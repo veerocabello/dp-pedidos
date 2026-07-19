@@ -851,15 +851,16 @@ async function submitOrder() {
   } else {
     console.warn("EmailJS no cargado — email omitido");
   }
-  // Registrar uso del código de descuento
-  if (_activeDiscount && window.fb_incrementDiscountUse) {
-    window.fb_incrementDiscountUse(_activeDiscount.code).catch(() => {});
-    _activeDiscount = null;
-    const dcInput = document.getElementById('discount-input');
-    const dcFeedback = document.getElementById('discount-feedback');
-    if (dcInput) dcInput.value = '';
-    if (dcFeedback) dcFeedback.textContent = '';
-  }
+  // El uso del código de descuento se registra en el servidor al
+  // finalizar el pedido (ver guardar-pedido.php) — incrementar
+  // discounts/<code>/uses exige el UID de admin en las reglas, así que
+  // el navegador ya no puede hacerlo directamente.
+  const _discountCodeUsado = _activeDiscount ? _activeDiscount.code : null;
+  _activeDiscount = null;
+  const dcInput = document.getElementById('discount-input');
+  const dcFeedback = document.getElementById('discount-feedback');
+  if (dcInput) dcInput.value = '';
+  if (dcFeedback) dcFeedback.textContent = '';
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
@@ -867,7 +868,8 @@ async function submitOrder() {
     slotTime: needsSlot ? selectedSlot : null,
     phone,
     phoneClean,
-    ticketData: ticketData
+    ticketData: ticketData,
+    discountCode: _discountCodeUsado
   };
 
   // Teléfonos de prueba que saltan la verificación SMS
@@ -928,7 +930,7 @@ async function submitOrder() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -936,17 +938,39 @@ async function _finalizarPedido() {
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
 
-  // Guardar ticket completo en Firebase para impresión
-  if (window.fb_saveTicket && window._pendingTicketData) {
-    console.log('💾 Guardando ticket en Firebase:', orderNum);
-    window.fb_saveTicket(orderNum, window._pendingTicketData)
-      .then(() => { console.log('✅ Ticket guardado'); window._pendingTicketData = null; })
+  // Guardar el pedido en el servidor: ticket completo + estadísticas del
+  // día + uso del código de descuento (si lo hubo). tickets/ y stats/
+  // exigen el UID de admin en las reglas de Firebase, así que un cliente
+  // anónimo (cualquiera que pida sin haber iniciado sesión de admin) no
+  // puede escribir ahí directamente — lo hace guardar-pedido.php con la
+  // cuenta de servicio.
+  if (window._pendingTicketData) {
+    console.log('💾 Guardando pedido en el servidor:', orderNum);
+    fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderNum,
+        name: window._pendingTicketData.name,
+        phone: window._pendingTicketData.phone,
+        notes: window._pendingTicketData.notes,
+        slotTime: window._pendingTicketData.slotTime,
+        items: window._pendingTicketData.items,
+        total: window._pendingTicketData.total,
+        discountCode: discountCode || null
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); }
+      })
       .catch((e) => {
-        console.error('❌ Error guardando ticket:', e);
-        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó en Firebase — ' + (e && e.message || 'error desconocido'));
+        console.error('❌ Error guardando pedido:', e);
+        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
       });
   } else {
-    console.warn('⚠️ fb_saveTicket no disponible o _pendingTicketData vacío', !!window.fb_saveTicket, !!window._pendingTicketData);
+    console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
   }
 
   await showSuccess(orderNum, slotTime);
