@@ -185,7 +185,11 @@ function renderActivityLog() {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin actividad registrada</div>';
     return;
   }
-  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(e.time, "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(e.action, "</span>\n    </div>")).join('');
+  // e.action pasa por logActivity() desde toda la app y a menudo lleva
+  // texto libre interpolado (nombres de ingredientes, proveedores,
+  // empleados, categorías...) — hay que escapar aquí, en el único sitio
+  // donde se renderiza, en vez de perseguir cada origen por separado.
+  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(escapeHtml(e.time), "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n    </div>")).join('');
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
