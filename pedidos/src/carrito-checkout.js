@@ -969,48 +969,24 @@ function _ticketTienePatata(ticketData) {
 }
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
   if (!phoneClean || !_ticketTienePatata(ticketData)) return;
-  if (!window.fb_loadFidelizacionCliente || !window.fb_saveFidelizacionCliente) return;
-
-  let cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-  if (!cliente) {
-    cliente = { nombre: (ticketData && ticketData.name) || '', sellos: 0, premiosPendientes: 0, vecesCompletado: 0, historialCanjes: [] };
-  }
-  // Migración de clientes antiguos (formato con premioDisponible booleano)
-  if (typeof cliente.premiosPendientes !== 'number') {
-    cliente.premiosPendientes = cliente.premioDisponible ? 1 : 0;
-  }
-  if (typeof cliente.vecesCompletado !== 'number') cliente.vecesCompletado = 0;
-  delete cliente.premioDisponible;
-
-  // Mantener actualizado el nombre más reciente con el que pide el cliente
-  if (ticketData && ticketData.name) cliente.nombre = ticketData.name;
-
-  // Si este pedido consume un premio pendiente (la patata gratis ya se
-  // descontó en el carrito, ver el cálculo de _fidelizacionDescuento en
-  // submitOrder), se resta 1 premio pendiente y se registra en el historial
-  // de canjes. El contador de sellos no se toca aquí porque ya se resetea
-  // solo al llegar a 10.
-  if (consumioPremio && cliente.premiosPendientes > 0) {
-    cliente.premiosPendientes -= 1;
-    cliente.historialCanjes = cliente.historialCanjes || [];
-    cliente.historialCanjes.push({ fecha: new Date().toLocaleString('es-ES'), ticket: (ticketData && ticketData.orderNum) || null });
-  }
-
-  cliente.sellos = (cliente.sellos || 0) + 1;
-  if (cliente.sellos >= FIDELIZACION_META) {
-    cliente.sellos = 0;
-    cliente.premiosPendientes = (cliente.premiosPendientes || 0) + 1;
-    cliente.vecesCompletado = (cliente.vecesCompletado || 0) + 1;
-  }
-  // Registro de cuándo se pone cada sello, para poder detectar ritmos
-  // sospechosos (varios sellos en pocos minutos = posible abuso del
-  // sistema). Solo guardamos los últimos 15 para no hinchar el nodo.
-  cliente.historialSellos = cliente.historialSellos || [];
-  cliente.historialSellos.push({ ts: Date.now(), fecha: new Date().toLocaleString('es-ES') });
-  if (cliente.historialSellos.length > 15) {
-    cliente.historialSellos = cliente.historialSellos.slice(-15);
-  }
-  await window.fb_saveFidelizacionCliente(phoneClean, cliente);
+  // El cálculo del sello (sumar, resetear a los 10, descontar premio
+  // canjeado) se hace en el servidor (fidelizacion.php): el navegador ya
+  // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
+  // pueda regalarse sellos/premios abriendo las devtools.
+  try {
+    await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'registrarSello',
+        telefono: phoneClean,
+        orderNum: (ticketData && ticketData.orderNum) || '',
+        tienePatata: true,
+        consumioPremio: !!consumioPremio,
+        nombre: (ticketData && ticketData.name) || ''
+      })
+    });
+  } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.

@@ -1367,12 +1367,19 @@ function formatPhone(input) {
 
 // ── FIDELIZACIÓN: comprobación de premio disponible al introducir teléfono ──
 async function _comprobarPremioFidelizacion(phoneClean) {
-  if (!window.fb_loadFidelizacionCliente) return;
+  // Consulta server-side (fidelizacion.php) en vez de leer Firebase
+  // directamente — así solo se ve lo mínimo (sellos/premios de ESTE
+  // teléfono) y nadie puede fisgonear el nombre/historial de otro cliente.
   try {
-    const cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-    const premiosPendientes = cliente
-      ? (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : (cliente.premioDisponible ? 1 : 0))
-      : 0;
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'consultar', telefono: phoneClean })
+    });
+    const data = await res.json();
+    if (!data.success) return;
+    const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
+    const premiosPendientes = cliente.premiosPendientes;
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
