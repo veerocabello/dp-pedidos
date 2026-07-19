@@ -27,21 +27,36 @@ $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 
 $ip_file = $tmp_dir . '/dpf_verify_ip_' . md5($ip) . '.json';
 
+// Todo esto (leer, contar, decidir, escribir) pasa con el lock exclusivo
+// abierto de principio a fin — si no, dos peticiones a la vez podían leer
+// el mismo estado antes de que ninguna escribiera y saltarse el límite.
 function dpf_check_limit($file, $max, $window) {
-    $now = time();
-    $log = [];
-    if (file_exists($file)) {
-        $log = json_decode(file_get_contents($file), true) ?: [];
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return true; // no bloquear tráfico real por un fallo de disco
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return true;
     }
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
     // Borrar entradas antiguas
-    $log = array_filter($log, function($ts) use ($now, $window) {
+    $log = array_values(array_filter($log, function($ts) use ($now, $window) {
         return ($now - $ts) < $window;
-    });
+    }));
     if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return false; // bloqueado
     }
     $log[] = $now;
-    file_put_contents($file, json_encode(array_values($log)), LOCK_EX);
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
     return true;
 }
 

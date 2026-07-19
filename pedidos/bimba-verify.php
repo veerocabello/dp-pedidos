@@ -34,54 +34,55 @@ $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_bimba_ip_' . md5($ip) . '.json';
 
-function dpf_bimba_check_limit($file, $max, $window) {
-    $now = time();
-    $log = [];
-    if (file_exists($file)) {
-        $log = json_decode(file_get_contents($file), true) ?: [];
-    }
-    $log = array_filter($log, function ($ts) use ($now, $window) {
-        return ($now - $ts) < $window;
-    });
-    if (count($log) >= $max) {
-        return false;
-    }
-    $log[] = $now;
-    file_put_contents($file, json_encode(array_values($log)), LOCK_EX);
-    return true;
-}
+// ── Comprobar el PIN ──
+$data = json_decode(file_get_contents('php://input'), true);
+$pin = isset($data['pin']) ? (string)$data['pin'] : '';
+$hash = hash('sha256', $pin . BIMBA_SALT);
 
-// Solo consulta si ya se ha superado el límite, sin registrar un intento nuevo
-function dpf_bimba_check_limit_peek($file, $max, $window) {
-    $now = time();
-    $log = [];
-    if (file_exists($file)) {
-        $log = json_decode(file_get_contents($file), true) ?: [];
-    }
-    $log = array_filter($log, function ($ts) use ($now, $window) {
-        return ($now - $ts) < $window;
-    });
-    return count($log) < $max;
+// Todo el ciclo (comprobar el límite, verificar el PIN y anotar/limpiar el
+// contador) pasa con el lock exclusivo abierto de principio a fin. Antes el
+// límite se consultaba (peek) y se anotaba (check_limit) en dos pasos
+// sueltos y sin lock en la lectura: varias peticiones a la vez podían pasar
+// el peek antes de que ninguna anotara su fallo, saltándose el máximo de
+// intentos por fuerza bruta.
+$fp = fopen($ip_file, 'c+');
+if ($fp === false) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Error interno']);
+    exit();
 }
+flock($fp, LOCK_EX);
 
-if (!dpf_bimba_check_limit_peek($ip_file, $max_ip, $window)) {
+$now = time();
+$size = filesize($ip_file) ?: 0;
+$raw = $size > 0 ? fread($fp, $size) : '';
+$log = json_decode($raw, true) ?: [];
+$log = array_values(array_filter($log, function ($ts) use ($now, $window) {
+    return ($now - $ts) < $window;
+}));
+
+if (count($log) >= $max_ip) {
+    flock($fp, LOCK_UN);
+    fclose($fp);
     http_response_code(429);
     echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
 }
 
-// ── Comprobar el PIN ──
-$data = json_decode(file_get_contents('php://input'), true);
-$pin = isset($data['pin']) ? (string)$data['pin'] : '';
-
-$hash = hash('sha256', $pin . BIMBA_SALT);
-
 if (hash_equals(BIMBA_PWD_HASH, $hash)) {
-    // Acierto: no cuenta para el límite, y limpiamos el contador de fallos de esta IP
-    if (file_exists($ip_file)) unlink($ip_file);
+    // Acierto: no cuenta para el límite, se limpia el contador de fallos de esta IP
+    ftruncate($fp, 0);
+    flock($fp, LOCK_UN);
+    fclose($fp);
     echo json_encode(['success' => true]);
 } else {
     // Fallo: este sí cuenta para el límite
-    dpf_bimba_check_limit($ip_file, $max_ip, $window);
+    $log[] = $now;
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
     echo json_encode(['success' => false]);
 }

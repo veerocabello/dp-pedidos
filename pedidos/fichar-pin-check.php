@@ -33,20 +33,36 @@ $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_fichar_ip_' . md5($ip) . '.json';
 
+// Nota: todo esto (leer, contar, decidir, escribir) pasa mientras se tiene
+// el lock exclusivo abierto — así dos peticiones que llegan a la vez no
+// pueden leer ambas el mismo estado "antes" de que ninguna escriba, que es
+// lo que permitía saltarse el límite bajo ráfaga concurrente.
 function dpf_fichar_check_limit($file, $max, $window) {
-    $now = time();
-    $log = [];
-    if (file_exists($file)) {
-        $log = json_decode(file_get_contents($file), true) ?: [];
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return true; // no bloquear tráfico real por un fallo de disco
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return true;
     }
-    $log = array_filter($log, function ($ts) use ($now, $window) {
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
         return ($now - $ts) < $window;
-    });
+    }));
     if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return false;
     }
     $log[] = $now;
-    file_put_contents($file, json_encode(array_values($log)), LOCK_EX);
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
     return true;
 }
 
@@ -112,16 +128,65 @@ function fbGetArrayString($databaseURL, $path, $accessToken) {
     return is_array($arr) ? $arr : [];
 }
 
-// Escribe de vuelta el array entero como STRING JSON, en el mismo formato
-function fbSetArrayString($databaseURL, $path, $accessToken, $arr) {
+// ── Lectura/escritura CONDICIONAL de config/fichajes (con ETag) ──────────
+// config/fichajes es un único nodo (todo el array guardado como string), así
+// que registrar un fichaje es leer-modificar-escribir el árbol entero. Sin
+// más, dos empleados fichando casi a la vez podían perder uno de los dos
+// fichajes (el segundo PUT pisaba el primero). Firebase RTDB soporta
+// escritura condicional por ETag: si el nodo cambió desde que lo leímos, el
+// PUT falla (412) y volvemos a leer + reintentar en vez de pisar el fichaje
+// que el otro acababa de guardar.
+function fbGetArrayStringConEtag($databaseURL, $path, $accessToken) {
+    $etag = null;
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
+        if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
+        return strlen($header);
+    });
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $raw = json_decode($response, true);
+    $arr = is_string($raw) ? json_decode($raw, true) : null;
+    return ['arr' => is_array($arr) ? $arr : [], 'etag' => $etag];
+}
+
+// Devuelve true si escribió, false si hubo conflicto (otra petición escribió
+// primero) — en ese caso el llamador debe releer y reintentar.
+function fbSetArrayStringSiCoincide($databaseURL, $path, $accessToken, $arr, $etag) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json']);
+    $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
+    if ($etag) $headers[] = 'If-Match: ' . $etag;
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(json_encode(array_values($arr))));
-    $response = curl_exec($ch);
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    return json_decode($response, true);
+    return $httpCode === 200;
+}
+
+// Aplica $mutator($fichajesActuales) sobre config/fichajes de forma segura
+// frente a fichajes concurrentes. $mutator debe devolver:
+//   ['todos' => $arrayNuevo]   → intentar guardar
+//   ['error' => 'mensaje']     → abortar sin escribir (p.ej. guardia de doble entrada)
+// Si otra petición escribió entre medias, vuelve a leer el estado real y
+// reintenta (hasta 8 veces) en vez de perder el fichaje ajeno.
+function fbModificarFichajesSeguro($databaseURL, $accessToken, $mutator) {
+    for ($intento = 0; $intento < 8; $intento++) {
+        $leido = fbGetArrayStringConEtag($databaseURL, 'config/fichajes', $accessToken);
+        $resultado = $mutator($leido['arr']);
+        if (isset($resultado['error'])) {
+            return ['ok' => false, 'error' => $resultado['error']];
+        }
+        if (fbSetArrayStringSiCoincide($databaseURL, 'config/fichajes', $accessToken, $resultado['todos'], $leido['etag'])) {
+            return ['ok' => true];
+        }
+        usleep(rand(20000, 80000)); // pequeña espera aleatoria para no reintentar todos a la vez
+    }
+    return ['ok' => false, 'error' => 'No se pudo registrar, inténtalo de nuevo.'];
 }
 
 try {
@@ -224,15 +289,21 @@ try {
             exit;
         }
 
-        $todos = fbGetArrayString($databaseURL, 'config/fichajes', $accessToken);
-        $todos[] = [
+        $nuevoFichaje = [
             'empId'  => $empId,
             'fecha'  => $fecha,
             'hora'   => $hora,
             'tipo'   => $tipo,
             'manual' => true,
         ];
-        fbSetArrayString($databaseURL, 'config/fichajes', $accessToken, $todos);
+        $resultado = fbModificarFichajesSeguro($databaseURL, $accessToken, function ($todos) use ($nuevoFichaje) {
+            $todos[] = $nuevoFichaje;
+            return ['todos' => $todos];
+        });
+        if (!$resultado['ok']) {
+            echo json_encode(['success' => false, 'error' => $resultado['error']]);
+            exit;
+        }
 
         echo json_encode(['success' => true]);
         exit;
@@ -260,23 +331,6 @@ try {
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
         $fecha = $ahora->format('Y-m-d');
         $hora  = $ahora->format('H:i');
-
-        $todos = fbGetArrayString($databaseURL, 'config/fichajes', $accessToken);
-
-        // Guardia: evitar doble entrada o doble salida consecutiva
-        $suyosHoy = array_values(array_filter($todos, function ($f) use ($empId, $fecha) {
-            return ($f['empId'] ?? '') === $empId && ($f['fecha'] ?? '') === $fecha;
-        }));
-        usort($suyosHoy, function ($a, $b) { return strcmp($a['hora'] ?? '', $b['hora'] ?? ''); });
-        $ultimoTipo = count($suyosHoy) ? end($suyosHoy)['tipo'] : null;
-        if ($tipo === 'entrada' && $ultimoTipo === 'entrada') {
-            echo json_encode(['success' => false, 'error' => 'Ya tienes una entrada registrada. Registra primero la salida.']);
-            exit;
-        }
-        if ($tipo === 'salida' && $ultimoTipo !== 'entrada') {
-            echo json_encode(['success' => false, 'error' => 'No tienes una entrada activa. Registra primero la entrada.']);
-            exit;
-        }
 
         // Hora oficial según el turno del contrato más cercano a la hora real
         $horaOficial = $hora;
@@ -306,8 +360,30 @@ try {
             $nuevoFichaje['firma'] = $payload['firma'];
         }
 
-        $todos[] = $nuevoFichaje;
-        fbSetArrayString($databaseURL, 'config/fichajes', $accessToken, $todos);
+        // La guardia (evitar doble entrada/salida) se recalcula en cada
+        // intento contra el estado más reciente leído de Firebase, no
+        // contra una copia que pudo quedarse desfasada por otro fichaje
+        // guardado entre medias.
+        $resultado = fbModificarFichajesSeguro($databaseURL, $accessToken, function ($todos) use ($empId, $fecha, $tipo, $nuevoFichaje) {
+            $suyosHoy = array_values(array_filter($todos, function ($f) use ($empId, $fecha) {
+                return ($f['empId'] ?? '') === $empId && ($f['fecha'] ?? '') === $fecha;
+            }));
+            usort($suyosHoy, function ($a, $b) { return strcmp($a['hora'] ?? '', $b['hora'] ?? ''); });
+            $ultimoTipo = count($suyosHoy) ? end($suyosHoy)['tipo'] : null;
+            if ($tipo === 'entrada' && $ultimoTipo === 'entrada') {
+                return ['error' => 'Ya tienes una entrada registrada. Registra primero la salida.'];
+            }
+            if ($tipo === 'salida' && $ultimoTipo !== 'entrada') {
+                return ['error' => 'No tienes una entrada activa. Registra primero la entrada.'];
+            }
+            $todos[] = $nuevoFichaje;
+            return ['todos' => $todos];
+        });
+
+        if (!$resultado['ok']) {
+            echo json_encode(['success' => false, 'error' => $resultado['error']]);
+            exit;
+        }
 
         echo json_encode(['success' => true, 'hora' => $hora, 'tipo' => $tipo]);
         exit;
