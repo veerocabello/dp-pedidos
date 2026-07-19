@@ -34,6 +34,23 @@ $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_bimba_ip_' . md5($ip) . '.json';
 
+// Limpieza ocasional: sin esto se acumula un archivo por cada IP distinta
+// para siempre (solo se filtran las entradas de dentro, nunca se borra el
+// archivo en sí). Se ejecuta con baja probabilidad para no penalizar cada
+// petición, y borra archivos sin tocar hace más de 1 hora (bastante más
+// que cualquier ventana de límite usada en esta web).
+function dpf_gc_rate_limit_files() {
+    if (mt_rand(1, 50) !== 1) return; // ~2% de las peticiones
+    $ahora = time();
+    foreach (glob(sys_get_temp_dir() . '/dpf_*.json') ?: [] as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime !== false && ($ahora - $mtime) > 3600) {
+            @unlink($f);
+        }
+    }
+}
+dpf_gc_rate_limit_files();
+
 // ── Comprobar el PIN ──
 $data = json_decode(file_get_contents('php://input'), true);
 $pin = isset($data['pin']) ? (string)$data['pin'] : '';
