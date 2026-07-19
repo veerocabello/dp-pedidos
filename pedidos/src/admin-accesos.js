@@ -452,14 +452,9 @@ async function openAdmin() {
 })();
 
 // ── ACCESO BIMBA POR CANDADO ────────────────────────────────────────────────
-// Contraseña almacenada como hash SHA-256 con sal — nunca en texto plano
-const _BIMBA_SALT = 'dpf_2026_x7q';
-const BIMBA_PWD_HASH = '94817839a2d2ae89cf3c0cd4afdf73526ab401525e7a2e557aadf7a8e4fcb4f8';
-async function hashBimbaPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd + _BIMBA_SALT));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// El PIN se comprueba en el servidor (bimba-verify.php), nunca en el
+// navegador — así no queda ningún hash extraíble en el JS público y el
+// límite de intentos es real (no se puede probar offline sin límite).
 function secureLockTap() {
   document.getElementById('secure-pin-input').value = '';
   document.getElementById('secure-pin-error').style.display = 'none';
@@ -471,11 +466,24 @@ function secureLockCerrar() {
 }
 async function secureLockConfirm() {
   const val = document.getElementById('secure-pin-input').value;
-  const hash = await hashBimbaPwd(val);
-  if (hash === BIMBA_PWD_HASH) {
+  let ok = false, errMsg = 'Contraseña incorrecta';
+  try {
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: val })
+    });
+    const data = await res.json();
+    ok = !!data.success;
+    if (data.error) errMsg = data.error;
+  } catch (e) {
+    errMsg = 'Error de conexión. Inténtalo de nuevo.';
+  }
+  if (ok) {
     document.getElementById('secure-pin-modal').style.display = 'none';
     setTimeout(_updateAudioBannerState, 200);
     _adminLoggedIn = true; window._adminLoggedIn = true;
+    _cargarDatosEmpleadosPrivados();
     if (window._bimbaTargetEmpleados) {
       window._bimbaTargetEmpleados = false;
       logActivity('👥 Acceso a empleados por bimba');
@@ -487,8 +495,6 @@ async function secureLockConfirm() {
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
       }, 100);
-      return;
-      showAdminSection('bimba-empleados', null);
     } else {
       logActivity('🔒 Acceso bimba por candado');
       openStockConfigSecret();
@@ -499,6 +505,7 @@ async function secureLockConfirm() {
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
   } else {
+    document.getElementById('secure-pin-error').textContent = errMsg;
     document.getElementById('secure-pin-error').style.display = 'block';
     document.getElementById('secure-pin-input').value = '';
     document.getElementById('secure-pin-input').focus();

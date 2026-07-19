@@ -2365,10 +2365,13 @@ function renderCart() {
   const grandTotal = feeEnabled ? total + feeAmount : total;
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
-  // Sync mobile FAB and drawer
-  _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
   // Only show total and form if orders are open
+  // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
+  // porque _syncCartDrawer() (a través de _syncDrawerSlotPicker()) copia el
+  // estado visible de #slot-picker-group al drawer móvil. Si se sincroniza
+  // primero, el drawer copia el estado del render ANTERIOR (desactualizado),
+  // provocando que "Hora de recogida" no aparezca en el drawer justo tras
+  // el primer cambio de carrito (bug intermitente en móvil).
   if (getOrdersOpen()) {
     totalRowEl.style.display = "flex";
     formEl.style.display = "block";
@@ -2377,6 +2380,10 @@ function renderCart() {
     totalRowEl.style.display = "none";
     formEl.style.display = "none";
   }
+
+  // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
+  _updateCartFab(totalItems, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal);
 }
 
 
@@ -4139,7 +4146,7 @@ function updateCustProgress() {
     if (sauceProg) sauceProg.style.display = 'none';
     document.getElementById('cust-sauce-badge').textContent = ns;
     document.getElementById('cust-ing-label').textContent = 'Total: ' + total + '/' + cfg.maxTotal + ' (salsas: ' + ns + ' · ing: ' + ni + ')';
-    document.getElementById('cust-ing-bar').style.width = pct + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pct / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill ' + cls;
     document.getElementById('cust-ing-badge').textContent = total + '/' + cfg.maxTotal;
   } else {
@@ -4148,11 +4155,11 @@ function updateCustProgress() {
     const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(ni / cfg.maxIngredients * 100));
     document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
-    document.getElementById('cust-sauce-bar').style.width = pctS + '%';
+    document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
     document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + ni + '/' + cfg.maxIngredients;
-    document.getElementById('cust-ing-bar').style.width = pctI + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
     document.getElementById('cust-ing-badge').textContent = ni + '/' + cfg.maxIngredients;
   }
@@ -6019,14 +6026,9 @@ async function openAdmin() {
 })();
 
 // ── ACCESO BIMBA POR CANDADO ────────────────────────────────────────────────
-// Contraseña almacenada como hash SHA-256 con sal — nunca en texto plano
-const _BIMBA_SALT = 'dpf_2026_x7q';
-const BIMBA_PWD_HASH = '94817839a2d2ae89cf3c0cd4afdf73526ab401525e7a2e557aadf7a8e4fcb4f8';
-async function hashBimbaPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd + _BIMBA_SALT));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// El PIN se comprueba en el servidor (bimba-verify.php), nunca en el
+// navegador — así no queda ningún hash extraíble en el JS público y el
+// límite de intentos es real (no se puede probar offline sin límite).
 function secureLockTap() {
   document.getElementById('secure-pin-input').value = '';
   document.getElementById('secure-pin-error').style.display = 'none';
@@ -6038,11 +6040,24 @@ function secureLockCerrar() {
 }
 async function secureLockConfirm() {
   const val = document.getElementById('secure-pin-input').value;
-  const hash = await hashBimbaPwd(val);
-  if (hash === BIMBA_PWD_HASH) {
+  let ok = false, errMsg = 'Contraseña incorrecta';
+  try {
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: val })
+    });
+    const data = await res.json();
+    ok = !!data.success;
+    if (data.error) errMsg = data.error;
+  } catch (e) {
+    errMsg = 'Error de conexión. Inténtalo de nuevo.';
+  }
+  if (ok) {
     document.getElementById('secure-pin-modal').style.display = 'none';
     setTimeout(_updateAudioBannerState, 200);
     _adminLoggedIn = true; window._adminLoggedIn = true;
+    _cargarDatosEmpleadosPrivados();
     if (window._bimbaTargetEmpleados) {
       window._bimbaTargetEmpleados = false;
       logActivity('👥 Acceso a empleados por bimba');
@@ -6054,8 +6069,6 @@ async function secureLockConfirm() {
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
       }, 100);
-      return;
-      showAdminSection('bimba-empleados', null);
     } else {
       logActivity('🔒 Acceso bimba por candado');
       openStockConfigSecret();
@@ -6066,6 +6079,7 @@ async function secureLockConfirm() {
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
   } else {
+    document.getElementById('secure-pin-error').textContent = errMsg;
     document.getElementById('secure-pin-error').style.display = 'block';
     document.getElementById('secure-pin-input').value = '';
     document.getElementById('secure-pin-input').focus();
@@ -6523,6 +6537,7 @@ async function checkAdminPwd() {
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();
@@ -7867,24 +7882,29 @@ function _ejecutarLoadOrdersStatus() {
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe
   checkVacationMode();
+  // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
+  // un cliente anónimo mirando la carta no tiene permiso de escritura en
+  // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
+  // generando avisos de "permission_denied" en la consola sin ningún efecto.
+  const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
       updateOpenBtn(false);
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
       localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
   const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
@@ -8202,18 +8222,10 @@ document.addEventListener('keydown', function (e) {
     var _document$getElementB9;
     window._secretKeyBuf += e.key.toLowerCase();
     if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    {
-      const _last5 = window._secretKeyBuf.slice(-5);
-      if (_last5.length === 5) {
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(_last5 + _BIMBA_SALT)).then(buf => {
-          const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-          if (h === BIMBA_PWD_HASH) {
-            window._secretKeyBuf = '';
-            openStockConfigSecret();
-          }
-        });
-      }
-    }
+    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
+    // en cualquier parte de la página se ha quitado — comprobaba el hash en
+    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
+    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
     if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
       const inp = document.getElementById('log-secret-input');
       if (inp) {
@@ -8593,9 +8605,12 @@ function scheduleSlotMidnightReset() {
     localStorage.removeItem(OPEN_KEY);
     localStorage.removeItem(ORDERS_KEY);
     localStorage.removeItem('dpf_open_manual_override');
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    const _esAdminAutenticadoReset = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+    if (_esAdminAutenticadoReset) {
+      firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    }
     // También archivar el día anterior en historial
     try {
       const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8623,7 +8638,7 @@ function scheduleSlotMidnightReset() {
           modified = true;
         }
       });
-      if (modified) fichajesSave(fich);
+      if (modified && _esAdminAutenticadoReset) fichajesSave(fich);
     } catch (e) {
       console.warn('Auto-checkout error', e);
     }
@@ -12109,6 +12124,33 @@ async function saveOrderTotal(orderNum, rawValue) {
 }
 
 
+// ── DATOS PRIVADOS DE EMPLEADOS ──────────────────────────────────────
+// Empleados y fichajes (PIN, DNI, teléfono, firmas) son datos sensibles.
+// Solo se cargan tras un login real (Firebase Auth admin o PIN bimba
+// verificado en el servidor) — nunca al abrir la página como visitante.
+// Llamar desde checkAdminPwd() (slots-alertas.js) y secureLockConfirm()
+// (admin-accesos.js) justo después de confirmar el acceso.
+function _cargarDatosEmpleadosPrivados() {
+  if (window.fb_loadEmpleados) {
+    window.fb_loadEmpleados().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_empleados', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadFichajes) {
+    window.fb_loadFichajes().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+}
+
 // ── INIT ADMIN DATA ──
 loadSavedMenu();
 initTabs(); // re-renderizar pestañas con el menú guardado
@@ -12218,26 +12260,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     });
   }
 
-  // Carga inicial de datos críticos desde Firebase (empleados, fichajes, cats, slots)
+  // Carga inicial de datos críticos desde Firebase (cats, slots, etc.)
+  // NOTA DE SEGURIDAD: empleados y fichajes NO se cargan aquí — esta
+  // función corre para cualquier visitante. Ver _cargarDatosEmpleadosPrivados().
   function _cargarCriticosDesdeFirebase() {
-    if (window.fb_loadEmpleados) {
-      window.fb_loadEmpleados().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB31;
-          localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-          if ((_document$getElementB31 = document.getElementById('admin-empleados')) !== null && _document$getElementB31 !== void 0 && _document$getElementB31.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadFichajes) {
-      window.fb_loadFichajes().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB32;
-          localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-          if ((_document$getElementB32 = document.getElementById('admin-empleados')) !== null && _document$getElementB32 !== void 0 && _document$getElementB32.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
     if (window.fb_loadBlockedCats) {
       window.fb_loadBlockedCats().then(cats => {
         if (cats) {

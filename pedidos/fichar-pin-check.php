@@ -199,6 +199,45 @@ try {
         exit;
     }
 
+    // ── REGISTRAR MANUAL: "¿Olvidaste fichar?" — fecha/hora las da el empleado,
+    //    sin la guardia de doble entrada/salida (puede ser un día pasado) ni el
+    //    ajuste a hora oficial de turno (es una corrección puntual) ──
+    if ($action === 'registrarManual') {
+        $empId = isset($payload['empId']) ? (string)$payload['empId'] : '';
+        $tipo  = isset($payload['tipo']) ? (string)$payload['tipo'] : '';
+        $fecha = isset($payload['fecha']) ? (string)$payload['fecha'] : '';
+        $hora  = isset($payload['hora']) ? (string)$payload['hora'] : '';
+        if (!$empId || !in_array($tipo, ['entrada', 'salida'], true)
+            || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)
+            || !preg_match('/^\d{2}:\d{2}$/', $hora)) {
+            echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
+            exit;
+        }
+
+        $empleados = fbGetArrayString($databaseURL, 'config/empleados', $accessToken);
+        $emp = null;
+        foreach ($empleados as $e) {
+            if (isset($e['id']) && $e['id'] === $empId) { $emp = $e; break; }
+        }
+        if (!$emp || !empty($emp['deBaja'])) {
+            echo json_encode(['success' => false, 'error' => 'Empleado no válido']);
+            exit;
+        }
+
+        $todos = fbGetArrayString($databaseURL, 'config/fichajes', $accessToken);
+        $todos[] = [
+            'empId'  => $empId,
+            'fecha'  => $fecha,
+            'hora'   => $hora,
+            'tipo'   => $tipo,
+            'manual' => true,
+        ];
+        fbSetArrayString($databaseURL, 'config/fichajes', $accessToken, $todos);
+
+        echo json_encode(['success' => true]);
+        exit;
+    }
+
     // ── REGISTRAR: nueva entrada/salida ──
     if ($action === 'registrar') {
         $empId = isset($payload['empId']) ? (string)$payload['empId'] : '';

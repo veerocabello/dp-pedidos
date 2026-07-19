@@ -238,10 +238,17 @@ const EMP_FICHAJES_IMPORTADOS = [];
 (function empInyectarImportados() {
   const KEY = 'dpf_fichajes_importados_v6';
   if (localStorage.getItem(KEY)) return;
-  const fich = fichajesLoad();
-  const existentes = new Set(fich.map(f => f.empId + '|' + f.fecha + '|' + f.hora + '|' + f.tipo));
-  const nuevos = EMP_FICHAJES_IMPORTADOS.filter(f => !existentes.has(f.empId + '|' + f.fecha + '|' + f.hora + '|' + f.tipo));
-  fichajesSave([...fich, ...nuevos]);
+  // EMP_FICHAJES_IMPORTADOS está vacío (migración ya hecha hace tiempo) —
+  // no tocar Firebase si no hay nada que inyectar. Sin este guard, esto
+  // sobrescribía config/fichajes con lo que hubiera en local (vacío para
+  // cualquier visitante nuevo que no sea admin), perdiendo el resto de
+  // fichajes en Firebase la primera vez que alguien nuevo abría la página.
+  if (EMP_FICHAJES_IMPORTADOS.length) {
+    const fich = fichajesLoad();
+    const existentes = new Set(fich.map(f => f.empId + '|' + f.fecha + '|' + f.hora + '|' + f.tipo));
+    const nuevos = EMP_FICHAJES_IMPORTADOS.filter(f => !existentes.has(f.empId + '|' + f.fecha + '|' + f.hora + '|' + f.tipo));
+    if (nuevos.length) fichajesSave([...fich, ...nuevos]);
+  }
   localStorage.setItem(KEY, '1');
 })();
 
@@ -694,8 +701,12 @@ async function empGenerarDocumento() {
 }
 
 // ── PANTALLA FICHAJE ──────────────────────────
+// Habla con fichar-pin-check.php en vez de leer Firebase/localStorage
+// directamente, para no exponer al navegador la lista completa de
+// empleados (DNI, teléfono, PIN) ni el fichero completo de fichajes.
 let _ficharPin = '',
-  _ficharEmpActivo = null;
+  _ficharEmpActivo = null,
+  _ficharHistorialCache = [];
 function ficharMostrarOverlay() {
   document.getElementById('fichar-overlay').classList.add('open');
   ficharIrVistaPIN();
@@ -722,18 +733,30 @@ function ficharPinBorrar() {
 function ficharActualizarDots() {
   document.querySelectorAll('.pin-dot').forEach((d, i) => d.classList.toggle('filled', i < _ficharPin.length));
 }
-function ficharPinOk() {
-  const emp = empLoadAll().find(e => e.pin === _ficharPin);
-  if (!emp) {
+async function ficharPinOk() {
+  try {
+    const res = await fetch('fichar-pin-check.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', pin: _ficharPin })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      document.getElementById('fichar-pin-error').style.display = 'block';
+      _ficharPin = '';
+      ficharActualizarDots();
+      return;
+    }
+    _ficharEmpActivo = data;
+    await ficharMostrarVista(data);
+  } catch (e) {
+    document.getElementById('fichar-pin-error').textContent = 'Error de conexión. Inténtalo de nuevo.';
     document.getElementById('fichar-pin-error').style.display = 'block';
     _ficharPin = '';
     ficharActualizarDots();
-    return;
   }
-  _ficharEmpActivo = emp;
-  ficharMostrarVista(emp);
 }
-function ficharMostrarVista(emp) {
+async function ficharMostrarVista(emp) {
   document.getElementById('fichar-pin-view').style.display = 'none';
   document.getElementById('fichar-emp-view').style.display = 'block';
   document.getElementById('fichar-ok-view').style.display = 'none';
@@ -749,9 +772,21 @@ function ficharMostrarVista(emp) {
   });
   document.getElementById('fichar-fecha-hoy').textContent = hoyLabel.charAt(0).toUpperCase() + hoyLabel.slice(1);
 
+  // Pedir el historial de este empleado al servidor (solo el suyo)
+  let fich = [];
+  try {
+    const res = await fetch('fichar-pin-check.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'historial', empId: emp.empId })
+    });
+    const data = await res.json();
+    if (data.success) fich = data.fichajes || [];
+  } catch (e) { /* si falla, mostramos con lo que haya */ }
+  _ficharHistorialCache = fich;
+
   // Estado: ¿dentro o fuera?
-  const fich = fichajesLoad();
-  const suyosHoy = fich.filter(f => f.empId === emp.id && f.fecha === hoyStr).sort((a, b) => a.hora.localeCompare(b.hora));
+  const suyosHoy = fich.filter(f => f.fecha === hoyStr).sort((a, b) => a.hora.localeCompare(b.hora));
   const dentro = suyosHoy.length > 0 && suyosHoy[suyosHoy.length - 1].tipo === 'entrada';
   document.getElementById('fichar-emp-estado').textContent = dentro ? '🟢 Estás trabajando' : '⚪ No has fichado entrada hoy';
 
@@ -766,7 +801,7 @@ function ficharMostrarVista(emp) {
   // Resumen del mes
   const mes = hoy.toISOString().slice(0, 7);
   const porDia = {};
-  fich.filter(f => f.empId === emp.id && f.fecha.startsWith(mes)).forEach(f => {
+  fich.filter(f => f.fecha.startsWith(mes)).forEach(f => {
     if (!porDia[f.fecha]) porDia[f.fecha] = {
       e: [],
       s: []
@@ -802,7 +837,7 @@ function ficharMostrarVista(emp) {
   document.getElementById('fichar-resumen-mes').innerHTML = '<b>' + mesN.charAt(0).toUpperCase() + mesN.slice(1) + ':</b><br>' + 'Días trabajados: <b>' + dias.size + '</b><br>' + 'Horas totales: <b>' + th + 'h' + (tm > 0 ? ' ' + tm + 'min' : '') + '</b>';
 
   // Últimos fichajes
-  const rec = fich.filter(f => f.empId === emp.id).sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)).slice(0, 8);
+  const rec = [...fich].sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)).slice(0, 8);
   document.getElementById('fichar-historial-reciente').innerHTML = rec.length ? rec.map(f => '<div>' + f.fecha.slice(5).replace('-', '/') + ' ' + f.hora + ' — ' + (f.tipo === 'entrada' ? '🟢 Entrada' : '🔴 Salida') + (f.auto ? ' <span style="font-size:10px;color:var(--muted)">(auto)</span>' : '') + '</div>').join('') : '<span style="color:var(--muted)">Sin fichajes recientes</span>';
 }
 // ── FICHAJE: firma con el dedo (una vez al día, antes de la primera entrada) ──
@@ -810,10 +845,9 @@ let _ficharFirmaCtx = null;
 let _ficharFirmaDibujando = false;
 let _ficharFirmaTieneTrazo = false;
 let _ficharTipoPendienteFirma = null;
-function _ficharYaFirmoHoy(empId) {
+function _ficharYaFirmoHoy() {
   const hoyStr = new Date().toISOString().slice(0, 10);
-  const fich = fichajesLoad();
-  return fich.some(f => f.empId === empId && f.fecha === hoyStr && f.firma);
+  return _ficharHistorialCache.some(f => f.fecha === hoyStr && f.firma);
 }
 function _ficharFirmaInitCanvas() {
   const canvas = document.getElementById('fichar-firma-canvas');
@@ -883,7 +917,7 @@ function ficharFirmaConfirmar() {
 function ficharMostrarFirmaSiHaceFalta(tipo) {
   if (!_ficharEmpActivo) return false;
   if (tipo !== 'entrada') return false; // solo se pide al fichar la primera entrada del día
-  if (_ficharYaFirmoHoy(_ficharEmpActivo.id)) return false;
+  if (_ficharYaFirmoHoy()) return false;
   _ficharTipoPendienteFirma = tipo;
   document.getElementById('fichar-emp-view').style.display = 'none';
   document.getElementById('fichar-firma-view').style.display = 'block';
@@ -892,84 +926,40 @@ function ficharMostrarFirmaSiHaceFalta(tipo) {
   setTimeout(_ficharFirmaInitCanvas, 50); // pequeño delay para que el canvas ya tenga su tamaño real en pantalla
   return true;
 }
-function ficharRegistrar(tipo, firmaDataUrl) {
+async function ficharRegistrar(tipo, firmaDataUrl) {
   if (!_ficharEmpActivo) {
     alert('Error: no hay empleado activo');
     return;
   }
-  const ahora = new Date();
-  const fecha = ahora.toISOString().slice(0, 10);
-  const hora = ahora.toTimeString().slice(0, 5);
-  const fich = fichajesLoad();
-  // Guardia: evitar doble entrada o doble salida consecutiva
-  const suyosHoy = fich.filter(f => f.empId === _ficharEmpActivo.id && f.fecha === fecha).sort((a, b) => a.hora.localeCompare(b.hora));
-  const ultimoTipo = suyosHoy.length > 0 ? suyosHoy[suyosHoy.length - 1].tipo : null;
-  if (tipo === 'entrada' && ultimoTipo === 'entrada') {
-    alert('Ya tienes una entrada registrada. Registra primero la salida.');
-    return;
-  }
-  if (tipo === 'salida' && ultimoTipo !== 'entrada') {
-    alert('No tienes una entrada activa. Registra primero la entrada.');
-    return;
-  }
-  // Calcular horaOficial según contrato del empleado
-  const horaReal = hora;
-  let horaOficial = hora;
-  const empActivo = _ficharEmpActivo;
-  if (empActivo) {
-    if (tipo === 'entrada') {
-      // Usar hora de entrada del turno correspondiente
-      if (empActivo.manIn && empActivo.tarIn) {
-        // Tiene ambos turnos — elegir el más cercano a la hora real
-        const [mh, mm] = empActivo.manIn.split(':').map(Number);
-        const [th, tm] = empActivo.tarIn.split(':').map(Number);
-        const realMin = ahora.getHours() * 60 + ahora.getMinutes();
-        const diffMan = Math.abs(realMin - (mh * 60 + mm));
-        const diffTar = Math.abs(realMin - (th * 60 + tm));
-        horaOficial = diffMan <= diffTar ? empActivo.manIn : empActivo.tarIn;
-      } else if (empActivo.tarIn) {
-        horaOficial = empActivo.tarIn;
-      } else if (empActivo.manIn) {
-        horaOficial = empActivo.manIn;
-      }
-    } else {
-      // Salida
-      if (empActivo.manOut && empActivo.tarOut) {
-        const [mh, mm] = empActivo.manOut.split(':').map(Number);
-        const [th, tm] = empActivo.tarOut.split(':').map(Number);
-        const realMin = ahora.getHours() * 60 + ahora.getMinutes();
-        const diffMan = Math.abs(realMin - (mh * 60 + mm));
-        const diffTar = Math.abs(realMin - (th * 60 + tm));
-        horaOficial = diffMan <= diffTar ? empActivo.manOut : empActivo.tarOut;
-      } else if (empActivo.tarOut) {
-        horaOficial = empActivo.tarOut;
-      } else if (empActivo.manOut) {
-        horaOficial = empActivo.manOut;
-      }
+  // La hora oficial (según turno del contrato), la guardia de doble
+  // entrada/salida y el guardado en Firebase los resuelve el servidor
+  // (fichar-pin-check.php), que es quien tiene acceso completo a los
+  // datos de empleados — el navegador nunca los ve.
+  try {
+    const res = await fetch('fichar-pin-check.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'registrar', empId: _ficharEmpActivo.empId, tipo, firma: firmaDataUrl || undefined })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.error || 'No se pudo registrar el fichaje.');
+      return;
     }
+    document.getElementById('fichar-emp-view').style.display = 'none';
+    document.getElementById('fichar-ok-view').style.display = 'block';
+    document.getElementById('fichar-ok-icon').textContent = tipo === 'entrada' ? '🟢' : '🔴';
+    document.getElementById('fichar-ok-msg').textContent = tipo === 'entrada' ? '¡Entrada registrada!' : '¡Salida registrada!';
+    const ahora = new Date();
+    const fechaLabel = ahora.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long'
+    });
+    document.getElementById('fichar-ok-hora').textContent = fechaLabel.charAt(0).toUpperCase() + fechaLabel.slice(1) + ' · ' + data.hora;
+  } catch (e) {
+    alert('Error de conexión. Inténtalo de nuevo.');
   }
-
-  fich.push({
-    empId: _ficharEmpActivo.id,
-    fecha,
-    hora: horaOficial,
-    horaReal,
-    tipo,
-    ...(firmaDataUrl ? { firma: firmaDataUrl } : {})
-  });
-  fichajesSave(fich);
-
-  // Mostrar confirmación
-  document.getElementById('fichar-emp-view').style.display = 'none';
-  document.getElementById('fichar-ok-view').style.display = 'block';
-  document.getElementById('fichar-ok-icon').textContent = tipo === 'entrada' ? '🟢' : '🔴';
-  document.getElementById('fichar-ok-msg').textContent = tipo === 'entrada' ? '¡Entrada registrada!' : '¡Salida registrada!';
-  const fechaLabel = ahora.toLocaleDateString('es-ES', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long'
-  });
-  document.getElementById('fichar-ok-hora').textContent = fechaLabel.charAt(0).toUpperCase() + fechaLabel.slice(1) + ' · ' + hora;
 }
 function ficharVolverEmp() {
   ficharMostrarVista(_ficharEmpActivo);
@@ -1203,7 +1193,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 });
 
-// Comprobar token fichaje en URL
+// Comprobar token fichaje en URL — verificado en el servidor (fichar-pin-check.php),
+// nunca comparando en el cliente contra el token completo leído de Firebase.
 (function () {
   const params = new URLSearchParams(window.location.search);
   const key = params.get('fichar');
@@ -1215,37 +1206,14 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(ficharMostrarOverlay, 300);
     }
   }
-
-  // Primero comprobar localStorage (rápido)
-  const saved = getFicharToken();
-  if (saved && key === saved) {
-    abrirFichar();
-    return;
-  }
-
-  // Si no está en localStorage, consultar Firebase
-  function checkFirebase() {
-    if (window._ficharTokenChecked) return;
-    if (!window.fb_loadFicharToken) return; // no marcar como checked si aún no está listo
-    window._ficharTokenChecked = true;
-    window.fb_loadFicharToken().then(function(fbToken) {
-      if (fbToken && key === fbToken) {
-        localStorage.setItem(EMP_FICHAR_KEY, fbToken); // cachear para futuras visitas
-        abrirFichar();
-      }
-    }).catch(function() {});
-  }
-  if (window._firebaseReady) {
-    checkFirebase();
-  } else {
-    document.addEventListener('firebaseReady', checkFirebase);
-    // Fallback: reintentar varias veces por si firebaseReady ya pasó (especialmente en móvil)
-    [1000, 2000, 3000, 5000].forEach(function(ms) {
-      setTimeout(function() {
-        if (window._firebaseReady && !window._ficharTokenChecked) checkFirebase();
-      }, ms);
-    });
-  }
+  fetch('fichar-pin-check.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'checkToken', token: key })
+  })
+    .then(res => res.json())
+    .then(data => { if (data.success) abrirFichar(); })
+    .catch(() => {});
 })();
 
 
@@ -1661,15 +1629,31 @@ function bimbaGuardarPromo() {
 
 
 
-function ficharManualRegistrar(tipo) {
+async function ficharManualRegistrar(tipo) {
   const fecha = document.getElementById('fichar-manual-fecha').value;
   const hora  = document.getElementById('fichar-manual-hora').value;
   const msg   = document.getElementById('fichar-manual-msg');
   if (!fecha || !hora) { msg.textContent = '⚠️ Pon fecha y hora'; msg.style.color='#c0392b'; msg.style.display='block'; return; }
   if (!_ficharEmpActivo) return;
-  const fich = fichajesLoad();
-  fich.push({ empId: _ficharEmpActivo.id, fecha, hora, tipo, manual: true });
-  fichajesSave(fich);
+  try {
+    const res = await fetch('fichar-pin-check.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'registrarManual', empId: _ficharEmpActivo.empId, fecha, hora, tipo })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      msg.textContent = '⚠️ ' + (data.error || 'No se pudo registrar');
+      msg.style.color = '#c0392b';
+      msg.style.display = 'block';
+      return;
+    }
+  } catch (e) {
+    msg.textContent = '⚠️ Error de conexión';
+    msg.style.color = '#c0392b';
+    msg.style.display = 'block';
+    return;
+  }
   msg.textContent = '✅ ' + (tipo==='entrada'?'Entrada':'Salida') + ' registrada el ' + fecha + ' a las ' + hora;
   msg.style.color = '#27855a';
   msg.style.display = 'block';

@@ -125,18 +125,10 @@ document.addEventListener('keydown', function (e) {
     var _document$getElementB9;
     window._secretKeyBuf += e.key.toLowerCase();
     if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    {
-      const _last5 = window._secretKeyBuf.slice(-5);
-      if (_last5.length === 5) {
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(_last5 + _BIMBA_SALT)).then(buf => {
-          const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-          if (h === BIMBA_PWD_HASH) {
-            window._secretKeyBuf = '';
-            openStockConfigSecret();
-          }
-        });
-      }
-    }
+    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
+    // en cualquier parte de la página se ha quitado — comprobaba el hash en
+    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
+    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
     if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
       const inp = document.getElementById('log-secret-input');
       if (inp) {
