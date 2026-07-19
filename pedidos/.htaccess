@@ -1,0 +1,80 @@
+# ── Las credenciales de Twilio ya NO viven aquí.
+#    Ahora están en /domains/dulcepatatafood.es/twilio-secrets.php
+#    (fuera de public_html, no accesible por web).
+#    Ver twilio-config.php.
+
+# ── Compresión (gzip/deflate) — reduce mucho el peso de JS/CSS/HTML al viajar ──
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain image/svg+xml
+</IfModule>
+
+# ── Cabeceras de seguridad HTTP ──
+<IfModule mod_headers.c>
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+
+    # CSP activo (ya verificado en modo Report-Only sin romper nada)
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+
+    # CSP DE PRUEBA (Report-Only, no bloquea nada) — igual que la de arriba pero SIN 'unsafe-eval'
+    # Objetivo: comprobar unos días si salta algún aviso de violación en la consola del navegador.
+    # Si no salta nada, se puede quitar 'unsafe-eval' de la cabecera activa de arriba.
+    Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+</IfModule>
+
+# ── Bloquear acceso directo a archivos PHP sensibles ──
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log)$">
+    Require all denied
+</FilesMatch>
+
+# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
+RewriteEngine On
+RewriteRule ^send-code\.php$ - [L]
+RewriteRule ^verify-code\.php$ - [L]
+RewriteRule ^webhook-incidencia\.php$ - [L]
+RewriteRule ^bimba-verify\.php$ - [L]
+RewriteRule ^fichar-pin-check\.php$ - [L]
+
+# ── Excepción TEMPORAL (solo mientras dura el Basic Auth): fichar-standalone.html
+#    es una página propia, solo con la pantalla de fichar (sin carta ni
+#    carrito detrás), accesible SIN contraseña mientras la web está cerrada,
+#    para que los empleados puedan fichar con su enlace (?fichar=TOKEN) sin
+#    conocer la contraseña de la web. Los archivos que esa página necesita
+#    (JS del fichaje, fichar-pin-check.php) se abren también SOLO cuando el
+#    navegador los pide con ese mismo enlace como "Referer".
+#    admin-shell.html NUNCA se salta, tiene su propia regla aparte.
+#
+#    IMPORTANTE — el día de la reapertura, quitar SOLO este bloque de
+#    SetEnvIf/RequireAny (deja de hacer nada útil sin Basic Auth de por
+#    medio) — pero fichar-standalone.html, js/fichar.js y
+#    fichar-pin-check.php se QUEDAN para siempre: no son un parche del
+#    Basic Auth, resuelven un problema de fondo (que el móvil de un
+#    empleado no tenga que leer la lista completa de compañeros para
+#    comprobar su propio PIN) que existe da igual si la web tiene
+#    contraseña o no.
+<IfModule mod_setenvif.c>
+    SetEnvIf Referer "fichar=" allow_fichar
+</IfModule>
+
+# admin-shell.html: siempre con contraseña, sin excepción de fichar
+<FilesMatch "^admin-shell\.html$">
+    AuthType Basic
+    AuthName "Zona privada"
+    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
+    Require valid-user
+</FilesMatch>
+
+# ── Zona privada — se aplica a TODO excepto a la lista de archivos públicos ──
+# (cerrado temporalmente por obras — quitar este bloque el día de la reapertura, ver .htaccess preparado sin Basic Auth)
+<FilesMatch "^(?!(send-code\.php|verify-code\.php|webhook-incidencia\.php|bimba-verify\.php|fichar-pin-check\.php|manifest\.json|sw\.js|fichar-standalone\.html|admin-shell\.html)$).*$">
+    AuthType Basic
+    AuthName "Zona privada"
+    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
+    <RequireAny>
+        Require valid-user
+        Require env allow_fichar
+    </RequireAny>
+</FilesMatch>

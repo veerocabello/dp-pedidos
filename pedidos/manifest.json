@@ -1,0 +1,24 @@
+{
+  "name": "Dulce Patata Food",
+  "short_name": "Dulce Patata",
+  "description": "Pide tu patata rellena online y recógela en tienda",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#3D1F0D",
+  "theme_color": "#3D1F0D",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

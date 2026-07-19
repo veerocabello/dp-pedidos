@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Administración — Dulce Patata Food</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;600;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'DM Sans', sans-serif;
+    background-color: #FFF8EE;
+    background-image: radial-gradient(rgba(61,31,13,0.06) 1px, transparent 1px);
+    background-size: 9px 9px;
+    color: #2A1506;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: #3D1F0D; color: #FFF8EE;
+    padding: 18px 20px; padding-top: calc(env(safe-area-inset-top) + 18px);
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  header h1 {
+    font-family: 'Anton', sans-serif; font-size: 18px; font-weight: 400;
+    letter-spacing: 0.04em; text-transform: uppercase; margin: 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #logout-btn {
+    background: rgba(244,196,48,0.15); border: 1px solid rgba(244,196,48,0.3);
+    color: #F4C430; cursor: pointer; font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 700; border-radius: 8px; padding: 7px 14px;
+  }
+
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 60px; }
+  .welcome { margin-bottom: 16px; }
+  .welcome .hi { font-family: 'Oswald', sans-serif; font-size: 12px; color: #8A6A4E; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .welcome h2 { font-family: 'Anton', sans-serif; font-size: 20px; color: #3D1F0D; margin: 0; text-transform: uppercase; }
+
+  /* ── LOGIN ── */
+  #login-screen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .login-card {
+    background: #FFF8EE; border: 1.5px solid #F5E6C8; border-radius: 18px;
+    padding: 34px 28px; max-width: 360px; width: 100%; text-align: center;
+  }
+  .login-card .icon { font-size: 44px; margin-bottom: 6px; }
+  .login-card h1 {
+    font-family: 'Anton', sans-serif; font-size: 20px; color: #3D1F0D;
+    text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 4px;
+  }
+  .login-card .sub { font-family: 'Oswald', sans-serif; font-size: 13px; color: #8A6A4E; margin-bottom: 22px; }
+  .login-card label { display: block; font-size: 12px; color: #8A6A4E; font-weight: 700; margin-bottom: 5px; text-align: left; }
+  .login-card input {
+    width: 100%; padding: 11px 14px; margin-bottom: 14px; border: 1.5px solid #F5E6C8;
+    border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; background: #fff; color: #2A1506;
+  }
+  .login-card input:focus { outline: none; border-color: #C8860A; box-shadow: 0 0 0 3px rgba(200,134,10,0.1); }
+  .login-card button {
+    width: 100%; background: #3D1F0D; color: #F4C430; border: none; border-radius: 10px;
+    padding: 13px; font-size: 14px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif;
+  }
+  .login-card button:disabled { opacity: 0.6; cursor: not-allowed; }
+  #login-error { color: #c0392b; font-size: 12.5px; font-weight: 600; margin-top: 12px; min-height: 16px; }
+
+  /* ── FILAS DE NAVEGACIÓN (igual que bimba) ── */
+  .sec-head {
+    font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 700;
+    color: #8A6A4E; text-transform: uppercase; letter-spacing: 0.08em; margin: 4px 0 8px;
+  }
+  .row-group { background: #fff; border: 1.5px solid #F5E6C8; border-radius: 14px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 15px 14px; border-bottom: 1px solid #F5E6C8; cursor: pointer; }
+  .row:last-child { border-bottom: none; }
+  .row-icon { font-size: 19px; width: 26px; text-align: center; flex-shrink: 0; }
+  .row-text { flex: 1; min-width: 0; }
+  .row-title { font-size: 14px; font-weight: 700; color: #3D1F0D; }
+  .row-desc { font-size: 11.5px; color: #8A6A4E; margin-top: 1px; }
+  .row-chevron { color: #C2711A; font-size: 15px; flex-shrink: 0; }
+
+  /* ── MODALES (igual que el panel de pedidos) ── */
+  .admin-overlay {
+    display: none;
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 1000;
+    background: rgba(61,31,13,0.55);
+    padding: calc(env(safe-area-inset-top) + 24px) 16px 24px;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+  }
+  .admin-overlay.open { display: block; }
+  .admin-modal {
+    background: #FFF8EE; border-radius: 16px; width: 100%; max-width: 680px;
+    padding: 0; position: relative; margin: auto; overflow: hidden; box-sizing: border-box;
+  }
+  .admin-modal-body { padding: 20px 16px 24px; }
+  .admin-modal-body input:not([type=checkbox]):not([type=range]),
+  .admin-modal-body textarea,
+  .admin-modal-body select {
+    background: #fafafa !important; border: 1.5px solid rgba(61,31,13,0.18) !important; color: #3D1F0D !important;
+  }
+  .admin-modal-body input:focus, .admin-modal-body textarea:focus {
+    border-color: #C8860A !important; background: #fff !important; box-shadow: 0 0 0 3px rgba(200,134,10,0.1) !important;
+  }
+  .admin-modal h2 {
+    font-family: 'Anton', sans-serif; font-size: 20px; font-weight: 400; color: #FFF8EE;
+    background: #3D1F0D; padding: 16px 24px; margin-bottom: 0;
+    display: flex; align-items: center; gap: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .admin-close {
+    position: absolute; top: 14px; right: 18px;
+    background: rgba(244,196,48,0.15); border: 1px solid rgba(244,196,48,0.3);
+    color: #F4C430; cursor: pointer; line-height: 1; font-size: 16px; border-radius: 6px;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  }
+  .admin-close:hover { background: rgba(244,196,48,0.3); }
+  .admin-save-btn {
+    background: #3D1F0D; color: #FFF8EE; border: none; border-radius: 10px;
+    padding: 12px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: 'DM Sans', sans-serif;
+  }
+
+  #loading-msg { text-align: center; padding: 60px 20px; color: #8A6A4E; font-family: 'Oswald', sans-serif; }
+
+  /* ── Tabla de Márgenes por producto ── */
+  .margenes-tabla { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; border: 1.5px solid #F5E6C8; }
+  .margenes-tabla th { font-family: 'Oswald', sans-serif; font-size: 10.5px; font-weight: 700; color: #8A6A4E; text-transform: uppercase; letter-spacing: 0.03em; text-align: left; padding: 9px 7px; border-bottom: 1.5px solid #F5E6C8; background: #FBF6EC; }
+  .margenes-tabla th.num { text-align: right; }
+  .margenes-tabla td { padding: 8px 7px; border-bottom: 1px solid #F5E6C8; font-size: 12px; vertical-align: middle; }
+  .margenes-tabla td.nombre { font-weight: 700; color: #3D1F0D; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+  .margenes-tabla td.num { text-align: right; white-space: nowrap; }
+  .margenes-tabla input.coste-input { width: 58px; padding: 4px 4px; border: 1.5px solid #F5E6C8; border-radius: 6px; font-size: 12px; text-align: right; font-weight: 600; font-family: 'DM Sans', sans-serif; box-sizing: border-box; }
+  .margenes-tabla .pct { font-size: 10px; display: block; }
+  .margenes-tabla .cat-row td { background: #3D1F0D; color: #FFF8EE; font-family: 'Oswald', sans-serif; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 7px 10px; }
+
+  /* ── PC: rejilla de tarjetas en vez de lista estrecha ── */
+  @media (min-width: 700px) {
+    main { max-width: 980px; }
+    .welcome h2 { font-size: 28px; }
+    .row-group {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
+      background: none; border: none; border-radius: 0; overflow: visible;
+    }
+    .row {
+      flex-direction: column; align-items: flex-start; gap: 0;
+      background: #fff; border: 1.5px solid #F5E6C8; border-radius: 18px;
+      padding: 26px 24px; position: relative; transition: all .15s;
+    }
+    .row:hover { border-color: #F4C430; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(61,31,13,0.08); }
+    .row-icon {
+      width: 52px; height: 52px; border-radius: 14px; background: #FBEFD6;
+      display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 16px;
+    }
+    .row-title { font-size: 17px; font-family: 'Oswald', sans-serif; }
+    .row-desc { font-size: 12.5px; margin-top: 6px; line-height: 1.4; }
+    .row-chevron { position: absolute; top: 24px; right: 22px; font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="icon">🥔</div>
+    <h1>Administración</h1>
+    <div class="sub">Dulce Patata Food — solo socios</div>
+    <label>Email</label>
+    <input type="email" id="login-email" autocomplete="username">
+    <label>Contraseña</label>
+    <input type="password" id="login-pwd" autocomplete="current-password">
+    <button id="login-btn" onclick="hacerLogin()">Entrar</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ── APP ── -->
+<div id="app-screen" style="display:none">
+  <header>
+    <h1>🏪 Administración</h1>
+    <button id="logout-btn" onclick="hacerLogout()">Salir</button>
+  </header>
+  <main>
+    <div id="loading-msg" style="display:none">Cargando datos...</div>
+    <div id="app-content">
+      <div class="welcome">
+        <div class="hi">Finanzas · Dulce Patata Food</div>
+        <h2>¿Qué quieres mirar hoy?</h2>
+      </div>
+      <div class="row-group">
+        <div class="row" onclick="openMargenesOverlay()">
+          <span class="row-icon">💰</span>
+          <div class="row-text">
+            <div class="row-title">Márgenes por producto</div>
+            <div class="row-desc">El coste, el precio y lo que te queda de cada cosa que vendes.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openCalculadoraOverlay()">
+          <span class="row-icon">🧮</span>
+          <div class="row-text">
+            <div class="row-title">Calculadora de precios</div>
+            <div class="row-desc">Coste + margen que quieras ganar = a cuánto venderlo.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openEquipoOverlay()">
+          <span class="row-icon">💶</span>
+          <div class="row-text">
+            <div class="row-title">Equipo vs facturación</div>
+            <div class="row-desc">Cuánto se lleva el personal frente a lo que entra de verdad.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openEstrellasOverlay()">
+          <span class="row-icon">🎯</span>
+          <div class="row-text">
+            <div class="row-title">Estrellas y perdedores</div>
+            <div class="row-desc">Qué se vende mucho y deja margen, y qué no merece la pena.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openGastosOverlay()">
+          <span class="row-icon">💸</span>
+          <div class="row-text">
+            <div class="row-title">Gastos e ingresos</div>
+            <div class="row-desc">Lo que entra y lo que sale, por canal y categoría.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openResumenOverlay()">
+          <span class="row-icon">📊</span>
+          <div class="row-text">
+            <div class="row-title">Resumen del negocio</div>
+            <div class="row-desc">Hoy y el periodo, todo junto: ventas, beneficio, margen, personal.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ── OVERLAYS DE FINANZAS ── -->
+<div id="margenes-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMargenesOverlay()">✕</button>
+    <h2>💰 Márgenes por producto</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:12px">Pon el coste estimado de cada producto (ingredientes + envase). Se guarda solo. Los de margen más bajo salen marcados.</div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;margin-bottom:5px;font-weight:700">Dentro de cada sección, ordenar por:</label>
+        <select id="margenes-orden" onchange="bimbaRenderMargenes()" style="width:100%;padding:7px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff">
+          <option value="margenPct" selected>Margen % (peor primero)</option>
+          <option value="margenEur">Margen € (peor primero)</option>
+          <option value="nombre">Nombre</option>
+        </select>
+      </div>
+      <div id="bimba-margenes-lista"></div>
+    </div>
+  </div>
+</div><!-- /margenes-overlay -->
+
+<div id="calculadora-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeCalculadoraOverlay()">✕</button>
+    <h2>🧮 Calculadora de precios</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:12px">Pon el coste de un producto y el margen que quieres ganar, y te digo a qué precio venderlo.</div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;margin-bottom:5px;font-weight:700">Producto (opcional, para rellenar el coste si ya lo tenías puesto)</label>
+        <select id="calc-producto" onchange="bimbaCalcSeleccionarProducto()" style="width:100%;padding:9px 12px;border:1.5px solid #F5E6C8;border-radius:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+          <option value="">— Elige un producto —</option>
+        </select>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;margin-bottom:5px;font-weight:700">Coste del producto</label>
+        <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:9px 12px">
+          <input type="number" step="0.01" min="0" id="calc-coste" placeholder="0.00" oninput="bimbaCalcularPrecio()" style="border:none;outline:none;font-size:16px;font-weight:700;color:#3D1F0D;width:100%;font-family:'DM Sans',sans-serif;background:transparent">
+          <span style="font-size:13px;color:#8A6A4E;font-weight:700">€</span>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;margin-bottom:5px;font-weight:700">Margen que quieres ganar</label>
+        <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:9px 12px">
+          <input type="number" step="1" min="0" max="95" id="calc-margen" value="65" oninput="bimbaCalcularPrecio()" style="border:none;outline:none;font-size:16px;font-weight:700;color:#3D1F0D;width:100%;font-family:'DM Sans',sans-serif;background:transparent">
+          <span style="font-size:13px;color:#8A6A4E;font-weight:700">%</span>
+        </div>
+      </div>
+      <div style="background:#3D1F0D;border-radius:14px;padding:18px;text-align:center;margin:14px 0 12px">
+        <div style="font-size:11px;color:rgba(255,248,238,0.6);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Precio de venta sugerido</div>
+        <div id="calc-precio" style="font-family:'Anton',sans-serif;font-size:34px;color:#F4C430;letter-spacing:0.02em">—</div>
+        <div id="calc-sub" style="font-size:12px;color:rgba(255,248,238,0.75);margin-top:4px"></div>
+      </div>
+      <div style="font-size:11px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;font-weight:700">Precios redondos cercanos</div>
+      <div id="calc-redondeos"></div>
+    </div>
+  </div>
+</div><!-- /calculadora-overlay -->
+
+<div id="equipo-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeEquipoOverlay()">✕</button>
+    <h2>💶 Equipo vs facturación</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:12px">Configura cómo cobra cada uno, elige el periodo, mete la facturación real y te digo qué % se lleva el personal.</div>
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Configuración del equipo</div>
+      <div id="config-empleados"></div>
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin:16px 0 8px">Calcular periodo</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="equipo-periodo" onchange="bimbaEquipoPeriodoChange()" style="flex:1;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+          <option value="semana">Esta semana</option>
+          <option value="mes" selected>Este mes</option>
+          <option value="trimestre">Este trimestre</option>
+          <option value="anio">Este año</option>
+          <option value="3meses">Últimos 3 meses</option>
+          <option value="6meses">Últimos 6 meses</option>
+          <option value="personalizado">Fechas a mi gusto</option>
+        </select>
+      </div>
+      <div id="equipo-fechas-custom" style="display:none;gap:8px;margin-bottom:8px">
+        <input type="date" id="equipo-fecha-inicio" onchange="bimbaEquipoPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+        <input type="date" id="equipo-fecha-fin" onchange="bimbaEquipoPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+      </div>
+      <div id="equipo-rango-texto" style="font-size:11.5px;color:#8A6A4E;margin-bottom:14px"></div>
+      <div id="calc-empleados"></div>
+      <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin:14px 0 8px">
+        <label style="font-size:12px;color:#8A6A4E;font-weight:700;flex:1">Facturación total del periodo</label>
+        <input type="number" step="10" id="equipo-facturacion" oninput="bimbaEquipoFacturacionChange()" style="width:100px;padding:6px 8px;border:1.5px solid #F5E6C8;border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:'DM Sans',sans-serif;color:#3D1F0D">
+      </div>
+      <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <label style="font-size:12px;color:#8A6A4E;font-weight:700;flex:1">Gastos del periodo (proveedores, alquiler, suministros...)</label>
+        <input type="number" step="10" id="equipo-gastos" oninput="bimbaEquipoFacturacionChange()" style="width:100px;padding:6px 8px;border:1.5px solid #F5E6C8;border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:'DM Sans',sans-serif;color:#3D1F0D">
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">Personal</div>
+          <div id="equipo-coste-total" style="font-size:15px;font-weight:800;color:#3D1F0D">—</div>
+        </div>
+        <div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">Gastos</div>
+          <div id="equipo-gastos-total" style="font-size:15px;font-weight:800;color:#3D1F0D">—</div>
+        </div>
+        <div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">Facturación</div>
+          <div id="equipo-facturacion-total" style="font-size:15px;font-weight:800;color:#3D1F0D">—</div>
+        </div>
+      </div>
+      <div style="background:#3D1F0D;border-radius:14px;padding:16px;text-align:center;margin-bottom:10px">
+        <div style="font-size:11px;color:rgba(255,248,238,0.6);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Beneficio neto del periodo</div>
+        <div id="equipo-beneficio-neto" style="font-family:'Anton',sans-serif;font-size:30px;color:#F4C430;letter-spacing:0.02em">—</div>
+        <div id="equipo-beneficio-sub" style="font-size:11px;color:rgba(255,248,238,0.65);margin-top:4px"></div>
+      </div>
+      <div style="background:#3D1F0D;border-radius:14px;padding:18px;text-align:center;margin-bottom:14px">
+        <div id="equipo-resultado-pct" style="font-family:'Anton',sans-serif;font-size:38px;color:#F4C430;letter-spacing:0.02em">—</div>
+        <div id="equipo-resultado-estado" style="font-size:13px;font-weight:800;margin-top:2px"></div>
+        <div id="equipo-resultado-sub" style="font-size:11.5px;color:rgba(255,248,238,0.7);margin-top:6px;line-height:1.4"></div>
+      </div>
+
+      <div onclick="bimbaToggleSimulador()" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">🧮 Simular nueva contratación</span>
+        <span id="simulador-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="simulador-panel" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px">
+        <div style="font-size:11.5px;color:#8A6A4E;margin-bottom:10px">Prueba cuánto cambiaría el % de personal si contratas a alguien, sin crear el empleado de verdad.</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <div id="sim-tipo-hora" onclick="bimbaSimSetTipo('hora')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid #3D1F0D;background:#3D1F0D;color:#fff">Por hora</div>
+          <div id="sim-tipo-sueldo" onclick="bimbaSimSetTipo('sueldo')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">Sueldo fijo</div>
+        </div>
+        <div id="sim-campos-hora" style="display:flex;gap:6px;margin-bottom:10px">
+          <input type="number" step="0.5" min="0" id="sim-horas-semana" placeholder="horas/semana" oninput="bimbaRenderSimulador()" style="flex:1;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+          <input type="number" step="0.1" min="0" id="sim-tarifa-hora" placeholder="€/hora" oninput="bimbaRenderSimulador()" style="flex:1;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+        </div>
+        <div id="sim-campos-sueldo" style="display:none;margin-bottom:10px">
+          <input type="number" step="10" min="0" id="sim-sueldo-mensual" placeholder="sueldo mensual €" oninput="bimbaRenderSimulador()" style="width:100%;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <label style="font-size:11.5px;color:#854F0B;font-weight:700;white-space:nowrap">🛡️ SS mensual de esta persona</label>
+          <input type="number" step="1" min="0" id="sim-ss-mensual" placeholder="0" oninput="bimbaRenderSimulador()" style="width:64px;padding:6px 7px;border:1.5px solid #F4C430;border-radius:7px;font-size:12.5px;text-align:right;font-family:'DM Sans',sans-serif">
+          <span style="font-size:11px;color:#854F0B">€/mes</span>
+        </div>
+        <div id="sim-resultado" style="font-size:12.5px;color:#3D1F0D;line-height:1.6"></div>
+      </div>
+    </div>
+  </div>
+</div><!-- /equipo-overlay -->
+
+<div id="estrellas-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeEstrellasOverlay()">✕</button>
+    <h2>🎯 Estrellas y perdedores</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Cruza el margen de cada producto con cuánto se vende, para ver qué cuidar y qué quitar de la carta.</div>
+
+      <div style="margin-bottom:14px">
+        <div onclick="bimbaToggleVentaManualForm()" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer">
+          <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir venta manual (tienda / delivery)</span>
+          <span id="venta-manual-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+        </div>
+        <div id="venta-manual-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px">
+          <div style="background:#3D1F0D;border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <label style="font-size:12px;color:rgba(255,248,238,0.7);font-weight:700">Fecha de estas ventas</label>
+            <input type="date" id="venta-manual-fecha" style="background:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:13px;font-family:'DM Sans',sans-serif;font-weight:700;color:#3D1F0D">
+          </div>
+          <div id="venta-manual-lista"></div>
+          <div style="text-align:center;font-size:11.5px;color:#8A6A4E;text-decoration:underline;cursor:pointer;margin:10px 0 8px" onclick="bimbaLimpiarVentaManual()">Limpiar todo</div>
+          <button id="venta-manual-guardar-btn" onclick="bimbaGuardarVentasManualesCarta()" disabled style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;opacity:0.4">Guardar (0 productos)</button>
+          <div id="venta-manual-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <select id="estrellas-periodo" onchange="bimbaRenderEstrellas()" style="flex:1;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+          <option value="semana">Esta semana</option>
+          <option value="mes" selected>Este mes</option>
+          <option value="trimestre">Este trimestre</option>
+          <option value="anio">Este año</option>
+        </select>
+      </div>
+      <div id="estrellas-rango-texto" style="font-size:11.5px;color:#8A6A4E;margin-bottom:14px"></div>
+      <div id="estrellas-contenido"></div>
+    </div>
+  </div>
+</div><!-- /estrellas-overlay -->
+
+<div id="gastos-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeGastosOverlay()">✕</button>
+    <h2>💸 Gastos e ingresos</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:12px">Apunta lo que entra y lo que sale. Los ingresos alimentan la "Facturación" de Equipo vs facturación y Resumen del negocio; los gastos alimentan el campo de gastos.</div>
+
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="gastos-periodo" onchange="bimbaGastosPeriodoChange()" style="flex:1;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+          <option value="semana">Esta semana</option>
+          <option value="mes" selected>Este mes</option>
+          <option value="trimestre">Este trimestre</option>
+          <option value="anio">Este año</option>
+          <option value="personalizado">Fechas a mi gusto</option>
+        </select>
+      </div>
+      <div id="gastos-fechas-custom" style="display:none;gap:8px;margin-bottom:8px">
+        <input type="date" id="gastos-fecha-inicio" onchange="bimbaGastosPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+        <input type="date" id="gastos-fecha-fin" onchange="bimbaGastosPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+      </div>
+      <div id="gastos-rango-texto" style="font-size:11.5px;color:#8A6A4E;margin-bottom:14px"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+        <div style="background:#fff;border:1.5px solid #639922;border-radius:10px;padding:11px 8px;text-align:center">
+          <div style="font-size:10px;color:#3B6D11;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Ingresos</div>
+          <div id="ingresos-total" style="font-family:'Oswald',sans-serif;font-size:15px;font-weight:700;color:#3B6D11">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #E24B4A;border-radius:10px;padding:11px 8px;text-align:center">
+          <div style="font-size:10px;color:#A32D2D;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Gastos</div>
+          <div id="gastos-total" style="font-family:'Oswald',sans-serif;font-size:15px;font-weight:700;color:#A32D2D">—</div>
+        </div>
+        <div style="background:#3D1F0D;border-radius:10px;padding:11px 8px;text-align:center">
+          <div style="font-size:10px;color:rgba(244,196,48,0.75);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Neto</div>
+          <div id="movimientos-neto" style="font-family:'Oswald',sans-serif;font-size:15px;font-weight:700;color:#F4C430">—</div>
+        </div>
+      </div>
+
+      <div id="ingresos-por-canal" style="margin-bottom:14px"></div>
+
+      <div onclick="bimbaToggleGastoForm()" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir movimiento</span>
+        <span id="gasto-form-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="gasto-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+          <div id="tipo-btn-ingreso" onclick="bimbaSetTipoMovimiento('ingreso')" style="flex:1;text-align:center;padding:9px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid #639922;background:#3B6D11;color:#fff">➕ Ingreso</div>
+          <div id="tipo-btn-gasto" onclick="bimbaSetTipoMovimiento('gasto')" style="flex:1;text-align:center;padding:9px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">➖ Gasto</div>
+        </div>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Fecha</label>
+        <input type="date" id="gasto-fecha" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Categoría</label>
+        <select id="gasto-categoria" onchange="bimbaCategoriaGastoChange()" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D"></select>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Importe</label>
+        <div style="display:flex;align-items:center;gap:6px;background:#fafafa;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;margin-bottom:10px">
+          <input type="number" step="0.01" min="0" id="gasto-importe" placeholder="0.00" style="border:none;outline:none;font-size:15px;font-weight:700;color:#3D1F0D;width:100%;font-family:'DM Sans',sans-serif;background:transparent">
+          <span style="font-size:13px;color:#8A6A4E;font-weight:700">€</span>
+        </div>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Nota (opcional)</label>
+        <input type="text" id="gasto-nota" placeholder="ej. patatas y aceite" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <button onclick="bimbaGuardarGasto()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="gasto-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Movimientos de este periodo</div>
+      <div id="gastos-lista"></div>
+    </div>
+  </div>
+</div><!-- /gastos-overlay -->
+
+<div id="resumen-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeResumenOverlay()">✕</button>
+    <h2>📊 Resumen del negocio</h2>
+    <div class="admin-modal-body">
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">🕐 Hoy</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Ventas hoy</div>
+          <div id="resumen-ventas-hoy-val" style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Beneficio hoy</div>
+          <div id="resumen-beneficio-hoy" style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Ticket medio (solo web)</div>
+          <div id="resumen-ticket-medio" style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Nº pedidos (solo web)</div>
+          <div id="resumen-num-pedidos" style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Hora punta (solo web)</div>
+          <div id="resumen-hora-punta" style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="grid-column:1/-1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em">Producto más vendido</div>
+          <div id="resumen-producto-top" style="font-family:'Oswald',sans-serif;font-size:15px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+      </div>
+
+      <div style="height:1px;background:#F5E6C8;margin:18px 0"></div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">📅 Resumen del periodo</div>
+      <select id="resumen-periodo" onchange="bimbaResumenPeriodoChange()" style="width:100%;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D;margin-bottom:8px">
+        <option value="semana">Esta semana</option>
+        <option value="mes" selected>Este mes</option>
+        <option value="trimestre">Este trimestre</option>
+        <option value="anio">Este año</option>
+        <option value="personalizado">Fechas a mi gusto</option>
+      </select>
+      <div id="resumen-fechas-custom" style="display:none;gap:8px;margin-bottom:8px">
+        <input type="date" id="resumen-fecha-inicio" onchange="bimbaResumenPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+        <input type="date" id="resumen-fecha-fin" onchange="bimbaResumenPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+      </div>
+      <div id="resumen-rango-texto" style="font-size:11.5px;color:#8A6A4E;margin-bottom:14px"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Facturación</div>
+          <div id="resumen-facturacion-periodo" style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Gastos</div>
+          <div id="resumen-gastos-periodo" style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Margen medio</div>
+          <div id="resumen-margen-medio" style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:13px 14px;text-align:center">
+          <div style="font-size:10.5px;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Coste personal</div>
+          <div id="resumen-coste-personal" style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:700;color:#3D1F0D">—</div>
+        </div>
+      </div>
+
+      <div style="background:#3D1F0D;border-radius:14px;padding:16px;text-align:center;margin-bottom:10px">
+        <div style="font-size:11px;color:rgba(255,248,238,0.6);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Beneficio neto del periodo</div>
+        <div id="resumen-beneficio-periodo" style="font-family:'Anton',sans-serif;font-size:28px;color:#F4C430;letter-spacing:0.02em">—</div>
+      </div>
+
+      <div style="background:#3D1F0D;border-radius:14px;padding:14px;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:11px;color:rgba(255,248,238,0.65)">% que se lleva el personal</div>
+        <div id="resumen-pct-personal" style="font-family:'Anton',sans-serif;font-size:22px;color:#F4C430">—</div>
+      </div>
+
+    </div>
+  </div>
+</div><!-- /resumen-overlay -->
+
+<div id="receta-overlay" class="admin-overlay" style="z-index:10000">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeRecetaOverlay()">✕</button>
+    <h2>🧮 Coste por receta</h2>
+    <div class="admin-modal-body">
+      <div id="receta-producto-nombre" style="font-size:15px;font-weight:700;color:#3D1F0D;margin-bottom:4px"></div>
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:10px">Suma cuánto usas de cada ingrediente y te calculo el coste solo.</div>
+      <div id="receta-sugeridos" style="margin-bottom:16px"></div>
+
+      <div onclick="bimbaToggleIngredientesBase()" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">🧺 Mis ingredientes base</span>
+        <span id="ingredientes-base-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="ingredientes-base-panel" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <div id="ingredientes-base-lista" style="margin-bottom:10px"></div>
+
+        <div id="nuevo-ingrediente-form" style="display:none;background:#FBF6EC;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px;margin-bottom:8px">
+        <div id="ning-nombre-stock-wrap" style="margin-bottom:8px">
+          <select id="ning-nombre-stock" onchange="bimbaNingNombreStockChange()" style="width:100%;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D"></select>
+        </div>
+        <input type="text" id="ning-nombre" placeholder="Nombre del ingrediente" style="display:none;width:100%;padding:7px 9px;margin-bottom:8px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D">
+
+          <div style="display:flex;gap:5px;margin-bottom:8px">
+            <div id="ning-modo-granel" onclick="bimbaSetModoIngrediente('granel')" style="flex:1;text-align:center;padding:6px 4px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid #3D1F0D;background:#3D1F0D;color:#fff">A granel</div>
+            <div id="ning-modo-pack" onclick="bimbaSetModoIngrediente('pack')" style="flex:1;text-align:center;padding:6px 4px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">Por pack</div>
+            <div id="ning-modo-unidad" onclick="bimbaSetModoIngrediente('unidad')" style="flex:1;text-align:center;padding:6px 4px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">Por ud.</div>
+          </div>
+
+          <div id="ning-campos-granel" style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+            <input type="number" step="0.01" min="0" id="ning-precio-granel" placeholder="Precio" style="flex:1;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+            <span style="font-size:12px;color:#8A6A4E">€ por</span>
+            <select id="ning-unidad-granel" style="padding:7px 6px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;background:#fff">
+              <option value="kg">kg</option>
+              <option value="L">litro</option>
+            </select>
+          </div>
+          <div id="ning-campos-pack" style="display:none;gap:6px;align-items:center;margin-bottom:8px">
+            <input type="number" step="0.01" min="0" id="ning-precio-pack" placeholder="Precio del pack" style="flex:1;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+            <span style="font-size:12px;color:#8A6A4E">por</span>
+            <input type="number" step="1" min="1" id="ning-unidades-pack" placeholder="uds" style="width:54px;padding:7px 6px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+          </div>
+          <div id="ning-campos-unidad" style="display:none;gap:6px;align-items:center;margin-bottom:8px">
+            <span style="font-size:12px;color:#8A6A4E">Precio de 1 unidad:</span>
+            <input type="number" step="0.01" min="0" id="ning-precio-unidad" placeholder="0.00" style="flex:1;padding:7px 9px;border:1.5px solid #F5E6C8;border-radius:7px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+          </div>
+
+          <button onclick="bimbaGuardarIngrediente()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar ingrediente</button>
+        </div>
+        <div onclick="bimbaMostrarNuevoIngrediente()" style="text-align:center;font-size:12px;color:#C2711A;font-weight:700;cursor:pointer;padding:6px">➕ Nuevo ingrediente</div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Receta de este producto</div>
+      <div id="receta-lineas-lista" style="margin-bottom:10px"></div>
+
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <select id="receta-nuevo-ingrediente" style="flex:1;padding:8px 9px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:12.5px;font-family:'DM Sans',sans-serif;background:#fff;color:#3D1F0D"></select>
+        <input type="number" step="1" min="0" id="receta-nueva-cantidad" placeholder="cant." style="width:64px;padding:8px 6px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:12.5px;font-family:'DM Sans',sans-serif">
+        <button onclick="bimbaAnadirLineaReceta()" style="background:#3D1F0D;color:#FFF8EE;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer">+</button>
+      </div>
+
+      <div style="background:#3D1F0D;border-radius:14px;padding:16px;text-align:center;margin-bottom:12px">
+        <div style="font-size:11px;color:rgba(255,248,238,0.6);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Coste total de esta receta</div>
+        <div id="receta-total" style="font-family:'Anton',sans-serif;font-size:28px;color:#F4C430;letter-spacing:0.02em">0,00 €</div>
+      </div>
+
+      <button onclick="bimbaAplicarCosteReceta()" style="width:100%;background:#F4C430;color:#3D1F0D;border:none;border-radius:10px;padding:13px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Aplicar este coste al producto</button>
+      <div id="receta-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+    </div>
+  </div>
+</div><!-- /receta-overlay -->
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>

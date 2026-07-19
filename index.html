@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="google-site-verification" content="8Fcx0D60FL-nAC2-QXFNH_Q-CBnc0IM7rhzElyWrxoc" />
+  <meta name="viewport" content="width=794, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <title>Carta · Dulce Patata Food — Patatas Asadas en Granada</title>
+
+  <meta name="description" content="Carta de Dulce Patata Food: patatas asadas rellenas, boniato fries, paninis, cookies y tartas caseras. Carretera de Málaga 111, Granada. Recogida en tienda o a domicilio con Uber Eats, Just Eat y Glovo.">
+  <meta name="keywords" content="patatas asadas Granada, patata rellena, dulce patata food, comida para llevar Granada, boniato fries, carta patatas asadas">
+  <meta name="author" content="Dulce Patata Food">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://dulcepatatafood.es/">
+
+  <!-- Open Graph (vista previa al compartir en WhatsApp, Facebook, etc.) -->
+  <meta property="og:type" content="restaurant.menu">
+  <meta property="og:url" content="https://dulcepatatafood.es/">
+  <meta property="og:title" content="Dulce Patata Food — Carta">
+  <meta property="og:description" content="Las patatas asadas más deliciosas de Granada. Rellenas a tu gusto, boniato fries, paninis, cookies y tartas caseras.">
+  <meta property="og:image" content="https://dulcepatatafood.es/carta/images/logo.png">
+  <meta property="og:locale" content="es_ES">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Dulce Patata Food — Carta">
+  <meta name="twitter:description" content="Las patatas asadas más deliciosas de Granada.">
+  <meta name="twitter:image" content="https://dulcepatatafood.es/carta/images/logo.png">
+
+  <meta name="theme-color" content="#3D1F0D">
+
+  <!-- Datos estructurados para Google (aparece como ficha de restaurante en el buscador) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    "name": "Dulce Patata Food",
+    "image": "https://dulcepatatafood.es/carta/images/logo.png",
+    "servesCuisine": "Comida para llevar",
+    "priceRange": "€",
+    "telephone": "+34604823180",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Carretera de Málaga 111",
+      "addressLocality": "Granada",
+      "postalCode": "18015",
+      "addressCountry": "ES"
+    },
+    "openingHoursSpecification": [
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+        "opens": "10:00",
+        "closes": "13:45"
+      },
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+        "opens": "18:00",
+        "closes": "23:45"
+      }
+    ],
+    "url": "https://dulcepatatafood.es/",
+    "sameAs": [
+      "https://www.instagram.com/dulcepatata_food/",
+      "https://www.tiktok.com/@dulcepatata_food"
+    ]
+  }
+  </script>
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
+
+  <!-- Tipografías (Google Fonts) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600;700&family=Oswald:wght@300;400;500;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Estilos propios -->
+  <link rel="stylesheet" href="carta/style.css?v=3">
+
+  <!-- Librerías para exportar la carta a PDF -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+  <div class="screenpad">
+
+    <!-- ============================ PÁGINA 1 ============================ -->
+    <section class="sheet sheet--col">
+      <div class="paper-texture"></div>
+
+      <!-- Cabecera -->
+      <header class="sheet-header">
+        <img class="sheet-header__banner" src="carta/images/header-banner.webp" alt="Dulce Patata Food — las patatas asadas más deliciosas de Granada">
+        <span class="badge-pickup">Todos los precios son para recogida en tienda</span>
+      </header>
+      <div class="gold-bar"></div>
+
+      <div class="sheet-body">
+
+        <!-- Patatas asadas -->
+        <section>
+          <div class="section-header">
+            <span class="section-header__icon">🥔</span>
+            <h2 class="section-header__title">Patatas Asadas</h2>
+          </div>
+          <div class="section-subtitle-row">
+            <span class="section-subtitle">recién asadas a partir de las 19:30h</span>
+          </div>
+
+          <div class="menu-list" id="lista-patatas">
+            <!-- Rellenado por script.js a partir de PATATAS -->
+          </div>
+
+          <!-- Extras -->
+          <div class="extras-box">
+            <div class="extras-box__title">
+              <span class="price-tag">+0,50€</span>Gratina tu patata con queso&nbsp;🧀
+            </div>
+            <div class="extras-row">
+              <div class="extras-row__label">Ingredientes extra<br><span class="price-tag">(+1,00€)</span></div>
+              <div class="extras-row__items">Jamón York · Carne picada · Pollo · Carne kebab · Atún · Gambas · Tronquitos de mar · Huevo · Bacon · Mozzarella · 4 quesos</div>
+            </div>
+            <div class="extras-row">
+              <div class="extras-row__label">Ingredientes extra<br><span class="price-tag">(+0,70€)</span></div>
+              <div class="extras-row__items">Tomate natural · Maíz · Aceitunas · Zanahoria · Remolacha · Piña · Cebolla · Champiñón</div>
+            </div>
+            <div class="extras-row">
+              <div class="extras-row__label">Salsas extra<br><span class="price-tag">(+0,90€)</span></div>
+              <div class="extras-row__items">Ranchera · Brava · BBQ · Ketchup · Mayonesa · Alioli · Salsa rosa · Salsa de yogur · Tomate frito · Queso Philadelphia · Roquefort</div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- ============================ PÁGINA 2 ============================ -->
+    <section class="sheet sheet--row">
+
+      <!-- Barra lateral -->
+      <aside class="sidebar">
+        <h2 class="sidebar__title">🥤 Bebidas</h2>
+        <div class="drinks-list" id="lista-bebidas">
+          <!-- Rellenado por script.js a partir de BEBIDAS -->
+        </div>
+
+        <div class="sidebar__divider"></div>
+
+        <p class="reservas-label">Reservas y encargos</p>
+        <a class="phone-link" href="tel:+34604823180">604 82 31 80</a>
+
+        <!-- Delivery -->
+        <div class="delivery-box">
+          <div class="delivery-box__title">🛵 Pedidos a domicilio</div>
+          <p class="delivery-box__subtitle">¡te lo llevamos a casa!</p>
+          <div class="delivery-links">
+            <a href="https://www.ubereats.com/store/dulce-patata-food/TkpG0PoITCijSFWqLJoQsg" target="_blank" rel="noopener">
+              <img src="carta/images/uber-eats.png" alt="Uber Eats">
+            </a>
+            <a href="https://www.just-eat.es/restaurants-dulce-patata-granada/menu" target="_blank" rel="noopener">
+              <img src="carta/images/just-eat.png" alt="Just Eat">
+            </a>
+            <a href="https://glovoapp.com/es/es/granada/stores/dulce-patata-food-granada" target="_blank" rel="noopener">
+              <img src="carta/images/glovo.png" alt="Glovo">
+            </a>
+          </div>
+        </div>
+
+        <!-- Horario -->
+        <div class="hours-box">
+          <div class="hours-box__title">🕒 Martes a Domingo</div>
+          <div class="hours-box__text">Mañanas · 10:00 – 13:45h<br>Tardes · 18:00 – 23:45h</div>
+          <p class="hours-box__tag">🥔 patatas desde las 19:30h</p>
+          <div class="hours-box__divider"></div>
+          <div class="hours-box__address">
+            📍 Carretera de Málaga 111 · 18015 Granada<br>
+            <span class="hours-box__address-note">frente al supermercado Dani</span>
+          </div>
+        </div>
+
+        <!-- Redes sociales -->
+        <div class="socials">
+          <div class="social-row">
+            <span class="social-row__icon social-row__icon--instagram">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.4" cy="6.6" r="1.1" fill="#fff" stroke="none"></circle></svg>
+            </span>@dulcepatata_food
+          </div>
+          <div class="social-row">
+            <span class="social-row__icon social-row__icon--tiktok">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="#fff"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.6 3h-3.09v12.4a2.5 2.5 0 1 1-2.5-2.5c.17 0 .34.02.5.05V9.8a5.6 5.6 0 1 0 4.6 5.5V8.99a7.3 7.3 0 0 0 4.3 1.39V7.3a4.28 4.28 0 0 1-2.31-1.48z"></path></svg>
+            </span>@dulcepatata_food
+          </div>
+          <div class="website-line">🌐 www.dulcepatatafood.es</div>
+        </div>
+      </aside>
+
+      <!-- Columna derecha -->
+      <div class="content-column">
+        <div class="paper-texture"></div>
+
+        <!-- Monta tu patata -->
+        <div class="monta-box">
+          <div class="monta-box__head">
+            <h2 class="monta-box__title">Monta tu patata</h2>
+            <p class="monta-box__subtitle">a tu gusto, sin líos</p>
+            <p class="monta-box__base">la base es una patata <strong>simple · 3,00€</strong></p>
+          </div>
+          <div class="monta-rows">
+            <div class="monta-row">
+              <div class="monta-row__label">Ingredientes premium<br><span class="price-tag">(+1,00€)</span></div>
+              <div class="monta-row__items" id="ingredientes-premium"></div>
+            </div>
+            <div class="monta-row">
+              <div class="monta-row__label">Vegetales<br><span class="price-tag">(+0,70€)</span></div>
+              <div class="monta-row__items" id="ingredientes-base"></div>
+            </div>
+            <div class="monta-row">
+              <div class="monta-row__label">Salsas<br><span class="price-tag">(+0,90€)</span></div>
+              <div class="monta-row__items" id="lista-salsas"></div>
+            </div>
+            <div class="monta-cheese">
+              <span class="price-tag">+0,50€</span>Gratina tu patata con queso&nbsp;🧀
+            </div>
+          </div>
+        </div>
+
+        <!-- Boniato -->
+        <article class="card">
+          <div class="card__header">
+            <span class="card__icon">🍠</span>
+            <h3 class="card__title">Boniato Fries</h3>
+            <span class="card__spacer"></span>
+            <span class="card__price">4,50€</span>
+          </div>
+          <p class="card__subtitle">el toque dulce y crujiente · elige tu tarrina</p>
+          <div class="tarrina-list" id="lista-tarrinas">
+            <!-- Rellenado por script.js a partir de TARRINAS -->
+          </div>
+        </article>
+
+        <!-- Paninis -->
+        <article class="card">
+          <div class="card__header">
+            <span class="card__icon">🍕</span>
+            <h3 class="card__title">Paninis</h3>
+            <span class="card__spacer"></span>
+            <span class="card__price">5,50€</span>
+          </div>
+          <p class="card__subtitle">pan de leña crujiente · ¡medio metro!</p>
+          <div class="flat-list" id="lista-paninis"></div>
+        </article>
+
+        <!-- Crumbl Cookies -->
+        <article class="card">
+          <div class="card__header">
+            <span class="card__icon">🍪</span>
+            <h3 class="card__title">Crumbl Cookies</h3>
+            <span class="card__spacer"></span>
+            <span class="card__price">2,99€</span>
+          </div>
+          <p class="card__subtitle">galletas estilo americano · gruesas, blanditas y recién horneadas</p>
+          <div class="flat-list" id="lista-cookies"></div>
+        </article>
+
+        <!-- Tartas -->
+        <article class="card">
+          <div class="card__header">
+            <span class="card__icon">🍰</span>
+            <h3 class="card__title">Tartas Caseras</h3>
+            <span class="card__spacer"></span>
+            <span class="card__price card__price--sm">3,40€ / 3,90€</span>
+          </div>
+          <p class="card__subtitle" style="margin-bottom:3px">todas caseras y de elaboración propia</p>
+
+          <div class="tartas-columns">
+            <div class="tarta-col">
+              <div class="tarta-col__header">Clásicas · 3,40€</div>
+              <div class="tarta-list" id="lista-tartas-clasicas"></div>
+            </div>
+            <div class="tarta-col">
+              <div class="tarta-col__header">Especiales · 3,90€</div>
+              <div class="tarta-list" id="lista-tartas-especiales"></div>
+            </div>
+          </div>
+
+          <p class="tartas-note">Tartas completas bajo pedido · 28€ especiales / 26€ clásicas</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ===================== Barra de acciones (solo en pantalla) ===================== -->
+    <div class="actionbar">
+      <a class="action-btn action-btn--call" href="tel:+34604823180">
+        <svg class="action-btn__icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+        Llamar
+      </a>
+      <a class="action-btn action-btn--instagram" href="https://www.instagram.com/dulcepatata_food/" target="_blank" rel="noopener">
+        <svg class="action-btn__icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+        Instagram
+      </a>
+      <a class="action-btn action-btn--tiktok" href="https://www.tiktok.com/@dulcepatata_food" target="_blank" rel="noopener">
+        <svg class="action-btn__icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.6 3h-3.09v12.4a2.5 2.5 0 1 1-2.5-2.5c.17 0 .34.02.5.05V9.8a5.6 5.6 0 1 0 4.6 5.5V8.99a7.3 7.3 0 0 0 4.3 1.39V7.3a4.28 4.28 0 0 1-2.31-1.48z"></path></svg>
+        TikTok
+      </a>
+      <button class="action-btn action-btn--download" id="btn-descargar" type="button">
+        <svg class="action-btn__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span class="lbl">Descargar carta</span>
+      </button>
+    </div>
+
+  </div>
+
+  <script src="carta/script.js?v=3"></script>
+</body>
+</html>

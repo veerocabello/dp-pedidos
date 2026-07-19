@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Fichar — Dulce Patata Food</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600;700;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #FFF8EE;
+    --warm: #F5E6C8;
+    --brown: #3D1F0D;
+    --amber: #E8943A;
+    --amber-dark: #C2711A;
+    --amber-light: #FDECD5;
+    --text: #2A1506;
+    --muted: #8A6A4E;
+    --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--cream); font-family: 'DM Sans', sans-serif;
+    min-height: 100vh; color: var(--text); touch-action: manipulation;
+  }
+  #fichar-overlay {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 10;
+    background: var(--cream); font-family: 'DM Sans', sans-serif;
+    flex-direction: column; align-items: center; justify-content: center;
+    overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+  }
+  #fichar-overlay.open { display: flex; }
+  .pin-dot {
+    width: 14px; height: 14px; border-radius: 50%; margin: 0 6px;
+    border: 2px solid var(--amber); background: transparent; transition: background .15s; display: inline-block;
+  }
+  .pin-dot.filled { background: var(--amber); }
+  .fichar-pin-btn {
+    width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--warm);
+    background: var(--white); font-size: 22px; font-weight: 700; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; color: var(--brown); transition: all .1s; margin: 4px;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  .fichar-pin-btn:active { background: var(--amber); color: #fff; border-color: var(--amber); }
+  #fichar-no-token {
+    display: none; position: fixed; inset: 0; background: var(--cream);
+    align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 32px;
+    font-family: 'DM Sans', sans-serif;
+  }
+</style>
+</head>
+<body>
+
+<div id="fichar-no-token">
+  <div style="font-size:40px;margin-bottom:12px">🔒</div>
+  <div style="font-size:18px;font-weight:700;color:var(--brown);margin-bottom:8px">Enlace no válido</div>
+  <div style="font-size:14px;color:var(--muted)">Pide a tu encargado que te pase el enlace de fichar actualizado.</div>
+</div>
+
+<div id="fichar-overlay">
+  <div style="width:100%;max-width:380px;padding:32px 24px;text-align:center;box-sizing:border-box;overflow-x:hidden">
+    <div style="font-family:'Oswald',sans-serif;font-size:20px;font-weight:900;color:#3D1F0D;margin-bottom:32px">Dulce Patata Food</div>
+
+    <div id="fichar-pin-view">
+      <div style="font-size:16px;font-weight:600;color:#3D1F0D;margin-bottom:8px">Introduce tu PIN</div>
+      <div id="fichar-pin-dots" style="display:flex;justify-content:center;margin-bottom:24px">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,72px);justify-content:center;margin-bottom:12px">
+        <button class="fichar-pin-btn" onclick="ficharPin('1')">1</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('2')">2</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('3')">3</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('4')">4</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('5')">5</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('6')">6</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('7')">7</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('8')">8</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('9')">9</button>
+        <button class="fichar-pin-btn" onclick="ficharPinBorrar()" style="font-size:16px">⌫</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('0')">0</button>
+        <button class="fichar-pin-btn" onclick="ficharPinOk()" style="background:#3D1F0D;color:#fff;border-color:#3D1F0D;font-size:14px">OK</button>
+      </div>
+      <div id="fichar-pin-error" style="display:none;color:#c0392b;font-size:13px;font-weight:600;margin-top:8px">PIN incorrecto</div>
+    </div>
+
+    <div id="fichar-firma-view" style="display:none">
+      <div id="fichar-firma-saludo" style="font-size:20px;font-weight:900;color:#3D1F0D;font-family:'Oswald',sans-serif;margin-bottom:6px"></div>
+      <div style="font-size:13px;color:#8A6A4E;margin-bottom:18px">Primera entrada del día — firma para el registro de jornada</div>
+      <div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:14px;padding:10px;margin-bottom:14px">
+        <canvas id="fichar-firma-canvas" width="320" height="160" style="width:100%;height:160px;touch-action:none;border:1.5px dashed #F5E6C8;border-radius:10px;background:#FFFDF8;display:block"></canvas>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <button onclick="ficharFirmaBorrar()" style="flex:1;padding:12px;background:#FFF8EE;border:1.5px solid #E8943A;color:#C2711A;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Borrar</button>
+        <button onclick="ficharFirmaConfirmar()" style="flex:2;padding:12px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✓ Confirmar firma</button>
+      </div>
+      <div id="fichar-firma-error" style="display:none;color:#c0392b;font-size:12px;font-weight:600;margin-bottom:8px">Por favor, firma antes de continuar.</div>
+      <button onclick="ficharCerrarSesion()" style="background:none;border:none;color:#8A6A4E;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;text-decoration:underline">Cambiar empleado</button>
+    </div>
+
+    <div id="fichar-emp-view" style="display:none">
+      <div id="fichar-emp-saludo" style="font-size:22px;font-weight:900;color:#3D1F0D;font-family:'Oswald',sans-serif;margin-bottom:4px"></div>
+      <div id="fichar-fecha-hoy" style="font-size:13px;color:#C2711A;font-weight:600;margin-bottom:4px"></div>
+      <div id="fichar-emp-estado" style="font-size:14px;color:#8A6A4E;margin-bottom:28px"></div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px">
+        <button id="fichar-btn-entrada" onclick="if(!ficharMostrarFirmaSiHaceFalta('entrada'))ficharRegistrar('entrada')" style="width:100%;padding:18px;background:#27855a;color:#fff;border:none;border-radius:14px;font-size:18px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🟢 Registrar entrada</button>
+        <button id="fichar-btn-salida" onclick="ficharRegistrar('salida')" style="width:100%;padding:18px;background:#c0392b;color:#fff;border:none;border-radius:14px;font-size:18px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔴 Registrar salida</button>
+      </div>
+      <div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:16px;margin-bottom:16px;text-align:left">
+        <div style="font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:10px">📊 Este mes</div>
+        <div id="fichar-resumen-mes" style="font-size:13px;color:#2A1506;line-height:1.8"></div>
+      </div>
+      <div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:16px;text-align:left">
+        <div style="font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:10px">🕐 Últimos fichajes</div>
+        <div id="fichar-historial-reciente" style="font-size:12.5px;color:#2A1506;line-height:1.7"></div>
+      </div>
+      <button onclick="ficharCerrarSesion()" style="background:none;border:none;color:#8A6A4E;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;text-decoration:underline;margin-top:16px">Cambiar empleado</button>
+    </div>
+
+    <div id="fichar-ok-view" style="display:none">
+      <div id="fichar-ok-icon" style="font-size:56px;margin-bottom:16px"></div>
+      <div id="fichar-ok-msg" style="font-size:20px;font-weight:900;color:#3D1F0D;font-family:'Oswald',sans-serif;margin-bottom:8px"></div>
+      <div id="fichar-ok-hora" style="font-size:16px;color:#8A6A4E;margin-bottom:32px"></div>
+      <button onclick="ficharVolverEmp()" style="width:100%;padding:14px;background:#3D1F0D;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Volver</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/fichar.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# ── Las credenciales de Twilio ya NO viven aquí. Ver .htaccess raíz. ──
+
+# ── Bloquear acceso directo a archivos PHP sensibles ──
+<FilesMatch "^(twilio-config\.php|\.htpasswd|\.htaccess)$">
+    Require all denied
+</FilesMatch>
+
+# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
+RewriteEngine On
+RewriteRule ^send-code\.php$ - [L]
+RewriteRule ^verify-code\.php$ - [L]
+
+<Files "send-code.php">
+    Require all granted
+</Files>
+<Files "verify-code.php">
+    Require all granted
+</Files>
+
+# ── Zona privada (resto de URLs) ──
+AuthType Basic
+AuthName "Zona privada"
+AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
+Require valid-user
