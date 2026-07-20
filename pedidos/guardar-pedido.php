@@ -178,6 +178,17 @@ function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
 }
 
+// Quita caracteres de control (todo lo que no sea texto normal, salvo
+// saltos de línea) de un texto libre del cliente. El texto del pedido
+// (nombre, notas, nombres de producto) acaba tal cual en el ticket que
+// imprime la impresora térmica (js/index.js) como bytes ESC/POS — sin
+// esto, un pedido con secuencias de escape (ESC/GS) coladas en el nombre
+// o las notas podría mandar comandos a la impresora (cortar papel sin
+// parar, abrir el cajón, etc.) en vez de imprimirse como texto.
+function dpf_limpiar_texto($str) {
+    return preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/', '', (string)$str);
+}
+
 // ── Lectura-modificación-escritura condicional (con reintento) de
 // stats/<fecha>, compartida por el guardado normal y por el botón
 // "Reintentar guardado" de la pestaña Alertas del panel. Idempotente por
@@ -383,7 +394,13 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
         $discResp = fbGetConEtag($databaseURL, 'discounts/' . strtoupper($discountCode), $accessToken);
         $disc = is_array($discResp['data']) ? $discResp['data'] : null;
         if ($disc && isset($disc['pct'])) {
-            $descuentoCodigo = $itemsSum * ((float)$disc['pct'] / 100);
+            // Tope de cordura: un % fuera de 0-100 no puede ser un
+            // descuento real creado desde el panel — si discounts/<code>
+            // aparece con un valor así es que alguien lo escribió a mano
+            // (las reglas de Firebase deberían impedirlo, pero por si acaso
+            // no se confía a ciegas en lo que haya ahí para calcular el margen).
+            $pctSeguro = max(0, min(100, (float)$disc['pct']));
+            $descuentoCodigo = $itemsSum * ($pctSeguro / 100);
         }
     }
     $margen = $maxPatataUnit + $descuentoCodigo + 0.05;
@@ -462,9 +479,9 @@ try {
         echo json_encode(['success' => false, 'error' => 'Número de pedido inválido']);
         exit;
     }
-    $name = isset($payload['name']) ? mb_substr(trim((string)$payload['name']), 0, 60) : '';
-    $phone = isset($payload['phone']) ? mb_substr(trim((string)$payload['phone']), 0, 20) : '';
-    $notes = isset($payload['notes']) ? mb_substr(trim((string)$payload['notes']), 0, 300) : '';
+    $name = isset($payload['name']) ? dpf_limpiar_texto(mb_substr(trim((string)$payload['name']), 0, 60)) : '';
+    $phone = isset($payload['phone']) ? dpf_limpiar_texto(mb_substr(trim((string)$payload['phone']), 0, 20)) : '';
+    $notes = isset($payload['notes']) ? dpf_limpiar_texto(mb_substr(trim((string)$payload['notes']), 0, 300)) : '';
     $slotTime = isset($payload['slotTime']) && $payload['slotTime'] !== '' ? (string)$payload['slotTime'] : null;
     // Cada campo de cada producto se acota — antes solo se limitaba el
     // NÚMERO de productos (100), pero no el tamaño de cada uno. Un pedido
@@ -476,7 +493,7 @@ try {
     $items = array_map(function ($it) {
         if (!is_array($it)) return ['name' => '', 'qty' => 0, 'subtotal' => 0];
         $limpio = [
-            'name'     => isset($it['name']) ? mb_substr(trim((string)$it['name']), 0, 120) : '',
+            'name'     => isset($it['name']) ? dpf_limpiar_texto(mb_substr(trim((string)$it['name']), 0, 120)) : '',
             'qty'      => isset($it['qty']) ? max(0, min(999, (float)$it['qty'])) : 0,
             'subtotal' => isset($it['subtotal']) ? max(0, min(9999, (float)$it['subtotal'])) : 0,
         ];
@@ -485,11 +502,11 @@ try {
             $limpio['extras'] = array_map(function ($e) {
                 if (is_array($e)) {
                     return [
-                        'name'  => isset($e['name']) ? mb_substr(trim((string)$e['name']), 0, 80) : '',
+                        'name'  => isset($e['name']) ? dpf_limpiar_texto(mb_substr(trim((string)$e['name']), 0, 80)) : '',
                         'price' => isset($e['price']) ? max(0, min(999, (float)$e['price'])) : 0,
                     ];
                 }
-                return mb_substr(trim((string)$e), 0, 80);
+                return dpf_limpiar_texto(mb_substr(trim((string)$e), 0, 80));
             }, array_slice($it['extras'], 0, 30));
         }
         return $limpio;

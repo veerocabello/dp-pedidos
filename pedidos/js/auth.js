@@ -778,7 +778,7 @@ async function ficharMostrarVista(emp) {
     const res = await fetch('fichar-pin-check.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'historial', empId: emp.empId })
+      body: JSON.stringify({ action: 'historial', sessionToken: emp.sessionToken })
     });
     const data = await res.json();
     if (data.success) fich = data.fichajes || [];
@@ -939,7 +939,7 @@ async function ficharRegistrar(tipo, firmaDataUrl) {
     const res = await fetch('fichar-pin-check.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'registrar', empId: _ficharEmpActivo.empId, tipo, firma: firmaDataUrl || undefined })
+      body: JSON.stringify({ action: 'registrar', sessionToken: _ficharEmpActivo.sessionToken, tipo, firma: firmaDataUrl || undefined })
     });
     const data = await res.json();
     if (!data.success) {
