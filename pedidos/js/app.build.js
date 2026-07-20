@@ -738,12 +738,28 @@ function pp2LoadState() {
     return {};
   }
 }
-function pp2SaveState(s) {
+// Aplica mutatorFn (que modifica el objeto de estado in-place) de forma
+// atómica: actualiza localStorage al instante para que la UI responda sin
+// esperar, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos tocan
+// cantidades/proveedores a la vez, Firebase reintenta con el dato fresco
+// en vez de que uno pise el cambio del otro.
+function pp2MutateState(mutatorFn) {
+  const s = pp2LoadState();
+  mutatorFn(s);
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
-  if (window.fb_savePP2) {
+  if (window.fb_transactNative) {
+    window._pp2LocalWrite = Date.now();
+    window.fb_transactNative('pp2/state', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
     window.fb_savePP2('state', s).catch(() => {});
   }
+  return s;
 }
 function pp2LoadCustom() {
   try {
@@ -1157,17 +1173,17 @@ function pp2RenderRow(id) {
 
 // ── quantity & unit ──────────────────────────────────────
 function pp2Qty(id, delta) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
+  });
   pp2RenderRow(id);
 }
 function pp2SetUnit(id, unit) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].unit = unit;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].unit = unit;
+  });
   pp2RenderRow(id);
 }
 
@@ -1191,10 +1207,10 @@ function pp2PickerOpen(itemId) {
   picker.style.display = 'flex';
 }
 function pp2PickerSelect(provId) {
-  const s = pp2LoadState();
-  if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
-  s[_pp2CurrentItem].prov = provId;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
+    s[_pp2CurrentItem].prov = provId;
+  });
   // Guardar como habitual si se asigna uno (no si se quita)
   if (provId) {
     const hab = pp2LoadProvHab();
@@ -1347,15 +1363,14 @@ function pp2ConfirmDelete() {
 // ── nueva semana ─────────────────────────────────────────
 function pp2NuevaSemana() {
   if (!confirm('¿Nueva semana? Se borran todas las cantidades. Los proveedores habituales se mantienen y se precargarán automáticamente.')) return;
-  const s = pp2LoadState();
-  const hab = pp2LoadProvHab();
   // Limpiar cantidades y proveedores del estado; los habituales se aplican en render
-  Object.keys(s).forEach(id => {
-    s[id].qty = 0;
-    s[id].prov = '';
-    s[id].unit = s[id].unit || 'cajas';
+  pp2MutateState(function (s) {
+    Object.keys(s).forEach(id => {
+      s[id].qty = 0;
+      s[id].prov = '';
+      s[id].unit = s[id].unit || 'cajas';
+    });
   });
-  pp2SaveState(s);
   pp2Render();
   const t = document.getElementById('pp2-toast');
   t.textContent = '🔄 ¡Nueva semana! Proveedores habituales precargados.';
@@ -1366,19 +1381,29 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
-  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  hist.push({
-    fecha,
-    nota
-  }); // más antiguo primero, más reciente al final
-  if (hist.length > 50) hist.shift(); // máximo 50 entradas
-  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
-  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
+  const entrada = { fecha, nota };
+  // Añadir la entrada localmente al instante (UI responde ya)...
+  const histLocal = pp2LoadHistorial();
+  histLocal.push(entrada);
+  if (histLocal.length > 50) histLocal.shift();
+  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(histLocal));
+  // ...y de forma atómica contra Firebase, para no perder el pedido que
+  // otro dispositivo acaba de guardar en el historial casi al mismo tiempo.
+  if (window.fb_transactNative) {
+    window.fb_transactNative('pp2/historial', function (current) {
+      const hist = Array.isArray(current) ? current.slice() : [];
+      hist.push(entrada);
+      if (hist.length > 50) hist.shift();
+      return hist;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
+    window.fb_savePP2('historial', histLocal).catch(() => {});
+  }
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();
@@ -4248,31 +4273,42 @@ function renderSlotTurnosList(turnos) {
   }
   list.innerHTML = turnos.map((t, i) => "\n    <div style=\"display:flex;align-items:center;flex-wrap:wrap;background:#F4F2EE;border-radius:8px;padding:10px 12px;margin-bottom:8px\">\n      <span style=\"font-size:12px;font-weight:700;color:#8A6A4E;min-width:20px\">".concat(i + 1, ".</span>\n      <label style=\"font-size:12px;color:#8A6A4E\">Desde</label>\n      <input type=\"time\" value=\"").concat(t.start, "\" onchange=\"updateSlotTurno(").concat(i, ",'start',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Hasta</label>\n      <input type=\"time\" value=\"").concat(t.end, "\" onchange=\"updateSlotTurno(").concat(i, ",'end',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Cada</label>\n      <select onchange=\"updateSlotTurno(").concat(i, ",'interval',parseInt(this.value))\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n        <option value=\"15\" ").concat(t.interval === 15 ? 'selected' : '', ">15 min</option>\n        <option value=\"20\" ").concat(t.interval === 20 ? 'selected' : '', ">20 min</option>\n        <option value=\"30\" ").concat(!t.interval || t.interval === 30 ? 'selected' : '', ">30 min</option>\n        <option value=\"45\" ").concat(t.interval === 45 ? 'selected' : '', ">45 min</option>\n        <option value=\"60\" ").concat(t.interval === 60 ? 'selected' : '', ">60 min</option>\n      </select>\n      <button onclick=\"removeSlotTurno(").concat(i, ")\"\n        style=\"margin-left:auto;background:#fff;border:1.5px solid #e74c3c;color:#c0392b;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">&#128465;</button>\n    </div>")).join('');
 }
-function _syncSlotTurnos(turnos) {
+// mutatorFn recibe el array de turnos actual (local o el más reciente de
+// Firebase, según el intento) y lo modifica in-place. Evita que dos
+// ediciones de turnos casi simultáneas (dos dispositivos) se pisen entre
+// sí — igual que el resto de escrituras "leer todo, modificar, guardar
+// todo" arregladas en esta misma pasada.
+function _mutateSlotTurnos(mutatorFn) {
+  const turnos = getSlotTurnos();
+  mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  const max = getSlotMax();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+      mutatorFn(t);
+      return { turnos: t, max: (current && current.max) || getSlotMax() };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
+  }
+  return turnos;
 }
 function addSlotTurno() {
-  const turnos = getSlotTurnos();
-  turnos.push({
-    start: '19:30',
-    end: '23:30',
-    interval: 30
+  const turnos = _mutateSlotTurnos(function (t) {
+    t.push({ start: '19:30', end: '23:30', interval: 30 });
   });
-  _syncSlotTurnos(turnos);
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
-  const turnos = getSlotTurnos();
-  turnos.splice(idx, 1);
-  _syncSlotTurnos(turnos);
+  const turnos = _mutateSlotTurnos(function (t) {
+    if (idx < t.length) t.splice(idx, 1);
+  });
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
-  const turnos = getSlotTurnos();
-  turnos[idx][field] = value;
-  _syncSlotTurnos(turnos);
+  _mutateSlotTurnos(function (t) {
+    if (t[idx]) t[idx][field] = value;
+  });
 }
 function saveSlotConfig() {
   const maxInp = document.getElementById('slot-max-input');
@@ -5173,7 +5209,10 @@ function _bimbaPintarConfigEquipo(empleados) {
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
   _equipoPagoConfig[empId].tipoPago = tipo;
-  _bimbaGuardarPagoConfig();
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = {};
+    cfg[empId].tipoPago = tipo;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarCalcEquipo(empleados);
@@ -5181,12 +5220,29 @@ function bimbaSetTipoPago(empId, tipo) {
 function bimbaActualizarPago(empId, campo, valor) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = { tipoPago: 'hora' };
   const val = parseFloat(valor);
-  _equipoPagoConfig[empId][campo] = isNaN(val) ? null : val;
-  _bimbaGuardarPagoConfig();
+  const valorGuardado = isNaN(val) ? null : val;
+  _equipoPagoConfig[empId][campo] = valorGuardado;
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = { tipoPago: 'hora' };
+    cfg[empId][campo] = valorGuardado;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarCalcEquipo(empleados);
 }
-function _bimbaGuardarPagoConfig() {
+// mutatorFn modifica in-place la config de pago de UN empleado. Se aplica
+// contra el valor más reciente de Firebase (transacción), no contra la
+// copia en memoria de _equipoPagoConfig, que solo se cargó una vez al abrir
+// el overlay — así dos personas editando el pago de dos empleados distintos
+// a la vez no se pisan la una a la otra.
+function _bimbaGuardarPagoConfig(mutatorFn) {
+  if (window.fb_transactNative) {
+    window.fb_transactNative('config/empleadosPago', function (current) {
+      const cfg = current || {};
+      mutatorFn(cfg);
+      return cfg;
+    }).catch(() => {});
+    return;
+  }
   firebase.database().ref('config/empleadosPago').set(_equipoPagoConfig).catch(() => {});
 }
 function _bimbaCosteEmpleado(emp) {
@@ -11205,12 +11261,28 @@ function getStockData() {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
-function saveStockData(data) {
+// Aplica mutatorFn (que modifica el objeto de ingredientes in-place) de
+// forma atómica: actualiza localStorage al instante para que la UI
+// responda, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos añaden,
+// borran o reordenan ingredientes casi a la vez, Firebase reintenta con
+// el dato fresco en vez de que uno pise el cambio del otro.
+function stockMutateData(mutatorFn) {
+  const data = getStockData();
+  mutatorFn(data);
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_saveStockData) {
+  if (window.fb_transactJsonString) {
+    window._stockDataLocalWrite = Date.now();
+    window.fb_transactJsonString('config/stockData', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }
+  return data;
 }
 
 // ── ADMIN: ingredient management ──
@@ -11251,13 +11323,12 @@ function stockDrop(e) {
   if (srcGroup !== dstGroup) return; // solo dentro del mismo grupo
   const srcIdx = parseInt(_stockDragSrc.dataset.index);
   const dstIdx = parseInt(e.currentTarget.dataset.index);
-  const data = getStockData();
-  const arr = data[srcGroup];
-  const _arr$splice = arr.splice(srcIdx, 1),
-    _arr$splice2 = _slicedToArray(_arr$splice, 1),
-    moved = _arr$splice2[0];
-  arr.splice(dstIdx, 0, moved);
-  saveStockData(data);
+  stockMutateData(function (data) {
+    const arr = data[srcGroup];
+    if (!arr || !arr[srcIdx]) return;
+    const moved = arr.splice(srcIdx, 1)[0];
+    arr.splice(dstIdx, 0, moved);
+  });
   loadStockAdminList();
   showToast('stock-config-toast');
 }
@@ -11303,13 +11374,12 @@ function _stockTouchEnd(e) {
     if (endY > rect.top && endY < rect.bottom) targetIdx = i;
   });
   if (targetIdx !== srcIdx) {
-    const data = getStockData();
-    const arr = data[group];
-    const _arr$splice3 = arr.splice(srcIdx, 1),
-      _arr$splice4 = _slicedToArray(_arr$splice3, 1),
-      moved = _arr$splice4[0];
-    arr.splice(targetIdx, 0, moved);
-    saveStockData(data);
+    stockMutateData(function (data) {
+      const arr = data[group];
+      if (!arr || !arr[srcIdx]) return;
+      const moved = arr.splice(srcIdx, 1)[0];
+      arr.splice(targetIdx, 0, moved);
+    });
     loadStockAdminList();
     showToast('stock-config-toast');
   }
@@ -11322,22 +11392,27 @@ function addStockIngredient() {
   const group = groupSel ? groupSel.value : 'ingredientes';
   if (!name) return;
   const data = getStockData();
-  if (!data[group]) data[group] = [];
-  if (data[group].includes(name)) {
+  if (data[group] && data[group].includes(name)) {
     alert('Ya existe en ese grupo');
     return;
   }
-  data[group].push(name);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) d[group] = [];
+    if (!d[group].includes(name)) d[group].push(name);
+  });
   input.value = '';
   loadStockAdminList();
   showToast('stock-config-toast');
 }
 function removeStockItem(group, i) {
   const data = getStockData();
-  if (!data[group]) return;
-  data[group].splice(i, 1);
-  saveStockData(data);
+  const ing = data[group] && data[group][i];
+  if (!ing) return;
+  stockMutateData(function (d) {
+    if (!d[group]) return;
+    const idx = d[group].indexOf(ing);
+    if (idx !== -1) d[group].splice(idx, 1);
+  });
   loadStockAdminList();
 }
 
@@ -11358,21 +11433,23 @@ function stockOverlayAddItem() {
   const name = document.getElementById('stock-edit-name').value.trim();
   if (!name) return;
   const data = getStockData();
-  if (!data[group]) data[group] = [];
-  if (data[group].includes(name)) {
+  if (data[group] && data[group].includes(name)) {
     alert('Ya existe en esa categoría');
     return;
   }
-  data[group].push(name);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) d[group] = [];
+    if (!d[group].includes(name)) d[group].push(name);
+  });
   document.getElementById('stock-edit-name').value = '';
   renderStockItems();
 }
 function stockOverlayRemoveItem(group, ing) {
   if (!confirm('¿Eliminar "' + ing + '"?')) return;
-  const data = getStockData();
-  data[group] = data[group].filter(i => i !== ing);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) return;
+    d[group] = d[group].filter(i => i !== ing);
+  });
   renderStockItems();
 }
 let _stockOverlayDragSrc = null;
@@ -11399,14 +11476,15 @@ function stockOverlayDrop(e) {
   if (srcGroup !== dstGroup) return;
   const srcIng = _stockOverlayDragSrc.dataset.ing;
   const dstIng = e.currentTarget.dataset.ing;
-  const data = getStockData();
-  const arr = data[srcGroup];
-  const srcIdx = arr.indexOf(srcIng);
-  const dstIdx = arr.indexOf(dstIng);
-  if (srcIdx === -1 || dstIdx === -1) return;
-  arr.splice(srcIdx, 1);
-  arr.splice(dstIdx, 0, srcIng);
-  saveStockData(data);
+  stockMutateData(function (data) {
+    const arr = data[srcGroup];
+    if (!arr) return;
+    const srcIdx = arr.indexOf(srcIng);
+    const dstIdx = arr.indexOf(dstIng);
+    if (srcIdx === -1 || dstIdx === -1) return;
+    arr.splice(srcIdx, 1);
+    arr.splice(dstIdx, 0, srcIng);
+  });
   renderStockItems();
 }
 function openStockFromAdmin() {
@@ -11751,18 +11829,26 @@ function getStockHistorial() {
   }
 }
 function saveToStockHistorial(ts, lines) {
-  const hist = getStockHistorial();
-  hist.push({
-    ts,
-    lines
-  });
-  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
+  const entrada = { ts, lines };
+  // Local al instante...
+  const histLocal = getStockHistorial();
+  histLocal.push(entrada);
+  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(histLocal));
 
-  // 🔥 Subir a Firebase — reintenta si aún no está listo
+  // ...y de forma atómica contra Firebase — reintenta si aún no está listo,
+  // y usa una transacción para no perder la reposición de otro dispositivo
+  // guardada casi al mismo tiempo.
   function subirAFirebase(intentos) {
-    if (window.fb_saveStockHistorial) {
+    if (window.fb_transactNative) {
       window._stockLocalWrite = Date.now();
-      window.fb_saveStockHistorial(hist).catch(e => console.warn('Firebase stock historial error:', e));
+      window.fb_transactNative('stock/historial', function (current) {
+        const hist = Array.isArray(current) ? current.slice() : [];
+        hist.push(entrada);
+        return hist;
+      }).catch(e => console.warn('Firebase stock historial error:', e));
+    } else if (window.fb_saveStockHistorial) {
+      window._stockLocalWrite = Date.now();
+      window.fb_saveStockHistorial(histLocal).catch(e => console.warn('Firebase stock historial error:', e));
     } else if (intentos > 0) {
       setTimeout(() => subirAFirebase(intentos - 1), 500);
     } else {

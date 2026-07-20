@@ -613,12 +613,28 @@ function pp2LoadState() {
     return {};
   }
 }
-function pp2SaveState(s) {
+// Aplica mutatorFn (que modifica el objeto de estado in-place) de forma
+// atómica: actualiza localStorage al instante para que la UI responda sin
+// esperar, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos tocan
+// cantidades/proveedores a la vez, Firebase reintenta con el dato fresco
+// en vez de que uno pise el cambio del otro.
+function pp2MutateState(mutatorFn) {
+  const s = pp2LoadState();
+  mutatorFn(s);
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
-  if (window.fb_savePP2) {
+  if (window.fb_transactNative) {
+    window._pp2LocalWrite = Date.now();
+    window.fb_transactNative('pp2/state', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
     window.fb_savePP2('state', s).catch(() => {});
   }
+  return s;
 }
 function pp2LoadCustom() {
   try {
@@ -1032,17 +1048,17 @@ function pp2RenderRow(id) {
 
 // ── quantity & unit ──────────────────────────────────────
 function pp2Qty(id, delta) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
+  });
   pp2RenderRow(id);
 }
 function pp2SetUnit(id, unit) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].unit = unit;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].unit = unit;
+  });
   pp2RenderRow(id);
 }
 
@@ -1066,10 +1082,10 @@ function pp2PickerOpen(itemId) {
   picker.style.display = 'flex';
 }
 function pp2PickerSelect(provId) {
-  const s = pp2LoadState();
-  if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
-  s[_pp2CurrentItem].prov = provId;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
+    s[_pp2CurrentItem].prov = provId;
+  });
   // Guardar como habitual si se asigna uno (no si se quita)
   if (provId) {
     const hab = pp2LoadProvHab();
@@ -1222,15 +1238,14 @@ function pp2ConfirmDelete() {
 // ── nueva semana ─────────────────────────────────────────
 function pp2NuevaSemana() {
   if (!confirm('¿Nueva semana? Se borran todas las cantidades. Los proveedores habituales se mantienen y se precargarán automáticamente.')) return;
-  const s = pp2LoadState();
-  const hab = pp2LoadProvHab();
   // Limpiar cantidades y proveedores del estado; los habituales se aplican en render
-  Object.keys(s).forEach(id => {
-    s[id].qty = 0;
-    s[id].prov = '';
-    s[id].unit = s[id].unit || 'cajas';
+  pp2MutateState(function (s) {
+    Object.keys(s).forEach(id => {
+      s[id].qty = 0;
+      s[id].prov = '';
+      s[id].unit = s[id].unit || 'cajas';
+    });
   });
-  pp2SaveState(s);
   pp2Render();
   const t = document.getElementById('pp2-toast');
   t.textContent = '🔄 ¡Nueva semana! Proveedores habituales precargados.';
@@ -1241,19 +1256,29 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
-  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  hist.push({
-    fecha,
-    nota
-  }); // más antiguo primero, más reciente al final
-  if (hist.length > 50) hist.shift(); // máximo 50 entradas
-  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
-  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
+  const entrada = { fecha, nota };
+  // Añadir la entrada localmente al instante (UI responde ya)...
+  const histLocal = pp2LoadHistorial();
+  histLocal.push(entrada);
+  if (histLocal.length > 50) histLocal.shift();
+  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(histLocal));
+  // ...y de forma atómica contra Firebase, para no perder el pedido que
+  // otro dispositivo acaba de guardar en el historial casi al mismo tiempo.
+  if (window.fb_transactNative) {
+    window.fb_transactNative('pp2/historial', function (current) {
+      const hist = Array.isArray(current) ? current.slice() : [];
+      hist.push(entrada);
+      if (hist.length > 50) hist.shift();
+      return hist;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
+    window.fb_savePP2('historial', histLocal).catch(() => {});
+  }
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();

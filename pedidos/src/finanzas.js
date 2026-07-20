@@ -295,7 +295,10 @@ function _bimbaPintarConfigEquipo(empleados) {
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
   _equipoPagoConfig[empId].tipoPago = tipo;
-  _bimbaGuardarPagoConfig();
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = {};
+    cfg[empId].tipoPago = tipo;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarCalcEquipo(empleados);
@@ -303,12 +306,29 @@ function bimbaSetTipoPago(empId, tipo) {
 function bimbaActualizarPago(empId, campo, valor) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = { tipoPago: 'hora' };
   const val = parseFloat(valor);
-  _equipoPagoConfig[empId][campo] = isNaN(val) ? null : val;
-  _bimbaGuardarPagoConfig();
+  const valorGuardado = isNaN(val) ? null : val;
+  _equipoPagoConfig[empId][campo] = valorGuardado;
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = { tipoPago: 'hora' };
+    cfg[empId][campo] = valorGuardado;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarCalcEquipo(empleados);
 }
-function _bimbaGuardarPagoConfig() {
+// mutatorFn modifica in-place la config de pago de UN empleado. Se aplica
+// contra el valor más reciente de Firebase (transacción), no contra la
+// copia en memoria de _equipoPagoConfig, que solo se cargó una vez al abrir
+// el overlay — así dos personas editando el pago de dos empleados distintos
+// a la vez no se pisan la una a la otra.
+function _bimbaGuardarPagoConfig(mutatorFn) {
+  if (window.fb_transactNative) {
+    window.fb_transactNative('config/empleadosPago', function (current) {
+      const cfg = current || {};
+      mutatorFn(cfg);
+      return cfg;
+    }).catch(() => {});
+    return;
+  }
   firebase.database().ref('config/empleadosPago').set(_equipoPagoConfig).catch(() => {});
 }
 function _bimbaCosteEmpleado(emp) {

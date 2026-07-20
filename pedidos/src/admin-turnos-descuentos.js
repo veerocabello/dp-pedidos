@@ -15,31 +15,42 @@ function renderSlotTurnosList(turnos) {
   }
   list.innerHTML = turnos.map((t, i) => "\n    <div style=\"display:flex;align-items:center;flex-wrap:wrap;background:#F4F2EE;border-radius:8px;padding:10px 12px;margin-bottom:8px\">\n      <span style=\"font-size:12px;font-weight:700;color:#8A6A4E;min-width:20px\">".concat(i + 1, ".</span>\n      <label style=\"font-size:12px;color:#8A6A4E\">Desde</label>\n      <input type=\"time\" value=\"").concat(t.start, "\" onchange=\"updateSlotTurno(").concat(i, ",'start',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Hasta</label>\n      <input type=\"time\" value=\"").concat(t.end, "\" onchange=\"updateSlotTurno(").concat(i, ",'end',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Cada</label>\n      <select onchange=\"updateSlotTurno(").concat(i, ",'interval',parseInt(this.value))\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n        <option value=\"15\" ").concat(t.interval === 15 ? 'selected' : '', ">15 min</option>\n        <option value=\"20\" ").concat(t.interval === 20 ? 'selected' : '', ">20 min</option>\n        <option value=\"30\" ").concat(!t.interval || t.interval === 30 ? 'selected' : '', ">30 min</option>\n        <option value=\"45\" ").concat(t.interval === 45 ? 'selected' : '', ">45 min</option>\n        <option value=\"60\" ").concat(t.interval === 60 ? 'selected' : '', ">60 min</option>\n      </select>\n      <button onclick=\"removeSlotTurno(").concat(i, ")\"\n        style=\"margin-left:auto;background:#fff;border:1.5px solid #e74c3c;color:#c0392b;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">&#128465;</button>\n    </div>")).join('');
 }
-function _syncSlotTurnos(turnos) {
+// mutatorFn recibe el array de turnos actual (local o el más reciente de
+// Firebase, según el intento) y lo modifica in-place. Evita que dos
+// ediciones de turnos casi simultáneas (dos dispositivos) se pisen entre
+// sí — igual que el resto de escrituras "leer todo, modificar, guardar
+// todo" arregladas en esta misma pasada.
+function _mutateSlotTurnos(mutatorFn) {
+  const turnos = getSlotTurnos();
+  mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  const max = getSlotMax();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+      mutatorFn(t);
+      return { turnos: t, max: (current && current.max) || getSlotMax() };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
+  }
+  return turnos;
 }
 function addSlotTurno() {
-  const turnos = getSlotTurnos();
-  turnos.push({
-    start: '19:30',
-    end: '23:30',
-    interval: 30
+  const turnos = _mutateSlotTurnos(function (t) {
+    t.push({ start: '19:30', end: '23:30', interval: 30 });
   });
-  _syncSlotTurnos(turnos);
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
-  const turnos = getSlotTurnos();
-  turnos.splice(idx, 1);
-  _syncSlotTurnos(turnos);
+  const turnos = _mutateSlotTurnos(function (t) {
+    if (idx < t.length) t.splice(idx, 1);
+  });
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
-  const turnos = getSlotTurnos();
-  turnos[idx][field] = value;
-  _syncSlotTurnos(turnos);
+  _mutateSlotTurnos(function (t) {
+    if (t[idx]) t[idx][field] = value;
+  });
 }
 function saveSlotConfig() {
   const maxInp = document.getElementById('slot-max-input');

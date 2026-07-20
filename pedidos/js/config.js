@@ -123,6 +123,36 @@ function _initFirebase() {
   var jlisten = function(r,cb) { return db.ref(r).on("value",cb); };
   var jparse = function(v) { try{return JSON.parse(v);}catch(e){return null;} };
   var jstr = function(v) { return JSON.stringify(v); };
+  // Escritura ATÓMICA de un nodo que guarda un objeto/array como STRING JSON
+  // (el mismo formato que jset/jget en toda la web). mutatorFn recibe el
+  // valor YA PARSEADO actual (o null si no existía) y debe devolver el
+  // nuevo valor a guardar. Usa una transacción real de Firebase: si dos
+  // dispositivos escriben casi a la vez, Firebase reintenta automáticamente
+  // con el dato más reciente en vez de que uno pise el cambio del otro.
+  window.fb_transactJsonString = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      var parsed = null;
+      if (typeof current === 'string') {
+        parsed = jparse(current);
+      } else if (current !== null && current !== undefined) {
+        parsed = current;
+      }
+      var updated = mutatorFn(parsed);
+      return jstr(updated);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? jparse(result.snapshot.val()) : null;
+  };
+  // Igual que fb_transactJsonString pero para nodos que guardan el objeto/
+  // array nativo de Firebase directamente (sin pasar por JSON.stringify),
+  // como pp2/*.
+  window.fb_transactNative = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      return mutatorFn(current === undefined ? null : current);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? result.snapshot.val() : null;
+  };
   // SLOTS
   window.fb_incrementSlot = async function(s) { await db.ref("slots/"+tK()+"/"+s).transaction(function(v){return(v||0)+1;}); };
   window.fb_getSlotCount = async function(s) { var sn=await jget("slots/"+tK()+"/"+s); return sn.exists()?sn.val():0; };
