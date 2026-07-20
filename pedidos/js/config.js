@@ -281,6 +281,7 @@ function _initFirebase() {
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };
   window.fb_saveBimbaToken = async function(t) { await jset("config/bimbaToken",t); };
   window.fb_loadBimbaToken = async function() { var sn=await jget("config/bimbaToken"); return sn.exists()?sn.val():null; };
+  window.fb_saveBimbaTokenExpiry = async function(ts) { await jset("config/bimbaTokenExpiry",ts); };
   // STOCK PWD
   window.fb_saveStockPwd = async function(h) { await jset("config/stockPwd",h); };
   window.fb_loadStockPwd = async function() { var sn=await jget("config/stockPwd"); return sn.exists()?sn.val():null; };

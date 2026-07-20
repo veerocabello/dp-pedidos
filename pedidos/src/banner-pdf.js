@@ -794,6 +794,16 @@ async function renderActiveSessionsList() {
 async function killSession(sid) {
   try {
     await firebase.database().ref('activeSessions/' + sid + '/killed').set(true);
+    // Si esa sesión ya no está conectada para pillar el aviso en directo,
+    // "killed" por sí solo no basta: el dispositivo seguiría entrando sin
+    // pedir contraseña la próxima vez gracias a "dispositivo de confianza".
+    // Por eso también se borra aquí su registro de confianza — así deja
+    // de valer de verdad, lo esté escuchando en ese momento o no.
+    try {
+      const snap = await firebase.database().ref('activeSessions/' + sid + '/deviceId').get();
+      const deviceId = snap.val();
+      if (deviceId) await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+    } catch (e) {}
     renderActiveSessionsList();
   } catch(e) {
     alert('Error al expulsar la sesión: ' + e.message);
@@ -813,7 +823,10 @@ async function killAllSessions() {
     );
     if (!ok) return;
     const updates = {};
-    otras.forEach(s => { updates['activeSessions/' + s.sid + '/killed'] = true; });
+    otras.forEach(s => {
+      updates['activeSessions/' + s.sid + '/killed'] = true;
+      if (s.deviceId) updates['config/trustedDevices/' + s.deviceId] = null; // revoca también la confianza, no solo la sesión en directo
+    });
     await firebase.database().ref().update(updates);
     logActivity('🚫 Expulsadas ' + otras.length + ' sesión' + (otras.length !== 1 ? 'es' : '') + ' a la vez');
     renderActiveSessionsList();

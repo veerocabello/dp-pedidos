@@ -388,7 +388,34 @@ try {
     $phone = isset($payload['phone']) ? mb_substr(trim((string)$payload['phone']), 0, 20) : '';
     $notes = isset($payload['notes']) ? mb_substr(trim((string)$payload['notes']), 0, 300) : '';
     $slotTime = isset($payload['slotTime']) && $payload['slotTime'] !== '' ? (string)$payload['slotTime'] : null;
-    $items = is_array($payload['items'] ?? null) ? array_slice($payload['items'], 0, 100) : [];
+    // Cada campo de cada producto se acota — antes solo se limitaba el
+    // NÚMERO de productos (100), pero no el tamaño de cada uno. Un pedido
+    // con nombres/notas/extras de varios MB cada uno se guarda tal cual en
+    // tickets/<fecha>/<num> Y en el nodo stats/<fecha> COMPARTIDO por todos
+    // los pedidos del día — podía hincharlo lo bastante como para romper
+    // "Pedidos en vivo" para todo el mundo ese día, no solo para quien lo mandó.
+    $itemsRaw = is_array($payload['items'] ?? null) ? array_slice($payload['items'], 0, 100) : [];
+    $items = array_map(function ($it) {
+        if (!is_array($it)) return ['name' => '', 'qty' => 0, 'subtotal' => 0];
+        $limpio = [
+            'name'     => isset($it['name']) ? mb_substr(trim((string)$it['name']), 0, 120) : '',
+            'qty'      => isset($it['qty']) ? max(0, min(999, (float)$it['qty'])) : 0,
+            'subtotal' => isset($it['subtotal']) ? max(0, min(9999, (float)$it['subtotal'])) : 0,
+        ];
+        if (!empty($it['isFee'])) $limpio['isFee'] = true;
+        if (is_array($it['extras'] ?? null)) {
+            $limpio['extras'] = array_map(function ($e) {
+                if (is_array($e)) {
+                    return [
+                        'name'  => isset($e['name']) ? mb_substr(trim((string)$e['name']), 0, 80) : '',
+                        'price' => isset($e['price']) ? max(0, min(999, (float)$e['price'])) : 0,
+                    ];
+                }
+                return mb_substr(trim((string)$e), 0, 80);
+            }, array_slice($it['extras'], 0, 30));
+        }
+        return $limpio;
+    }, $itemsRaw);
     $total = is_numeric($payload['total'] ?? null) ? round((float)$payload['total'], 2) : 0;
     if ($total < 0) $total = 0;
     $discountCode = isset($payload['discountCode']) && $payload['discountCode'] !== '' ? strtoupper((string)$payload['discountCode']) : null;

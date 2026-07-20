@@ -190,6 +190,42 @@ function fbSetArrayStringSiCoincide($databaseURL, $path, $accessToken, $arr, $et
     return $httpCode === 200;
 }
 
+// ── SESIÓN DE FICHAJE ──────────────────────────────────────────────────
+// Antes, tras el login (comprobar el PIN una vez), el navegador se
+// quedaba con el empId en texto plano y lo mandaba tal cual en cada
+// acción posterior (historial/registrar/registrarManual) — cualquiera
+// que supiera o adivinara el empId de OTRO empleado podía leer su
+// historial o ficharlo/desficharlo sin saber su PIN, porque nada
+// volvía a comprobar que quien llama de verdad pasó el login. Ahora el
+// login devuelve un token firmado (HMAC) con el empId y una caducidad,
+// y esas tres acciones exigen ese token — el empId real se saca DEL
+// TOKEN, nunca del campo suelto que mande el cliente.
+function ficharSessionSecret($rutaCredenciales) {
+    // Deriva la clave de firma de las credenciales de Firebase (ya son un
+    // secreto protegido fuera de public_html) — no hace falta pedirle a la
+    // dueña que cree un fichero de secretos nuevo solo para esto.
+    static $secret = null;
+    if ($secret !== null) return $secret;
+    $creds = json_decode(file_get_contents($rutaCredenciales), true);
+    $secret = hash('sha256', ($creds['private_key'] ?? '') . '|fichar-session');
+    return $secret;
+}
+function generarSessionToken($empId, $rutaCredenciales) {
+    $exp = time() + 12 * 3600; // 12 horas — de sobra para un turno
+    $payload = $empId . '.' . $exp;
+    $firma = hash_hmac('sha256', $payload, ficharSessionSecret($rutaCredenciales));
+    return $payload . '.' . $firma;
+}
+// Devuelve el empId si el token es válido y no ha caducado, o null si no.
+function verificarSessionToken($token, $rutaCredenciales) {
+    if (!is_string($token) || substr_count($token, '.') !== 2) return null;
+    list($empId, $exp, $firma) = explode('.', $token);
+    if ((int)$exp < time()) return null;
+    $esperada = hash_hmac('sha256', $empId . '.' . $exp, ficharSessionSecret($rutaCredenciales));
+    if (!hash_equals($esperada, $firma)) return null;
+    return $empId;
+}
+
 // Añade una entrada al mismo "Registro de actividad" que ya se ve en el
 // panel de admin (config/activityLog, guardado igual que config/fichajes:
 // un array como STRING JSON) — para que un fallo silencioso del servidor
@@ -280,22 +316,23 @@ try {
             exit;
         }
         echo json_encode([
-            'success' => true,
-            'empId'   => $encontrado['id'],
-            'nombre'  => $encontrado['nombre'],
-            'manIn'   => $encontrado['manIn']  ?? '',
-            'manOut'  => $encontrado['manOut'] ?? '',
-            'tarIn'   => $encontrado['tarIn']  ?? '',
-            'tarOut'  => $encontrado['tarOut'] ?? '',
+            'success'      => true,
+            'empId'        => $encontrado['id'],
+            'nombre'       => $encontrado['nombre'],
+            'manIn'        => $encontrado['manIn']  ?? '',
+            'manOut'       => $encontrado['manOut'] ?? '',
+            'tarIn'        => $encontrado['tarIn']  ?? '',
+            'tarOut'       => $encontrado['tarOut'] ?? '',
+            'sessionToken' => generarSessionToken($encontrado['id'], $rutaCredenciales),
         ]);
         exit;
     }
 
     // ── HISTORIAL: solo los fichajes de ESE empleado concreto ──
     if ($action === 'historial') {
-        $empId = isset($payload['empId']) ? (string)$payload['empId'] : '';
+        $empId = verificarSessionToken($payload['sessionToken'] ?? null, $rutaCredenciales);
         if (!$empId) {
-            echo json_encode(['success' => false, 'error' => 'Falta empId']);
+            echo json_encode(['success' => false, 'error' => 'Sesión caducada, vuelve a introducir tu PIN.']);
             exit;
         }
         $todos = fbGetArrayString($databaseURL, 'config/fichajes', $accessToken);
@@ -310,11 +347,15 @@ try {
     //    sin la guardia de doble entrada/salida (puede ser un día pasado) ni el
     //    ajuste a hora oficial de turno (es una corrección puntual) ──
     if ($action === 'registrarManual') {
-        $empId = isset($payload['empId']) ? (string)$payload['empId'] : '';
+        $empId = verificarSessionToken($payload['sessionToken'] ?? null, $rutaCredenciales);
         $tipo  = isset($payload['tipo']) ? (string)$payload['tipo'] : '';
         $fecha = isset($payload['fecha']) ? (string)$payload['fecha'] : '';
         $hora  = isset($payload['hora']) ? (string)$payload['hora'] : '';
-        if (!$empId || !in_array($tipo, ['entrada', 'salida'], true)
+        if (!$empId) {
+            echo json_encode(['success' => false, 'error' => 'Sesión caducada, vuelve a introducir tu PIN.']);
+            exit;
+        }
+        if (!in_array($tipo, ['entrada', 'salida'], true)
             || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)
             || !preg_match('/^\d{2}:\d{2}$/', $hora)) {
             echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
@@ -356,9 +397,13 @@ try {
 
     // ── REGISTRAR: nueva entrada/salida ──
     if ($action === 'registrar') {
-        $empId = isset($payload['empId']) ? (string)$payload['empId'] : '';
+        $empId = verificarSessionToken($payload['sessionToken'] ?? null, $rutaCredenciales);
         $tipo  = isset($payload['tipo']) ? (string)$payload['tipo'] : '';
-        if (!$empId || !in_array($tipo, ['entrada', 'salida'], true)) {
+        if (!$empId) {
+            echo json_encode(['success' => false, 'error' => 'Sesión caducada, vuelve a introducir tu PIN.']);
+            exit;
+        }
+        if (!in_array($tipo, ['entrada', 'salida'], true)) {
             echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
             exit;
         }

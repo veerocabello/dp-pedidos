@@ -1639,7 +1639,7 @@ async function ficharManualRegistrar(tipo) {
     const res = await fetch('fichar-pin-check.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'registrarManual', empId: _ficharEmpActivo.empId, fecha, hora, tipo })
+      body: JSON.stringify({ action: 'registrarManual', sessionToken: _ficharEmpActivo.sessionToken, fecha, hora, tipo })
     });
     const data = await res.json();
     if (!data.success) {

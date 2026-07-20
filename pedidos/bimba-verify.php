@@ -84,6 +84,16 @@ function fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
     $val = json_decode($response, true);
     return is_string($val) ? $val : '';
 }
+// Lee un nodo cualquiera (objeto/array nativo) con la cuenta de servicio.
+function fbGetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
+    $accessToken = obtenerTokenAcceso($rutaCredenciales);
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($response, true);
+}
 
 // ── LÍMITE DE INTENTOS: máximo 5 intentos por IP cada 10 minutos ──
 // Compartido entre el PIN y los tokens de URL — todos son intentos de
@@ -176,6 +186,14 @@ if ($action === 'checkBimbaToken' || $action === 'checkAdminUrlToken') {
     try {
         $path = $action === 'checkBimbaToken' ? 'config/bimbaToken' : 'config/urlToken';
         $real = fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales);
+        // El enlace bimba caduca (ver bimbaGenBimbaToken en slots-alertas.js)
+        // para que un enlace olvidado/filtrado no quede válido para siempre.
+        // El token admin (?key=) no tiene este campo, así que no caduca.
+        $expirado = false;
+        if ($action === 'checkBimbaToken') {
+            $expiry = fbGetNodoConCuentaServicio($databaseURL, 'config/bimbaTokenExpiry', $rutaCredenciales);
+            if (is_numeric($expiry) && (float)$expiry < (microtime(true) * 1000)) $expirado = true;
+        }
     } catch (Exception $e) {
         flock($fp, LOCK_UN);
         fclose($fp);
@@ -183,7 +201,35 @@ if ($action === 'checkBimbaToken' || $action === 'checkAdminUrlToken') {
         echo json_encode(['success' => false, 'error' => 'Error interno']);
         exit();
     }
-    if ($real !== '' && hash_equals($real, $token)) {
+    if (!$expirado && $real !== '' && hash_equals($real, $token)) {
+        dpf_bimba_acierto($fp);
+    } else {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+}
+
+// ── Dispositivo de confianza: el navegador solo guarda un token aleatorio,
+// el servidor guarda su hash en config/trustedDevices/<deviceId> y aquí se
+// compara. Si el admin "expulsa" el dispositivo desde el panel, ese nodo
+// se borra y esta comprobación empieza a fallar de verdad — no solo hasta
+// que recargue la página, como pasaba antes.
+if ($action === 'checkTrustedDevice') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    if ($tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', $token))) {
         dpf_bimba_acierto($fp);
     } else {
         dpf_bimba_fallo($fp, $log, $now);

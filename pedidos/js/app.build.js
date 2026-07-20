@@ -5712,19 +5712,33 @@ function shareOrderWhatsApp(orderNum, name, slotTime, items, total) {
 }
 
 // ── DISPOSITIVO DE CONFIANZA ─────────────────────────────────────────────────
-// El token almacenado es: sha256(uid_firebase + contraseña_hasheada)
-// Así, aunque alguien acceda al localStorage, el token solo es válido
-// para el UID concreto de esta sesión Firebase — no es un string genérico.
+// El token de confianza es un secreto ALEATORIO generado en el momento de
+// marcar el dispositivo (no una fórmula a partir de datos que ya son
+// públicos o casi — antes era sha256(uid + hash de la contraseña), y el uid
+// y el hash por defecto están en el JS que se manda al navegador, así que
+// cualquiera que supiera el uid del admin podía calcular un token válido
+// sin haber iniciado sesión nunca). Solo se guarda su HASH en Firebase
+// (config/trustedDevices/<deviceId>), y la comprobación la hace el
+// servidor (bimba-verify.php) — así "Expulsar" desde el panel puede borrar
+// ese registro y el dispositivo pierde el acceso de verdad, no solo hasta
+// que recargue la página.
 const TRUSTED_KEY = 'dpf_trusted_device';
 const TRUSTED_NAME_KEY = 'dpf_trusted_device_name';
-const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // hash vinculado al UID
+const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado de nada público
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
+const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
 
-async function _buildTrustedToken(uid) {
-  // Token = SHA-256(uid + ADMIN_PWD_DEFAULT_HASH) — usa la contraseña hasheada como sal
-  const raw = uid + (localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH);
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = 'dev_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -5734,27 +5748,29 @@ function getTrustedExpiryDays() {
 
 async function isTrustedDevice() {
   if (localStorage.getItem(TRUSTED_KEY) !== 'yes') return false;
-  // Comprobar expiración
+  // Comprobar expiración local primero (evita una llamada de red inútil)
   const expiry = parseInt(localStorage.getItem(TRUSTED_EXPIRY_KEY) || '0');
   if (expiry && Date.now() > expiry) {
-    // Sesión expirada — limpiar
-    localStorage.removeItem(TRUSTED_KEY);
-    localStorage.removeItem(TRUSTED_TOKEN_KEY);
-    localStorage.removeItem(TRUSTED_EXPIRY_KEY);
+    await setTrustedDevice(false);
     console.log('[trusted] sesión expirada');
     return false;
   }
-  // Requiere sesión Firebase activa con UID
-  const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
-  if (!user || !user.uid) return false;
-  // Verificar que el token almacenado corresponde al UID actual
-  const storedToken = localStorage.getItem(TRUSTED_TOKEN_KEY);
-  if (!storedToken) return false;
+  const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+  if (!token) return false;
+  // Comprobación real en el servidor: si el admin ha "expulsado" este
+  // dispositivo desde el panel, su registro ya no existe en Firebase y
+  // esto falla aunque el token siga guardado en este navegador.
   try {
-    const expected = await _buildTrustedToken(user.uid);
-    return storedToken === expected;
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkTrustedDevice', deviceId: getDeviceId(), token })
+    });
+    const data = await res.json();
+    if (!data.success) { await setTrustedDevice(false); return false; }
+    return true;
   } catch (e) {
-    return false;
+    return false; // red caída: por seguridad, pedir login en vez de asumir confianza
   }
 }
 
@@ -5766,14 +5782,31 @@ async function setTrustedDevice(val, name) {
   if (val) {
     const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
     if (!user || !user.uid) return; // no guardar si no hay sesión real
-    const token = await _buildTrustedToken(user.uid);
+    const token = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '_' + Math.random().toString(36).slice(2));
+    const tokenHash = await _sha256Hex(token);
+    const deviceId = getDeviceId();
     const days = getTrustedExpiryDays();
     const expiry = Date.now() + days * 24 * 60 * 60 * 1000;
+    // Escritura autenticada (ya hay sesión real de admin en este momento) —
+    // el servidor solo guarda el HASH, nunca el token en sí.
+    await firebase.database().ref('config/trustedDevices/' + deviceId).set({
+      tokenHash: tokenHash,
+      name: name || 'Sin nombre',
+      createdAt: Date.now(),
+    });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');
     localStorage.setItem(TRUSTED_TOKEN_KEY, token);
     localStorage.setItem(TRUSTED_EXPIRY_KEY, String(expiry));
   } else {
+    // Si hay sesión real, limpiar también el registro en Firebase — igual
+    // que arriba, si no hay sesión (p.ej. venimos de una comprobación
+    // fallida sin login) esta escritura fallará en silencio y no pasa nada,
+    // el registro se queda pero el token local ya no sirve para nada.
+    try {
+      const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
+      if (user && user.uid) await firebase.database().ref('config/trustedDevices/' + getDeviceId()).remove();
+    } catch (e) {}
     localStorage.removeItem(TRUSTED_KEY);
     localStorage.removeItem(TRUSTED_NAME_KEY);
     localStorage.removeItem(TRUSTED_TOKEN_KEY);
@@ -5895,6 +5928,7 @@ async function openAdmin() {
       window._mySessionId = _SESSION_ID;
       await window.fb_registerSession({
         sid: _SESSION_ID,
+        deviceId: getDeviceId(),
         device: device,
         time: new Date().toLocaleString('es-ES'),
         ts: Date.now(),
@@ -6272,8 +6306,13 @@ function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
@@ -6957,11 +6996,11 @@ function renderPromos() {
       '<span style="position:absolute;top:0;left:12px;background:#3D1F0D;color:#FFF8EE;font-size:11px;font-weight:700;padding:3px 12px;border-radius:20px">🔥 Promo</span>' +
       '<div style="background:#fdecd5;border:1.5px solid #3D1F0D;border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px">' +
       '<div style="flex:1">' +
-      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + p.nombre + '</div>' +
-      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + (p.descripcion || '') + '</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + escapeHtml(p.nombre) + '</div>' +
+      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(p.descripcion || '') + '</div>' +
       '<div>' + precioTachado + '<span style="font-size:14px;font-weight:700;color:#3D1F0D">' + parseFloat(p.precio).toFixed(2) + ' €</span></div>' +
       '</div>' +
-      '<button onclick="promoAnadir(\'' + p.id + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
+      '<button onclick="promoAnadir(\'' + escapeAttr(p.id) + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
       '</div></div>';
   }).join('');
 }
@@ -7032,7 +7071,7 @@ function promoAbrirModal(p) {
 
   var titleRow = document.createElement('div');
   titleRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px';
-  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + p.nombre + '</div>';
+  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + escapeHtml(p.nombre) + '</div>';
   var closeBtn = document.createElement('button');
   closeBtn.innerHTML = '×';
   closeBtn.style.cssText = 'background:none;border:none;font-size:22px;color:#8A6A4E;cursor:pointer;padding:0;line-height:1';
@@ -10792,6 +10831,16 @@ async function renderActiveSessionsList() {
 async function killSession(sid) {
   try {
     await firebase.database().ref('activeSessions/' + sid + '/killed').set(true);
+    // Si esa sesión ya no está conectada para pillar el aviso en directo,
+    // "killed" por sí solo no basta: el dispositivo seguiría entrando sin
+    // pedir contraseña la próxima vez gracias a "dispositivo de confianza".
+    // Por eso también se borra aquí su registro de confianza — así deja
+    // de valer de verdad, lo esté escuchando en ese momento o no.
+    try {
+      const snap = await firebase.database().ref('activeSessions/' + sid + '/deviceId').get();
+      const deviceId = snap.val();
+      if (deviceId) await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+    } catch (e) {}
     renderActiveSessionsList();
   } catch(e) {
     alert('Error al expulsar la sesión: ' + e.message);
@@ -10811,7 +10860,10 @@ async function killAllSessions() {
     );
     if (!ok) return;
     const updates = {};
-    otras.forEach(s => { updates['activeSessions/' + s.sid + '/killed'] = true; });
+    otras.forEach(s => {
+      updates['activeSessions/' + s.sid + '/killed'] = true;
+      if (s.deviceId) updates['config/trustedDevices/' + s.deviceId] = null; // revoca también la confianza, no solo la sesión en directo
+    });
     await firebase.database().ref().update(updates);
     logActivity('🚫 Expulsadas ' + otras.length + ' sesión' + (otras.length !== 1 ? 'es' : '') + ' a la vez');
     renderActiveSessionsList();

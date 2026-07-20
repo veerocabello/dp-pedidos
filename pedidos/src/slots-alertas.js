@@ -110,8 +110,13 @@ function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
