@@ -202,7 +202,7 @@ function isAlertEntry(action) {
   return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0);
 }
 function getAlertEntries() {
-  return getActivityLog().filter(e => isAlertEntry(e.action));
+  return getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
 }
 function updateAlertBadge() {
   const badge = document.getElementById('alertas-tab-badge');
@@ -216,18 +216,67 @@ function updateAlertBadge() {
     badge.style.display = 'none';
   }
 }
+// Persiste el log completo (local + Firebase si hay sesión) — usado tanto
+// por logActivity() como por resolverAlerta() al marcar una entrada.
+function _persistActivityLog(log) {
+  localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+  if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_saveActivityLog(log).catch(() => {});
+  }
+}
+// Marca una alerta como resuelta (desaparece de la lista y del badge, pero
+// sigue existiendo en el registro de actividad completo). Se usa tanto al
+// pulsar "Descartar" como automáticamente tras un "Reintentar" con éxito.
+function resolverAlerta(ts) {
+  const log = getActivityLog();
+  const entry = log.find(e => e.ts === ts);
+  if (!entry) return;
+  entry.resolved = true;
+  _persistActivityLog(log);
+  renderAlertas();
+}
+function _alertaDomId(ts) {
+  return 'alerta-' + String(ts).replace(/[^a-zA-Z0-9]/g, '');
+}
+async function reintentarGuardadoPedido(ts, orderNum, fecha) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reintentarStats', orderNum, fecha })
+    });
+    const data = await res.json();
+    if (data.success) {
+      resolverAlerta(ts); // vuelve a pintar la lista sin esta tarjeta
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+      if (statusEl) { statusEl.textContent = '❌ ' + (data.error || 'No se pudo recuperar.'); statusEl.style.display = 'block'; }
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+    if (statusEl) { statusEl.textContent = '❌ Error de conexión, inténtalo de nuevo.'; statusEl.style.display = 'block'; }
+  }
+}
 function renderAlertas() {
   const entries = getAlertEntries();
   const el = document.getElementById('alertas-list');
   if (!el) return;
   if (!entries.length) {
-    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos — todo se ha guardado correctamente</div>';
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos pendientes</div>';
   } else {
     el.innerHTML = entries.map(e => {
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';
       const border = critico ? '#F0CFC8' : '#EFD6A9';
-      return "\n      <div style=\"display:flex;gap:10px;padding:10px 12px;border-radius:10px;background:".concat(bg, ";border:1px solid ").concat(border, "\">\n        <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n        <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n      </div>");
+      const puedeReintentar = e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha;
+      const retryBtn = puedeReintentar
+        ? "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>")
+        : '';
+      return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
     }).join('');
   }
   // Marcar como vistos: la próxima vez que se recalcule el badge, estos

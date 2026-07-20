@@ -173,6 +173,37 @@ function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
 }
 
+// ── Lectura-modificación-escritura condicional (con reintento) de
+// stats/<fecha>, compartida por el guardado normal y por el botón
+// "Reintentar guardado" de la pestaña Alertas del panel. Idempotente por
+// número de pedido — reintentar un pedido que ya está en stats no lo duplica.
+function guardarPedidoEnStats($databaseURL, $accessToken, $fecha, $newOrder, $total) {
+    for ($intento = 0; $intento < 8; $intento++) {
+        $leido = fbGetConEtag($databaseURL, 'stats/' . $fecha, $accessToken);
+        $stats = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$stats || ($stats['date'] ?? null) !== $fecha) {
+            $stats = ['date' => $fecha, 'count' => 0, 'total' => 0, 'orders' => []];
+        }
+        if (!is_array($stats['orders'] ?? null)) $stats['orders'] = [];
+
+        $yaExiste = false;
+        foreach ($stats['orders'] as $o) {
+            if (normOrderKey($o['num'] ?? '') === normOrderKey($newOrder['num'])) { $yaExiste = true; break; }
+        }
+        if (!$yaExiste) {
+            $stats['count'] = (int)($stats['count'] ?? 0) + 1;
+            $stats['total'] = round((float)($stats['total'] ?? 0) + $total, 2);
+            array_unshift($stats['orders'], $newOrder);
+        }
+
+        if (fbPutSiCoincide($databaseURL, 'stats/' . $fecha, $accessToken, $stats, $leido['etag'])) {
+            return true;
+        }
+        usleep(rand(20000, 80000));
+    }
+    return false;
+}
+
 // ── Nodos guardados como STRING JSON (igual que jset/jget del resto de la
 // web) sobre las mismas funciones fbGetConEtag/fbPutSiCoincide de arriba.
 function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
@@ -189,12 +220,12 @@ function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $et
 // servidor, o un pedido con un precio que no cuadra, aparezcan donde el
 // admin ya mira cada día en vez de perderse en el log de errores de PHP,
 // que nadie revisa.
-function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = []) {
     for ($intento = 0; $intento < 5; $intento++) {
         $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
         $log = $leido['data'] ?: [];
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
-        array_unshift($log, [
+        array_unshift($log, $extra + [
             'ts'     => $ahora->format('c'),
             'time'   => $ahora->format('d/m/Y, H:i:s'),
             'action' => $mensaje,
@@ -252,6 +283,49 @@ try {
     if (!$payload) {
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'Petición inválida']);
+        exit;
+    }
+
+    // ── Botón "🔧 Reintentar guardado" de la pestaña Alertas del panel ──
+    // Recupera el ticket YA guardado (tickets/<fecha>/<num> casi siempre se
+    // guarda bien — lo que falla es el resumen agregado en stats/<fecha>) y
+    // vuelve a intentar reflejarlo en las estadísticas del día. Nunca acepta
+    // datos de pedido nuevos del cliente, solo relee lo que ya hay guardado,
+    // así que no reabre el riesgo de precios/items manipulados.
+    if (($payload['action'] ?? '') === 'reintentarStats') {
+        $rOrderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
+        $rFecha = isset($payload['fecha']) ? (string)$payload['fecha'] : '';
+        if (!preg_match('/^T\d{3,5}$/', $rOrderNum) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $rFecha)) {
+            echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $rTicketKey = normOrderKey($rOrderNum);
+        $ticketLeido = fbGetConEtag($databaseURL, 'tickets/' . $rFecha . '/' . $rTicketKey, $accessToken);
+        $ticket = is_array($ticketLeido['data']) ? $ticketLeido['data'] : null;
+        if (!$ticket) {
+            echo json_encode(['success' => false, 'error' => 'No se encontró el ticket original — puede que el pedido no llegara a guardarse en absoluto. Contacta al cliente para confirmarlo.']);
+            exit;
+        }
+        $rTotal = is_numeric($ticket['total'] ?? null) ? (float)$ticket['total'] : 0;
+        $rNewOrder = [
+            'num'   => $ticket['orderNum'] ?? $rOrderNum,
+            'name'  => $ticket['name'] ?? '',
+            'phone' => $ticket['phone'] ?? '',
+            'notes' => $ticket['notes'] ?? '',
+            'total' => $rTotal,
+            'items' => is_array($ticket['items'] ?? null) ? $ticket['items'] : [],
+            'time'  => date('H:i'),
+            'slot'  => $ticket['slotTime'] ?? null,
+            'ts'    => (int)(microtime(true) * 1000),
+        ];
+        $rOk = guardarPedidoEnStats($databaseURL, $accessToken, $rFecha, $rNewOrder, $rTotal);
+        if ($rOk) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '✅ Pedido ' . $rOrderNum . ' recuperado manualmente y guardado en estadísticas');
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Sigue sin poder guardarse en estadísticas. Inténtalo de nuevo en unos minutos.']);
+        }
         exit;
     }
 
@@ -322,36 +396,18 @@ try {
         'slot'  => $slotTime,
         'ts'    => (int)(microtime(true) * 1000),
     ];
-    $statsGuardado = false;
-    for ($intento = 0; $intento < 8; $intento++) {
-        $leido = fbGetConEtag($databaseURL, 'stats/' . $todayKey, $accessToken);
-        $stats = is_array($leido['data']) ? $leido['data'] : null;
-        if (!$stats || ($stats['date'] ?? null) !== $todayKey) {
-            $stats = ['date' => $todayKey, 'count' => 0, 'total' => 0, 'orders' => []];
-        }
-        if (!is_array($stats['orders'] ?? null)) $stats['orders'] = [];
-
-        // Idempotencia: si este pedido ya está guardado (reintento de red), no duplicar
-        $yaExiste = false;
-        foreach ($stats['orders'] as $o) {
-            if (normOrderKey($o['num'] ?? '') === normOrderKey($orderNum)) { $yaExiste = true; break; }
-        }
-        if (!$yaExiste) {
-            $stats['count'] = (int)($stats['count'] ?? 0) + 1;
-            $stats['total'] = round((float)($stats['total'] ?? 0) + $total, 2);
-            array_unshift($stats['orders'], $newOrder);
-        }
-
-        if (fbPutSiCoincide($databaseURL, 'stats/' . $todayKey, $accessToken, $stats, $leido['etag'])) {
-            $statsGuardado = true;
-            break;
-        }
-        usleep(rand(20000, 80000));
-    }
+    $statsGuardado = guardarPedidoEnStats($databaseURL, $accessToken, $todayKey, $newOrder, $total);
 
     if (!$statsGuardado) {
         error_log('[guardar-pedido] No se pudo actualizar stats para el pedido ' . $orderNum . ' tras varios intentos.');
-        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido ' . $orderNum . ' NO se pudo guardar en estadísticas tras varios intentos — revisa "Pedidos en vivo"');
+        // Se guarda orderNum/fecha junto al aviso para que el botón
+        // "🔧 Reintentar guardado" de la pestaña Alertas sepa qué ticket
+        // recuperar sin tener que parsear el texto del mensaje.
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido ' . $orderNum . ' NO se pudo guardar en estadísticas tras varios intentos — revisa "Pedidos en vivo"', [
+            'tipo'     => 'pedido_no_guardado',
+            'orderNum' => $orderNum,
+            'fecha'    => $todayKey,
+        ]);
     }
 
     // ── 3. INCREMENTAR USO DEL CÓDIGO DE DESCUENTO (si se usó uno) ──
