@@ -214,7 +214,18 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
 // desincronizar del cálculo real del carrito.
 function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
     $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
-    $menuItems = is_array($menuResp['data']['items'] ?? null) ? $menuResp['data']['items'] : [];
+    // config/menu se guarda como {items:[...], ts} desde admin-config.js,
+    // pero puede quedar en el formato legacy (array plano) si no se ha
+    // vuelto a guardar desde el panel — el cliente ya maneja ambos casos
+    // (ver fb_listenMenu en historial-export.js), así que aquí también.
+    $menuData = $menuResp['data'] ?? null;
+    if (is_array($menuData) && isset($menuData['items']) && is_array($menuData['items'])) {
+        $menuItems = $menuData['items']; // formato actual: {items:[...], ts}
+    } elseif (is_array($menuData)) {
+        $menuItems = $menuData; // formato legacy: array plano de productos
+    } else {
+        $menuItems = [];
+    }
     $menuPorNombre = [];
     foreach ($menuItems as $mi) {
         if (isset($mi['name'])) $menuPorNombre[$mi['name']] = $mi;
