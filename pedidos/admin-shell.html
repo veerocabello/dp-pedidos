@@ -122,6 +122,7 @@
         <button class="admin-tab" data-section="historial" onclick="showAdminSection('historial', this)"><span class="admin-tab-icon">📅</span><span>Historial</span></button>
         <button class="admin-tab" onclick="showAdminSection('stock-admin', this); openStockInline()"><span class="admin-tab-icon">📦</span><span>Stock</span></button>
         <button class="admin-tab" data-section="fidelizacion" onclick="showAdminSection('fidelizacion', this); renderFidelizacionList()"><span class="admin-tab-icon">🎁</span><span>Fidelización</span></button>
+        <button class="admin-tab" data-section="alertas" onclick="showAdminSection('alertas', this)"><span class="admin-tab-icon">🔔</span><span>Alertas</span><span class="admin-tab-badge" id="alertas-tab-badge" style="display:none">0</span></button>
         <!-- Empleados movido a ⚙️ con contraseña bimba -->
       </div>
         <input id="log-secret-input" placeholder="" oninput="checkLogSecret(this.value)" style="width:60px;opacity:0;position:absolute;pointer-events:none" tabindex="-1">
@@ -625,6 +626,12 @@
           </div>
           <div class="admin-toast" id="fidel-toast">✅ Cliente actualizado</div>
         </div>
+      </div>
+
+      <div class="admin-section" id="admin-alertas" style="display:none">
+        <div class="stat-panel-head" style="border-radius:12px;margin-bottom:6px">🔔 Alertas</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Pedidos que no se guardaron y precios que no cuadran con la carta — filtrado del registro de actividad.</div>
+        <div id="alertas-list" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
       <div class="admin-section" id="admin-pedidos-config">

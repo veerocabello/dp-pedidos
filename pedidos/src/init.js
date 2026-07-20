@@ -23,6 +23,18 @@ function _cargarDatosEmpleadosPrivados() {
       }
     }).catch(() => {});
   }
+  // El badge de 🔔 Alertas necesita datos frescos del log nada más
+  // entrar al panel, sin esperar a que se abra esa pestaña en concreto.
+  if (window.fb_loadActivityLog) {
+    window.fb_loadActivityLog().then(log => {
+      if (log && log.length) localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    }).catch(() => {
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  } else if (typeof updateAlertBadge === 'function') {
+    updateAlertBadge();
+  }
 }
 
 // ── INIT ADMIN DATA ──

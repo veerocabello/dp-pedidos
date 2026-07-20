@@ -1054,6 +1054,7 @@
     margin-bottom: 8px;
   }
   .admin-tab {
+    position: relative;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 5px; padding: 10px 4px;
     border-radius: 14px; border: none;
@@ -1064,11 +1065,21 @@
   }
   .admin-tab .admin-tab-icon { font-size: 20px; line-height: 1; }
   .admin-tab.active { background: var(--gold); color: #3D1F0D; font-weight: 700; }
+  .admin-tab-badge {
+    position: absolute; top: 2px; right: 6px;
+    min-width: 15px; height: 15px; padding: 0 3px;
+    border-radius: 99px; background: var(--error); color: #fff;
+    font-size: 9px; font-weight: 800; line-height: 15px; text-align: center;
+    box-shadow: 0 0 0 2px #5A3D24;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .admin-tab.active .admin-tab-badge { box-shadow: 0 0 0 2px var(--gold); }
   @media (min-width: 600px) {
-    .admin-tabs { grid-template-columns: repeat(7, 1fr); gap: 12px; }
+    .admin-tabs { grid-template-columns: repeat(8, 1fr); gap: 12px; }
     .admin-tab { padding: 12px 6px; border-radius: 16px; }
     .admin-tab .admin-tab-icon { font-size: 22px; }
     .admin-tab { font-size: 11px; }
+    .admin-modal { max-width: 760px; }
   }
 
   /* ── PESTAÑA "HOY" (estadísticas) — estilo carta ── */

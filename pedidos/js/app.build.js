@@ -8336,6 +8336,7 @@ function logActivity(action) {
   if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
     window.fb_saveActivityLog(trimmed).catch(() => {});
   }
+  if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 function renderActivityLog() {
   const log = getActivityLog();
@@ -8350,6 +8351,49 @@ function renderActivityLog() {
   // empleados, categorías...) — hay que escapar aquí, en el único sitio
   // donde se renderiza, en vez de perseguir cada origen por separado.
   el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(escapeHtml(e.time), "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n    </div>")).join('');
+}
+
+// ══════════════════════════════════════════════
+//  ALERTAS (subconjunto del registro de actividad: fallos silenciosos
+//  al guardar pedidos/sellos y precios que no cuadran con la carta)
+// ══════════════════════════════════════════════
+const ALERTAS_SEEN_KEY = 'dpf_alertas_last_seen_ts';
+function isAlertEntry(action) {
+  return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0);
+}
+function getAlertEntries() {
+  return getActivityLog().filter(e => isAlertEntry(e.action));
+}
+function updateAlertBadge() {
+  const badge = document.getElementById('alertas-tab-badge');
+  if (!badge) return;
+  const lastSeen = localStorage.getItem(ALERTAS_SEEN_KEY) || '';
+  const unseen = getAlertEntries().filter(e => (e.ts || '') > lastSeen).length;
+  if (unseen > 0) {
+    badge.textContent = unseen > 99 ? '99+' : String(unseen);
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+function renderAlertas() {
+  const entries = getAlertEntries();
+  const el = document.getElementById('alertas-list');
+  if (!el) return;
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos — todo se ha guardado correctamente</div>';
+  } else {
+    el.innerHTML = entries.map(e => {
+      const critico = e.action.indexOf('🚨') === 0;
+      const bg = critico ? '#FBEAE7' : '#FDECD5';
+      const border = critico ? '#F0CFC8' : '#EFD6A9';
+      return "\n      <div style=\"display:flex;gap:10px;padding:10px 12px;border-radius:10px;background:".concat(bg, ";border:1px solid ").concat(border, "\">\n        <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n        <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n      </div>");
+    }).join('');
+  }
+  // Marcar como vistos: la próxima vez que se recalcule el badge, estos
+  // avisos ya no cuentan como nuevos.
+  if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
+  updateAlertBadge();
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
@@ -10582,6 +10626,7 @@ function showAdminSection(id, btn) {
     loadCatBlockUI();
   }
   if (id === 'log') renderActivityLog();
+  if (id === 'alertas') renderAlertas();
   if (id === 'pwd') loadUrlTokenUI();
   if (id === 'stock-config') {
     loadStockAdminList();
@@ -12254,6 +12299,18 @@ function _cargarDatosEmpleadosPrivados() {
         if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
       }
     }).catch(() => {});
+  }
+  // El badge de 🔔 Alertas necesita datos frescos del log nada más
+  // entrar al panel, sin esperar a que se abra esa pestaña en concreto.
+  if (window.fb_loadActivityLog) {
+    window.fb_loadActivityLog().then(log => {
+      if (log && log.length) localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    }).catch(() => {
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  } else if (typeof updateAlertBadge === 'function') {
+    updateAlertBadge();
   }
 }
 
