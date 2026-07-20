@@ -34,7 +34,12 @@ $tmp_dir = sys_get_temp_dir();
 $window  = 300;
 $max_ip  = 30;
 
-$ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
+// quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
+// fije de verdad), así que confiar en él permite saltarse el límite de
+// intentos mandando un valor distinto en cada petición. REMOTE_ADDR es
+// la IP real de quien conecta — no se puede falsificar en la capa TCP.
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_fidelizacion_ip_' . md5($ip) . '.json';
 
@@ -199,6 +204,35 @@ function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $et
     return $httpCode === 200;
 }
 
+// Igual que _normOrderKey() en pedidos-vivo-cocina.js: quita '#' y una 'T' inicial
+function normOrderKey($num) {
+    return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
+}
+
+// Comprueba que orderNum es un pedido REAL guardado hoy, con ese teléfono
+// exacto y con al menos un producto "Patata..." — antes registrarSello se
+// fiaba de lo que dijera el cliente (orderNum, tienePatata, teléfono), así
+// que se podían inventar números de pedido para sumar sellos y premios sin
+// límite, sin haber pedido nada de verdad.
+function ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono) {
+    $todayKey = date('Y-m-d');
+    $ticketKey = normOrderKey($orderNum);
+    $ch = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $ticket = json_decode($response, true);
+    if (!is_array($ticket)) return false;
+    $telefonoTicket = preg_replace('/[^0-9]/', '', (string)($ticket['phone'] ?? ''));
+    if ($telefonoTicket !== $telefono) return false;
+    foreach (($ticket['items'] ?? []) as $it) {
+        $nombre = isset($it['name']) ? mb_strtolower(trim((string)$it['name'])) : '';
+        if (strpos($nombre, 'patata') === 0) return true;
+    }
+    return false;
+}
+
 // Añade una entrada al mismo "Registro de actividad" que ya se ve en el
 // panel de admin (config/activityLog) — para que un fallo silencioso del
 // servidor aparezca donde el admin ya mira cada día, en vez de perderse
@@ -263,6 +297,10 @@ try {
 
         if (!$orderNum || !$tienePatata) {
             echo json_encode(['success' => true, 'skipped' => true]);
+            exit;
+        }
+        if (!ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono)) {
+            echo json_encode(['success' => false, 'error' => 'Pedido no encontrado']);
             exit;
         }
 

@@ -220,6 +220,65 @@ function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $et
     return fbPutSiCoincide($databaseURL, $path, $accessToken, json_encode($data), $etag);
 }
 
+// ── Antifraude por teléfono (lista negra + cooldown/límite diario) ──
+// Antes esto SOLO se comprobaba en el navegador (carrito-checkout.js, antes
+// de llamar aquí) — quien mandara la petición directamente a este script,
+// sin pasar por la web, se saltaba la lista negra y el límite de pedidos
+// por teléfono sin más límite que el genérico de 20 pedidos/IP/10min.
+// Devuelve null si puede pedir, o un mensaje de error si no.
+function comprobarAntifraudeTelefono($databaseURL, $accessToken, $phoneClean, $todayKey) {
+    $blResp = fbGetJsonStringConEtag($databaseURL, 'config/blacklist', $accessToken);
+    $blacklist = is_array($blResp['data']) ? $blResp['data'] : [];
+    if (in_array($phoneClean, $blacklist, true)) {
+        return 'No es posible realizar pedidos desde este número de teléfono.';
+    }
+
+    $cfgResp = fbGetJsonStringConEtag($databaseURL, 'config/antiSpamCfg', $accessToken);
+    $cfg = is_array($cfgResp['data']) ? $cfgResp['data'] : [];
+    $cooldownMin = is_numeric($cfg['cooldown'] ?? null) ? (float)$cfg['cooldown'] : 45;
+    $dailyLimit = is_numeric($cfg['dailyLimit'] ?? null) ? (int)$cfg['dailyLimit'] : 3;
+
+    $logCh = curl_init($databaseURL . '/phoneLog/' . $todayKey . '/' . $phoneClean . '.json');
+    curl_setopt($logCh, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($logCh, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+    $log = json_decode(curl_exec($logCh), true);
+    curl_close($logCh);
+    if (!is_array($log)) return null;
+
+    $count = is_numeric($log['count'] ?? null) ? (int)$log['count'] : 0;
+    if ($dailyLimit > 0 && $count >= $dailyLimit) {
+        return 'Has alcanzado el límite de pedidos para hoy. Inténtalo mañana.';
+    }
+    $timestamps = is_array($log['timestamps'] ?? null) ? $log['timestamps'] : [];
+    if ($cooldownMin > 0 && $timestamps) {
+        $lastTs = max(array_map('floatval', $timestamps));
+        $cooldownMs = $cooldownMin * 60 * 1000;
+        $ahoraMs = microtime(true) * 1000;
+        if ($lastTs && ($ahoraMs - $lastTs) < $cooldownMs) {
+            $restanteMin = (int)ceil(($cooldownMs - ($ahoraMs - $lastTs)) / 60000);
+            return 'Debes esperar ' . $restanteMin . ' minuto' . ($restanteMin !== 1 ? 's' : '') . ' antes de hacer otro pedido.';
+        }
+    }
+    return null;
+}
+
+// Incrementa phoneLog/<fecha>/<phone> de forma atómica (lectura-modificación-
+// escritura con reintento) — antes solo lo escribía el navegador DESPUÉS de
+// que el pedido se diera por bueno, así que quien llamara aquí directamente
+// podía saltarse tanto la comprobación como el propio registro.
+function registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey) {
+    $path = 'phoneLog/' . $todayKey . '/' . $phoneClean;
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+        $log = is_array($leido['data']) ? $leido['data'] : ['count' => 0, 'timestamps' => []];
+        $log['count'] = (is_numeric($log['count'] ?? null) ? (int)$log['count'] : 0) + 1;
+        if (!is_array($log['timestamps'] ?? null)) $log['timestamps'] = [];
+        $log['timestamps'][] = (int)(microtime(true) * 1000);
+        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $log, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
 // Añade una entrada al mismo "Registro de actividad" que ya se ve en el
 // panel de admin (config/activityLog) — para que un fallo silencioso del
 // servidor, o un pedido con un precio que no cuadra, aparezcan donde el
@@ -270,9 +329,16 @@ function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
     foreach ($items as $it) {
         $nombre = $it['name'] ?? null;
         if (!$nombre || !isset($menuPorNombre[$nombre])) continue; // custom/extra, no catalogado aquí
-        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : null;
+        $qty = isset($it['qty']) ? (float)$it['qty'] : null;
         $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : null;
         if ($qty === null || $subtotal === null) continue;
+        // qty:0 con subtotal>0 es tan sospechoso como un precio que no
+        // cuadra (antes se ignoraba del todo — qty>0 era obligatorio para
+        // entrar aquí, así que un qty:0 se saltaba el aviso sin más).
+        if ($qty <= 0) {
+            if ($subtotal > 0.02) $avisos[] = sprintf('%s: qty=0 pero subtotal %.2f€', $nombre, $subtotal);
+            continue;
+        }
         $precioReal = (float)$menuPorNombre[$nombre]['price'];
         $precioEnviado = $subtotal / $qty;
         if (abs($precioEnviado - $precioReal) > 0.02) {
@@ -343,6 +409,18 @@ try {
     // datos de pedido nuevos del cliente, solo relee lo que ya hay guardado,
     // así que no reabre el riesgo de precios/items manipulados.
     if (($payload['action'] ?? '') === 'reintentarStats') {
+        // Esta acción no pide PIN ni sesión de admin (solo se llama desde
+        // el botón de la pestaña Alertas, pero el propio endpoint no lo
+        // comprueba) — no permite fabricar pedidos ni cambiar precios
+        // (relee lo que ya hay guardado), pero si/no encuentra el ticket sí
+        // deja adivinar qué números de pedido existieron un día dado. Un
+        // límite mucho más estricto que el de pedidos normales (compartido
+        // con clientes reales) reduce esa ventana a paso de tortuga.
+        if (!dpf_check_limit($tmp_dir . '/dpf_reintentarstats_ip_' . md5($ip) . '.json', 5, $window)) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+            exit;
+        }
         $rOrderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
         $rFecha = isset($payload['fecha']) ? (string)$payload['fecha'] : '';
         if (!preg_match('/^T\d{3,5}$/', $rOrderNum) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $rFecha)) {
@@ -429,6 +507,17 @@ try {
     $todayKey = date('Y-m-d');
     $horaLabel = date('H:i');
     $ticketKey = normOrderKey($orderNum);
+    $phoneClean = preg_replace('/[^0-9]/', '', $phone);
+
+    // ── ANTIFRAUDE: lista negra + cooldown/límite diario por teléfono ──
+    // Esto SÍ bloquea el pedido (a diferencia de los avisos de precio/total
+    // de abajo) — son las mismas reglas que ya aplicaba el navegador, solo
+    // que ahora también se hacen cumplir aquí para quien se salte la web.
+    $errorAntifraude = comprobarAntifraudeTelefono($databaseURL, $accessToken, $phoneClean, $todayKey);
+    if ($errorAntifraude) {
+        echo json_encode(['success' => false, 'error' => $errorAntifraude]);
+        exit;
+    }
 
     // ── 0. COMPROBACIÓN DE PRECIOS Y TOTAL (solo aviso, nunca bloquea el pedido) ──
     $avisosPrecios = comprobarPreciosSospechosos($databaseURL, $accessToken, $items);
@@ -505,6 +594,9 @@ try {
             usleep(rand(20000, 80000));
         }
     }
+
+    // ── 4. REGISTRAR EN phoneLog (para el cooldown/límite diario de próximos pedidos) ──
+    registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey);
 
     echo json_encode(['success' => true]);
 } catch (Exception $e) {

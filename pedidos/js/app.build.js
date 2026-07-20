@@ -3388,10 +3388,9 @@ async function _finalizarPedido() {
   }
 
   await showSuccess(orderNum, slotTime);
-  // Registrar teléfono en Firebase para cooldown/límite diario server-side
-  if (window.fb_logPhoneOrder && phone) {
-    window.fb_logPhoneOrder(phoneClean, Date.now()).catch(() => {});
-  }
+  // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
+  // guardar-pedido.php al guardar el pedido — hacerlo también aquí
+  // contaría cada pedido dos veces.
   // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
   const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
