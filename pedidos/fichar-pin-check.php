@@ -29,7 +29,12 @@ $tmp_dir = sys_get_temp_dir();
 $window  = 300;
 $max_ip  = 15;
 
-$ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
+// quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
+// fije de verdad), así que confiar en él permite saltarse el límite de
+// intentos mandando un valor distinto en cada petición. REMOTE_ADDR es
+// la IP real de quien conecta — no se puede falsificar en la capa TCP.
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_fichar_ip_' . md5($ip) . '.json';
 

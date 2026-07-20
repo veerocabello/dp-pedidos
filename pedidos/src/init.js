@@ -35,6 +35,29 @@ function _cargarDatosEmpleadosPrivados() {
   } else if (typeof updateAlertBadge === 'function') {
     updateAlertBadge();
   }
+  // Tokens de acceso (?bimba=/?key=) y clave de stock: solo se cargan al
+  // panel de ajustes DESPUÉS de un login real, para no exponerlos a
+  // cualquier visitante. La comprobación de ?bimba=/?key= en sí la hace
+  // el servidor (bimba-verify.php), este valor cacheado solo sirve para
+  // que la propia admin pueda ver/copiar el enlace desde Ajustes.
+  if (window.fb_loadUrlToken) {
+    window.fb_loadUrlToken().then(t => {
+      if (t) {
+        localStorage.setItem(URL_TOKEN_KEY, t);
+        if (typeof loadUrlTokenUI === 'function') loadUrlTokenUI();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadBimbaToken) {
+    window.fb_loadBimbaToken().then(t => {
+      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+    }).catch(() => {});
+  }
+  if (window.fb_loadStockPwd) {
+    window.fb_loadStockPwd().then(pwd => {
+      if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
+    }).catch(() => {});
+  }
 }
 
 // ── INIT ADMIN DATA ──
@@ -236,26 +259,14 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {

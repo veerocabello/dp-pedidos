@@ -1,11 +1,18 @@
 <?php
 // ═══════════════════════════════════════════════════════════
-//  VERIFICACIÓN DEL PIN DE "BIMBA" — EN EL SERVIDOR
+//  VERIFICACIÓN DEL PIN DE "BIMBA" Y DE LOS TOKENS DE ACCESO
+//  POR URL (?bimba=... y ?key=...) — EN EL SERVIDOR
 //  Dulce Patata Food
 //
-//  Antes esto se comprobaba en el navegador (el hash del PIN
-//  estaba visible en el código JavaScript). Ahora se comprueba
-//  aquí, donde nadie puede verlo, y con límite de intentos.
+//  Antes esto se comprobaba en el navegador: el hash del PIN
+//  estaba en el JS, y los tokens de ?bimba=/?key= se descargaban
+//  a config/urlToken y config/bimbaToken en el localStorage de
+//  CUALQUIER visitante (para que la comparación funcionara sin
+//  haber iniciado sesión), lo que significaba que cualquier
+//  cliente podía leer su propio localStorage y auto-concederse
+//  acceso. Ahora los tres se comprueban aquí, con la cuenta de
+//  servicio (el navegador nunca ve el valor real) y con límite
+//  de intentos.
 // ═══════════════════════════════════════════════════════════
 
 header('Access-Control-Allow-Origin: https://pedidos.dulcepatatafood.es');
@@ -25,12 +32,72 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // ── El mismo PIN y sal que ya tenías, ahora cargados desde fuera de public_html ──
 require_once __DIR__ . '/bimba-config.php';
 
+// ── Credenciales de Firebase (solo hacen falta para las acciones de token) ──
+$rutaCredenciales = __DIR__ . '/../../firebase-credenciales.json';
+$databaseURL = 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app';
+
+function base64url_encode($data) {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+function obtenerTokenAcceso($rutaCredenciales) {
+    $creds = json_decode(file_get_contents($rutaCredenciales), true);
+    if (!$creds || !isset($creds['private_key'])) {
+        throw new Exception('No se pudo leer el archivo de credenciales.');
+    }
+    $now = time();
+    $header = base64url_encode(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $claims = base64url_encode(json_encode([
+        'iss'   => $creds['client_email'],
+        'scope' => 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email',
+        'aud'   => 'https://oauth2.googleapis.com/token',
+        'exp'   => $now + 3600,
+        'iat'   => $now,
+    ]));
+    $unsigned = $header . '.' . $claims;
+    $signature = '';
+    openssl_sign($unsigned, $signature, $creds['private_key'], 'SHA256');
+    $jwt = $unsigned . '.' . base64url_encode($signature);
+
+    $ch = curl_init('https://oauth2.googleapis.com/token');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        'assertion'  => $jwt,
+    ]));
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $data = json_decode($response, true);
+    if (!isset($data['access_token'])) {
+        throw new Exception('No se pudo obtener el token de acceso: ' . $response);
+    }
+    return $data['access_token'];
+}
+// Lee un nodo de tipo string (config/bimbaToken, config/urlToken) con la cuenta de servicio.
+function fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
+    $accessToken = obtenerTokenAcceso($rutaCredenciales);
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $val = json_decode($response, true);
+    return is_string($val) ? $val : '';
+}
+
 // ── LÍMITE DE INTENTOS: máximo 5 intentos por IP cada 10 minutos ──
+// Compartido entre el PIN y los tokens de URL — todos son intentos de
+// adivinar el mismo tipo de secreto de acceso al panel.
 $tmp_dir = sys_get_temp_dir();
 $window  = 600;
 $max_ip  = 5;
 
-$ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
+// quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
+// fije de verdad), así que confiar en él permite saltarse el límite de
+// intentos mandando un valor distinto en cada petición. REMOTE_ADDR es
+// la IP real de quien conecta — no se puede falsificar en la capa TCP.
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_bimba_ip_' . md5($ip) . '.json';
 
@@ -51,17 +118,13 @@ function dpf_gc_rate_limit_files() {
 }
 dpf_gc_rate_limit_files();
 
-// ── Comprobar el PIN ──
 $data = json_decode(file_get_contents('php://input'), true);
-$pin = isset($data['pin']) ? (string)$data['pin'] : '';
-$hash = hash('sha256', $pin . BIMBA_SALT);
+$action = isset($data['action']) ? (string)$data['action'] : 'pin';
 
-// Todo el ciclo (comprobar el límite, verificar el PIN y anotar/limpiar el
-// contador) pasa con el lock exclusivo abierto de principio a fin. Antes el
-// límite se consultaba (peek) y se anotaba (check_limit) en dos pasos
-// sueltos y sin lock en la lectura: varias peticiones a la vez podían pasar
-// el peek antes de que ninguna anotara su fallo, saltándose el máximo de
-// intentos por fuerza bruta.
+// Todo el ciclo (comprobar el límite, verificar el secreto y anotar/limpiar
+// el contador) pasa con el lock exclusivo abierto de principio a fin — si
+// no, varias peticiones a la vez podían pasar la comprobación del límite
+// antes de que ninguna anotara su fallo, saltándose el máximo de intentos.
 $fp = fopen($ip_file, 'c+');
 if ($fp === false) {
     http_response_code(500);
@@ -86,14 +149,14 @@ if (count($log) >= $max_ip) {
     exit();
 }
 
-if (hash_equals(BIMBA_PWD_HASH, $hash)) {
-    // Acierto: no cuenta para el límite, se limpia el contador de fallos de esta IP
+function dpf_bimba_acierto($fp) {
     ftruncate($fp, 0);
     flock($fp, LOCK_UN);
     fclose($fp);
     echo json_encode(['success' => true]);
-} else {
-    // Fallo: este sí cuenta para el límite
+    exit();
+}
+function dpf_bimba_fallo($fp, $log, $now) {
     $log[] = $now;
     ftruncate($fp, 0);
     rewind($fp);
@@ -102,4 +165,37 @@ if (hash_equals(BIMBA_PWD_HASH, $hash)) {
     flock($fp, LOCK_UN);
     fclose($fp);
     echo json_encode(['success' => false]);
+    exit();
+}
+
+if ($action === 'checkBimbaToken' || $action === 'checkAdminUrlToken') {
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($token === '' || strlen($token) > 200) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    try {
+        $path = $action === 'checkBimbaToken' ? 'config/bimbaToken' : 'config/urlToken';
+        $real = fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales);
+    } catch (Exception $e) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($real !== '' && hash_equals($real, $token)) {
+        dpf_bimba_acierto($fp);
+    } else {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+}
+
+// ── Comprobar el PIN (comportamiento por defecto, action: 'pin' u omitido) ──
+$pin = isset($data['pin']) ? (string)$data['pin'] : '';
+$hash = hash('sha256', $pin . BIMBA_SALT);
+
+if (hash_equals(BIMBA_PWD_HASH, $hash)) {
+    dpf_bimba_acierto($fp);
+} else {
+    dpf_bimba_fallo($fp, $log, $now);
 }

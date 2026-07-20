@@ -8197,20 +8197,33 @@ function getUrlToken() {
 function getBimbaToken() {
   return localStorage.getItem(BIMBA_TOKEN_KEY) || '';
 }
-(function checkUrlToken() {
+(async function checkUrlToken() {
   const params = new URLSearchParams(window.location.search);
+
+  // Ambos tokens (?key= y ?bimba=) se comprueban en el servidor
+  // (bimba-verify.php) con límite de intentos — antes se comparaban aquí
+  // contra un valor precargado en localStorage para TODO visitante, lo
+  // que permitía a cualquier cliente leer su propio localStorage y
+  // auto-concederse acceso sin conocer el token real.
 
   // Token admin normal
   const key = params.get('key');
   if (key) {
-    const saved = getUrlToken();
-    if (saved && key === saved) {
-      setTimeout(() => {
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('🔗 Acceso por URL token');
-        openAdmin();
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkAdminUrlToken', token: key })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => {
+          setTimeout(_updateAudioBannerState, 200);
+          logActivity('🔗 Acceso por URL token');
+          openAdmin();
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 
   // Token bimba — abre directamente el panel sin contraseña.
@@ -8219,17 +8232,32 @@ function getBimbaToken() {
   // tickets, gastos, fichajes, etc. Solo sirve para ver la interfaz.
   const bimbaKey = params.get('bimba');
   if (bimbaKey) {
-    const saved = getBimbaToken();
-    if (saved && bimbaKey === saved) {
-      setTimeout(() => {
-        logActivity('🔗 Acceso bimba por URL token');
-        _adminLoggedIn = true; window._adminLoggedIn = true;
-        openStockConfigSecret();
-        document.getElementById('admin-overlay').classList.add('open');
-        document.getElementById('admin-login').style.display = 'none';
-        document.getElementById('admin-panel').style.display = 'block';
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkBimbaToken', token: bimbaKey })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // admin-shell.html se inyecta de forma diferida (carga eager a los
+        // 2s, o al vuelo desde openAdmin()) — este acceso directo por URL
+        // puede llegar antes de que exista, así que hay que esperar a que
+        // esté listo antes de tocar sus elementos (si no, "#admin-overlay"
+        // aún no existe y todo esto revienta con un error silencioso).
+        if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
+          await new Promise(resolve => loadAdminShell(resolve));
+        }
+        setTimeout(() => {
+          logActivity('🔗 Acceso bimba por URL token');
+          _adminLoggedIn = true; window._adminLoggedIn = true;
+          openStockConfigSecret();
+          document.getElementById('admin-overlay').classList.add('open');
+          document.getElementById('admin-login').style.display = 'none';
+          document.getElementById('admin-panel').style.display = 'block';
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 })();
 
@@ -8644,8 +8672,12 @@ function buildTicketHTML(data) {
   const tc = getTicketConfig();
   const sep = '─'.repeat(32);
   const sep2 = '═'.repeat(32);
+  // Los nombres de producto/extras vienen de lo que el navegador mand\u00F3 a
+  // guardar-pedido.php \u2014 pueden manipularse con una petici\u00F3n directa al
+  // servidor (sin pasar por la web), as\u00ED que hay que escaparlos igual que
+  // nombre/tel\u00E9fono/notas de abajo, no son m\u00E1s de fiar que esos.
   let itemsHTML = items.map(_ref21 => {
-    let n = _ref21.name,
+    let n = escapeHtml(_ref21.name),
       qty = _ref21.qty,
       subtotal = _ref21.subtotal,
       extras = _ref21.extras;
@@ -8653,7 +8685,7 @@ function buildTicketHTML(data) {
     const label = qty + 'x ' + n;
     if (extras && extras.length > 0) {
       const extrasList = extras.map(function(e) {
-        const extraName = (e && e.name) ? e.name : e;
+        const extraName = escapeHtml((e && e.name) ? e.name : e);
         const extraPrice = (e && e.price) ? '+' + parseFloat(e.price).toFixed(2).replace('.', ',') + ' \u20AC' : '';
         return '<div style="display:flex;justify-content:space-between"><span>&nbsp;&nbsp;&nbsp;\xB7 ' + extraName + '</span>' + (extraPrice ? '<span style="color:#aaa">' + extraPrice + '</span>' : '') + '</div>';
       }).join('');
@@ -12361,6 +12393,29 @@ function _cargarDatosEmpleadosPrivados() {
   } else if (typeof updateAlertBadge === 'function') {
     updateAlertBadge();
   }
+  // Tokens de acceso (?bimba=/?key=) y clave de stock: solo se cargan al
+  // panel de ajustes DESPUÉS de un login real, para no exponerlos a
+  // cualquier visitante. La comprobación de ?bimba=/?key= en sí la hace
+  // el servidor (bimba-verify.php), este valor cacheado solo sirve para
+  // que la propia admin pueda ver/copiar el enlace desde Ajustes.
+  if (window.fb_loadUrlToken) {
+    window.fb_loadUrlToken().then(t => {
+      if (t) {
+        localStorage.setItem(URL_TOKEN_KEY, t);
+        if (typeof loadUrlTokenUI === 'function') loadUrlTokenUI();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadBimbaToken) {
+    window.fb_loadBimbaToken().then(t => {
+      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+    }).catch(() => {});
+  }
+  if (window.fb_loadStockPwd) {
+    window.fb_loadStockPwd().then(pwd => {
+      if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
+    }).catch(() => {});
+  }
 }
 
 // ── INIT ADMIN DATA ──
@@ -12562,26 +12617,14 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {

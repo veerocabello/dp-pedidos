@@ -41,7 +41,12 @@ $tmp_dir = sys_get_temp_dir();
 $window  = 600;
 $max_ip  = 20;
 
-$ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
+// quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
+// fije de verdad), así que confiar en él permite saltarse el límite de
+// intentos mandando un valor distinto en cada petición. REMOTE_ADDR es
+// la IP real de quien conecta — no se puede falsificar en la capa TCP.
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_guardarpedido_ip_' . md5($ip) . '.json';
 
@@ -277,6 +282,51 @@ function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
     return $avisos;
 }
 
+// ── Comprobación (solo aviso, nunca bloquea el pedido) de que el TOTAL
+// enviado no sea más bajo de lo que un descuento/premio legítimo podría
+// explicar. La comprobación de precios de arriba solo mira productos que
+// coinciden por nombre con la carta — esto la complementa mirando el
+// total final, que hasta ahora no se verificaba en absoluto: se podía
+// pedir con productos reales a precio real y aun así forzar el total a
+// cualquier cifra.
+//
+// Margen que SÍ se admite como legítimo (no genera aviso):
+//  - El código de descuento aplicado (si lo hay), por su % real guardado.
+//  - El premio de fidelización (patata gratis), aproximado como el precio
+//    unitario de la patata más cara del carrito — igual que calcula el
+//    propio navegador en _finalizarPedido() (carrito-checkout.js).
+// No se puede saber desde aquí si el cliente REALMENTE tenía derecho a
+// ese premio, así que se admite siempre como margen: es mejor un falso
+// negativo ocasional que bloquear/avisar de pedidos legítimos.
+function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode) {
+    $itemsSum = 0;
+    $maxPatataUnit = 0;
+    foreach ($items as $it) {
+        if (!empty($it['isFee'])) continue; // los gastos de gestión suman aparte, no hace falta cubrirlos con margen
+        $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : 0;
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 1;
+        $itemsSum += $subtotal;
+        $nombre = isset($it['name']) ? mb_strtolower(trim((string)$it['name'])) : '';
+        if (strpos($nombre, 'patata') === 0) {
+            $unit = $subtotal / $qty;
+            if ($unit > $maxPatataUnit) $maxPatataUnit = $unit;
+        }
+    }
+    $descuentoCodigo = 0;
+    if ($discountCode) {
+        $discResp = fbGetConEtag($databaseURL, 'discounts/' . strtoupper($discountCode), $accessToken);
+        $disc = is_array($discResp['data']) ? $discResp['data'] : null;
+        if ($disc && isset($disc['pct'])) {
+            $descuentoCodigo = $itemsSum * ((float)$disc['pct'] / 100);
+        }
+    }
+    $margen = $maxPatataUnit + $descuentoCodigo + 0.05;
+    if ($total < ($itemsSum - $margen)) {
+        return sprintf('total enviado %.2f€, suma de productos %.2f€ (margen de descuentos/premio admitido: %.2f€)', $total, $itemsSum, $margen);
+    }
+    return null;
+}
+
 try {
     $raw = file_get_contents('php://input');
     $payload = json_decode($raw, true);
@@ -353,10 +403,14 @@ try {
     $horaLabel = date('H:i');
     $ticketKey = normOrderKey($orderNum);
 
-    // ── 0. COMPROBACIÓN DE PRECIOS (solo aviso, nunca bloquea el pedido) ──
+    // ── 0. COMPROBACIÓN DE PRECIOS Y TOTAL (solo aviso, nunca bloquea el pedido) ──
     $avisosPrecios = comprobarPreciosSospechosos($databaseURL, $accessToken, $items);
     if ($avisosPrecios) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible precio manipulado en pedido ' . $orderNum . ' — ' . implode(' · ', $avisosPrecios));
+    }
+    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode);
+    if ($avisoTotal) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible total manipulado en pedido ' . $orderNum . ' — ' . $avisoTotal);
     }
 
     // ── 1. GUARDAR TICKET (para reimprimir) ──
