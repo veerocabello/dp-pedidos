@@ -173,6 +173,68 @@ function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
 }
 
+// ── Nodos guardados como STRING JSON (igual que jset/jget del resto de la
+// web) sobre las mismas funciones fbGetConEtag/fbPutSiCoincide de arriba.
+function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
+    $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+    $arr = is_string($leido['data']) ? json_decode($leido['data'], true) : null;
+    return ['data' => is_array($arr) ? $arr : null, 'etag' => $leido['etag']];
+}
+function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
+    return fbPutSiCoincide($databaseURL, $path, $accessToken, json_encode($data), $etag);
+}
+
+// Añade una entrada al mismo "Registro de actividad" que ya se ve en el
+// panel de admin (config/activityLog) — para que un fallo silencioso del
+// servidor, o un pedido con un precio que no cuadra, aparezcan donde el
+// admin ya mira cada día en vez de perderse en el log de errores de PHP,
+// que nadie revisa.
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
+        $log = $leido['data'] ?: [];
+        $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        array_unshift($log, [
+            'ts'     => $ahora->format('c'),
+            'time'   => $ahora->format('d/m/Y, H:i:s'),
+            'action' => $mensaje,
+        ]);
+        if (count($log) > 200) $log = array_slice($log, 0, 200);
+        if (fbPutJsonStringSiCoincide($databaseURL, 'config/activityLog', $accessToken, $log, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
+// ── Comprobación (solo aviso, nunca bloquea el pedido) de que el precio
+// enviado por el navegador coincide con el precio real del menú. Solo
+// compara productos normales de la carta por nombre exacto — los
+// personalizados (Al Gusto/Bomba) y los "extras" no se verifican aquí,
+// porque su precio depende de una lógica más compleja (ingredientes,
+// quesos...) que no merece la pena duplicar en PHP y arriesgar
+// desincronizar del cálculo real del carrito.
+function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
+    $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
+    $menuItems = is_array($menuResp['data']['items'] ?? null) ? $menuResp['data']['items'] : [];
+    $menuPorNombre = [];
+    foreach ($menuItems as $mi) {
+        if (isset($mi['name'])) $menuPorNombre[$mi['name']] = $mi;
+    }
+    $avisos = [];
+    foreach ($items as $it) {
+        $nombre = $it['name'] ?? null;
+        if (!$nombre || !isset($menuPorNombre[$nombre])) continue; // custom/extra, no catalogado aquí
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : null;
+        $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : null;
+        if ($qty === null || $subtotal === null) continue;
+        $precioReal = (float)$menuPorNombre[$nombre]['price'];
+        $precioEnviado = $subtotal / $qty;
+        if (abs($precioEnviado - $precioReal) > 0.02) {
+            $avisos[] = sprintf('%s: enviado %.2f€, precio real %.2f€', $nombre, $precioEnviado, $precioReal);
+        }
+    }
+    return $avisos;
+}
+
 try {
     $raw = file_get_contents('php://input');
     $payload = json_decode($raw, true);
@@ -205,6 +267,12 @@ try {
     $todayKey = date('Y-m-d');
     $horaLabel = date('H:i');
     $ticketKey = normOrderKey($orderNum);
+
+    // ── 0. COMPROBACIÓN DE PRECIOS (solo aviso, nunca bloquea el pedido) ──
+    $avisosPrecios = comprobarPreciosSospechosos($databaseURL, $accessToken, $items);
+    if ($avisosPrecios) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible precio manipulado en pedido ' . $orderNum . ' — ' . implode(' · ', $avisosPrecios));
+    }
 
     // ── 1. GUARDAR TICKET (para reimprimir) ──
     // tickets/<fecha>/<num> es un nodo por pedido: sin condición de carrera
@@ -272,6 +340,7 @@ try {
 
     if (!$statsGuardado) {
         error_log('[guardar-pedido] No se pudo actualizar stats para el pedido ' . $orderNum . ' tras varios intentos.');
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido ' . $orderNum . ' NO se pudo guardar en estadísticas tras varios intentos — revisa "Pedidos en vivo"');
     }
 
     // ── 3. INCREMENTAR USO DEL CÓDIGO DE DESCUENTO (si se usó uno) ──

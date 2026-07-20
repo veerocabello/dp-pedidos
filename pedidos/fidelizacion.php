@@ -167,6 +167,58 @@ function fbSetClienteSiCoincide($databaseURL, $telefono, $accessToken, $cliente,
     return $httpCode === 200;
 }
 
+// ── Lectura/escritura CONDICIONAL de un nodo cualquiera guardado como
+// STRING JSON (con ETag) — para añadir al "Registro de actividad" del
+// panel de admin.
+function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
+    $etag = null;
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
+        if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
+        return strlen($header);
+    });
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $raw = json_decode($response, true);
+    $arr = is_string($raw) ? json_decode($raw, true) : null;
+    return ['data' => is_array($arr) ? $arr : null, 'etag' => $etag];
+}
+function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+    $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
+    if ($etag) $headers[] = 'If-Match: ' . $etag;
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(json_encode($data)));
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $httpCode === 200;
+}
+
+// Añade una entrada al mismo "Registro de actividad" que ya se ve en el
+// panel de admin (config/activityLog) — para que un fallo silencioso del
+// servidor aparezca donde el admin ya mira cada día, en vez de perderse
+// en el log de errores de PHP.
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
+        $log = $leido['data'] ?: [];
+        $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        array_unshift($log, [
+            'ts'     => $ahora->format('c'),
+            'time'   => $ahora->format('d/m/Y, H:i:s'),
+            'action' => $mensaje,
+        ]);
+        if (count($log) > 200) $log = array_slice($log, 0, 200);
+        if (fbPutJsonStringSiCoincide($databaseURL, 'config/activityLog', $accessToken, $log, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
 try {
     $raw = file_get_contents('php://input');
     $payload = json_decode($raw, true);
@@ -276,6 +328,7 @@ try {
         }
 
         if (!$guardado) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo registrar el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') tras varios intentos');
             echo json_encode(['success' => false, 'error' => 'No se pudo registrar, inténtalo de nuevo.']);
             exit;
         }

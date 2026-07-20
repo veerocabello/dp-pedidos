@@ -185,6 +185,26 @@ function fbSetArrayStringSiCoincide($databaseURL, $path, $accessToken, $arr, $et
     return $httpCode === 200;
 }
 
+// Añade una entrada al mismo "Registro de actividad" que ya se ve en el
+// panel de admin (config/activityLog, guardado igual que config/fichajes:
+// un array como STRING JSON) — para que un fallo silencioso del servidor
+// aparezca donde el admin ya mira cada día.
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetArrayStringConEtag($databaseURL, 'config/activityLog', $accessToken);
+        $log = $leido['arr'];
+        $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        array_unshift($log, [
+            'ts'     => $ahora->format('c'),
+            'time'   => $ahora->format('d/m/Y, H:i:s'),
+            'action' => $mensaje,
+        ]);
+        if (count($log) > 200) $log = array_slice($log, 0, 200);
+        if (fbSetArrayStringSiCoincide($databaseURL, 'config/activityLog', $accessToken, $log, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
 // Aplica $mutator($fichajesActuales) sobre config/fichajes de forma segura
 // frente a fichajes concurrentes. $mutator debe devolver:
 //   ['todos' => $arrayNuevo]   → intentar guardar
@@ -318,6 +338,9 @@ try {
             return ['todos' => $todos];
         });
         if (!$resultado['ok']) {
+            if ($resultado['error'] === 'No se pudo registrar, inténtalo de nuevo.') {
+                fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo registrar el fichaje manual de ' . $empId . ' (' . $fecha . ' ' . $hora . ') tras varios intentos');
+            }
             echo json_encode(['success' => false, 'error' => $resultado['error']]);
             exit;
         }
@@ -398,6 +421,9 @@ try {
         });
 
         if (!$resultado['ok']) {
+            if ($resultado['error'] === 'No se pudo registrar, inténtalo de nuevo.') {
+                fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo registrar el fichaje de ' . $empId . ' (' . $tipo . ') tras varios intentos');
+            }
             echo json_encode(['success' => false, 'error' => $resultado['error']]);
             exit;
         }
