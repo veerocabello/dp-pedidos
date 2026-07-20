@@ -498,7 +498,11 @@ try {
     if ($total < 0) $total = 0;
     $discountCode = isset($payload['discountCode']) && $payload['discountCode'] !== '' ? strtoupper((string)$payload['discountCode']) : null;
 
-    if (!$name || !$phone) {
+    $phoneClean = preg_replace('/[^0-9]/', '', (string)$phone);
+    // La web ya exige 9 dígitos (carrito-checkout.js) — comprobarlo también
+    // aquí evita que un teléfono no numérico caiga en el mismo "cajón"
+    // vacío de phoneLog/lista negra que cualquier otro teléfono inválido.
+    if (!$name || !$phone || strlen($phoneClean) !== 9) {
         echo json_encode(['success' => false, 'error' => 'Faltan datos del pedido']);
         exit;
     }
@@ -507,7 +511,6 @@ try {
     $todayKey = date('Y-m-d');
     $horaLabel = date('H:i');
     $ticketKey = normOrderKey($orderNum);
-    $phoneClean = preg_replace('/[^0-9]/', '', $phone);
 
     // ── ANTIFRAUDE: lista negra + cooldown/límite diario por teléfono ──
     // Esto SÍ bloquea el pedido (a diferencia de los avisos de precio/total

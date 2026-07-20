@@ -3358,9 +3358,16 @@ async function _finalizarPedido() {
   // anónimo (cualquiera que pida sin haber iniciado sesión de admin) no
   // puede escribir ahí directamente — lo hace guardar-pedido.php con la
   // cuenta de servicio.
+  // No se espera aquí (para que la pantalla de éxito aparezca al instante),
+  // pero SÍ hay que esperar a que termine antes de pedir el sello de
+  // fidelización más abajo — fidelizacion.php ahora comprueba contra el
+  // ticket ya guardado en Firebase (tickets/<fecha>/<num>), así que si se
+  // llamara antes de que este guardado termine, el sello se rechazaría por
+  // "pedido no encontrado" en pedidos completamente legítimos.
+  let _pedidoGuardadoPromise = Promise.resolve();
   if (window._pendingTicketData) {
     console.log('💾 Guardando pedido en el servidor:', orderNum);
-    fetch('guardar-pedido.php', {
+    _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3393,6 +3400,7 @@ async function _finalizarPedido() {
   // contaría cada pedido dos veces.
   // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
   const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
+  await _pedidoGuardadoPromise;
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
@@ -3411,7 +3419,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
   // pueda regalarse sellos/premios abriendo las devtools.
   try {
-    await fetch('fidelizacion.php', {
+    const res = await fetch('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3423,6 +3431,14 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
         nombre: (ticketData && ticketData.name) || ''
       })
     });
+    const data = await res.json();
+    // "skipped" es normal (pedido sin patata) — un success:false de verdad
+    // significa que el servidor rechazó el sello (antes esto se ignoraba
+    // en silencio, así que un cliente podía perder un sello legítimo sin
+    // que nadie se enterara).
+    if (!data.success && !data.skipped) {
+      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'));
+    }
   } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
@@ -6371,6 +6387,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -6380,13 +6403,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -6442,18 +6461,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
@@ -10665,7 +10677,7 @@ function expandHistorialDay(date) {
       let _ref24 = _slicedToArray(_ref23, 2),
         name = _ref24[0],
         qty = _ref24[1];
-      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(name, "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
+      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(escapeHtml(name), "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
     }).join('');
   }
   html += "<div style=\"font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px\">\uD83E\uDDFE Pedidos</div>";

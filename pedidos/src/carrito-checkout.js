@@ -944,9 +944,16 @@ async function _finalizarPedido() {
   // anónimo (cualquiera que pida sin haber iniciado sesión de admin) no
   // puede escribir ahí directamente — lo hace guardar-pedido.php con la
   // cuenta de servicio.
+  // No se espera aquí (para que la pantalla de éxito aparezca al instante),
+  // pero SÍ hay que esperar a que termine antes de pedir el sello de
+  // fidelización más abajo — fidelizacion.php ahora comprueba contra el
+  // ticket ya guardado en Firebase (tickets/<fecha>/<num>), así que si se
+  // llamara antes de que este guardado termine, el sello se rechazaría por
+  // "pedido no encontrado" en pedidos completamente legítimos.
+  let _pedidoGuardadoPromise = Promise.resolve();
   if (window._pendingTicketData) {
     console.log('💾 Guardando pedido en el servidor:', orderNum);
-    fetch('guardar-pedido.php', {
+    _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -979,6 +986,7 @@ async function _finalizarPedido() {
   // contaría cada pedido dos veces.
   // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
   const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
+  await _pedidoGuardadoPromise;
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
@@ -997,7 +1005,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
   // pueda regalarse sellos/premios abriendo las devtools.
   try {
-    await fetch('fidelizacion.php', {
+    const res = await fetch('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1009,6 +1017,14 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
         nombre: (ticketData && ticketData.name) || ''
       })
     });
+    const data = await res.json();
+    // "skipped" es normal (pedido sin patata) — un success:false de verdad
+    // significa que el servidor rechazó el sello (antes esto se ignoraba
+    // en silencio, así que un cliente podía perder un sello legítimo sin
+    // que nadie se enterara).
+    if (!data.success && !data.skipped) {
+      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'));
+    }
   } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),

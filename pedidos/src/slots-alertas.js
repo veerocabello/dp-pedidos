@@ -176,6 +176,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -185,13 +192,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -247,18 +250,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
