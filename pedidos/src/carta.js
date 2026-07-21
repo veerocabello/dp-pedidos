@@ -610,7 +610,24 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
-  const grandTotal = feeEnabled ? total + feeAmount : total;
+  // Mostrar línea de descuento si hay un código aplicado (manual o ganado
+  // en la ruleta/rasca) — antes el total mostrado en el carrito nunca
+  // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
+  // que aunque el código sí se aplicaba de verdad, la clienta no veía
+  // ningún cambio en el número y parecía que no había pasado nada.
+  const discountAmt = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
+  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
+  const discountEl = document.getElementById('cart-discount-row');
+  if (discountEl) {
+    if (discountAmt > 0 && discountCode) {
+      discountEl.style.display = 'flex';
+      document.getElementById('cart-discount-label').textContent = 'Descuento (' + discountCode + ')';
+      document.getElementById('cart-discount-amount').textContent = '-' + discountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      discountEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
   // Only show total and form if orders are open
@@ -631,6 +648,6 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode);
 }
 

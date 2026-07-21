@@ -12,16 +12,24 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
 }
-function _syncCartDrawer(cartHtml, total) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
   const feeEnabled = getFeeEnabled();
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
+  discountAmt = discountAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
+  // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
+  // tambi\u00E9n deje claro por qu\u00E9 el total baj\u00F3 (c\u00F3digo manual o premio
+  // ganado en la ruleta/rasca).
+  if (discountAmt > 0 && discountCode) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
