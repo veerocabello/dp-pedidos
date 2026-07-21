@@ -9,9 +9,61 @@
 // ═══════════════════════════════════════════════════════════
 
 const JUEGO_COLORES = ['#3D1F0D', '#C0392B', '#D9A441', '#27855a', '#8A6A4E', '#1f6f8b', '#a5471f', '#6b4226'];
+const CONFETI_COLORES = ['#D9A441', '#C0392B', '#27855a', '#3D1F0D', '#FFF8EE', '#1f6f8b'];
 
 window._juegoActivoActual = 'ninguno';
 window._juegoState = { juego: null, premio: null, code: null };
+
+// Confeti + sonido al ganar un premio de verdad (pct>0) — solo estética,
+// no afecta a nada del cálculo/aplicación del premio. El sonido se
+// sintetiza con Web Audio (sin archivo de audio que subir); si el
+// navegador bloquea el audio por lo que sea, sigue mostrándose el confeti
+// igualmente.
+function _celebrarPremio() {
+  _lanzarConfeti();
+  _sonidoCelebracion();
+}
+function _lanzarConfeti() {
+  const cont = document.createElement('div');
+  cont.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:99999;overflow:hidden';
+  document.body.appendChild(cont);
+  const N = 60;
+  for (let i = 0; i < N; i++) {
+    const piece = document.createElement('div');
+    const color = CONFETI_COLORES[i % CONFETI_COLORES.length];
+    const left = Math.random() * 100;
+    const size = 6 + Math.random() * 6;
+    const duration = 2200 + Math.random() * 1400;
+    const delay = Math.random() * 300;
+    const rot = Math.random() * 360;
+    piece.style.cssText = 'position:absolute;top:-20px;left:' + left + 'vw;width:' + size + 'px;height:' + (size * 0.4) + 'px;background:' + color + ';opacity:.9;transform:rotate(' + rot + 'deg);border-radius:2px;' +
+      'animation:juegoConfetiCae ' + duration + 'ms ease-in ' + delay + 'ms forwards';
+    cont.appendChild(piece);
+  }
+  setTimeout(() => cont.remove(), 4200);
+}
+function _sonidoCelebracion() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notas = [523.25, 659.25, 783.99, 1046.5]; // Do-Mi-Sol-Do, un arpegio alegre
+    notas.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.4);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
 
 function _juegosInit() {
   if (window.fb_listenJuegoActivo) {
@@ -272,6 +324,7 @@ async function girarRuleta() {
         ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
         : (premio.nombre || 'Suerte la próxima vez');
       document.getElementById('ruleta-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      if (premio.pct > 0) _celebrarPremio();
       _ruletaEjecutando = false;
     }, 4700);
   } catch (e) {
@@ -415,6 +468,7 @@ function _mostrarResultadoRasca() {
     ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
     : (premio.nombre || 'Suerte la próxima vez');
   document.getElementById('rasca-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+  if (premio.pct > 0) _celebrarPremio();
 }
 function aplicarPremioRasca() { _aplicarPremioComun('rasca'); }
 

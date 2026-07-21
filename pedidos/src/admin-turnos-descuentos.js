@@ -630,6 +630,10 @@ async function dcAplicar(code) {
   if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
   const d = await window.fb_getDiscount(code).catch(() => null);
   if (!d) { showDiscountError('Código no válido'); return; }
+  // Los premios de la ruleta/rasca caducan a las 48h (expiraEn) — los
+  // códigos creados a mano desde el panel no llevan ese campo, así que
+  // esta comprobación no les afecta.
+  if (d.expiraEn && Date.now() > d.expiraEn) { showDiscountError('Este código ha caducado'); return; }
   if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
   _activeDiscount = { code, pct: d.pct };
   showDiscountOk(code, d.pct);

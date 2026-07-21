@@ -681,6 +681,9 @@ try {
             $usos = is_numeric($cupon['uses'] ?? null) ? (int)$cupon['uses'] : 0;
             $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
             if ($maxUsos !== null && $usos >= $maxUsos) break; // ya agotado, no seguir incrementando
+            // Premios de la ruleta/rasca caducados a las 48h (expiraEn) — los
+            // códigos creados a mano desde el panel no llevan este campo.
+            if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) break;
             $cupon['uses'] = $usos + 1;
             if (fbPutSiCoincide($databaseURL, 'discounts/' . $discountCode, $accessToken, $cupon, $leido['etag'])) break;
             usleep(rand(20000, 80000));

@@ -188,17 +188,23 @@ function elegirPremio($premios) {
 // guarda en discounts/<código> con la cuenta de servicio — discounts/ ya
 // exige el UID de admin para escribir en las reglas de Firebase, así que
 // el navegador nunca podría crear uno por su cuenta.
+// Caduca a las 48h: un premio ganado y no usado no debería quedar como
+// descuento válido para siempre — los códigos que crea el admin a mano
+// (dcCrear en el panel) no llevan este campo, así que no les afecta.
+const JUEGO_CODIGO_VALIDEZ_MS = 48 * 60 * 60 * 1000;
 function crearCodigoPremio($databaseURL, $accessToken, $juego, $pct, $telefono) {
     $prefijo = $juego === 'ruleta' ? 'RUL-' : 'RAS-';
     for ($intento = 0; $intento < 20; $intento++) {
         $codigo = $prefijo . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
         $leido = fbGetConEtag($databaseURL, 'discounts/' . $codigo, $accessToken);
         if ($leido['data'] !== null) continue; // colisión (muy improbable), probar otro
+        $ahoraMs = (int)(microtime(true) * 1000);
         $cupon = [
             'pct'       => $pct,
             'maxUses'   => 1,
             'uses'      => 0,
-            'createdAt' => (int)(microtime(true) * 1000),
+            'createdAt' => $ahoraMs,
+            'expiraEn'  => $ahoraMs + JUEGO_CODIGO_VALIDEZ_MS,
             'origen'    => $juego,
             'telefono'  => $telefono,
         ];

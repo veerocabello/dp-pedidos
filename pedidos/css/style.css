@@ -1741,6 +1741,9 @@
     animation: juegoFabPulse 2.2s ease-in-out infinite;
   }
   #juego-fab.hidden { display: none !important; }
+  @keyframes juegoConfetiCae {
+    to { transform: translateY(105vh) rotate(720deg); opacity: 0; }
+  }
   /* El banner de cookies (#cookies-banner) tapa toda la parte de abajo de
      la pantalla en móvil hasta que se acepta/rechaza — mientras esté
      visible, el botón del juego sube por encima para no quedar oculto. */
