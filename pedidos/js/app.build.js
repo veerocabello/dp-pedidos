@@ -12683,9 +12683,20 @@ async function girarRuleta() {
       return;
     }
     if (data.yaJugaste) {
+      // Ya jugó hoy — en vez de la pantalla genérica "vuelve mañana", se
+      // reutiliza la de resultado con lo que ganó de verdad: si tenía un
+      // código sin aplicar (cerró el modal, cambió de dispositivo...) aquí
+      // puede recuperarlo, en vez de quedarse sin ninguna forma de verlo.
+      const premio = data.premio || {};
       document.getElementById('ruleta-intro').style.display = 'none';
-      document.getElementById('ruleta-ya-jugaste').style.display = 'block';
-      window._juegoState = { juego: 'ruleta', premio: data.premio, code: data.code };
+      document.getElementById('ruleta-resultado').style.display = 'block';
+      document.getElementById('ruleta-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('ruleta-resultado-titulo').textContent = 'Ya has girado hoy';
+      document.getElementById('ruleta-resultado-desc').textContent = premio.pct > 0
+        ? 'Tu premio de hoy fue "' + premio.nombre + '" — aquí tienes tu código otra vez, por si no lo llegaste a usar.'
+        : (premio.nombre || 'Suerte la próxima vez') + '. Vuelve mañana para otra oportunidad.';
+      document.getElementById('ruleta-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      window._juegoState = { juego: 'ruleta', premio, code: data.code };
       _ruletaEjecutando = false;
       return;
     }
@@ -12702,6 +12713,7 @@ async function girarRuleta() {
       document.getElementById('ruleta-resultado').style.display = 'block';
       const premio = data.premio || {};
       document.getElementById('ruleta-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('ruleta-resultado-titulo').textContent = '¡Enhorabuena!';
       document.getElementById('ruleta-resultado-desc').textContent = premio.pct > 0
         ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
         : (premio.nombre || 'Suerte la próxima vez');
@@ -12760,8 +12772,18 @@ async function empezarRasca() {
     }
     window._juegoState = { juego: 'rasca', premio: data.premio, code: data.code };
     if (data.yaJugaste) {
-      document.getElementById('rasca-intro').style.display = 'none';
-      document.getElementById('rasca-ya-jugaste').style.display = 'block';
+      // Igual que en la ruleta: si ya rascó hoy, se le enseña directamente
+      // el resultado (con el botón de aplicar si aún tiene código sin usar)
+      // en vez de un "vuelve mañana" sin ninguna forma de recuperarlo.
+      const premio = data.premio || {};
+      document.getElementById('rasca-tel-paso').style.display = 'none';
+      document.getElementById('rasca-resultado').style.display = 'block';
+      document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('rasca-resultado-titulo').textContent = 'Ya rascaste hoy';
+      document.getElementById('rasca-resultado-desc').textContent = premio.pct > 0
+        ? 'Tu premio de hoy fue "' + premio.nombre + '" — aquí tienes tu código otra vez, por si no lo llegaste a usar.'
+        : (premio.nombre || 'Suerte la próxima vez') + '. Vuelve mañana para otra tarjeta.';
+      document.getElementById('rasca-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
       _rascaEjecutando = false;
       return;
     }
@@ -12834,6 +12856,7 @@ function _mostrarResultadoRasca() {
   document.getElementById('rasca-resultado').style.display = 'block';
   const premio = (window._juegoState && window._juegoState.premio) || {};
   document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
+  document.getElementById('rasca-resultado-titulo').textContent = '¡Enhorabuena!';
   document.getElementById('rasca-resultado-desc').textContent = premio.pct > 0
     ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
     : (premio.nombre || 'Suerte la próxima vez');
