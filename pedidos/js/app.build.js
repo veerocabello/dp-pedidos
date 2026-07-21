@@ -12533,6 +12533,49 @@ function _dibujarRuletaWheel(premios) {
     return;
   }
   const seg = (Math.PI * 2) / premios.length;
+  const n = premios.length;
+  const emojiSize = n > 8 ? 13 : n > 6 ? 15 : n > 4 ? 17 : 20;
+  const EMOJI_FONTS = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  // Ancho disponible para el texto: la cuerda del arco a la altura donde
+  // se dibuja, con un margen — así el ajuste se basa en el hueco real de
+  // cada porción (más estrecho cuantos más premios haya) y no en un
+  // recuento de caracteres a ojo.
+  const radialPos = r * 0.6;
+  const maxTextWidth = Math.max(30, 2 * radialPos * Math.sin(seg / 2) * 0.82);
+
+  // Reparte "nombre" en 1-2 líneas que quepan en maxTextWidth, reduciendo
+  // el tamaño de letra si hace falta (hasta un mínimo legible). Devuelve
+  // las líneas ya recortadas con "…" si ni así caben.
+  function _ajustarTexto(nombre) {
+    for (let size = 9; size >= 6; size--) {
+      ctx.font = '600 ' + size + 'px DM Sans, sans-serif';
+      if (ctx.measureText(nombre).width <= maxTextWidth) return { size, lineas: [nombre] };
+      const palabras = nombre.split(' ');
+      if (palabras.length > 1) {
+        // Envuelve en 2 líneas por el espacio más cercano a la mitad.
+        let mejor = 1, mejorDiff = Infinity;
+        let acumulado = 0;
+        for (let k = 0; k < palabras.length - 1; k++) {
+          acumulado += palabras[k].length + 1;
+          const diff = Math.abs(acumulado - nombre.length / 2);
+          if (diff < mejorDiff) { mejorDiff = diff; mejor = k + 1; }
+        }
+        const l1 = palabras.slice(0, mejor).join(' ');
+        const l2 = palabras.slice(mejor).join(' ');
+        if (ctx.measureText(l1).width <= maxTextWidth && ctx.measureText(l2).width <= maxTextWidth) {
+          return { size, lineas: [l1, l2] };
+        }
+      }
+    }
+    // Ni a tamaño mínimo cabe entero: recortar con "…"
+    ctx.font = '600 6px DM Sans, sans-serif';
+    let corto = nombre;
+    while (corto.length > 1 && ctx.measureText(corto + '…').width > maxTextWidth) {
+      corto = corto.slice(0, -1);
+    }
+    return { size: 6, lineas: [corto + '…'] };
+  }
+
   premios.forEach((p, i) => {
     // Ángulo 0 = arriba (donde está el puntero), sentido horario.
     // En coordenadas de canvas eso equivale a restar 90°.
@@ -12546,16 +12589,29 @@ function _dibujarRuletaWheel(premios) {
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1.5; ctx.stroke();
 
+    const { size, lineas } = _ajustarTexto(p.nombre || '');
+
     ctx.save();
+    // Recortar el dibujo del texto a la propia porción — así, sea cual
+    // sea el tamaño del nombre del premio, nunca puede "pintarse" por
+    // encima del color de la porción de al lado (antes se veía cortado
+    // a medias entre dos colores cuando el texto no cabía).
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.clip();
+
     ctx.translate(cx, cy);
     ctx.rotate(start + seg / 2);
-    ctx.textAlign = 'right';
+    ctx.textAlign = 'center';
     ctx.fillStyle = '#FFF8EE';
-    ctx.font = '20px sans-serif';
-    ctx.fillText(p.emoji || '🎁', r - 44, 6);
-    ctx.font = '600 10px DM Sans, sans-serif';
-    const nombre = (p.nombre || '').slice(0, 14);
-    ctx.fillText(nombre, r - 16, 6);
+    ctx.font = emojiSize + 'px ' + EMOJI_FONTS;
+    ctx.fillText(p.emoji || '🎁', radialPos, lineas.length > 1 ? -12 : -8);
+    ctx.font = '600 ' + size + 'px DM Sans, sans-serif';
+    lineas.forEach((linea, li) => {
+      ctx.fillText(linea, radialPos, 8 + li * (size + 2));
+    });
     ctx.restore();
   });
 }
