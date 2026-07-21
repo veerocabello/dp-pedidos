@@ -290,6 +290,15 @@ function registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey) {
     }
 }
 
+// Lee el aforo máximo configurado por turno (config/slotConfig.max) con la
+// cuenta de servicio — si no hay nada guardado, usa el valor por defecto
+// que ya usaba el navegador (4).
+function obtenerSlotMax($databaseURL, $accessToken) {
+    $leido = fbGetConEtag($databaseURL, 'config/slotConfig', $accessToken);
+    $cfg = is_array($leido['data']) ? $leido['data'] : null;
+    return ($cfg && is_numeric($cfg['max'] ?? null)) ? (int)$cfg['max'] : 4;
+}
+
 // Añade una entrada al mismo "Registro de actividad" que ya se ve en el
 // panel de admin (config/activityLog) — para que un fallo silencioso del
 // servidor, o un pedido con un precio que no cuadra, aparezcan donde el
@@ -471,6 +480,69 @@ try {
         } else {
             echo json_encode(['success' => false, 'error' => 'Sigue sin poder guardarse en estadísticas. Inténtalo de nuevo en unos minutos.']);
         }
+        exit;
+    }
+
+    // ── Reservar un turno (contador atómico slots/<fecha>/<turno>) ──
+    // Sustituye la escritura directa que antes hacía el navegador contra
+    // Firebase (incrementSlot() → fb_incrementSlot en carrito-checkout.js).
+    // Antes, para que esa escritura funcionara, las reglas de Firebase
+    // tenían que dejar escribir en slots/ a cualquier visitante anónimo
+    // ("auth != null", que cualquiera cumple por el login anónimo
+    // automático) — eso permitía inundar los turnos sin llegar a
+    // completar ningún pedido real. Ahora lo hace este script con la
+    // cuenta de servicio, así que las reglas ya pueden exigir el UID de
+    // admin también para escribir aquí.
+    if (($payload['action'] ?? '') === 'reservarSlot') {
+        $slotTime = isset($payload['slotTime']) ? trim((string)$payload['slotTime']) : '';
+        if (!preg_match('/^\d{1,2}:\d{2}$/', $slotTime)) {
+            echo json_encode(['success' => false, 'error' => 'Turno inválido']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $todayKey = date('Y-m-d');
+        $slotMax = obtenerSlotMax($databaseURL, $accessToken);
+        $path = 'slots/' . $todayKey . '/' . $slotTime;
+        $reservado = false;
+        for ($intento = 0; $intento < 8; $intento++) {
+            $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+            $count = is_numeric($leido['data']) ? (int)$leido['data'] : 0;
+            if ($count >= $slotMax) {
+                echo json_encode(['success' => false, 'error' => 'slot_full']);
+                exit;
+            }
+            if (fbPutSiCoincide($databaseURL, $path, $accessToken, $count + 1, $leido['etag'])) { $reservado = true; break; }
+            usleep(rand(20000, 80000));
+        }
+        echo json_encode($reservado
+            ? ['success' => true]
+            : ['success' => false, 'error' => 'No se pudo reservar el turno, inténtalo de nuevo']);
+        exit;
+    }
+
+    // ── Generar un número de pedido único del día (usedOrderNums/<fecha>) ──
+    // Mismo motivo que arriba: antes lo reservaba el navegador
+    // (generateOrderNumber() en carrito-checkout.js) escribiendo directo
+    // en Firebase, lo que exigía dejar usedOrderNums/ abierto a escritura
+    // anónima en las reglas.
+    if (($payload['action'] ?? '') === 'reservarNumeroPedido') {
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $todayKey = date('Y-m-d');
+        $orderNumReservado = null;
+        for ($intento = 0; $intento < 50; $intento++) {
+            $num = random_int(1000, 9999);
+            $path = 'usedOrderNums/' . $todayKey . '/' . $num;
+            $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+            if ($leido['data'] !== null) continue; // ya usado, probar otro
+            if (fbPutSiCoincide($databaseURL, $path, $accessToken, true, $leido['etag'])) {
+                $orderNumReservado = 'T' . $num;
+                break;
+            }
+            // 412 (otro proceso lo reservó a la vez): probar con otro número
+        }
+        echo json_encode($orderNumReservado
+            ? ['success' => true, 'orderNum' => $orderNumReservado]
+            : ['success' => false, 'error' => 'No se pudo generar el número de pedido, inténtalo de nuevo']);
         exit;
     }
 

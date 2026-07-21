@@ -2634,28 +2634,25 @@ function formatNombreConBadgeNuevo(nombre) {
   return escapeHtml(limpio) + ' <span style="display:inline-block;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:9px;color:#fff;background:#C0392B;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;vertical-align:middle">Nuevo</span>';
 }
 
-// Genera número de pedido usando contador atómico en Firebase.
-// El contador se resetea cada día (clave = fecha de hoy).
-// Fallback a aleatorio solo si Firebase no está disponible.
+// Genera número de pedido reservándolo en el servidor (guardar-pedido.php,
+// cuenta de servicio) para evitar colisiones entre pedidos simultáneos.
+// Antes el propio navegador escribía directo en usedOrderNums/ vía la SDK
+// de Firebase, lo que exigía dejar esa escritura abierta a cualquier
+// visitante anónimo en las reglas — cualquiera podía rellenar
+// usedOrderNums/<fecha>/ sin llegar a pedir nada.
+// Fallback a aleatorio solo si el servidor no responde.
 async function generateOrderNumber() {
-  // Transacción atómica: reserva el número en Firebase antes de devolverlo.
-  // Si dos pedidos llegan a la vez, Firebase garantiza que obtienen números distintos.
-  const todayKey = new Date().toISOString().slice(0, 10);
-  if (typeof firebase !== 'undefined' && firebase.database) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const rnd = Math.floor(Math.random() * 9000) + 1000;
-      const ref = firebase.database().ref('usedOrderNums/' + todayKey + '/' + rnd);
-      let reserved = false;
-      try {
-        await ref.transaction(function(current) {
-          if (current === null) { reserved = true; return true; }
-          return undefined; // ya existe, abortar
-        });
-        if (reserved) return 'T' + rnd;
-      } catch (e) {
-        console.warn('[orderNum] transaction error:', e);
-      }
-    }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarNumeroPedido' })
+    });
+    const data = await res.json();
+    if (data.success && data.orderNum) return data.orderNum;
+    console.warn('[orderNum] reserva en servidor falló:', data.error);
+  } catch (e) {
+    console.warn('[orderNum] fetch error:', e);
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
@@ -2823,14 +2820,17 @@ function getSlotCount(slotTime) {
 async function incrementSlot(slotTime) {
   // Update local cache immediately for UI responsiveness
   _slotsCache[slotTime] = (_slotsCache[slotTime] || 0) + 1;
-  // Persist to Firebase (atomic increment)
-  if (window.fb_incrementSlot) {
-    try {
-      await window.fb_incrementSlot(slotTime);
-    } catch (e) {
-      console.warn('Firebase slot error', e);
-    }
-  } else {
+  // Reservar en el servidor (guardar-pedido.php, cuenta de servicio) — antes
+  // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
+  // slots/ abierto a escritura anónima en las reglas.
+  try {
+    await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarSlot', slotTime })
+    });
+  } catch (e) {
+    console.warn('Slot reserve error', e);
     saveSlotsData(getSlotsData());
   }
 }
