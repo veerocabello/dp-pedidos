@@ -314,6 +314,18 @@ function _initFirebase() {
     var sn = await jget("ruleta_config");
     return sn.exists() ? sn.val() : null;
   };
+  window.fb_listenRuletaConfig = function(cb) { return jlisten("ruleta_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // RASCA Y GANA — mismo formato que la ruleta (premios con peso)
+  window.fb_saveRascaConfig = async function(config) { await jset("rasca_config", config); };
+  window.fb_loadRascaConfig = async function() {
+    var sn = await jget("rasca_config");
+    return sn.exists() ? sn.val() : null;
+  };
+  window.fb_listenRascaConfig = function(cb) { return jlisten("rasca_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // JUEGO ACTIVO — qué juego (si alguno) ve el cliente en la carta
+  window.fb_saveJuegoActivo = async function(juego) { await jset("config/juegoActivo", juego); };
+  window.fb_loadJuegoActivo = async function() { var sn=await jget("config/juegoActivo"); return sn.exists()?sn.val():'ninguno'; };
+  window.fb_listenJuegoActivo = function(cb) { return jlisten("config/juegoActivo", function(sn){ cb(sn.exists()?sn.val():'ninguno'); }); };
   // LOGIN LOG (intentos de acceso al panel)
   window.fb_saveLoginLog = async function(entry) {
     var sid = entry.ts || Date.now();

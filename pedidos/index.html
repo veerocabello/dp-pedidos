@@ -428,6 +428,8 @@
   <span id="cart-fab-count">0</span>
 </button>
 
+<button id="juego-fab" class="hidden" onclick="abrirJuegoActivo()" aria-label="Jugar y ganar un premio">🎡</button>
+
 <!-- ── DRAWER CARRITO ── -->
 <div id="cart-drawer-overlay" onclick="closeCartDrawer()"></div>
 <div id="cart-drawer">
@@ -535,6 +537,11 @@
       <div class="ruleta-title">🎡 ¡Gira y gana!</div>
       <p class="ruleta-sub">Una vuelta gratis al día. A ver qué te toca hoy 👇</p>
 
+      <div class="juego-tel-group">
+        <input type="tel" id="ruleta-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+        <div class="juego-tel-error" id="ruleta-tel-error">Introduce un teléfono válido de 9 dígitos</div>
+      </div>
+
       <div class="ruleta-wheel-wrap">
         <div class="ruleta-pointer">▼</div>
         <canvas id="ruleta-canvas" width="280" height="280"></canvas>
@@ -569,14 +576,24 @@
       <div class="rasca-title">🎫 ¡Rasca y gana!</div>
       <p class="rasca-sub">Rasca la tarjeta con el dedo o el ratón y descubre tu premio 👇</p>
 
-      <div class="rasca-card-wrap">
-        <div class="rasca-premio-debajo">
-          <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
-          <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+      <div id="rasca-tel-paso">
+        <div class="juego-tel-group">
+          <input type="tel" id="rasca-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+          <div class="juego-tel-error" id="rasca-tel-error">Introduce un teléfono válido de 9 dígitos</div>
         </div>
-        <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        <button class="ruleta-spin-btn" id="rasca-empezar-btn" onclick="empezarRasca()">Destapar mi tarjeta</button>
       </div>
-      <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+
+      <div id="rasca-tarjeta-paso" style="display:none">
+        <div class="rasca-card-wrap">
+          <div class="rasca-premio-debajo">
+            <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
+            <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+          </div>
+          <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        </div>
+        <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+      </div>
     </div>
 
     <div id="rasca-resultado" style="display:none">
@@ -822,7 +839,7 @@
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1784581169495" defer></script>
-<script src="js/app.js?v=1784596183336" defer></script>
+<script src="js/app.js?v=1784622980882" defer></script>
 <script src="js/auth.js?v=1784585024176" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita
