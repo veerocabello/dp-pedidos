@@ -265,7 +265,32 @@ try {
         exit;
     }
 
-    $premio = elegirPremio($premios);
+    // ── Tope diario de premios con descuento (config.topeDiario, 0/vacío =
+    // sin tope) — cuenta cuántos premios con pct>0 se han entregado hoy y,
+    // si ya se alcanzó, solo deja elegir entre los premios sin descuento
+    // (pct=0). Si no hay ninguno así configurado, se rechaza el giro con
+    // un aviso claro en vez de dar un error genérico.
+    $tope = is_numeric($cfg['topeDiario'] ?? null) ? (int)$cfg['topeDiario'] : 0;
+    $premiosDisponibles = $premios;
+    if ($tope > 0) {
+        $girosHoyResp = fbGetConEtag($databaseURL, $juego . '_giros/' . $todayKey, $accessToken);
+        $girosHoy = is_array($girosHoyResp['data']) ? $girosHoyResp['data'] : [];
+        $entregados = 0;
+        foreach ($girosHoy as $g) {
+            if (is_array($g) && isset($g['premio']['pct']) && (float)$g['premio']['pct'] > 0) $entregados++;
+        }
+        if ($entregados >= $tope) {
+            $premiosDisponibles = array_values(array_filter($premios, function ($p) {
+                return !isset($p['pct']) || (float)$p['pct'] <= 0;
+            }));
+            if (!$premiosDisponibles) {
+                echo json_encode(['success' => false, 'error' => 'tope_alcanzado', 'message' => 'Hoy ya se han repartido todos los premios disponibles. ¡Vuelve mañana!']);
+                exit;
+            }
+        }
+    }
+
+    $premio = elegirPremio($premiosDisponibles);
     if (!$premio) {
         echo json_encode(['success' => false, 'error' => 'Este juego no está disponible ahora mismo.']);
         exit;

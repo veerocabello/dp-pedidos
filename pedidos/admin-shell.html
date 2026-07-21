@@ -836,9 +836,17 @@
 
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">El "peso" decide la probabilidad relativa de cada premio — no hace falta que sumen 100, se calcula solo. Cuanto más alto, más probable.</div>
 
+          <div id="ruleta-admin-hoy" style="font-size:12px;color:var(--brown);background:var(--white);border-radius:10px;padding:10px 12px;margin-bottom:10px"></div>
+
           <div id="ruleta-admin-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
 
           <button onclick="ruletaAdminAddPremio()" style="width:100%;padding:9px;background:var(--white);color:var(--brown);border:1.5px dashed var(--warm);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">+ Añadir premio</button>
+
+          <div style="margin-bottom:10px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Tope de premios con descuento al día (0 = sin tope)</label>
+            <input type="number" id="ruleta-admin-tope" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Al llegar al tope, la ruleta sigue funcionando pero solo puede tocar "sin premio" hasta el día siguiente.</div>
+          </div>
 
           <button onclick="ruletaAdminGuardar()" style="width:100%;padding:11px;background:var(--brown);color:var(--gold);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar cambios</button>
           <div class="admin-toast" id="ruleta-config-toast" style="margin-top:8px">✅ Guardado</div>
@@ -858,9 +866,17 @@
 
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">El "peso" decide la probabilidad relativa de cada premio — no hace falta que sumen 100, se calcula solo. Cuanto más alto, más probable. A diferencia de la ruleta, aquí no hay opción de "no ganar nada": el cliente siempre se lleva algo.</div>
 
+          <div id="rasca-admin-hoy" style="font-size:12px;color:var(--brown);background:var(--white);border-radius:10px;padding:10px 12px;margin-bottom:10px"></div>
+
           <div id="rasca-admin-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
 
           <button onclick="rascaAdminAddPremio()" style="width:100%;padding:9px;background:var(--white);color:var(--brown);border:1.5px dashed var(--warm);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">+ Añadir premio</button>
+
+          <div style="margin-bottom:10px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Tope de premios con descuento al día (0 = sin tope)</label>
+            <input type="number" id="rasca-admin-tope" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Al llegar al tope, el rasca sigue funcionando pero solo puede tocar "sin premio" hasta el día siguiente.</div>
+          </div>
 
           <button onclick="rascaAdminGuardar()" style="width:100%;padding:11px;background:var(--brown);color:var(--gold);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar cambios</button>
           <div class="admin-toast" id="rasca-config-toast" style="margin-top:8px">✅ Guardado</div>

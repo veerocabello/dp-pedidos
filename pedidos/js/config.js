@@ -307,6 +307,10 @@ function _initFirebase() {
     var sn = await jget("ruleta_giros/" + fecha);
     return sn.exists() ? sn.val() : {};
   };
+  window.fb_loadRascaGiros = async function(fecha) {
+    var sn = await jget("rasca_giros/" + fecha);
+    return sn.exists() ? sn.val() : {};
+  };
   window.fb_saveRuletaConfig = async function(config) {
     await jset("ruleta_config", config);
   };
