@@ -24,6 +24,26 @@ function _juegosInit() {
 if (window._firebaseReady) _juegosInit();
 document.addEventListener('firebaseReady', _juegosInit);
 
+// El banner de cookies (#cookies-banner, ver index.html) tapa toda la
+// franja de abajo de la pantalla en móvil hasta que se acepta/rechaza, con
+// un z-index mucho más alto que cualquier botón flotante — sin esto el
+// botón del juego queda escondido debajo la primera vez que alguien entra.
+// Se vigila con un observer en vez de tocar cookiesAceptar() directamente,
+// así funciona pase lo que pase cómo se cierre el banner.
+function _juegoFabVigilarBannerCookies() {
+  const banner = document.getElementById('cookies-banner');
+  const fab = document.getElementById('juego-fab');
+  if (!banner || !fab) return;
+  const actualizar = () => {
+    const visible = getComputedStyle(banner).display !== 'none';
+    fab.classList.toggle('sobre-banner-cookies', visible);
+  };
+  actualizar();
+  new MutationObserver(actualizar).observe(banner, { attributes: true, attributeFilter: ['style'] });
+}
+document.addEventListener('DOMContentLoaded', _juegoFabVigilarBannerCookies);
+if (document.readyState !== 'loading') _juegoFabVigilarBannerCookies();
+
 function _actualizarJuegoFab(juego) {
   const fab = document.getElementById('juego-fab');
   if (fab) {

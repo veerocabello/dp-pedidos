@@ -1726,7 +1726,7 @@
   /* ── FAB DEL JUEGO ACTIVO (ruleta/rasca) ── */
   #juego-fab {
     position: fixed;
-    right: 16px;
+    left: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     z-index: var(--z-cart-fab);
     background: var(--brown);
@@ -1741,6 +1741,10 @@
     animation: juegoFabPulse 2.2s ease-in-out infinite;
   }
   #juego-fab.hidden { display: none !important; }
+  /* El banner de cookies (#cookies-banner) tapa toda la parte de abajo de
+     la pantalla en móvil hasta que se acepta/rechaza — mientras esté
+     visible, el botón del juego sube por encima para no quedar oculto. */
+  #juego-fab.sobre-banner-cookies { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
   @keyframes juegoFabPulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.08); }
