@@ -412,36 +412,21 @@
   .menu-cat-sep {
     display: flex;
     align-items: center;
-    gap: 14px;
+    justify-content: space-between;
     background: #3D1F0D;
-    background-image: radial-gradient(rgba(250,240,221,0.05) 1.3px, transparent 1.3px), radial-gradient(130% 100% at 90% -20%, rgba(244,196,48,0.16), transparent 55%);
-    background-size: 16px 16px, 100% 100%;
-    border-radius: 14px;
-    padding: 14px 16px;
+    border-radius: 10px;
+    padding: 10px 14px;
     margin: 22px 0 10px;
     unicode-bidi: plaintext;
   }
   .menu-cat-sep:first-child { margin-top: 4px; }
-  .menu-cat-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: radial-gradient(circle at 32% 28%, #F9DD7A, var(--gold) 55%, var(--amber-dark) 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 26px;
-    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.25), inset 0 -3px 6px rgba(0,0,0,0.12);
-  }
-  .menu-cat-left { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .menu-cat-left { display: flex; flex-direction: column; }
   .menu-cat-name {
     font-family: 'Oswald', sans-serif;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--gold);
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
   }
   .menu-cat-emoji {
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
@@ -453,7 +438,7 @@
   }
   .menu-cat-sub {
     font-family: 'Caveat', cursive;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
     color: rgba(245,234,211,0.85);
     margin-top: 2px;
@@ -463,11 +448,10 @@
     color: #2B1712;
     font-size: 11px;
     font-weight: 700;
-    padding: 4px 11px;
+    padding: 3px 10px;
     border-radius: 99px;
     white-space: nowrap;
     font-family: 'Oswald', sans-serif;
-    flex-shrink: 0;
   }
 
   /* ── AVISO PATATAS (cuenta atrás / listo para pedir) ── */

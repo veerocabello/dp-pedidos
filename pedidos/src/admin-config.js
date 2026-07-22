@@ -499,7 +499,7 @@ function renderMenu() {
       return '<div class="aviso-patatas aviso-patatas-ready">'
         + '<div class="aviso-patatas-icon">🔥</div>'
         + '<div class="aviso-patatas-txt"><div class="aviso-patatas-lead">Patatas rellenas</div>'
-        + '<div class="aviso-patatas-big">¡Ya se están asando! Puedes pedir</div></div>'
+        + '<div class="aviso-patatas-big">¡Ya puedes recogerlas! Recién asadas</div></div>'
         + '</div>';
     }
     if (nowMin < INICIO) {
@@ -510,7 +510,7 @@ function renderMenu() {
       return '<div class="aviso-patatas aviso-patatas-wait">'
         + '<div class="aviso-patatas-icon">⏳</div>'
         + '<div class="aviso-patatas-txt"><div class="aviso-patatas-lead">Patatas rellenas</div>'
-        + '<div class="aviso-patatas-big">Faltan <b>' + texto + '</b> para empezar a asarlas</div>'
+        + '<div class="aviso-patatas-big">Puedes pedirlas ya — listas para recoger en <b>' + texto + '</b></div>'
         + '<div class="aviso-patatas-bar"><div class="aviso-patatas-bar-fill" style="width:' + progreso + '%"></div></div></div>'
         + '</div>';
     }
@@ -530,9 +530,8 @@ function renderMenu() {
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
-          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
