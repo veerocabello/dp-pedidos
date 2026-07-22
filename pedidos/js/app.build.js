@@ -7192,6 +7192,37 @@ function renderMenu() {
     MENU.filter(i => !i.hidden).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
   }
   let lastCat = null;
+  // Aviso dinámico "faltan X para las patatas" — sustituye la línea fija
+  // de antes por una cuenta atrás real (y un aviso en verde en cuanto se
+  // puede pedir). El horario de las 19:30/23:30 es el mismo que ya se usa
+  // en el texto fijo y en la franja de turnos por defecto
+  // (admin-turnos-descuentos.js) — si cambia ese horario alguna vez, hay
+  // que actualizarlo aquí también.
+  function _avisoPatatasHTML() {
+    const INICIO = 19 * 60 + 30, FIN = 23 * 60 + 30, TARDE_INICIO = 18 * 60;
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin >= INICIO && nowMin < FIN) {
+      return '<div class="aviso-patatas aviso-patatas-ready">'
+        + '<div class="aviso-patatas-icon">🔥</div>'
+        + '<div class="aviso-patatas-txt"><div class="aviso-patatas-lead">Patatas rellenas</div>'
+        + '<div class="aviso-patatas-big">¡Ya se están asando! Puedes pedir</div></div>'
+        + '</div>';
+    }
+    if (nowMin < INICIO) {
+      const faltan = INICIO - nowMin;
+      const h = Math.floor(faltan / 60), m = faltan % 60;
+      const texto = h > 0 ? (h + 'h ' + m + ' min') : (m + ' min');
+      const progreso = Math.max(0, Math.min(100, Math.round((nowMin - TARDE_INICIO) / (INICIO - TARDE_INICIO) * 100)));
+      return '<div class="aviso-patatas aviso-patatas-wait">'
+        + '<div class="aviso-patatas-icon">⏳</div>'
+        + '<div class="aviso-patatas-txt"><div class="aviso-patatas-lead">Patatas rellenas</div>'
+        + '<div class="aviso-patatas-big">Faltan <b>' + texto + '</b> para empezar a asarlas</div>'
+        + '<div class="aviso-patatas-bar"><div class="aviso-patatas-bar-fill" style="width:' + progreso + '%"></div></div></div>'
+        + '</div>';
+    }
+    return ''; // fuera de horario (madrugada / tras el cierre de la tarde) — sin aviso
+  }
   const html = filtered.map(item => {
     const isCustom = item.id === 15 || item.id === 16;
     const isExtras = ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(item.id) || item.id === CHEDDAR_ID;
@@ -7206,12 +7237,14 @@ function renderMenu() {
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
+          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
           + '</div>';
+      if (item.cat === 'Patatas') sep += _avisoPatatasHTML();
     }
 
     // Subsecciones de Tartas: Clásicas / Especiales
@@ -13182,6 +13215,7 @@ applyAutoDelete(); // auto-borrado del historial al cargar
       window._autoStatusInterval = setInterval(() => {
         checkAutoCloseWarning();
         loadOrdersStatus();
+        if (typeof renderMenu === 'function') renderMenu();
       }, 60000);
     }
     if (!window._autoStatusInterval) {
@@ -13191,6 +13225,7 @@ applyAutoDelete(); // auto-borrado del historial al cargar
           // La página volvió a primer plano — re-evaluar estado inmediatamente y reiniciar intervalo
           checkAutoCloseWarning();
           loadOrdersStatus();
+          if (typeof renderMenu === 'function') renderMenu();
           _startAutoStatusInterval();
         }
       });

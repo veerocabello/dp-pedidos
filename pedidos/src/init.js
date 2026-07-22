@@ -99,6 +99,7 @@ applyAutoDelete(); // auto-borrado del historial al cargar
       window._autoStatusInterval = setInterval(() => {
         checkAutoCloseWarning();
         loadOrdersStatus();
+        if (typeof renderMenu === 'function') renderMenu();
       }, 60000);
     }
     if (!window._autoStatusInterval) {
@@ -108,6 +109,7 @@ applyAutoDelete(); // auto-borrado del historial al cargar
           // La página volvió a primer plano — re-evaluar estado inmediatamente y reiniciar intervalo
           checkAutoCloseWarning();
           loadOrdersStatus();
+          if (typeof renderMenu === 'function') renderMenu();
           _startAutoStatusInterval();
         }
       });
