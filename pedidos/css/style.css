@@ -454,55 +454,6 @@
     font-family: 'Oswald', sans-serif;
   }
 
-  /* ── AVISO PATATAS (cuenta atrás / listo para pedir) ── */
-  .aviso-patatas {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    border-radius: 14px;
-    padding: 12px 16px;
-    margin-bottom: 10px;
-  }
-  .aviso-patatas-icon { font-size: 26px; flex-shrink: 0; }
-  .aviso-patatas-txt { flex: 1; min-width: 0; }
-  .aviso-patatas-lead {
-    font-family: 'Oswald', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .aviso-patatas-big {
-    font-family: 'Anton', sans-serif;
-    font-size: 17px;
-    letter-spacing: 0.01em;
-    color: var(--brown);
-    margin-top: 1px;
-  }
-  .aviso-patatas-wait {
-    background: linear-gradient(135deg, var(--amber-light), #FBE0A8);
-    border: 1.5px solid var(--gold);
-  }
-  .aviso-patatas-wait .aviso-patatas-lead { color: var(--amber-dark); }
-  .aviso-patatas-wait .aviso-patatas-big b { color: var(--amber-dark); }
-  .aviso-patatas-bar {
-    height: 6px;
-    background: rgba(61,31,13,0.12);
-    border-radius: 99px;
-    margin-top: 8px;
-    overflow: hidden;
-  }
-  .aviso-patatas-bar-fill {
-    height: 100%;
-    border-radius: 99px;
-    background: linear-gradient(90deg, var(--amber-dark), var(--gold));
-  }
-  .aviso-patatas-ready {
-    background: linear-gradient(135deg, #E9F7EE, #D3F0DC);
-    border: 1.5px solid #7BC896;
-  }
-  .aviso-patatas-ready .aviso-patatas-lead { color: #2B8A4E; }
-
   /* ── MENU ITEMS ── */
   .menu-grid { display: flex; flex-direction: column; gap: 10px; }
   .item-card {
