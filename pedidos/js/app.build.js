@@ -7206,7 +7206,7 @@ function renderMenu() {
       return '<div class="aviso-patatas aviso-patatas-ready">'
         + '<div class="aviso-patatas-icon">🔥</div>'
         + '<div class="aviso-patatas-txt"><div class="aviso-patatas-lead">Patatas rellenas</div>'
-        + '<div class="aviso-patatas-big">¡Ya puedes recogerlas! Recién asadas</div></div>'
+        + '<div class="aviso-patatas-big">¡Recién salidas del horno!</div></div>'
         + '</div>';
     }
     if (nowMin < INICIO) {
@@ -7217,7 +7217,7 @@ function renderMenu() {
       return '<div class="aviso-patatas aviso-patatas-wait">'
         + '<div class="aviso-patatas-icon">⏳</div>'
         + '<div class="aviso-patatas-txt"><div class="aviso-patatas-lead">Patatas rellenas</div>'
-        + '<div class="aviso-patatas-big">Puedes pedirlas ya — listas para recoger en <b>' + texto + '</b></div>'
+        + '<div class="aviso-patatas-big">Puedes pedirlas ya<br>se empiezan a asar en <b>' + texto + '</b></div>'
         + '<div class="aviso-patatas-bar"><div class="aviso-patatas-bar-fill" style="width:' + progreso + '%"></div></div></div>'
         + '</div>';
     }
