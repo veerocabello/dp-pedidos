@@ -36,15 +36,23 @@ body {
   print-color-adjust: exact;
 }
 
-@page { size: A4; margin: 12mm 10mm; }
+/* El margen superior/inferior de cada hoja depende de que el navegador
+   respete @page margin (algunos lo ignoran si el usuario elige "Sin
+   márgenes" al imprimir). El padding de .screenpad es un refuerzo: no se
+   repite en páginas intermedias (así es como funciona la paginación CSS),
+   pero sí garantiza margen izquierdo/derecho en todas las páginas y
+   margen arriba/abajo en la primera y última. */
+@page { size: A4; margin: 14mm 10mm; }
 @media print {
   body { background: #fff; }
-  .screenpad { padding: 0 !important; }
+  .screenpad { padding: 14mm 10mm !important; }
   .sheet { box-shadow: none !important; margin: 0 !important; }
-  .actionbar, .back-link { display: none !important; }
+  .actionbar, .back-link, .al-links { display: none !important; }
   .allergen-section, .card-grid__item, .matrix-row, .legend-box, .notice-box { break-inside: avoid; }
   .allergen-section__head { break-after: avoid; }
   .legend-box__row { break-inside: avoid; }
+  .matrix-scroll { overflow: visible !important; margin: 0 !important; padding: 0 !important; }
+  .matrix-scroll__inner { min-width: 0 !important; }
 }
 
 .screenpad {
@@ -171,6 +179,15 @@ body {
 
 /* ---------- Vista matriz ---------- */
 
+.matrix-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -24px;
+  padding: 0 24px;
+}
+
+.matrix-scroll__inner { min-width: 750px; }
+
 .matrix-headrow {
   display: flex;
   align-items: flex-end;
@@ -193,8 +210,8 @@ body {
 }
 
 .matrix-headrow__col {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 40px;
+  width: 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -253,8 +270,8 @@ body {
 }
 
 .matrix-row__cell {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 40px;
+  width: 40px;
   display: flex;
   justify-content: center;
   align-items: center;

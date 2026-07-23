@@ -83,7 +83,7 @@ function renderMatrix() {
     `;
   }).join('');
 
-  return head + sections + renderLegend() + FOOTER;
+  return `<div class="matrix-scroll"><div class="matrix-scroll__inner">${head}${sections}</div></div>` + renderLegend() + FOOTER;
 }
 
 /* ---------- Vista fichas ---------- */

@@ -114,14 +114,4 @@ const ALLERGEN_SECTIONS = [
       ['Donuts', [1, 2, 3]],
     ],
   },
-  {
-    title: 'Bebidas', sub: '', icon: '🥤',
-    items: [
-      ['Refrescos', [], 'botella 2 l · 500 ml o lata'],
-      ['Nestea · Aquarius', []],
-      ['Agua', [], '1,5 l o pequeña'],
-      ['Cerveza', [1], '1 litro o lata'],
-      ['Monster · Red Bull', []],
-    ],
-  },
 ];
