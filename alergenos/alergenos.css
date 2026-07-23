@@ -183,7 +183,6 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pan-y;
   margin: 0 -24px;
   padding: 0 24px;
 }
@@ -484,4 +483,52 @@ body {
 @media (max-width: 480px) {
   .card-grid { grid-template-columns: 1fr; }
   .al-header__reg { display: none; }
+}
+
+/* Al generar el PDF se fuerza el ancho de diseño (794px) en .sheet, pero
+   las media-queries de arriba dependen del ancho de LA VENTANA, no del
+   elemento, así que sin esto seguirían aplicando el layout de móvil (una
+   columna) aunque la hoja ya sea ancha. Se anulan aquí durante la captura. */
+.pdf-export .card-grid { grid-template-columns: repeat(2, 1fr) !important; }
+.pdf-export .al-header__reg { display: block !important; }
+/* html2canvas no soporta bien el texto vertical (writing-mode): sale
+   invertido/ilegible. Para el PDF se muestra horizontal y envuelto. */
+.pdf-export .matrix-headrow__product,
+.pdf-export .matrix-row__name {
+  width: 140px !important;
+}
+
+.pdf-export .matrix-headrow__col,
+.pdf-export .matrix-row__cell {
+  flex: 0 0 43px !important;
+  width: 43px !important;
+}
+
+.pdf-export .matrix-headrow__label {
+  writing-mode: horizontal-tb !important;
+  transform: none !important;
+  height: auto !important;
+  min-height: 52px !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  text-align: center !important;
+  line-height: 1.15 !important;
+  font-size: 6px !important;
+  letter-spacing: 0 !important;
+}
+
+.pdf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: var(--darker);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+  font-family: var(--font-display), sans-serif;
+  font-size: 16px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }

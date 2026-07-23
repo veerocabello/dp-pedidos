@@ -45,7 +45,7 @@ ALLERGENS.forEach((a) => { ALLERGEN_BY_NUM[a.num] = a; });
 /* items: [nombre, [nºs de alérgeno], nota opcional] */
 const ALLERGEN_SECTIONS = [
   {
-    title: 'Patatas Asadas', sub: 'recién asadas a partir de las 19:30h', icon: '🥔',
+    title: 'Patatas Asadas', sub: 'recién asadas a partir de las 19:30h', hideSubCards: true, icon: '🥔',
     items: [
       ['Simple', []],
       ['Vegetal', []],
@@ -62,8 +62,8 @@ const ALLERGEN_SECTIONS = [
       ['Granollers', [3, 5, 6]],
       ['Pulled Pork', [2]],
       ['Cheddar Bacon', [2]],
-      ['Al Gusto', [], 'según los ingredientes elegidos'],
-      ['Bomba', [], 'según los ingredientes elegidos'],
+      ['Al Gusto', [], 'personalizada: los alérgenos dependen de lo que tú añadas'],
+      ['Bomba', [], 'personalizada: los alérgenos dependen de lo que tú añadas'],
     ],
   },
   {

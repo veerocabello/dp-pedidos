@@ -14,7 +14,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600;700&family=Oswald:wght@300;400;500;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="alergenos.css?v=3">
+  <link rel="stylesheet" href="alergenos.css?v=9">
+
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body data-view="matriz">
 
@@ -42,10 +45,10 @@
 
   <div class="actionbar">
     <a class="action-btn action-btn--back" href="../index.html">Volver a la carta</a>
-    <button class="action-btn action-btn--download" id="btn-descargar" type="button">Descargar / imprimir PDF</button>
+    <button class="action-btn action-btn--download" id="btn-descargar" type="button"><span class="lbl">Descargar PDF</span></button>
   </div>
 
-  <script src="alergenos-data.js?v=2"></script>
-  <script src="alergenos.js?v=2"></script>
+  <script src="alergenos-data.js?v=4"></script>
+  <script src="alergenos.js?v=4"></script>
 </body>
 </html>

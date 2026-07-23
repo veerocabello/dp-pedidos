@@ -39,7 +39,7 @@ function renderLegend() {
 const FOOTER = `
   <div class="notice-box">
     <span class="notice-box__badge">¡ojo!</span>
-    <span class="notice-box__text">Al compartir zona de fritura y elaboración existe posibilidad de contaminación cruzada por trazas. Ante cualquier alergia o intolerancia, informa a nuestro personal antes de realizar tu pedido. Información según Reglamento (UE) nº 1169/2011.</span>
+    <span class="notice-box__text">Al compartir zona de elaboración existe posibilidad de contaminación cruzada por trazas. Ante cualquier alergia o intolerancia, informa a nuestro personal antes de realizar tu pedido. Información según Reglamento (UE) nº 1169/2011.</span>
   </div>
   <div class="al-footer">Carretera de Málaga 111 · 18015 Granada &nbsp;·&nbsp; 604 82 31 80 &nbsp;·&nbsp; @dulcepatata_food</div>
 `;
@@ -91,18 +91,20 @@ function renderMatrix() {
 function renderCards() {
   const sections = ALLERGEN_SECTIONS.map((sec) => {
     const cards = sec.items.map(([name, nums, note]) => {
-      const clean = nums.length === 0;
+      const clean = nums.length === 0 && !note;
       const chips = clean
         ? '<span class="chip-clean">Sin alérgenos declarados</span>'
-        : nums.map((n) => {
-          const a = ALLERGEN_BY_NUM[n];
-          return `
-            <span class="chip-allergen">
-              ${allergenIcon(a)}
-              <span class="chip-allergen__name">${esc(a.name)}</span>
-            </span>
-          `;
-        }).join('');
+        : nums.length === 0
+          ? ''
+          : nums.map((n) => {
+              const a = ALLERGEN_BY_NUM[n];
+              return `
+                <span class="chip-allergen">
+                  ${allergenIcon(a)}
+                  <span class="chip-allergen__name">${esc(a.name)}</span>
+                </span>
+              `;
+            }).join('');
       return `
         <div class="card-grid__item">
           <div class="card-grid__name">${esc(name)}${note ? `<span class="card-grid__note"> ${esc(note)}</span>` : ''}</div>
@@ -114,7 +116,7 @@ function renderCards() {
       <div class="allergen-section">
         <div class="allergen-section__head" style="background:none;border-bottom:2px solid var(--gold);border-radius:0;padding:0 0 5px">
           <span class="allergen-section__title" style="font-size:17px">${esc(sec.title)}</span>
-          ${sec.sub ? `<span class="allergen-section__sub" style="color:var(--red)">${esc(sec.sub)}</span>` : ''}
+          ${sec.sub && !sec.hideSubCards ? `<span class="allergen-section__sub" style="color:var(--red)">${esc(sec.sub)}</span>` : ''}
         </div>
         <div class="card-grid">${cards}</div>
       </div>
@@ -124,10 +126,104 @@ function renderCards() {
   return sections + FOOTER;
 }
 
-/* ---------- Descarga en PDF (impresión del navegador) ---------- */
+/* ---------- Descarga en PDF ----------
+   Se captura cada bloque (cabecera, cada sección, leyenda, aviso) por
+   separado con html2canvas y se colocan uno tras otro en el PDF, saltando
+   de página cuando no cabe un bloque entero. Así nunca se corte una fila
+   o una tarjeta a la mitad, a diferencia de una captura única recortada
+   por altura de página. */
 
-function downloadPdf() {
-  window.print();
+async function downloadPdf(ev) {
+  const btn = ev.currentTarget;
+  const label = btn.querySelector('.lbl');
+  if (btn.dataset.busy === '1') return;
+  btn.dataset.busy = '1';
+  if (label) label.textContent = 'Generando…';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'pdf-overlay';
+  overlay.textContent = 'Generando PDF…';
+  document.body.appendChild(overlay);
+
+  const sheet = document.querySelector('.sheet');
+  const prevWidth = sheet.style.width;
+  const prevMaxWidth = sheet.style.maxWidth;
+  let usedFallback = false;
+
+  try {
+    if (!window.html2canvas || !window.jspdf) throw new Error('Faltan las librerías de exportación a PDF');
+
+    sheet.querySelectorAll('.matrix-scroll').forEach((el) => { el.scrollLeft = 0; });
+    // Se fija el ancho de diseño para que el PDF salga siempre nítido y bien
+    // proporcionado, aunque se genere desde un móvil donde la hoja se ve
+    // encogida. pdf-export anula además las media-queries de layout móvil,
+    // que dependen del ancho de la ventana y no del elemento.
+    document.body.classList.add('pdf-export');
+    sheet.style.width = '794px';
+    sheet.style.maxWidth = 'none';
+    await new Promise((r) => requestAnimationFrame(r));
+
+    const sheetRect = sheet.getBoundingClientRect();
+    const PAGE_W = Math.round(sheetRect.width);
+    const PAGE_H = 1123;
+    const MARGIN = 40;
+
+    const blocks = [];
+    const header = sheet.querySelector('.al-header');
+    const goldBar = sheet.querySelector('.gold-bar');
+    if (header) blocks.push({ el: header, bg: '#251309' });
+    if (goldBar) blocks.push({ el: goldBar, bg: '#E3B23C' });
+
+    const content = sheet.querySelector('#al-content');
+    for (const child of content.children) {
+      if (child.classList.contains('matrix-scroll')) {
+        const inner = child.querySelector('.matrix-scroll__inner');
+        for (const c of inner.children) blocks.push({ el: c, bg: '#F3E6CC' });
+      } else {
+        blocks.push({ el: child, bg: '#F3E6CC' });
+      }
+    }
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'px', format: [PAGE_W, PAGE_H], orientation: 'portrait', compress: true });
+    const paintPageBg = () => { pdf.setFillColor('#F3E6CC'); pdf.rect(0, 0, PAGE_W, PAGE_H, 'F'); };
+    paintPageBg();
+
+    let y = MARGIN;
+    let started = false;
+    for (const { el, bg } of blocks) {
+      const rect = el.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (w < 1 || h < 1) continue;
+      const x = Math.round(rect.left - sheetRect.left);
+
+      if (started && y + h > PAGE_H - MARGIN) {
+        pdf.addPage([PAGE_W, PAGE_H], 'portrait');
+        paintPageBg();
+        y = MARGIN;
+      }
+      started = true;
+
+      const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: bg, useCORS: true, logging: false });
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, y, w, h);
+      y += h;
+    }
+
+    const view = document.body.dataset.view === 'fichas' ? 'fichas' : 'matriz';
+    pdf.save(`Carta de alergenos - ${view}.pdf`);
+  } catch (e) {
+    console.warn('No se pudo generar el PDF, se abre el diálogo de impresión:', e);
+    usedFallback = true;
+  } finally {
+    document.body.classList.remove('pdf-export');
+    sheet.style.width = prevWidth;
+    sheet.style.maxWidth = prevMaxWidth;
+    overlay.remove();
+    if (label) label.textContent = 'Descargar PDF';
+    btn.dataset.busy = '';
+    if (usedFallback) window.print();
+  }
 }
 
 /* ---------- Inicio ---------- */
