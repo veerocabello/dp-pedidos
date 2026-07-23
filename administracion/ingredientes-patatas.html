@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root {
     --dark: #3D1F0D;
@@ -156,14 +158,30 @@
     margin-bottom: 8px;
   }
 
+  /* ---------- Botón de descarga ---------- */
+  .download-fab {
+    position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 16px); z-index: 60;
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(#FFD24C, #F4A415); color: var(--dark);
+    border: none; border-radius: 30px; padding: 13px 20px;
+    font-family: 'DM Sans', sans-serif; font-weight: 800; font-size: 13px;
+    box-shadow: 0 6px 20px rgba(244,164,21,0.45); cursor: pointer;
+  }
+  .download-fab:active { transform: scale(.96); }
+  .download-fab svg { flex: none; }
+  main { padding-bottom: 90px; }
+
   /* ---------- PC ---------- */
   @media (min-width: 680px) {
     header h1 { font-size: 24px; }
-    main { padding: 32px 24px 80px; }
+    main { padding: 32px 24px 90px; }
     .section-head h2 { font-size: 30px; }
   }
   @media (max-width: 679px) {
     .scroll-hint { display: block; }
+  }
+  @media print {
+    .download-fab { display: none; }
   }
 </style>
 </head>
@@ -396,5 +414,67 @@
   </section>
 
 </main>
+
+<button class="download-fab" id="btn-descargar" type="button">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+  <span class="lbl">Descargar PDF</span>
+</button>
+
+<script>
+  async function descargarPDF(ev) {
+    const btn = ev.currentTarget;
+    const label = btn.querySelector('.lbl');
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    const restore = () => { btn.dataset.busy = ''; if (label) label.textContent = 'Descargar PDF'; };
+
+    try {
+      if (!window.html2canvas || !window.jspdf) throw new Error('Faltan las librerías de exportación a PDF');
+      if (label) label.textContent = 'Generando…';
+      btn.style.display = 'none';
+
+      const target = document.querySelector('main');
+      const canvas = await window.html2canvas(target, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+      });
+
+      btn.style.display = '';
+
+      const JsPDF = window.jspdf.jsPDF;
+      const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgW = pageW;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      const img = canvas.toDataURL('image/jpeg', 0.95);
+
+      let heightLeft = imgH;
+      let position = 0;
+      pdf.addImage(img, 'JPEG', 0, position, imgW, imgH);
+      heightLeft -= pageH;
+      while (heightLeft > 0) {
+        position = heightLeft - imgH;
+        pdf.addPage();
+        pdf.addImage(img, 'JPEG', 0, position, imgW, imgH);
+        heightLeft -= pageH;
+      }
+
+      pdf.save('Ingredientes Patatas - Dulce Patata Food.pdf');
+      restore();
+    } catch (e) {
+      console.warn('No se pudo generar el PDF, se abre el diálogo de impresión:', e);
+      btn.style.display = '';
+      restore();
+      window.print();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('btn-descargar').addEventListener('click', descargarPDF);
+  });
+</script>
 </body>
 </html>
