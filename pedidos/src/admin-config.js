@@ -498,9 +498,10 @@ function renderMenu() {
       const sub = catSubtitles[item.cat] || '';
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
-      sep = '<div class="menu-cat-sep">'
+      sep = '<div class="menu-cat-sep" data-cat="' + escapeAttr(item.cat) + '">'
+          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
@@ -552,6 +553,44 @@ function renderMenu() {
       + '</div>';
   }).join('');
   grid.innerHTML = html;
+  _initCatScrollSpy();
+}
+// Resalta en los chips de categoría cuál se está viendo mientras se hace
+// scroll por "Todos", sin tocar activeCategory ni volver a filtrar.
+function _catSpyHighlight(cat) {
+  var tabsEl = document.getElementById('tabs');
+  if (!tabsEl) return;
+  Array.from(tabsEl.querySelectorAll('.tab')).forEach(function (btn) {
+    btn.classList.toggle('active', btn.textContent === cat);
+  });
+}
+function _catScrollSpyUpdate() {
+  if (activeCategory !== 'Todos') return;
+  var seps = document.querySelectorAll('.menu-cat-sep');
+  if (!seps.length) return;
+  var offset = 100;
+  var current = 'Todos';
+  for (var i = 0; i < seps.length; i++) {
+    if (seps[i].getBoundingClientRect().top - offset <= 0) {
+      current = seps[i].getAttribute('data-cat') || current;
+    } else {
+      break;
+    }
+  }
+  _catSpyHighlight(current);
+}
+function _initCatScrollSpy() {
+  if (activeCategory !== 'Todos') return;
+  if (!window._catSpyBound) {
+    window._catSpyBound = true;
+    var ticking = false;
+    window.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () { _catScrollSpyUpdate(); ticking = false; });
+    }, { passive: true });
+  }
+  _catScrollSpyUpdate();
 }
 // ── CONFIG ──
 function loadAdminConfig() {
