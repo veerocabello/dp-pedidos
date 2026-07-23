@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor · Carta de alérgenos — Dulce Patata Food</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600;700&family=Oswald:wght@300;400;500;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="alergenos.css?v=10">
+  <link rel="stylesheet" href="editor.css?v=1">
+
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+  <div class="editor-page">
+    <header class="editor-header">
+      <h1>Editor de la carta de alérgenos</h1>
+      <p>
+        Aquí puedes añadir, quitar o editar productos y marcar sus alérgenos sin tocar código.
+        Cuando termines, pulsa <b>«Descargar alergenos-data.js»</b> y sube ese archivo a la carpeta
+        <code>alergenos</code> en Hostinger, reemplazando el <code>alergenos-data.js</code> que ya tienes.
+        Los cambios no se guardan solos: si cierras esta página sin descargar, se pierden.
+      </p>
+    </header>
+
+    <div id="editor-form"></div>
+
+    <button type="button" id="btn-add-section" class="editor-btn editor-btn--add">+ Añadir sección</button>
+
+    <div class="editor-actions">
+      <button type="button" id="btn-preview" class="editor-btn editor-btn--preview">Actualizar vista previa ↓</button>
+      <button type="button" id="btn-download-data" class="editor-btn editor-btn--download">Descargar alergenos-data.js</button>
+    </div>
+
+    <h2 class="editor-preview-title">Vista previa (matriz)</h2>
+
+    <div class="screenpad" style="padding:0 0 40px">
+      <div class="sheet">
+        <div class="al-header">
+          <img class="al-header__logo" src="images/logo.png" alt="Dulce Patata Food">
+          <div class="al-header__brand">
+            <div class="al-header__name">DULCE PATATA<span>FOOD</span></div>
+            <div class="al-header__sub">carta de alérgenos</div>
+          </div>
+          <div class="al-header__reg">Información para personas alérgicas<br>Reglamento (UE) nº 1169/2011</div>
+        </div>
+        <div class="gold-bar"></div>
+
+        <div class="al-body" id="al-content"></div>
+      </div>
+
+      <div class="editor-preview-download">
+        <button class="action-btn action-btn--download" id="btn-descargar" type="button"><span class="lbl">Descargar PDF de esta vista previa</span></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="alergenos-data.js?v=4"></script>
+  <script src="alergenos.js?v=8"></script>
+  <script src="editor.js?v=1"></script>
+</body>
+</html>
