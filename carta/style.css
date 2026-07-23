@@ -538,22 +538,6 @@ body {
 
 .hours-box__address-note { color: #bba287; font-size: 10.5px; }
 
-.allergens-link {
-  display: block;
-  text-align: center;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--gold);
-  text-decoration: none;
-  background: var(--dark);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
-  padding: 10px;
-  margin-top: 18px;
-  text-transform: uppercase;
-  letter-spacing: .5px;
-}
-
 .socials {
   display: flex;
   flex-direction: column;
