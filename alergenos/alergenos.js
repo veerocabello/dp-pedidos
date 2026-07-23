@@ -153,7 +153,11 @@ async function downloadPdf(ev) {
   try {
     if (!window.html2canvas || !window.jspdf) throw new Error('Faltan las librerías de exportación a PDF');
 
-    sheet.querySelectorAll('.matrix-scroll').forEach((el) => { el.scrollLeft = 0; });
+    // Si la tabla estaba ampliada con el pellizco, se vuelve a su tamaño
+    // normal: "zoom" afecta al layout, así que unas medidas ampliadas
+    // descuadrarían el cálculo de bloques/páginas de más abajo.
+    sheet.querySelectorAll('.matrix-scroll__inner').forEach((el) => { el.style.zoom = ''; });
+    sheet.querySelectorAll('.matrix-scroll').forEach((el) => { el.scrollLeft = 0; el.style.overflowY = ''; });
     // Se fija el ancho de diseño para que el PDF salga siempre nítido y bien
     // proporcionado, aunque se genere desde un móvil donde la hoja se ve
     // encogida. pdf-export anula además las media-queries de layout móvil,
@@ -226,12 +230,86 @@ async function downloadPdf(ev) {
   }
 }
 
+/* ---------- Pellizcar para ampliar/reducir solo la tabla ----------
+   Se usa la propiedad CSS "zoom" (no "transform: scale") porque zoom sí
+   afecta al layout: el navegador recalcula el ancho/alto reales y el
+   scroll se adapta solo. Con transform habría que reajustar el tamaño
+   del contenedor a mano para poder desplazarse por el contenido ampliado. */
+
+function setupPinchZoom() {
+  const scroller = document.querySelector('.matrix-scroll');
+  const inner = document.querySelector('.matrix-scroll__inner');
+  if (!scroller || !inner) return;
+
+  const MIN_SCALE = 1;
+  const MAX_SCALE = 2.5;
+  const pointers = new Map();
+  let startDist = 0;
+  let startScale = 1;
+  let scale = 1;
+  // Se marca en cuanto el gesto llega a tener 2 dedos, y solo se limpia
+  // cuando se levanta el último. Así, al soltar los dos dedos de un
+  // pellizco (dos pointerup casi seguidos) no se confunde el segundo con
+  // un toque suelto, aunque en ese instante ya quede un solo puntero.
+  let wasMultiTouch = false;
+  let lastTap = 0;
+
+  const dist = () => {
+    const pts = [...pointers.values()];
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  };
+
+  const applyScale = () => {
+    inner.style.zoom = scale;
+    scroller.style.overflowY = scale > 1.01 ? 'auto' : 'hidden';
+  };
+
+  scroller.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      wasMultiTouch = true;
+      startDist = dist();
+      startScale = scale;
+    }
+  });
+
+  scroller.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2 && startDist > 0) {
+      e.preventDefault();
+      scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, startScale * (dist() / startDist)));
+      applyScale();
+    }
+  }, { passive: false });
+
+  scroller.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); if (pointers.size === 0) wasMultiTouch = false; });
+  scroller.addEventListener('pointerleave', (e) => { pointers.delete(e.pointerId); if (pointers.size === 0) wasMultiTouch = false; });
+
+  // Doble toque para volver al tamaño normal.
+  scroller.addEventListener('pointerup', (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size > 0) return; // aún queda algún dedo del gesto en curso
+    const isTap = e.pointerType === 'touch' && !wasMultiTouch;
+    wasMultiTouch = false;
+    if (!isTap) return;
+    const now = Date.now();
+    if (now - lastTap < 300 && scale > 1.01) {
+      scale = 1;
+      applyScale();
+    }
+    lastTap = now;
+  });
+}
+
 /* ---------- Inicio ---------- */
 
 document.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('al-content');
   const view = document.body.dataset.view;
   root.innerHTML = view === 'fichas' ? renderCards() : renderMatrix();
+  if (view !== 'fichas') setupPinchZoom();
 
   const btn = document.getElementById('btn-descargar');
   if (btn) btn.addEventListener('click', downloadPdf);

@@ -183,11 +183,15 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  /* pan-x/pan-y (sin "pinch-zoom") deja el paneo normal al navegador pero
+     evita que capture el pellizco: así lo puede gestionar setupPinchZoom()
+     para ampliar solo la tabla en vez de toda la página. */
+  touch-action: pan-x pan-y;
   margin: 0 -24px;
   padding: 0 24px;
 }
 
-.matrix-scroll__inner { min-width: 750px; }
+.matrix-scroll__inner { min-width: 750px; transform-origin: 0 0; }
 
 .matrix-headrow {
   display: flex;
