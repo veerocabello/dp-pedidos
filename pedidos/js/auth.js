@@ -832,6 +832,18 @@ function _docxDiasAFichajes(dias, mesStr, empId) {
   });
   return fichajes;
 }
+
+// ── DESPLEGABLES DEL PANEL: llevar a la vista lo que se acaba de abrir ──
+// Varias filas del panel (Marketing, Empleados) son desplegables
+// independientes: se puede tener más de una abierta a la vez, y cada
+// contenido aparece más abajo en la página, detrás de lo que ya
+// estuviera abierto encima. Sin esto, abrir una segunda sección
+// mientras la primera sigue abierta parece "no hacer nada" — el
+// contenido sí aparece, pero fuera de la pantalla, más abajo de donde
+// se está mirando.
+function _bimbaScrollAbierto(el) {
+  setTimeout(() => { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
+}
 let _empImportPendiente = null; // { fichajes, empId, nombreEmp, mesStr, omitidosDias }
 function empImportarWordModal() {
   const emps = empLoadAll();

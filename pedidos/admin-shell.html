@@ -756,22 +756,22 @@
 
         <div class="sec-head">Marketing</div>
         <div class="row-group">
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-promos-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)bimbaRenderPromos();})(this)">
+          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-promos-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){bimbaRenderPromos();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🔥</span>
             <div class="row-text"><div class="row-title">Promociones</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('dc-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';})(this)">
+          <div class="row" onclick="(function(btn){var c=document.getElementById('dc-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
             <span class="row-icon">🎁</span>
             <div class="row-text"><div class="row-title">Códigos de descuento</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)renderRuletaAdmin();})(this)">
+          <div class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRuletaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎡</span>
             <div class="row-text"><div class="row-title">Ruleta de premios</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('rasca-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)renderRascaAdmin();})(this)">
+          <div class="row" onclick="(function(btn){var c=document.getElementById('rasca-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRascaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎫</span>
             <div class="row-text"><div class="row-title">Rasca y gana</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
@@ -1011,12 +1011,12 @@
             <div class="row-text"><div class="row-title">Alertas de fichaje</div><div class="row-desc" id="bimba-alertas-desc"></div></div>
             <span class="row-chevron">›</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-emp-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';})(this)">
+          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-emp-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
             <span class="row-icon">👥</span>
             <div class="row-text"><div class="row-title">Lista de empleados</div><div class="row-desc">URL de fichaje, añadir, fichar manual</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-hist-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){var m=document.getElementById('emp-hist-mes');if(m&&!m.value)m.value=new Date().toISOString().slice(0,7);}})(this)">
+          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-hist-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){var m=document.getElementById('emp-hist-mes');if(m&&!m.value)m.value=new Date().toISOString().slice(0,7);_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">📋</span>
             <div class="row-text"><div class="row-title">Historial de fichajes</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
@@ -1064,7 +1064,7 @@
           <div id="bimba-registro-meses" style="display:flex;flex-direction:column;gap:8px"></div>
         </div><!-- /bimba-hist-body -->
 
-        <div style="display:flex;justify-content:center;padding:4px 0;margin-bottom:12px"><span onclick="(function(){var c=document.getElementById('bimba-tr-body-wrap');c.style.display=c.style.display==='none'?'block':'none';})()" style="font-size:14px;opacity:0.3;cursor:pointer">🥔</span></div>
+        <div style="display:flex;justify-content:center;padding:4px 0;margin-bottom:12px"><span onclick="(function(){var c=document.getElementById('bimba-tr-body-wrap');var open=c.style.display!=='none';c.style.display=open?'none':'block';if(!open)_bimbaScrollAbierto(c);})()" style="font-size:14px;opacity:0.3;cursor:pointer">🥔</span></div>
         <div id="bimba-tr-body-wrap" style="display:none;border:1.5px solid var(--warm);border-radius:12px;margin-bottom:12px;overflow:hidden">
           <div style="padding:12px 14px;border-bottom:1.5px solid var(--warm);display:flex;gap:8px;flex-wrap:wrap">
             <select id="bimba-tr-emp" style="flex:1;padding:8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none"><option value="">— Todos —</option></select>
