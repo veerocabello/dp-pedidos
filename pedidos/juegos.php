@@ -114,12 +114,26 @@ function dpf_juegos_check_limit($file, $max, $window) {
 // (no las recuperaciones de "ya jugaste hoy") por IP y por juego, sin
 // importar qué teléfono se use. El modo incógnito no sirve para saltarse
 // esto porque se basa en la IP, no en cookies/localStorage.
-function dpf_juegos_check_daily_ip_limit($file, $max) {
+// Solo consulta, no consume — para poder rechazar rápido (sin llamar a
+// Firebase) sin dar por hecho que la jugada va a completarse bien.
+function dpf_juegos_daily_ip_limit_alcanzado($file, $max) {
+    $raw = @file_get_contents($file);
+    $data = $raw ? json_decode($raw, true) : null;
+    if (!is_array($data) || ($data['date'] ?? '') !== date('Y-m-d')) return false;
+    return $data['count'] >= $max;
+}
+
+// Consume el tope de hoy — se llama SOLO cuando la jugada ya se ha guardado
+// bien en Firebase, nunca antes de intentarlo. Si se consumiera antes y la
+// jugada fallara a medias (Firebase caída, timeout...), el cliente se
+// quedaría bloqueado el resto del día sin haber recibido premio ninguno,
+// incluso reintentando con el mismo teléfono.
+function dpf_juegos_marcar_ip_usada($file) {
     $fp = fopen($file, 'c+');
-    if ($fp === false) return true;
+    if ($fp === false) return;
     if (!flock($fp, LOCK_EX)) {
         fclose($fp);
-        return true;
+        return;
     }
     $hoy = date('Y-m-d');
     $size = filesize($file) ?: 0;
@@ -128,11 +142,6 @@ function dpf_juegos_check_daily_ip_limit($file, $max) {
     if (!is_array($data) || ($data['date'] ?? '') !== $hoy) {
         $data = ['date' => $hoy, 'count' => 0];
     }
-    if ($data['count'] >= $max) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return false;
-    }
     $data['count']++;
     ftruncate($fp, 0);
     rewind($fp);
@@ -140,7 +149,6 @@ function dpf_juegos_check_daily_ip_limit($file, $max) {
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
-    return true;
 }
 
 if (!dpf_juegos_check_limit($ip_file, $max_ip, $window)) {
@@ -329,7 +337,7 @@ try {
     // este juego (con otro teléfono distinto). No afecta a la recuperación
     // de arriba, solo a intentos realmente nuevos.
     $ip_day_file = $tmp_dir . '/dpf_juegos_ipday_' . $juego . '_' . md5($ip) . '.json';
-    if (!dpf_juegos_check_daily_ip_limit($ip_day_file, $max_ip_day)) {
+    if (dpf_juegos_daily_ip_limit_alcanzado($ip_day_file, $max_ip_day)) {
         echo json_encode(['success' => false, 'error' => 'limite_ip', 'message' => 'Ya se ha jugado hoy desde esta conexión. Inténtalo de nuevo mañana.']);
         exit;
     }
@@ -373,7 +381,20 @@ try {
     // teléfono a la vez), el segundo intento simplemente sobreescribe con
     // OTRO premio recién sorteado — no hay forma de jugar dos veces de
     // verdad porque cada uno ya generó como mucho un código de un solo uso.
-    fbPutSiCoincide($databaseURL, $giroPath, $accessToken, $giroData, $giroLeido['etag']);
+    $guardado = fbPutSiCoincide($databaseURL, $giroPath, $accessToken, $giroData, $giroLeido['etag']);
+    if (!$guardado) {
+        // No se ha podido registrar el giro (Firebase caída, timeout...).
+        // No se consume el tope diario por IP ni se dice que ha ido bien —
+        // así el cliente puede reintentarlo sin quedarse bloqueado por un
+        // fallo que no es suyo. El código de descuento, si lo hay, ya se
+        // creó de forma independiente en discounts/ y sigue siendo válido
+        // aunque este registro de "ya jugaste hoy" no se guarde.
+        echo json_encode(['success' => false, 'error' => 'Error al guardar la jugada. Inténtalo de nuevo.']);
+        exit;
+    }
+
+    // Tope consumido solo ahora que el giro está guardado de verdad.
+    dpf_juegos_marcar_ip_usada($ip_day_file);
 
     echo json_encode(['success' => true, 'yaJugaste' => false, 'premio' => $premio, 'code' => $code]);
 } catch (Exception $e) {
