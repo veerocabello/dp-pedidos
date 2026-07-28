@@ -859,7 +859,7 @@
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1784581169495" defer></script>
 <script src="js/app.js?v=1785254860175" defer></script>
-<script src="js/auth.js?v=1785258725189" defer></script>
+<script src="js/auth.js?v=1785262539873" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita
   var _adminShellLoaded = false;
@@ -873,7 +873,7 @@
           document.getElementById('admin-shell-container').innerHTML = html;
           _adminShellLoaded = true;
           // Fix: mover modales de empleados fuera de admin-stock-config
-          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal'].forEach(function(id) {
+          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal','emp-import-modal'].forEach(function(id) {
             var el = document.getElementById(id);
             if (el && el.parentElement && el.parentElement.id === 'admin-stock-config') {
               document.body.appendChild(el);

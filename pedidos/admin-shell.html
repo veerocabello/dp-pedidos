@@ -1054,6 +1054,7 @@
             <button onclick="empGenerarDocumento()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📄 Word</button>
             <button onclick="empExportarCSV()" style="flex:1;background:var(--white);color:var(--brown);border:1.5px solid var(--warm);border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📊 CSV / Excel</button>
           </div>
+          <button onclick="empImportarWordModal()" style="width:100%;background:var(--white);color:var(--brown);border:1.5px dashed var(--warm);border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:8px">📥 Importar registro de jornada (Word)</button>
           <div style="border:1.5px solid var(--warm);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
             <div style="font-size:13px;font-weight:700;color:var(--brown);flex:1">🔄 Auto-refresco</div>
             <select id="emp-autorefresh-sel" onchange="empSetAutoRefresh(this.value)" style="padding:6px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none">
@@ -1122,6 +1123,25 @@
           <div style="display:flex">
             <button onclick="document.getElementById('emp-borrar-fecha-modal').style.display='none'" style="flex:1;background:var(--warm);color:var(--brown);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
             <button onclick="empBorrarFechaConfirmar()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Borrar</button>
+          </div>
+        </div>
+      </div>
+<div id="emp-import-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:4000;background:rgba(61,31,13,0.7);padding:16px;overflow-y:auto">
+        <div style="background:var(--cream);border-radius:20px;width:100%;max-width:440px;padding:24px;margin:20px auto">
+          <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:900;color:var(--brown);margin-bottom:6px">📥 Importar registro de jornada</div>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Para documentos Word con el formato "Registro diario de jornada de trabajo" (día a día, entrada/salida mañana y tarde).</p>
+          <div style="display:flex;flex-direction:column">
+            <label style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Empleado</label>
+            <select id="emp-import-emp" style="width:100%;padding:10px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none;margin-bottom:12px"></select>
+            <label style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Documento (.docx)</label>
+            <input type="file" id="emp-import-file" accept=".docx" style="margin-bottom:14px;font-size:13px">
+            <button onclick="empImportarAnalizar()" style="width:100%;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">🔍 Analizar documento</button>
+            <div id="emp-import-preview" style="display:none;background:#fff;border:1.5px solid var(--warm);border-radius:10px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--text);line-height:1.6"></div>
+            <div id="emp-import-error" style="display:none;color:#c0392b;font-size:12px;font-weight:600;margin-bottom:10px"></div>
+            <div style="display:flex;gap:8px">
+              <button id="emp-import-confirmar-btn" onclick="empImportarConfirmar()" style="display:none;flex:1;background:#166534;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Confirmar importación</button>
+              <button onclick="document.getElementById('emp-import-modal').style.display='none'" style="flex:1;background:var(--warm);color:var(--brown);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cerrar</button>
+            </div>
           </div>
         </div>
       </div>

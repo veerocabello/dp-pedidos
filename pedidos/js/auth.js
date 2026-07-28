@@ -551,23 +551,18 @@ function empVerHistorial() {
         <tbody>`;
     Object.keys(byEmp[eid]).sort().reverse().forEach(fecha => {
       const ff = byEmp[eid][fecha];
-      const ent = ff.filter(f => f.tipo === 'entrada');
-      const sal = ff.filter(f => f.tipo === 'salida');
-      const entHora = ent.length ? ent[0].hora : '—';
-      const salHora = sal.length ? sal[sal.length-1].hora : '—';
+      const r = _empCalcularHorasDia(ff);
+      const entHora = r.primeraEntrada ? r.primeraEntrada.hora : '—';
+      const salHora = r.ultimaSalida ? r.ultimaSalida.hora : '—';
       let horas = '—';
-      if (ent.length && sal.length) {
-        const [eh, em] = ent[0].hora.split(':').map(Number);
-        const [sh, sm] = sal[sal.length-1].hora.split(':').map(Number);
-        let min = sh * 60 + sm - (eh * 60 + em);
-        if (min < 0) min += 24 * 60;
-        totalMin += min;
-        horas = Math.floor(min/60) + 'h' + (min%60 > 0 ? ' ' + min%60 + 'min' : '');
+      if (r.totalMin > 0) {
+        totalMin += r.totalMin;
+        horas = Math.floor(r.totalMin/60) + 'h' + (r.totalMin%60 > 0 ? ' ' + r.totalMin%60 + 'min' : '');
       }
       const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'numeric', month:'numeric'});
       const allFich = fichajesLoad();
-      const idxEnt = ent.length ? allFich.findIndex(x => x.empId === eid && x.fecha === fecha && x.hora === ent[0].hora && x.tipo === 'entrada') : -1;
-      const idxSal = sal.length ? allFich.findIndex(x => x.empId === eid && x.fecha === fecha && x.hora === sal[sal.length-1].hora && x.tipo === 'salida') : -1;
+      const idxEnt = r.primeraEntrada ? allFich.findIndex(x => x.empId === eid && x.fecha === fecha && x.hora === r.primeraEntrada.hora && x.tipo === 'entrada') : -1;
+      const idxSal = r.ultimaSalida ? allFich.findIndex(x => x.empId === eid && x.fecha === fecha && x.hora === r.ultimaSalida.hora && x.tipo === 'salida') : -1;
       html += `<tr style="border-bottom:1px solid #F5E6C8">
         <td style="padding:8px;color:#8A6A4E;font-size:12px">${fechaLabel}</td>
         <td style="padding:8px;text-align:center;font-weight:500;color:#2A1506">${entHora}</td>
@@ -698,6 +693,217 @@ async function empGenerarDocumento() {
   a.download = emp.nombre.split(' ')[0].toUpperCase() + '_' + mes.replace('-', '_') + '.doc';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── IMPORTAR REGISTRO DE JORNADA DESDE WORD ──────────────────────
+// Lee un .docx con el mismo formato que genera empGenerarDocumento()
+// (tabla "REGISTRO DIARIO DE JORNADA DE TRABAJO": día 1-31, entrada/
+// salida mañana y tarde) y mete esos fichajes en la app. Un .docx es un
+// ZIP con XML dentro — esto lo desempaqueta a mano con la API nativa
+// DecompressionStream (sin librerías) y extrae la tabla con una lectura
+// sencilla del XML, sin necesitar un parser DOM completo.
+async function _docxLeerEntry(arrayBuffer, entryName) {
+  const buf = new Uint8Array(arrayBuffer);
+  const dv = new DataView(arrayBuffer);
+  let eocdOff = -1;
+  const searchFrom = Math.max(0, buf.length - 22 - 65536);
+  for (let i = buf.length - 22; i >= searchFrom; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocdOff = i; break; }
+  }
+  if (eocdOff === -1) throw new Error('El archivo no parece un .docx válido');
+  const totalEntries = dv.getUint16(eocdOff + 10, true);
+  const cdOffset = dv.getUint32(eocdOff + 16, true);
+  let off = cdOffset;
+  for (let i = 0; i < totalEntries; i++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) throw new Error('El .docx está dañado (directorio central)');
+    const compMethod = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const commentLen = dv.getUint16(off + 32, true);
+    const localHeaderOffset = dv.getUint32(off + 42, true);
+    const name = new TextDecoder('utf-8').decode(buf.slice(off + 46, off + 46 + nameLen));
+    if (name === entryName) {
+      const lhNameLen = dv.getUint16(localHeaderOffset + 26, true);
+      const lhExtraLen = dv.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + lhNameLen + lhExtraLen;
+      const compData = buf.slice(dataStart, dataStart + compSize);
+      if (compMethod === 0) return compData;
+      if (compMethod === 8) {
+        if (!window.DecompressionStream) throw new Error('Tu navegador no soporta esto — prueba con Chrome/Edge/Safari actualizado');
+        const stream = new Blob([compData]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      }
+      throw new Error('Formato de compresión del .docx no soportado');
+    }
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  throw new Error('No se encontró contenido dentro del .docx');
+}
+function _docxDecodeEntities(s) {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+function _docxExtraerFilas(xml) {
+  const trMatches = xml.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) || [];
+  return trMatches.map(tr => {
+    const tcMatches = tr.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) || [];
+    return tcMatches.map(tc => {
+      const texts = tc.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+      return _docxDecodeEntities(texts.map(t => t.replace(/<[^>]+>/g, '')).join('')).trim();
+    });
+  });
+}
+const _MESES_IMPORT = { ENERO: 1, FEBRERO: 2, MARZO: 3, ABRIL: 4, MAYO: 5, JUNIO: 6, JULIO: 7, AGOSTO: 8, SEPTIEMBRE: 9, OCTUBRE: 10, NOVIEMBRE: 11, DICIEMBRE: 12 };
+function _docxParsearMesCabecera(texto) {
+  const m = texto.match(/([A-ZÁÉÍÓÚÑ]+)\s+(\d{4})/i);
+  if (!m) return null;
+  const mesNombre = m[1].toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const mesN = _MESES_IMPORT[mesNombre];
+  if (!mesN) return null;
+  return m[2] + '-' + String(mesN).padStart(2, '0');
+}
+// Devuelve { nombreDetectado, mesDetectado, dias: [{dia, entMan, entTar, salMan, salTar}] }
+async function _docxParsearRegistro(file) {
+  const buf = await file.arrayBuffer();
+  const xmlBytes = await _docxLeerEntry(buf, 'word/document.xml');
+  const xml = new TextDecoder('utf-8').decode(xmlBytes);
+  const filas = _docxExtraerFilas(xml);
+  if (!filas.length) throw new Error('El documento no tiene ninguna tabla — ¿es el formato correcto?');
+
+  let nombreDetectado = null, mesDetectado = null;
+  filas.slice(0, 6).forEach(fila => {
+    fila.forEach(celda => {
+      const mNombre = celda.match(/Nombre:\s*(.+)/i);
+      if (mNombre) nombreDetectado = mNombre[1].trim();
+      const mFecha = _docxParsearMesCabecera(celda);
+      if (mFecha) mesDetectado = mFecha;
+    });
+  });
+
+  const dias = [];
+  filas.forEach(fila => {
+    if (fila.length !== 7) return;
+    const dia = parseInt(fila[0], 10);
+    if (!Number.isInteger(dia) || dia < 1 || dia > 31 || !/^\d{1,2}$/.test(fila[0])) return;
+    dias.push({ dia, entMan: fila[1], entTar: fila[2], salMan: fila[3], salTar: fila[4] });
+  });
+  if (!dias.length) throw new Error('No se encontraron días con el formato esperado (1-31) en la tabla');
+
+  return { nombreDetectado, mesDetectado, dias };
+}
+// ── TOTAL DE HORAS DE UN DÍA, robusto a turno partido ──────────────────
+// Varios sitios del panel calculaban "horas del día" cogiendo la primera
+// entrada y la última salida (o incluso sin ordenar). Con un único turno
+// eso vale, pero esta empresa reparte mañana + tarde en el mismo día
+// (está en su propia plantilla de registro), y además una salida a las
+// 00:00 ordena ANTES que las entradas de la mañana por ser textualmente
+// menor ("00:00" < "10:00") — así que un día con turno partido se
+// resumía mal (o directamente se perdían horas). Esto empareja cada
+// entrada con la siguiente salida en orden cronológico real, tratando
+// la madrugada (00:00-05:59) como continuación de la noche anterior.
+function _empMinutosOrden(hora) {
+  const p = hora.split(':').map(Number);
+  return (p[0] < 6 ? p[0] + 24 : p[0]) * 60 + (p[1] || 0);
+}
+function _empCalcularHorasDia(fichs) {
+  const ordenados = fichs.slice().sort((a, b) => _empMinutosOrden(a.horaReal || a.hora) - _empMinutosOrden(b.horaReal || b.hora));
+  let totalMin = 0, entradaAbiertaMin = null, primeraEntrada = null, ultimaSalida = null;
+  ordenados.forEach(f => {
+    if (f.tipo === 'entrada') {
+      if (!primeraEntrada) primeraEntrada = f;
+      entradaAbiertaMin = _empMinutosOrden(f.horaReal || f.hora);
+    } else if (f.tipo === 'salida') {
+      ultimaSalida = f;
+      if (entradaAbiertaMin !== null) {
+        totalMin += Math.max(0, _empMinutosOrden(f.horaReal || f.hora) - entradaAbiertaMin);
+        entradaAbiertaMin = null;
+      }
+    }
+  });
+  return { primeraEntrada, ultimaSalida, totalMin };
+}
+function _docxDiasAFichajes(dias, mesStr, empId) {
+  const fichajes = [];
+  dias.forEach(d => {
+    const fecha = mesStr + '-' + String(d.dia).padStart(2, '0');
+    [['entrada', d.entMan], ['salida', d.salMan], ['entrada', d.entTar], ['salida', d.salTar]].forEach(([tipo, hora]) => {
+      if (hora && /^\d{2}:\d{2}$/.test(hora)) fichajes.push({ empId, fecha, hora, tipo, manual: true, importado: true });
+    });
+  });
+  return fichajes;
+}
+let _empImportPendiente = null; // { fichajes, empId, nombreEmp, mesStr, omitidosDias }
+function empImportarWordModal() {
+  const emps = empLoadAll();
+  const sel = document.getElementById('emp-import-emp');
+  if (sel) sel.innerHTML = emps.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+  document.getElementById('emp-import-file').value = '';
+  document.getElementById('emp-import-preview').style.display = 'none';
+  document.getElementById('emp-import-error').style.display = 'none';
+  document.getElementById('emp-import-confirmar-btn').style.display = 'none';
+  _empImportPendiente = null;
+  document.getElementById('emp-import-modal').style.display = 'flex';
+}
+async function empImportarAnalizar() {
+  const errEl = document.getElementById('emp-import-error');
+  const prevEl = document.getElementById('emp-import-preview');
+  const confBtn = document.getElementById('emp-import-confirmar-btn');
+  errEl.style.display = 'none';
+  prevEl.style.display = 'none';
+  confBtn.style.display = 'none';
+  _empImportPendiente = null;
+
+  const fileInput = document.getElementById('emp-import-file');
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) { errEl.textContent = 'Elige un archivo .docx primero'; errEl.style.display = 'block'; return; }
+  const empId = document.getElementById('emp-import-emp').value;
+  const emp = empLoadAll().find(e => e.id === empId);
+  if (!emp) { errEl.textContent = 'Selecciona un empleado'; errEl.style.display = 'block'; return; }
+
+  try {
+    const { nombreDetectado, mesDetectado, dias } = await _docxParsearRegistro(file);
+    if (!mesDetectado) throw new Error('No se pudo detectar el mes del documento (se esperaba algo como "Fecha: MAYO 2026")');
+
+    const fichajesNuevos = _docxDiasAFichajes(dias, mesDetectado, empId);
+    const existentes = fichajesLoad().filter(f => f.empId === empId);
+    const fechasExistentes = new Set(existentes.map(f => f.fecha));
+    const aImportar = fichajesNuevos.filter(f => !fechasExistentes.has(f.fecha));
+    const diasOmitidos = new Set(fichajesNuevos.filter(f => fechasExistentes.has(f.fecha)).map(f => f.fecha)).size;
+
+    const avisoNombre = (nombreDetectado && !nombreDetectado.toLowerCase().includes(emp.nombre.split(' ')[0].toLowerCase()))
+      ? `<div style="color:#c0392b;font-weight:700;margin-bottom:6px">⚠️ El documento dice "Nombre: ${nombreDetectado}" — no coincide con ${emp.nombre}. Revisa que sea el empleado correcto.</div>`
+      : '';
+
+    let html = avisoNombre;
+    html += `<div><b>Empleado:</b> ${emp.nombre}</div>`;
+    html += `<div><b>Mes detectado:</b> ${mesDetectado}</div>`;
+    html += `<div><b>Días con datos en el documento:</b> ${dias.length}</div>`;
+    html += `<div><b>Fichajes a importar:</b> ${aImportar.length}</div>`;
+    if (diasOmitidos > 0) html += `<div style="color:#9a3412">⚠️ ${diasOmitidos} día(s) ya tenían fichajes guardados — se omiten para no duplicar.</div>`;
+    if (!aImportar.length) html += `<div style="color:#8A6A4E;margin-top:6px">Nada nuevo que importar.</div>`;
+    prevEl.innerHTML = html;
+    prevEl.style.display = 'block';
+
+    if (aImportar.length) {
+      _empImportPendiente = { fichajes: aImportar, empId, nombreEmp: emp.nombre, mesStr: mesDetectado };
+      confBtn.style.display = 'block';
+    }
+  } catch (e) {
+    errEl.textContent = '❌ ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+function empImportarConfirmar() {
+  if (!_empImportPendiente || !_empImportPendiente.fichajes.length) return;
+  const { fichajes, nombreEmp, mesStr } = _empImportPendiente;
+  const todos = fichajesLoad();
+  fichajesSave(todos.concat(fichajes));
+  logActivity(`📥 Importados ${fichajes.length} fichajes de ${nombreEmp} (${mesStr}) desde Word`);
+  document.getElementById('emp-import-preview').innerHTML = `<div style="color:#166534;font-weight:700">✅ ${fichajes.length} fichajes importados correctamente.</div>`;
+  document.getElementById('emp-import-confirmar-btn').style.display = 'none';
+  _empImportPendiente = null;
+  if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+  if (typeof empVerHistorial === 'function' && document.getElementById('emp-hist-select').value) empVerHistorial();
 }
 
 // ── PANTALLA FICHAJE ──────────────────────────
@@ -1342,15 +1548,9 @@ function _empResumenMesTexto(mesStr) {
     suyos.forEach(f => { (porFecha[f.fecha] = porFecha[f.fecha] || []).push(f); });
     let totalMin = 0, dias = 0;
     Object.keys(porFecha).forEach(fecha => {
-      const dia = porFecha[fecha].slice().sort((a, b) => (a.horaReal || a.hora).localeCompare(b.horaReal || b.hora));
-      let entradaPendiente = null, tuvo = false;
-      dia.forEach(f => {
-        const p = (f.horaReal || f.hora).split(':').map(Number);
-        const min = p[0] * 60 + (p[1] || 0);
-        if (f.tipo === 'entrada') { entradaPendiente = min; tuvo = true; }
-        else if (f.tipo === 'salida' && entradaPendiente !== null) { totalMin += Math.max(0, min - entradaPendiente); entradaPendiente = null; tuvo = true; }
-      });
-      if (tuvo) dias++;
+      const r = _empCalcularHorasDia(porFecha[fecha]);
+      totalMin += r.totalMin;
+      if (r.primeraEntrada || r.ultimaSalida) dias++;
     });
     const h = Math.floor(totalMin / 60), m = totalMin % 60;
     txt += '• ' + emp.nombre + ': ' + dias + ' día(s), ' + h + 'h' + (m > 0 ? ' ' + m + 'min' : '') + '\n';
@@ -1454,20 +1654,13 @@ function bimbaRenderTR() {
         </thead>
         <tbody>`;
     Object.entries(dias).sort(([a],[b]) => a.localeCompare(b)).reverse().forEach(([fecha, fichs]) => {
-      const ent = fichs.filter(f => f.tipo === 'entrada');
-      const sal = fichs.filter(f => f.tipo === 'salida');
-      const entHora = ent.length ? (ent[0].horaReal || ent[0].hora) : '—';
-      const salHora = sal.length ? (sal[sal.length-1].horaReal || sal[sal.length-1].hora) : '—';
+      const r = _empCalcularHorasDia(fichs);
+      const entHora = r.primeraEntrada ? (r.primeraEntrada.horaReal || r.primeraEntrada.hora) : '—';
+      const salHora = r.ultimaSalida ? (r.ultimaSalida.horaReal || r.ultimaSalida.hora) : '—';
       let horas = '—';
-      if (ent.length && sal.length) {
-        const entR = ent[0].horaReal || ent[0].hora;
-        const salR = sal[sal.length-1].horaReal || sal[sal.length-1].hora;
-        const [eh, em] = entR.split(':').map(Number);
-        const [sh, sm] = salR.split(':').map(Number);
-        let min = sh * 60 + sm - (eh * 60 + em);
-        if (min < 0) min += 24 * 60;
-        totalMin += min;
-        horas = Math.floor(min/60) + 'h' + (min%60 > 0 ? ' ' + min%60 + 'min' : '');
+      if (r.totalMin > 0) {
+        totalMin += r.totalMin;
+        horas = Math.floor(r.totalMin/60) + 'h' + (r.totalMin%60 > 0 ? ' ' + r.totalMin%60 + 'min' : '');
       }
       const fechaLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'numeric', month:'numeric'});
       const manualBadge = fichs.some(f => f.manual) ? '<span style="font-size:10px;background:#e8943a;color:#fff;padding:1px 5px;border-radius:4px;margin-left:4px">manual</span>' : '';
