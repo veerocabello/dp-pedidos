@@ -820,6 +820,14 @@
             <button onclick="dcCrear()" style="padding:8px 16px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">+ Crear</button>
           </div>
           <div id="dc-list" style="font-size:13px;color:var(--muted)">Cargando...</div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--warm)">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">¿Un cliente perdió su código de premio de la Ruleta o el Rasca? Búscalo por su teléfono.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <input id="dc-buscar-tel" type="tel" placeholder="Teléfono (9 dígitos)" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+              <button onclick="dcBuscarPorTelefono()" style="padding:8px 16px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Buscar</button>
+            </div>
+            <div id="dc-buscar-resultado" style="font-size:13px;color:var(--muted)"></div>
+          </div>
         </div><!-- /dc-panel -->
 
         <div id="ruleta-admin-panel" style="display:none;margin-top:-2px;margin-bottom:16px;padding:14px;border:1.5px solid var(--warm);border-top:none;border-radius:0 0 14px 14px;background:var(--cream)">

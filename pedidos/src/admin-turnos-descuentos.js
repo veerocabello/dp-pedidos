@@ -618,6 +618,37 @@ async function dcCargar() {
   }).join('');
 }
 
+// Los premios de la Ruleta/Rasca (RAS-/RUL-) no aparecen en la lista de
+// arriba, pero siguen guardados en discounts/ con el teléfono con el que
+// jugó el cliente — esto permite encontrarlos si el cliente pierde su
+// código y llama pidiéndolo.
+async function dcBuscarPorTelefono() {
+  const el = document.getElementById('dc-buscar-resultado');
+  if (!el) return;
+  const tel = (document.getElementById('dc-buscar-tel').value || '').replace(/\D/g, '');
+  if (!/^\d{9}$/.test(tel)) { el.innerHTML = '<span style="color:#c0392b">Introduce un teléfono válido (9 dígitos)</span>'; return; }
+  if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
+  el.innerHTML = 'Buscando…';
+  const discounts = await window.fb_loadDiscounts().catch(() => ({}));
+  const ahoraMs = Date.now();
+  const codigos = Object.keys(discounts || {}).filter(code => discounts[code].telefono === tel);
+  if (!codigos.length) { el.innerHTML = '<span style="color:#8A6A4E">No se encontró ningún código de premio para ese teléfono</span>'; return; }
+  el.innerHTML = codigos.map(code => {
+    const d = discounts[code];
+    const usado = (d.uses || 0) >= d.maxUses;
+    const caducado = d.expiraEn && ahoraMs > d.expiraEn;
+    let estado = 'disponible', color = '#2e7d32';
+    if (usado) { estado = 'ya usado'; color = '#c0392b'; }
+    else if (caducado) { estado = 'caducado'; color = '#c0392b'; }
+    return '<div style="padding:6px 0;border-bottom:1px solid #F5E6C8">'
+      + '<strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
+      + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
+      + ' <span style="font-size:11px;font-weight:700;color:' + color + '">' + estado + '</span>'
+      + (d.origen ? ' <span style="font-size:11px;color:#8A6A4E">(' + escapeHtml(d.origen) + ')</span>' : '')
+      + '</div>';
+  }).join('');
+}
+
 async function dcCrear() {
   const code = (document.getElementById('dc-code').value || '').trim().toUpperCase();
   const pct = parseInt(document.getElementById('dc-pct').value);
