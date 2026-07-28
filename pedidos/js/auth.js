@@ -1303,6 +1303,114 @@ function bimbaRenderEmpleados() {
       </details>`;
     }).join('') : '<p style="font-size:13px;color:#8A6A4E">Sin fichajes registrados</p>';
   }
+
+  empRenderCierreMesBanner();
+}
+
+// ── CIERRE DE MES: recordatorio + resumen listo para WhatsApp ──
+// No hay forma de enviar WhatsApp sola sin intervención humana (no hay
+// WhatsApp Business API contratada, solo el SMS de Twilio para pedidos),
+// así que esto no es un envío automático de verdad: al abrir el panel de
+// Empleados durante los primeros días del mes, si hay fichajes del mes
+// que acaba de terminar y no se ha enviado/descartado ya, aparece un
+// aviso con el resumen ya redactado — un toque abre WhatsApp para
+// elegir a quién mandárselo (mismo patrón que "Compartir pedido").
+function _empClaveCierreMes(mesStr) { return 'dpf_cierre_mes_' + mesStr; }
+function _empMesAnteriorStr() {
+  const hoy = new Date();
+  const d = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function _empDebeAvisarCierreMes() {
+  if (new Date().getDate() > 7) return null; // solo los primeros 7 días del mes
+  const mesAnterior = _empMesAnteriorStr();
+  if (localStorage.getItem(_empClaveCierreMes(mesAnterior))) return null; // ya enviado o descartado
+  const hayFichajes = fichajesLoad().some(f => f.fecha.startsWith(mesAnterior));
+  return hayFichajes ? mesAnterior : null;
+}
+function _empResumenMesTexto(mesStr) {
+  const emps = empLoadAll().filter(e => !e.deBaja);
+  const fich = fichajesLoad().filter(f => f.fecha.startsWith(mesStr));
+  const mesLabel = new Date(mesStr + '-01T12:00:00').toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+  let txt = '📊 Cierre de ' + mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1) + ' — Dulce Patata Food\n\n';
+  let huboAlguno = false;
+  emps.forEach(emp => {
+    const suyos = fich.filter(f => f.empId === emp.id);
+    if (!suyos.length) return;
+    huboAlguno = true;
+    const porFecha = {};
+    suyos.forEach(f => { (porFecha[f.fecha] = porFecha[f.fecha] || []).push(f); });
+    let totalMin = 0, dias = 0;
+    Object.keys(porFecha).forEach(fecha => {
+      const dia = porFecha[fecha].slice().sort((a, b) => (a.horaReal || a.hora).localeCompare(b.horaReal || b.hora));
+      let entradaPendiente = null, tuvo = false;
+      dia.forEach(f => {
+        const p = (f.horaReal || f.hora).split(':').map(Number);
+        const min = p[0] * 60 + (p[1] || 0);
+        if (f.tipo === 'entrada') { entradaPendiente = min; tuvo = true; }
+        else if (f.tipo === 'salida' && entradaPendiente !== null) { totalMin += Math.max(0, min - entradaPendiente); entradaPendiente = null; tuvo = true; }
+      });
+      if (tuvo) dias++;
+    });
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    txt += '• ' + emp.nombre + ': ' + dias + ' día(s), ' + h + 'h' + (m > 0 ? ' ' + m + 'min' : '') + '\n';
+  });
+  return huboAlguno ? txt : null;
+}
+function empRenderCierreMesBanner() {
+  const cont = document.getElementById('bimba-cierre-mes-banner');
+  if (!cont) return;
+  const mes = _empDebeAvisarCierreMes();
+  if (!mes) { cont.style.display = 'none'; cont.innerHTML = ''; return; }
+  const mesLabel = new Date(mes + '-01T12:00:00').toLocaleString('es-ES', { month: 'long' });
+  cont.innerHTML = '<div style="background:#FBEFD6;border:1.5px solid var(--gold);border-radius:12px;padding:12px 14px;margin-bottom:14px">'
+    + '<div style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:8px">📊 Resumen de ' + mesLabel + ' listo</div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button onclick="empEnviarCierreMes(\'' + mes + '\')" style="flex:1;background:#25D366;color:#fff;border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">💬 Enviar por WhatsApp</button>'
+    + '<button onclick="empDescartarCierreMes(\'' + mes + '\')" style="background:none;border:1.5px solid var(--warm);border-radius:8px;padding:9px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:\'DM Sans\',sans-serif">Descartar</button>'
+    + '</div></div>';
+  cont.style.display = 'block';
+}
+function empEnviarCierreMes(mes) {
+  const texto = _empResumenMesTexto(mes);
+  if (!texto) { alert('No hay horas que resumir de ese mes'); return; }
+  window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+  localStorage.setItem(_empClaveCierreMes(mes), '1');
+  empRenderCierreMesBanner();
+}
+function empDescartarCierreMes(mes) {
+  localStorage.setItem(_empClaveCierreMes(mes), '1');
+  empRenderCierreMesBanner();
+}
+
+// ── EXPORTAR FICHAJES A CSV (Excel / gestoría) ──
+// A diferencia de empGenerarDocumento() (que exige un empleado y mes
+// concretos, formato oficial de "registro diario de jornada"), este
+// exporta cualquier combinación de filtros — incluido "todos los
+// empleados" y/o "todos los meses" — en bruto, para pasarlo a Excel o
+// a quien lleve las nóminas.
+function empExportarCSV() {
+  const empId = document.getElementById('emp-hist-select').value;
+  const mes = document.getElementById('emp-hist-mes').value;
+  let fich = fichajesLoad();
+  if (empId) fich = fich.filter(f => f.empId === empId);
+  if (mes) fich = fich.filter(f => f.fecha.startsWith(mes));
+  if (!fich.length) { alert('No hay fichajes para ese filtro'); return; }
+  fich.sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
+  const emps = empLoadAll();
+  const csvEsc = typeof _csvEscape === 'function' ? _csvEscape : (s => String(s == null ? '' : s).replace(/"/g, '""'));
+  const rows = ['Fecha,Empleado,Tipo,Hora,Manual'];
+  fich.forEach(f => {
+    const emp = emps.find(e => e.id === f.empId);
+    rows.push([f.fecha, '"' + csvEsc(emp ? emp.nombre : f.empId) + '"', f.tipo === 'entrada' ? 'Entrada' : 'Salida', f.horaReal || f.hora, f.manual ? 'Sí' : ''].join(','));
+  });
+  const empNombre = empId ? (emps.find(e => e.id === empId) || {}).nombre : null;
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fichajes' + (mes ? '_' + mes : '') + (empNombre ? '_' + empNombre.replace(/\s+/g, '_') : '') + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function bimbaRenderTR() {

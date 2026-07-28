@@ -996,6 +996,8 @@
         <button onclick="bimbaVolverAlPanel()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--warm);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:14px">← Volver</button>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px"><div style="font-family:'Anton',sans-serif;font-size:19px;color:var(--brown)">👥 Empleados</div><span style="font-size:11px;background:var(--brown);color:var(--cream);padding:3px 8px;border-radius:99px;font-weight:700">admin</span></div>
 
+        <div id="bimba-cierre-mes-banner" style="display:none"></div>
+
         <div class="stat-panel">
           <div class="stat-panel-head">🟢 Trabajando ahora</div>
           <div style="padding:14px">
@@ -1048,7 +1050,10 @@
             <button onclick="empVerHistorial()" style="padding:8px 14px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Ver</button>
           </div>
           <div id="emp-hist-resultado" style="margin-bottom:10px"></div>
-          <button onclick="empGenerarDocumento()" style="width:100%;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:8px">📄 Generar documento Word</button>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <button onclick="empGenerarDocumento()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📄 Word</button>
+            <button onclick="empExportarCSV()" style="flex:1;background:var(--white);color:var(--brown);border:1.5px solid var(--warm);border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📊 CSV / Excel</button>
+          </div>
           <div style="border:1.5px solid var(--warm);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
             <div style="font-size:13px;font-weight:700;color:var(--brown);flex:1">🔄 Auto-refresco</div>
             <select id="emp-autorefresh-sel" onchange="empSetAutoRefresh(this.value)" style="padding:6px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none">
