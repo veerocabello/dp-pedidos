@@ -627,7 +627,23 @@ function renderCart() {
       discountEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt);
+  // Premio de fidelización (patata gratis) — mismo cálculo que usa
+  // submitOrder() al confirmar (getFidelizacionDescuento en
+  // carrito-checkout.js), para que el total mostrado mientras se compra
+  // ya lo refleje en vez de solo cambiar al confirmar el pedido.
+  const _fidTelInput = document.getElementById('customer-phone');
+  const _fidPhoneClean = _fidTelInput ? _fidTelInput.value.replace(/\D/g, '').slice(0, 9) : '';
+  const fidelizacionAmt = (typeof getFidelizacionDescuento === 'function') ? getFidelizacionDescuento(_fidPhoneClean) : 0;
+  const fidelizacionEl = document.getElementById('cart-fidelizacion-row');
+  if (fidelizacionEl) {
+    if (fidelizacionAmt > 0) {
+      fidelizacionEl.style.display = 'flex';
+      document.getElementById('cart-fidelizacion-amount').textContent = '-' + fidelizacionAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fidelizacionEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
   // Only show total and form if orders are open
@@ -648,6 +664,6 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
 }
 

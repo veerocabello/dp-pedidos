@@ -705,6 +705,20 @@ function pp2AllProvs() {
 function pp2AllItems() {
   return pp2AllItemsOrdered();
 }
+// Compara el nombre de un ingrediente con la línea del historial de stock
+// que le corresponde — antes se usaba un .includes() sin límite de
+// palabra en ambos sentidos, así que "Sal" coincidía con cualquier línea
+// que contuviera "sal" en medio de otra palabra (p. ej. "Salsa Ketchup"),
+// mostrando el stock de un producto distinto en la tarjeta equivocada.
+function _stockNombreCoincide(a, b) {
+  if (a === b) return true;
+  const corto = a.length <= b.length ? a : b;
+  const largo = a.length <= b.length ? b : a;
+  if (!corto) return false;
+  const escapado = corto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(^|[^a-zà-ÿ0-9])' + escapado + '($|[^a-zà-ÿ0-9])', 'i');
+  return re.test(largo);
+}
 function pp2GetStockBadge(itemId, nombre) {
   const minimos = pp2LoadMinimos();
   const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
@@ -720,7 +734,7 @@ function pp2GetStockBadge(itemId, nombre) {
           const lineName = text.slice(0, colonIdx).trim().toLowerCase();
           const lineVal = text.slice(colonIdx + 1).trim();
           const itemName = nombre.toLowerCase();
-          if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+          if (_stockNombreCoincide(lineName, itemName)) {
             const m = lineVal.match(/^(\d+)\s*(.*)/);
             const qty = m ? parseInt(m[1]) : null;
             const unit = m ? m[2] || '' : lineVal;
@@ -863,7 +877,7 @@ function pp2Render() {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName = nombre.toLowerCase();
-      if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+      if (_stockNombreCoincide(lineName, itemName)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty = m ? parseInt(m[1]) : null;
         const unit = m ? m[2] || '' : lineVal;
@@ -973,7 +987,7 @@ function pp2RenderRow(id) {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName2 = nombre2.toLowerCase();
-      if (lineName === itemName2 || itemName2.includes(lineName) || lineName.includes(itemName2)) {
+      if (_stockNombreCoincide(lineName, itemName2)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty2 = m ? parseInt(m[1]) : null;
         const unit2 = m ? m[2] || '' : lineVal;
@@ -1419,12 +1433,19 @@ function pp2BuildNota() {
   const byProv = {};
   items.forEach(item => {
     const s = state[item.id] || {};
-    if (!s.qty || s.qty <= 0 || !s.prov) return;
-    if (!byProv[s.prov]) byProv[s.prov] = [];
-    byProv[s.prov].push(item);
+    if (!s.qty || s.qty <= 0) return;
+    // Antes, si se ponía cantidad pero se olvidaba asignar proveedor, el
+    // ingrediente se omitía en silencio del pedido (aquí y en el enviado
+    // por WhatsApp) sin ningún aviso. Ahora se agrupa bajo "SIN
+    // PROVEEDOR", igual que ya hacía pp2Save() al guardar en el historial.
+    const prov = s.prov || '__sin__';
+    if (!byProv[prov]) byProv[prov] = [];
+    byProv[prov].push(item);
   });
   if (!Object.keys(byProv).length) return null;
   const sortedProvs = Object.keys(byProv).sort((a, b) => {
+    if (a === '__sin__') return 1;
+    if (b === '__sin__') return -1;
     const la = (PP_PROVS.find(p => p.id === a) || {
       label: a
     }).label;
@@ -1436,7 +1457,7 @@ function pp2BuildNota() {
   let txt = '🛒 PEDIDO\n';
   sortedProvs.forEach(provId => {
     const allProvs = pp2AllProvs();
-    const provLabel = (allProvs.find(p => p.id === provId) || {
+    const provLabel = provId === '__sin__' ? 'SIN PROVEEDOR' : (allProvs.find(p => p.id === provId) || {
       label: provId
     }).label.toUpperCase();
     txt += '\n' + provLabel + ':\n';
@@ -1452,7 +1473,7 @@ function pp2BuildNota() {
 function pp2SaveToPad() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   document.getElementById('pp2-pad-text').value = txt;
@@ -1487,7 +1508,7 @@ function pp2PadWA() {
 function pp2ExportWA() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');

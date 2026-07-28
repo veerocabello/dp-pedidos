@@ -623,7 +623,22 @@ try {
 
     // ── 1. GUARDAR TICKET (para reimprimir) ──
     // tickets/<fecha>/<num> es un nodo por pedido: sin condición de carrera
-    // posible entre pedidos distintos (cada uno tiene su propia clave).
+    // posible entre pedidos distintos (cada uno tiene su propia clave) —
+    // PERO antes se escribía sin comprobar nada, con un PUT incondicional:
+    // cualquiera que adivinara un T#### ya usado (el número se muestra al
+    // cliente, y el espacio son solo 4 dígitos) podía sobrescribir el
+    // ticket de OTRO pedido con datos propios, y hasta farmear sellos de
+    // fidelización con él (fidelizacion.php confía en lo que haya en
+    // tickets/<fecha>/<num>). Ahora se comprueba primero que el ticket no
+    // exista ya, y la escritura es condicional (If-Match con el ETag de esa
+    // misma lectura) para que dos peticiones casi simultáneas para el mismo
+    // número no puedan pisarse entre sí tampoco.
+    $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
+    $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
+    if ($leidoTicket['data'] !== null) {
+        echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
+        exit;
+    }
     $ticketData = [
         'orderNum' => $orderNum,
         'name'     => $name,
@@ -634,13 +649,16 @@ try {
         'total'    => $total,
         'time'     => date('d/m/Y, H:i:s'),
     ];
-    $chTicket = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
-    curl_setopt($chTicket, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($chTicket, CURLOPT_CUSTOMREQUEST, 'PUT');
-    curl_setopt($chTicket, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json']);
-    curl_setopt($chTicket, CURLOPT_POSTFIELDS, json_encode($ticketData));
-    curl_exec($chTicket);
-    curl_close($chTicket);
+    $ticketGuardado = fbPutSiCoincide($databaseURL, $ticketPath, $accessToken, $ticketData, $leidoTicket['etag']);
+    if (!$ticketGuardado) {
+        // No se pudo guardar de verdad (colisión con otra petición casi
+        // simultánea para el mismo número, o fallo de red/Firebase). No se
+        // sigue adelante: ni se tocan las estadísticas ni se consume el
+        // límite diario de pedidos de este teléfono (más abajo) por un
+        // pedido que en realidad no ha quedado guardado en ningún sitio.
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar el pedido, inténtalo de nuevo.']);
+        exit;
+    }
 
     // ── 2. ACTUALIZAR ESTADÍSTICAS DEL DÍA (lo que lee "Pedidos en vivo") ──
     // stats/<fecha> es UN único nodo compartido por todos los pedidos del

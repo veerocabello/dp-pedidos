@@ -787,19 +787,22 @@ function markAllKitchenReady() {
   const orders = stats.orders || [];
   if (!orders.length) return;
   const statuses = getOrderStatuses();
-  let changed = 0;
-  orders.forEach(o => {
+  const aCambiar = orders.filter(o => {
     const key = _normOrderKey(o.num);
-    if ((statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado') {
-      statuses[key] = 'listo';
-      changed++;
-    }
+    return (statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado';
   });
-  if (!changed) return;
-  localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(statuses));
+  if (!aCambiar.length) return;
+  // setOrderStatus() actualiza localStorage Y Firebase (fb_setOrderStatus)
+  // por pedido \u2014 antes este bot\u00f3n solo tocaba localStorage directamente,
+  // as\u00ed que un pedido marcado "listo" aqu\u00ed pod\u00eda volver a aparecer como
+  // pendiente en cuanto llegara cualquier otro cambio de estado: el
+  // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
+  // window._orderStatusCache entero con lo que haya en Firebase, que nunca
+  // se hab\u00eda enterado de este cambio.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
   refreshKitchenGrid();
   loadLiveOrders();
-  logActivity("\u2705 ".concat(changed, " pedido").concat(changed !== 1 ? 's' : '', " marcado").concat(changed !== 1 ? 's' : '', " como listo desde cocina"));
+  logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
 }
 
 // Polling de fallback: solo actúa si Firebase no está disponible

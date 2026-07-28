@@ -49,29 +49,38 @@ function dpf_gc_rate_limit_files() {
 }
 dpf_gc_rate_limit_files();
 
-// Todo esto (leer, contar, decidir, escribir) pasa con el lock exclusivo
-// abierto de principio a fin — si no, dos peticiones a la vez podían leer
-// el mismo estado antes de que ninguna escribiera y saltarse el límite.
-function dpf_check_limit($file, $max, $window) {
+// Solo consulta, sin gastar ningún intento — para rechazar rápido a quien ya
+// esté al límite sin tener que llamar a Twilio.
+function dpf_peek_limit($file, $max, $window) {
+    $raw = @file_get_contents($file);
+    $log = $raw ? (json_decode($raw, true) ?: []) : [];
+    $now = time();
+    $log = array_filter($log, function ($ts) use ($now, $window) {
+        return ($now - $ts) < $window;
+    });
+    return count($log) >= $max;
+}
+
+// Gasta un intento — se llama SOLO cuando Twilio ha confirmado que el SMS se
+// ha enviado de verdad. Antes se gastaba el intento ANTES de llamar a
+// Twilio, así que si Twilio fallaba (caída puntual, timeout...) un cliente
+// real podía agotar sus intentos sin que le hubiera llegado ni un SMS, y
+// quedarse bloqueado sin poder pedir el código otra vez hasta pasada la
+// ventana de 10 minutos.
+function dpf_consume_limit($file, $window) {
     $fp = fopen($file, 'c+');
-    if ($fp === false) return true; // no bloquear tráfico real por un fallo de disco
+    if ($fp === false) return;
     if (!flock($fp, LOCK_EX)) {
         fclose($fp);
-        return true;
+        return;
     }
     $now = time();
     $size = filesize($file) ?: 0;
     $raw = $size > 0 ? fread($fp, $size) : '';
     $log = json_decode($raw, true) ?: [];
-    // Borrar entradas antiguas
-    $log = array_values(array_filter($log, function($ts) use ($now, $window) {
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
         return ($now - $ts) < $window;
     }));
-    if (count($log) >= $max) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return false; // bloqueado
-    }
     $log[] = $now;
     ftruncate($fp, 0);
     rewind($fp);
@@ -79,11 +88,10 @@ function dpf_check_limit($file, $max, $window) {
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
-    return true;
 }
 
-// Comprobar límite por IP
-if (!dpf_check_limit($ip_file, $max_ip, $window)) {
+// Comprobar límite por IP (sin gastarlo todavía)
+if (dpf_peek_limit($ip_file, $max_ip, $window)) {
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
@@ -116,9 +124,9 @@ if (!preg_match('/^\+34[6789][0-9]{8}$/', $phone)) {
     exit();
 }
 
-// Comprobar límite por teléfono
+// Comprobar límite por teléfono (sin gastarlo todavía)
 $phone_file = $tmp_dir . '/dpf_sms_phone_' . md5($phone) . '.json';
-if (!dpf_check_limit($phone_file, $max_phone_pre, $window)) {
+if (dpf_peek_limit($phone_file, $max_phone_pre, $window)) {
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos para este número. Espera unos minutos.']);
     exit();
@@ -144,6 +152,11 @@ curl_close($ch);
 $result = json_decode($response, true);
 
 if ($http_code === 201 && isset($result['status']) && $result['status'] === 'pending') {
+    // Solo se gastan los intentos de las dos ventanas (IP y teléfono) ahora
+    // que Twilio ha confirmado el envío — así un fallo de Twilio nunca
+    // consume el intento de un cliente real.
+    dpf_consume_limit($ip_file, $window);
+    dpf_consume_limit($phone_file, $window);
     echo json_encode(['success' => true]);
 } else {
     $log_line = '[' . date('Y-m-d H:i:s') . "] [send-code] Twilio ERROR — phone=$phone http_code=$http_code response=$response" . PHP_EOL;

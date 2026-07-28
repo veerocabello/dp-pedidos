@@ -4,7 +4,12 @@ async function _checkSlotAlmostFull(slotTime, count, max) {
   if (!slotTime || !max) return;
   const pct = Math.round((count / max) * 100);
   if (pct < 80) return;
-  const key = slotTime + '_' + count;
+  // La fecha va incluida en la clave para que la alerta pueda volver a
+  // dispararse cada día — antes, si la pantalla de cocina se quedaba
+  // abierta pasada la medianoche (uso normal en una pantalla siempre
+  // encendida), un slot que llegara otra vez a ese mismo recuento al día
+  // siguiente no volvía a avisar hasta recargar la página.
+  const key = new Date().toISOString().slice(0, 10) + '_' + slotTime + '_' + count;
   if (_slotAlertSent[key]) return;
   _slotAlertSent[key] = true;
   try {

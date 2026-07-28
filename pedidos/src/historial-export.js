@@ -343,17 +343,22 @@ function applyAutoDelete() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  let hist = getHistorial();
-  const before = hist.length;
+  const original = getHistorial();
+  const before = original.length;
   // Cap de seguridad: nunca más de 365 entradas independientemente del filtro de fecha
-  hist = hist.filter(d => d.date >= cutoffStr).slice(0, 365);
+  const hist = original.filter(d => d.date >= cutoffStr).slice(0, 365);
   if (hist.length !== before) {
+    // Las fechas borradas se calculan ANTES de sobrescribir localStorage —
+    // antes se recalculaban leyendo getHistorial() DESPUÉS del
+    // localStorage.setItem() de abajo, así que siempre salía una lista
+    // vacía (ya no quedaba ninguna fecha antigua que leer) y stats/{fecha}
+    // nunca llegaba a borrarse de Firebase, solo de localStorage.
+    const deletedDates = original
+      .filter(d => d.date < cutoffStr)
+      .map(d => d.date);
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist));
     // Borrar también los días eliminados de Firebase (stats/{fecha})
     if (typeof firebase !== 'undefined' && firebase.database) {
-      const deletedDates = getHistorial()
-        .filter(d => d.date < cutoffStr)
-        .map(d => d.date);
       deletedDates.forEach(date => {
         firebase.database().ref('stats/' + date).remove().catch(() => {});
       });

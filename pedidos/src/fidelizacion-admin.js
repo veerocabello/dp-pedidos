@@ -338,7 +338,13 @@ async function guardarFidelizacionManual() {
     sellos,
     premiosPendientes,
     vecesCompletado,
-    historialCanjes: (existente && existente.historialCanjes) || []
+    historialCanjes: (existente && existente.historialCanjes) || [],
+    // fb_saveFidelizacionCliente sobrescribe el registro entero (no hace
+    // merge) — antes esta edición manual no arrastraba historialSellos, así
+    // que guardar aquí borraba el historial de fechas de sellos que usa
+    // _clienteConRitmoSospechoso() para detectar abuso, aunque solo se
+    // estuviera corrigiendo el nombre.
+    historialSellos: (existente && existente.historialSellos) || []
   };
   await window.fb_saveFidelizacionCliente(telefono, cliente);
   showToast('fidel-toast');

@@ -1401,6 +1401,10 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
     }
+    // Repintar el carrito para que el total ya refleje el premio (o deje
+    // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
+    // el carrito para que se note el cambio.
+    if (typeof renderCart === 'function') renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {

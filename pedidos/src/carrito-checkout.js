@@ -12,7 +12,7 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
 }
-function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
@@ -20,6 +20,7 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
   discountAmt = discountAmt || 0;
+  fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
@@ -30,6 +31,9 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
   // ganado en la ruleta/rasca).
   if (discountAmt > 0 && discountCode) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fidelizacionAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
@@ -250,7 +254,7 @@ async function generateOrderNumber() {
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime) {
+function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento) {
   const tc = getTicketConfig();
   const lines = Object.entries(cart).map(_ref5 => {
     let _ref6 = _slicedToArray(_ref5, 2),
@@ -278,7 +282,12 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
   const allLines = [...lines, ...custLines, ...extLines2];
-  const total = Object.entries(cart).reduce((s, _ref7) => {
+  // El total final se recibe ya calculado desde submitOrder() (orderTotal)
+  // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
+  // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
+  // premio de fidelizaci\u00F3n, as\u00ED que el "TOTAL:" del ticket enviado por
+  // email pod\u00EDa no coincidir con lo que de verdad se cobra.
+  const itemsSubtotal = Object.entries(cart).reduce((s, _ref7) => {
     let _ref8 = _slicedToArray(_ref7, 2),
       id = _ref8[0],
       q = _ref8[1];
@@ -290,12 +299,18 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
   }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
+  const extraLineas = [];
+  if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
+  if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
+  if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
+  const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
   const now = new Date().toLocaleString('es-ES');
   const phoneCleanTxt = (phone || '').replace(/\D/g, '');
   const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
     ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
     : "";
-  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\nTOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
+  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
 }
 
 // ══════════════════════════════════════════
@@ -563,7 +578,51 @@ function selectSlot(slot) {
 
   // Aviso franja poco margen ahora es inline en el botón
 }
+
+// Precio a descontar por el premio de fidelización activo (patata gratis) —
+// la patata más cara del carrito, en beneficio del cliente. Compartida entre
+// el total mostrado mientras se compra (renderCart(), en carta.js) y el del
+// pedido final (submitOrder(), aquí abajo) para que nunca puedan mostrar
+// cifras distintas — antes solo se calculaba aquí, así que el total del
+// carrito no bajaba hasta confirmar el pedido, igual que pasaba con los
+// códigos de descuento manuales antes de arreglarlo.
+function getFidelizacionDescuento(phoneClean) {
+  if (!window._fidelizacionPremioActivo || window._fidelizacionPremioActivo !== phoneClean) return 0;
+  const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
+    const it = MENU.find(m => m.id == id);
+    return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
+  });
+  const preciosPatatasCustom = Object.values(custCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+  });
+  const preciosPatatasExtras = Object.values(extrasCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return getExtrasItemPrice(c);
+  });
+  const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
+  return todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
+}
+// Guarda contra doble envío — antes el botón "Confirmar pedido" no se
+// deshabilitaba hasta después de varias llamadas de red seguidas (lista
+// negra, cooldown, turnos, número de pedido), así que un doble-toque en
+// una conexión lenta podía lanzar dos submitOrder() a la vez: dos números
+// de pedido reservados, dos emails de confirmación, y _pendingOrderData/
+// _pendingTicketData del segundo pisando los del primero en mitad del
+// proceso, todo para lo que el cliente vivió como un único clic.
+let _submitOrderEnCurso = false;
 async function submitOrder() {
+  if (_submitOrderEnCurso) return;
+  _submitOrderEnCurso = true;
+  try {
+    await _submitOrderInner();
+  } finally {
+    _submitOrderEnCurso = false;
+  }
+}
+async function _submitOrderInner() {
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
     showAlert("Por favor escribe tu nombre");
@@ -614,12 +673,20 @@ async function submitOrder() {
   // ── Honeypot anti-bots: si el campo oculto está relleno, es un bot
   const hp = document.getElementById('hp-website');
   if (hp && hp.value.trim()) {
-    btn.disabled = true;
-    btn.textContent = 'Enviando pedido…';
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = 'Confirmar pedido';
-    }, 2000);
+    // `btn` (más abajo, para el resto de la función) todavía no existe en
+    // este punto — usarlo aquí lanzaba un ReferenceError ("Cannot access
+    // 'btn' before initialization") por ser un `const` del mismo scope
+    // referenciado antes de su declaración, así que se busca el elemento
+    // aparte en vez de depender de esa variable.
+    const hpBtn = document.getElementById('submit-btn');
+    if (hpBtn) {
+      hpBtn.disabled = true;
+      hpBtn.textContent = 'Enviando pedido…';
+      setTimeout(() => {
+        hpBtn.disabled = false;
+        hpBtn.textContent = 'Confirmar pedido';
+      }, 2000);
+    }
     return;
   }
 
@@ -728,28 +795,7 @@ async function submitOrder() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
   const _discountAmt = getDiscountAmount(subTotal);
-  // Premio de fidelización: si hay premio activo para este teléfono y el
-  // carrito incluye al menos 1 patata, se descuenta el precio de la patata
-  // más cara del carrito (la de mayor valor, en beneficio del cliente).
-  let _fidelizacionDescuento = 0;
-  if (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean) {
-    const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
-      const it = MENU.find(m => m.id == id);
-      return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
-    });
-    const preciosPatatasCustom = Object.values(custCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    });
-    const preciosPatatasExtras = Object.values(extrasCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return getExtrasItemPrice(c);
-    });
-    const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
-    _fidelizacionDescuento = todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
-  }
+  const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
@@ -833,7 +879,7 @@ async function submitOrder() {
   window._pendingTicketData = ticketData;
 
   // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot);
+  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";

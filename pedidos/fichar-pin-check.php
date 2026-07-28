@@ -430,8 +430,13 @@ try {
         if (!empty($emp[$campoIn]) && !empty($emp[$campoIn2])) {
             list($mh, $mm) = array_map('intval', explode(':', $emp[$campoIn]));
             list($th, $tm) = array_map('intval', explode(':', $emp[$campoIn2]));
-            $diffMan = abs($realMin - ($mh * 60 + $mm));
-            $diffTar = abs($realMin - ($th * 60 + $tm));
+            // Distancia circular (24h), no la resta directa — si no, un turno
+            // programado a las 00:00 parece estar a "23h y pico" de un
+            // fichaje real a las 23:50, en vez de a los ~10 minutos que
+            // realmente hay, y se elige el turno equivocado como "hora
+            // oficial" para ese fichaje.
+            $diffMan = min(abs($realMin - ($mh * 60 + $mm)), 1440 - abs($realMin - ($mh * 60 + $mm)));
+            $diffTar = min(abs($realMin - ($th * 60 + $tm)), 1440 - abs($realMin - ($th * 60 + $tm)));
             $horaOficial = $diffMan <= $diffTar ? $emp[$campoIn] : $emp[$campoIn2];
         } elseif (!empty($emp[$campoIn2])) {
             $horaOficial = $emp[$campoIn2];

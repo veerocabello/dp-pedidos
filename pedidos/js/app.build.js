@@ -830,6 +830,20 @@ function pp2AllProvs() {
 function pp2AllItems() {
   return pp2AllItemsOrdered();
 }
+// Compara el nombre de un ingrediente con la línea del historial de stock
+// que le corresponde — antes se usaba un .includes() sin límite de
+// palabra en ambos sentidos, así que "Sal" coincidía con cualquier línea
+// que contuviera "sal" en medio de otra palabra (p. ej. "Salsa Ketchup"),
+// mostrando el stock de un producto distinto en la tarjeta equivocada.
+function _stockNombreCoincide(a, b) {
+  if (a === b) return true;
+  const corto = a.length <= b.length ? a : b;
+  const largo = a.length <= b.length ? b : a;
+  if (!corto) return false;
+  const escapado = corto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(^|[^a-zà-ÿ0-9])' + escapado + '($|[^a-zà-ÿ0-9])', 'i');
+  return re.test(largo);
+}
 function pp2GetStockBadge(itemId, nombre) {
   const minimos = pp2LoadMinimos();
   const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
@@ -845,7 +859,7 @@ function pp2GetStockBadge(itemId, nombre) {
           const lineName = text.slice(0, colonIdx).trim().toLowerCase();
           const lineVal = text.slice(colonIdx + 1).trim();
           const itemName = nombre.toLowerCase();
-          if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+          if (_stockNombreCoincide(lineName, itemName)) {
             const m = lineVal.match(/^(\d+)\s*(.*)/);
             const qty = m ? parseInt(m[1]) : null;
             const unit = m ? m[2] || '' : lineVal;
@@ -988,7 +1002,7 @@ function pp2Render() {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName = nombre.toLowerCase();
-      if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+      if (_stockNombreCoincide(lineName, itemName)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty = m ? parseInt(m[1]) : null;
         const unit = m ? m[2] || '' : lineVal;
@@ -1098,7 +1112,7 @@ function pp2RenderRow(id) {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName2 = nombre2.toLowerCase();
-      if (lineName === itemName2 || itemName2.includes(lineName) || lineName.includes(itemName2)) {
+      if (_stockNombreCoincide(lineName, itemName2)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty2 = m ? parseInt(m[1]) : null;
         const unit2 = m ? m[2] || '' : lineVal;
@@ -1544,12 +1558,19 @@ function pp2BuildNota() {
   const byProv = {};
   items.forEach(item => {
     const s = state[item.id] || {};
-    if (!s.qty || s.qty <= 0 || !s.prov) return;
-    if (!byProv[s.prov]) byProv[s.prov] = [];
-    byProv[s.prov].push(item);
+    if (!s.qty || s.qty <= 0) return;
+    // Antes, si se ponía cantidad pero se olvidaba asignar proveedor, el
+    // ingrediente se omitía en silencio del pedido (aquí y en el enviado
+    // por WhatsApp) sin ningún aviso. Ahora se agrupa bajo "SIN
+    // PROVEEDOR", igual que ya hacía pp2Save() al guardar en el historial.
+    const prov = s.prov || '__sin__';
+    if (!byProv[prov]) byProv[prov] = [];
+    byProv[prov].push(item);
   });
   if (!Object.keys(byProv).length) return null;
   const sortedProvs = Object.keys(byProv).sort((a, b) => {
+    if (a === '__sin__') return 1;
+    if (b === '__sin__') return -1;
     const la = (PP_PROVS.find(p => p.id === a) || {
       label: a
     }).label;
@@ -1561,7 +1582,7 @@ function pp2BuildNota() {
   let txt = '🛒 PEDIDO\n';
   sortedProvs.forEach(provId => {
     const allProvs = pp2AllProvs();
-    const provLabel = (allProvs.find(p => p.id === provId) || {
+    const provLabel = provId === '__sin__' ? 'SIN PROVEEDOR' : (allProvs.find(p => p.id === provId) || {
       label: provId
     }).label.toUpperCase();
     txt += '\n' + provLabel + ':\n';
@@ -1577,7 +1598,7 @@ function pp2BuildNota() {
 function pp2SaveToPad() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   document.getElementById('pp2-pad-text').value = txt;
@@ -1612,7 +1633,7 @@ function pp2PadWA() {
 function pp2ExportWA() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
@@ -2404,7 +2425,23 @@ function renderCart() {
       discountEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt);
+  // Premio de fidelización (patata gratis) — mismo cálculo que usa
+  // submitOrder() al confirmar (getFidelizacionDescuento en
+  // carrito-checkout.js), para que el total mostrado mientras se compra
+  // ya lo refleje en vez de solo cambiar al confirmar el pedido.
+  const _fidTelInput = document.getElementById('customer-phone');
+  const _fidPhoneClean = _fidTelInput ? _fidTelInput.value.replace(/\D/g, '').slice(0, 9) : '';
+  const fidelizacionAmt = (typeof getFidelizacionDescuento === 'function') ? getFidelizacionDescuento(_fidPhoneClean) : 0;
+  const fidelizacionEl = document.getElementById('cart-fidelizacion-row');
+  if (fidelizacionEl) {
+    if (fidelizacionAmt > 0) {
+      fidelizacionEl.style.display = 'flex';
+      document.getElementById('cart-fidelizacion-amount').textContent = '-' + fidelizacionAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fidelizacionEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
   // Only show total and form if orders are open
@@ -2425,7 +2462,7 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
 }
 
 
@@ -2443,7 +2480,7 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
 }
-function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
@@ -2451,6 +2488,7 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
   discountAmt = discountAmt || 0;
+  fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
@@ -2461,6 +2499,9 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode) {
   // ganado en la ruleta/rasca).
   if (discountAmt > 0 && discountCode) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fidelizacionAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
@@ -2681,7 +2722,7 @@ async function generateOrderNumber() {
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime) {
+function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento) {
   const tc = getTicketConfig();
   const lines = Object.entries(cart).map(_ref5 => {
     let _ref6 = _slicedToArray(_ref5, 2),
@@ -2709,7 +2750,12 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
   const allLines = [...lines, ...custLines, ...extLines2];
-  const total = Object.entries(cart).reduce((s, _ref7) => {
+  // El total final se recibe ya calculado desde submitOrder() (orderTotal)
+  // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
+  // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
+  // premio de fidelizaci\u00F3n, as\u00ED que el "TOTAL:" del ticket enviado por
+  // email pod\u00EDa no coincidir con lo que de verdad se cobra.
+  const itemsSubtotal = Object.entries(cart).reduce((s, _ref7) => {
     let _ref8 = _slicedToArray(_ref7, 2),
       id = _ref8[0],
       q = _ref8[1];
@@ -2721,12 +2767,18 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
   }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
+  const extraLineas = [];
+  if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
+  if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
+  if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
+  const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
   const now = new Date().toLocaleString('es-ES');
   const phoneCleanTxt = (phone || '').replace(/\D/g, '');
   const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
     ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
     : "";
-  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\nTOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
+  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
 }
 
 // ══════════════════════════════════════════
@@ -2994,7 +3046,51 @@ function selectSlot(slot) {
 
   // Aviso franja poco margen ahora es inline en el botón
 }
+
+// Precio a descontar por el premio de fidelización activo (patata gratis) —
+// la patata más cara del carrito, en beneficio del cliente. Compartida entre
+// el total mostrado mientras se compra (renderCart(), en carta.js) y el del
+// pedido final (submitOrder(), aquí abajo) para que nunca puedan mostrar
+// cifras distintas — antes solo se calculaba aquí, así que el total del
+// carrito no bajaba hasta confirmar el pedido, igual que pasaba con los
+// códigos de descuento manuales antes de arreglarlo.
+function getFidelizacionDescuento(phoneClean) {
+  if (!window._fidelizacionPremioActivo || window._fidelizacionPremioActivo !== phoneClean) return 0;
+  const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
+    const it = MENU.find(m => m.id == id);
+    return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
+  });
+  const preciosPatatasCustom = Object.values(custCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+  });
+  const preciosPatatasExtras = Object.values(extrasCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return getExtrasItemPrice(c);
+  });
+  const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
+  return todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
+}
+// Guarda contra doble envío — antes el botón "Confirmar pedido" no se
+// deshabilitaba hasta después de varias llamadas de red seguidas (lista
+// negra, cooldown, turnos, número de pedido), así que un doble-toque en
+// una conexión lenta podía lanzar dos submitOrder() a la vez: dos números
+// de pedido reservados, dos emails de confirmación, y _pendingOrderData/
+// _pendingTicketData del segundo pisando los del primero en mitad del
+// proceso, todo para lo que el cliente vivió como un único clic.
+let _submitOrderEnCurso = false;
 async function submitOrder() {
+  if (_submitOrderEnCurso) return;
+  _submitOrderEnCurso = true;
+  try {
+    await _submitOrderInner();
+  } finally {
+    _submitOrderEnCurso = false;
+  }
+}
+async function _submitOrderInner() {
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
     showAlert("Por favor escribe tu nombre");
@@ -3045,12 +3141,20 @@ async function submitOrder() {
   // ── Honeypot anti-bots: si el campo oculto está relleno, es un bot
   const hp = document.getElementById('hp-website');
   if (hp && hp.value.trim()) {
-    btn.disabled = true;
-    btn.textContent = 'Enviando pedido…';
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = 'Confirmar pedido';
-    }, 2000);
+    // `btn` (más abajo, para el resto de la función) todavía no existe en
+    // este punto — usarlo aquí lanzaba un ReferenceError ("Cannot access
+    // 'btn' before initialization") por ser un `const` del mismo scope
+    // referenciado antes de su declaración, así que se busca el elemento
+    // aparte en vez de depender de esa variable.
+    const hpBtn = document.getElementById('submit-btn');
+    if (hpBtn) {
+      hpBtn.disabled = true;
+      hpBtn.textContent = 'Enviando pedido…';
+      setTimeout(() => {
+        hpBtn.disabled = false;
+        hpBtn.textContent = 'Confirmar pedido';
+      }, 2000);
+    }
     return;
   }
 
@@ -3159,28 +3263,7 @@ async function submitOrder() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
   const _discountAmt = getDiscountAmount(subTotal);
-  // Premio de fidelización: si hay premio activo para este teléfono y el
-  // carrito incluye al menos 1 patata, se descuenta el precio de la patata
-  // más cara del carrito (la de mayor valor, en beneficio del cliente).
-  let _fidelizacionDescuento = 0;
-  if (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean) {
-    const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
-      const it = MENU.find(m => m.id == id);
-      return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
-    });
-    const preciosPatatasCustom = Object.values(custCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    });
-    const preciosPatatasExtras = Object.values(extrasCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return getExtrasItemPrice(c);
-    });
-    const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
-    _fidelizacionDescuento = todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
-  }
+  const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
@@ -3264,7 +3347,7 @@ async function submitOrder() {
   window._pendingTicketData = ticketData;
 
   // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot);
+  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";
@@ -6244,7 +6327,12 @@ async function _checkSlotAlmostFull(slotTime, count, max) {
   if (!slotTime || !max) return;
   const pct = Math.round((count / max) * 100);
   if (pct < 80) return;
-  const key = slotTime + '_' + count;
+  // La fecha va incluida en la clave para que la alerta pueda volver a
+  // dispararse cada día — antes, si la pantalla de cocina se quedaba
+  // abierta pasada la medianoche (uso normal en una pantalla siempre
+  // encendida), un slot que llegara otra vez a ese mismo recuento al día
+  // siguiente no volvía a avisar hasta recargar la página.
+  const key = new Date().toISOString().slice(0, 10) + '_' + slotTime + '_' + count;
   if (_slotAlertSent[key]) return;
   _slotAlertSent[key] = true;
   try {
@@ -8108,6 +8196,10 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
     }
+    // Repintar el carrito para que el total ya refleje el premio (o deje
+    // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
+    // el carrito para que se note el cambio.
+    if (typeof renderCart === 'function') renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {
@@ -8583,17 +8675,22 @@ function applyAutoDelete() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  let hist = getHistorial();
-  const before = hist.length;
+  const original = getHistorial();
+  const before = original.length;
   // Cap de seguridad: nunca más de 365 entradas independientemente del filtro de fecha
-  hist = hist.filter(d => d.date >= cutoffStr).slice(0, 365);
+  const hist = original.filter(d => d.date >= cutoffStr).slice(0, 365);
   if (hist.length !== before) {
+    // Las fechas borradas se calculan ANTES de sobrescribir localStorage —
+    // antes se recalculaban leyendo getHistorial() DESPUÉS del
+    // localStorage.setItem() de abajo, así que siempre salía una lista
+    // vacía (ya no quedaba ninguna fecha antigua que leer) y stats/{fecha}
+    // nunca llegaba a borrarse de Firebase, solo de localStorage.
+    const deletedDates = original
+      .filter(d => d.date < cutoffStr)
+      .map(d => d.date);
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist));
     // Borrar también los días eliminados de Firebase (stats/{fecha})
     if (typeof firebase !== 'undefined' && firebase.database) {
-      const deletedDates = getHistorial()
-        .filter(d => d.date < cutoffStr)
-        .map(d => d.date);
       deletedDates.forEach(date => {
         firebase.database().ref('stats/' + date).remove().catch(() => {});
       });
@@ -10045,19 +10142,22 @@ function markAllKitchenReady() {
   const orders = stats.orders || [];
   if (!orders.length) return;
   const statuses = getOrderStatuses();
-  let changed = 0;
-  orders.forEach(o => {
+  const aCambiar = orders.filter(o => {
     const key = _normOrderKey(o.num);
-    if ((statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado') {
-      statuses[key] = 'listo';
-      changed++;
-    }
+    return (statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado';
   });
-  if (!changed) return;
-  localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(statuses));
+  if (!aCambiar.length) return;
+  // setOrderStatus() actualiza localStorage Y Firebase (fb_setOrderStatus)
+  // por pedido \u2014 antes este bot\u00f3n solo tocaba localStorage directamente,
+  // as\u00ed que un pedido marcado "listo" aqu\u00ed pod\u00eda volver a aparecer como
+  // pendiente en cuanto llegara cualquier otro cambio de estado: el
+  // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
+  // window._orderStatusCache entero con lo que haya en Firebase, que nunca
+  // se hab\u00eda enterado de este cambio.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
   refreshKitchenGrid();
   loadLiveOrders();
-  logActivity("\u2705 ".concat(changed, " pedido").concat(changed !== 1 ? 's' : '', " marcado").concat(changed !== 1 ? 's' : '', " como listo desde cocina"));
+  logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
 }
 
 // Polling de fallback: solo actúa si Firebase no está disponible
@@ -11254,7 +11354,13 @@ async function guardarFidelizacionManual() {
     sellos,
     premiosPendientes,
     vecesCompletado,
-    historialCanjes: (existente && existente.historialCanjes) || []
+    historialCanjes: (existente && existente.historialCanjes) || [],
+    // fb_saveFidelizacionCliente sobrescribe el registro entero (no hace
+    // merge) — antes esta edición manual no arrastraba historialSellos, así
+    // que guardar aquí borraba el historial de fechas de sellos que usa
+    // _clienteConRitmoSospechoso() para detectar abuso, aunque solo se
+    // estuviera corrigiendo el nombre.
+    historialSellos: (existente && existente.historialSellos) || []
   };
   await window.fb_saveFidelizacionCliente(telefono, cliente);
   showToast('fidel-toast');
@@ -11933,7 +12039,11 @@ function stockQty(i, delta) {
   if (!ing) return;
   const current = _stockSelections[ing];
   if (current === undefined) {
-    if (delta > 0) { _stockSelections[ing] = 0; }
+    // Antes ponía 0 aquí en vez de `delta` — el primer toque en "+" no
+    // cambiaba el número visible (seguía en 0), así que había que tocar
+    // dos veces para llegar a 1, y un solo toque real quedaba fuera del
+    // listado final (que solo incluye cantidades > 0).
+    if (delta > 0) { _stockSelections[ing] = delta; }
     renderStockItems();
     return;
   }
