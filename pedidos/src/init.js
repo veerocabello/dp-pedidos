@@ -788,3 +788,22 @@ function _mostrarAlertaTablet(data) {
 
   document.body.appendChild(overlay);
 }
+
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
+  if (!btn) return;
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
+})();

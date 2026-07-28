@@ -356,6 +356,99 @@ function showClosedToast() {
     t.style.opacity = "0";
   }, 2800);
 }
+// Toast genérico reutilizable — mismo patrón que showClosedToast(), para
+// confirmar visualmente acciones rápidas (copiar algo al portapapeles, etc.)
+// que antes no daban ningún feedback.
+function showCopyToast(msg) {
+  var t = document.getElementById("copy-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "copy-toast";
+    t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:14px 24px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = msg;
+  clearTimeout(t._timer);
+  t.style.opacity = "1";
+  t._timer = setTimeout(function () {
+    t.style.opacity = "0";
+  }, 1800);
+}
+function copiarTexto(text, mensajeExito) {
+  function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(function () {
+      _copiarConExecCommand(text);
+      onOk();
+    });
+  } else {
+    _copiarConExecCommand(text);
+    onOk();
+  }
+}
+function _copiarConExecCommand(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+// Contador de caracteres restantes para el campo de notas — antes solo se
+// sabía que se había llegado al límite de 300 cuando el textarea dejaba de
+// aceptar más texto, sin ningún aviso previo.
+function _actualizarContadorNotas(textareaId, counterId) {
+  const ta = document.getElementById(textareaId);
+  const counter = document.getElementById(counterId);
+  if (!ta || !counter) return;
+  const max = parseInt(ta.getAttribute('maxlength'), 10) || 300;
+  const restantes = max - ta.value.length;
+  counter.textContent = restantes + ' caracteres restantes';
+  counter.style.color = restantes <= 20 ? '#c0392b' : 'var(--muted, #8A6A4E)';
+}
+// Muestra el aviso de dato que falta/es inválido Y desplaza hasta el campo
+// correspondiente, resaltándolo un instante — antes solo salía la alerta,
+// sin llevar al cliente hasta dónde está el problema (con el formulario
+// largo, tocaba buscarlo a ojo). Detecta si el cliente está en el drawer
+// móvil (donde los campos visibles son drawer-customer-*, no los del
+// formulario de escritorio que solo se sincronizan por debajo) para
+// desplazarse al campo que de verdad se ve en pantalla.
+function _alertaConFoco(msg, fieldIdBase) {
+  showAlert(msg);
+  const drawer = document.getElementById('cart-drawer');
+  const enDrawer = drawer && drawer.classList.contains('open');
+  const fieldId = enDrawer ? ('drawer-' + fieldIdBase) : fieldIdBase;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.add('campo-con-error');
+  setTimeout(() => field.classList.remove('campo-con-error'), 2000);
+  setTimeout(() => { if (typeof field.focus === 'function') field.focus(); }, 350);
+}
+// Un único "ding" suave al confirmar el pedido — mismo patrón (Web Audio,
+// sin archivos externos) que ya usa _sonidoCelebracion() en la ruleta, pero
+// una sola nota discreta en vez del arpegio de premio.
+function _sonidoConfirmacionPedido() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880; // La5
+    const start = ctx.currentTime;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.13, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.55);
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
 function isShopBlocked() {
   var _document$getElementB;
   // 1. Si el banner de cerrado está visible

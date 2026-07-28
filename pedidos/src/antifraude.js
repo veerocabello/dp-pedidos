@@ -247,6 +247,10 @@ async function resetDayStats() {
   loadDayStats();
 }
 async function showSuccess(orderNum, slotTime) {
+  // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
+  // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
+  // que rompía el resaltado de campos con error en submitOrderFromDrawer).
+  if (typeof closeCartDrawer === 'function') closeCartDrawer();
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -337,6 +341,7 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');

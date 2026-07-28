@@ -2154,6 +2154,99 @@ function showClosedToast() {
     t.style.opacity = "0";
   }, 2800);
 }
+// Toast genérico reutilizable — mismo patrón que showClosedToast(), para
+// confirmar visualmente acciones rápidas (copiar algo al portapapeles, etc.)
+// que antes no daban ningún feedback.
+function showCopyToast(msg) {
+  var t = document.getElementById("copy-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "copy-toast";
+    t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:14px 24px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = msg;
+  clearTimeout(t._timer);
+  t.style.opacity = "1";
+  t._timer = setTimeout(function () {
+    t.style.opacity = "0";
+  }, 1800);
+}
+function copiarTexto(text, mensajeExito) {
+  function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(function () {
+      _copiarConExecCommand(text);
+      onOk();
+    });
+  } else {
+    _copiarConExecCommand(text);
+    onOk();
+  }
+}
+function _copiarConExecCommand(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+// Contador de caracteres restantes para el campo de notas — antes solo se
+// sabía que se había llegado al límite de 300 cuando el textarea dejaba de
+// aceptar más texto, sin ningún aviso previo.
+function _actualizarContadorNotas(textareaId, counterId) {
+  const ta = document.getElementById(textareaId);
+  const counter = document.getElementById(counterId);
+  if (!ta || !counter) return;
+  const max = parseInt(ta.getAttribute('maxlength'), 10) || 300;
+  const restantes = max - ta.value.length;
+  counter.textContent = restantes + ' caracteres restantes';
+  counter.style.color = restantes <= 20 ? '#c0392b' : 'var(--muted, #8A6A4E)';
+}
+// Muestra el aviso de dato que falta/es inválido Y desplaza hasta el campo
+// correspondiente, resaltándolo un instante — antes solo salía la alerta,
+// sin llevar al cliente hasta dónde está el problema (con el formulario
+// largo, tocaba buscarlo a ojo). Detecta si el cliente está en el drawer
+// móvil (donde los campos visibles son drawer-customer-*, no los del
+// formulario de escritorio que solo se sincronizan por debajo) para
+// desplazarse al campo que de verdad se ve en pantalla.
+function _alertaConFoco(msg, fieldIdBase) {
+  showAlert(msg);
+  const drawer = document.getElementById('cart-drawer');
+  const enDrawer = drawer && drawer.classList.contains('open');
+  const fieldId = enDrawer ? ('drawer-' + fieldIdBase) : fieldIdBase;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.add('campo-con-error');
+  setTimeout(() => field.classList.remove('campo-con-error'), 2000);
+  setTimeout(() => { if (typeof field.focus === 'function') field.focus(); }, 350);
+}
+// Un único "ding" suave al confirmar el pedido — mismo patrón (Web Audio,
+// sin archivos externos) que ya usa _sonidoCelebracion() en la ruleta, pero
+// una sola nota discreta en vez del arpegio de premio.
+function _sonidoConfirmacionPedido() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880; // La5
+    const start = ctx.currentTime;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.13, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.55);
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
 function isShopBlocked() {
   var _document$getElementB;
   // 1. Si el banner de cerrado está visible
@@ -2570,7 +2663,7 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value\"></textarea>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
@@ -2713,11 +2806,9 @@ function submitOrderFromDrawer() {
   if (n) document.getElementById('customer-name').value = n.value;
   if (p) document.getElementById('customer-phone').value = p.value;
   if (t) document.getElementById('customer-notes').value = t.value;
-  // Guardar slot antes de cerrar
-  var slotActual = selectedSlot;
-  closeCartDrawer();
-  // Restaurar slot por si closeCartDrawer lo resetea
-  if (slotActual) selectedSlot = slotActual;
+  // No cerramos el drawer aquí: si falta un dato, _alertaConFoco necesita
+  // que siga abierto para resaltar el campo correcto (drawer-customer-*).
+  // Se cierra solo al confirmar con éxito, desde showSuccess().
   submitOrder();
 }
 function removeItem(id) {
@@ -3144,11 +3235,11 @@ async function submitOrder() {
 async function _submitOrderInner() {
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
-    showAlert("Por favor escribe tu nombre");
+    _alertaConFoco("Por favor escribe tu nombre", "customer-name");
     return;
   }
   if (name.length > 60) {
-    showAlert("El nombre es demasiado largo (máximo 60 caracteres)");
+    _alertaConFoco("El nombre es demasiado largo (máximo 60 caracteres)", "customer-name");
     return;
   }
   if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0) {
@@ -3160,32 +3251,32 @@ async function _submitOrderInner() {
   const phone = document.getElementById("customer-phone").value.trim();
   const phoneClean = phone.replace(/[\s\-().+]/g, '');
   if (!phone) {
-    showAlert("Por favor escribe tu teléfono");
+    _alertaConFoco("Por favor escribe tu teléfono", "customer-phone");
     return;
   }
   if (!/^\d{9}$/.test(phoneClean)) {
-    showAlert("El teléfono debe tener exactamente 9 dígitos");
+    _alertaConFoco("El teléfono debe tener exactamente 9 dígitos", "customer-phone");
     return;
   }
   // Prefijo válido español: móviles 6/7, fijos 8/9 — excluye 800/900/901/902 y similares
   if (!/^[6789]/.test(phoneClean)) {
-    showAlert("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9");
+    _alertaConFoco("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9", "customer-phone");
     return;
   }
   // Excluir numeración especial: 800, 900, 901, 902, 803, 806, 807
   if (/^(800|900|901|902|803|806|807)/.test(phoneClean)) {
-    showAlert("No se admiten números de tarificación especial");
+    _alertaConFoco("No se admiten números de tarificación especial", "customer-phone");
     return;
   }
   // Detectar números absurdos: todos iguales, secuencias obvias
   const _absurdos = ['000000000', '111111111', '222222222', '333333333', '444444444', '555555555', '666666666', '777777777', '888888888', '999999999', '123456789', '987654321', '600000000', '700000000', '612345678'];
   if (_absurdos.includes(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
   // Detectar repetición: 7+ dígitos iguales consecutivos (ej. 611111111, 699999999)
   if (/(\d)\1{6,}/.test(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
 
@@ -3288,7 +3379,7 @@ async function _submitOrderInner() {
   }
   const notes = document.getElementById("customer-notes").value.trim();
   if (notes.length > 300) {
-    showAlert("La nota del pedido es demasiado larga (máximo 300 caracteres)");
+    _alertaConFoco("La nota del pedido es demasiado larga (máximo 300 caracteres)", "customer-notes");
     return;
   }
   const orderNum = await generateOrderNumber();
@@ -3892,6 +3983,10 @@ async function resetDayStats() {
   loadDayStats();
 }
 async function showSuccess(orderNum, slotTime) {
+  // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
+  // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
+  // que rompía el resaltado de campos con error en submitOrderFromDrawer).
+  if (typeof closeCartDrawer === 'function') closeCartDrawer();
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -3982,6 +4077,7 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');
@@ -14134,3 +14230,22 @@ function _mostrarAlertaTablet(data) {
 
   document.body.appendChild(overlay);
 }
+
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
+  if (!btn) return;
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
+})();
