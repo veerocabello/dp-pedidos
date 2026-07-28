@@ -844,6 +844,31 @@ function _docxDiasAFichajes(dias, mesStr, empId) {
 function _bimbaScrollAbierto(el) {
   setTimeout(() => { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
 }
+
+// Cada grupo se comporta como acordeón: al abrir una fila se cierran
+// las demás del mismo grupo que estuvieran abiertas.
+const _bimbaGrupoMkt = [
+  { panel: 'bimba-promos-body', row: 'mkt-row-promos' },
+  { panel: 'dc-panel', row: 'mkt-row-codigos' },
+  { panel: 'ruleta-admin-panel', row: 'mkt-row-ruleta' },
+  { panel: 'rasca-admin-panel', row: 'mkt-row-rasca' },
+];
+const _bimbaGrupoEmp = [
+  { panel: 'bimba-emp-body', row: 'emp-row-lista' },
+  { panel: 'bimba-hist-body', row: 'emp-row-hist' },
+];
+function _bimbaCerrarOtros(grupo, panelIdAbrir) {
+  grupo.forEach((item) => {
+    if (item.panel === panelIdAbrir) return;
+    const panel = document.getElementById(item.panel);
+    if (panel && panel.style.display !== 'none') {
+      panel.style.display = 'none';
+      const fila = document.getElementById(item.row);
+      const chevron = fila && fila.querySelector('.ba');
+      if (chevron) chevron.style.transform = 'rotate(0deg)';
+    }
+  });
+}
 let _empImportPendiente = null; // { fichajes, empId, nombreEmp, mesStr, omitidosDias }
 function empImportarWordModal() {
   const emps = empLoadAll();

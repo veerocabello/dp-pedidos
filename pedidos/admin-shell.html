@@ -756,22 +756,22 @@
 
         <div class="sec-head">Marketing</div>
         <div class="row-group">
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-promos-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){bimbaRenderPromos();_bimbaScrollAbierto(c);}})(this)">
+          <div id="mkt-row-promos" class="row" onclick="(function(btn){var c=document.getElementById('bimba-promos-body');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'bimba-promos-body');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){bimbaRenderPromos();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🔥</span>
             <div class="row-text"><div class="row-title">Promociones</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('dc-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
+          <div id="mkt-row-codigos" class="row" onclick="(function(btn){var c=document.getElementById('dc-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'dc-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
             <span class="row-icon">🎁</span>
             <div class="row-text"><div class="row-title">Códigos de descuento</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRuletaAdmin();_bimbaScrollAbierto(c);}})(this)">
+          <div id="mkt-row-ruleta" class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'ruleta-admin-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRuletaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎡</span>
             <div class="row-text"><div class="row-title">Ruleta de premios</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('rasca-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRascaAdmin();_bimbaScrollAbierto(c);}})(this)">
+          <div id="mkt-row-rasca" class="row" onclick="(function(btn){var c=document.getElementById('rasca-admin-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'rasca-admin-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRascaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎫</span>
             <div class="row-text"><div class="row-title">Rasca y gana</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
@@ -1011,12 +1011,12 @@
             <div class="row-text"><div class="row-title">Alertas de fichaje</div><div class="row-desc" id="bimba-alertas-desc"></div></div>
             <span class="row-chevron">›</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-emp-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
+          <div id="emp-row-lista" class="row" onclick="(function(btn){var c=document.getElementById('bimba-emp-body');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoEmp,'bimba-emp-body');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
             <span class="row-icon">👥</span>
             <div class="row-text"><div class="row-title">Lista de empleados</div><div class="row-desc">URL de fichaje, añadir, fichar manual</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-hist-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){var m=document.getElementById('emp-hist-mes');if(m&&!m.value)m.value=new Date().toISOString().slice(0,7);_bimbaScrollAbierto(c);}})(this)">
+          <div id="emp-row-hist" class="row" onclick="(function(btn){var c=document.getElementById('bimba-hist-body');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoEmp,'bimba-hist-body');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){var m=document.getElementById('emp-hist-mes');if(m&&!m.value)m.value=new Date().toISOString().slice(0,7);_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">📋</span>
             <div class="row-text"><div class="row-title">Historial de fichajes</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
