@@ -39,6 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $tmp_dir = sys_get_temp_dir();
 $window  = 600;
 $max_ip  = 15;
+// ── TOPE DIARIO: máximo 1 jugada NUEVA por IP y por juego cada día,
+// pase lo que pase con el teléfono que se escriba (ver más abajo) ──
+$max_ip_day = 1;
 
 // NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
 // quiera (no hay proxy/CDN de confianza delante en Hostinger que lo fije
@@ -52,7 +55,20 @@ $ip_file = $tmp_dir . '/dpf_juegos_ip_' . md5($ip) . '.json';
 function dpf_gc_rate_limit_files() {
     if (mt_rand(1, 50) !== 1) return;
     $ahora = time();
+    $hoy = date('Y-m-d');
     foreach (glob(sys_get_temp_dir() . '/dpf_*.json') ?: [] as $f) {
+        // Los archivos de tope diario por IP (dpf_juegos_ipday_*) deben
+        // sobrevivir aunque lleven horas sin tocarse (solo se escriben una
+        // vez al día por IP+juego) — si no, el límite se reiniciaría solo
+        // por no volver a intentarlo en la última hora.
+        if (strpos(basename($f), 'dpf_juegos_ipday_') === 0) {
+            $raw = @file_get_contents($f);
+            $data = $raw ? json_decode($raw, true) : null;
+            if (!is_array($data) || ($data['date'] ?? '') !== $hoy) {
+                @unlink($f);
+            }
+            continue;
+        }
         $mtime = @filemtime($f);
         if ($mtime !== false && ($ahora - $mtime) > 3600) {
             @unlink($f);
@@ -84,6 +100,43 @@ function dpf_juegos_check_limit($file, $max, $window) {
     ftruncate($fp, 0);
     rewind($fp);
     fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return true;
+}
+
+// ── TOPE DIARIO POR IP (independiente del teléfono) ──
+// El límite de "una vez al día" de más abajo está atado al teléfono que
+// se escribe, y ese campo no se verifica (no hay SMS ni nada parecido) —
+// cualquiera puede escribir un teléfono distinto cada vez y seguir
+// jugando sin límite real. Esto lo corta contando los intentos NUEVOS
+// (no las recuperaciones de "ya jugaste hoy") por IP y por juego, sin
+// importar qué teléfono se use. El modo incógnito no sirve para saltarse
+// esto porque se basa en la IP, no en cookies/localStorage.
+function dpf_juegos_check_daily_ip_limit($file, $max) {
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return true;
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return true;
+    }
+    $hoy = date('Y-m-d');
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $data = json_decode($raw, true);
+    if (!is_array($data) || ($data['date'] ?? '') !== $hoy) {
+        $data = ['date' => $hoy, 'count' => 0];
+    }
+    if ($data['count'] >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return false;
+    }
+    $data['count']++;
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($data));
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
@@ -268,6 +321,16 @@ try {
             'premio'    => $giroLeido['data']['premio'] ?? null,
             'code'      => $giroLeido['data']['code'] ?? null,
         ]);
+        exit;
+    }
+
+    // Este teléfono concreto no había jugado hoy — antes de dejarle jugar,
+    // comprobar que esta IP no haya agotado ya su jugada nueva de hoy para
+    // este juego (con otro teléfono distinto). No afecta a la recuperación
+    // de arriba, solo a intentos realmente nuevos.
+    $ip_day_file = $tmp_dir . '/dpf_juegos_ipday_' . $juego . '_' . md5($ip) . '.json';
+    if (!dpf_juegos_check_daily_ip_limit($ip_day_file, $max_ip_day)) {
+        echo json_encode(['success' => false, 'error' => 'limite_ip', 'message' => 'Ya se ha jugado hoy desde esta conexión. Inténtalo de nuevo mañana.']);
         exit;
     }
 
