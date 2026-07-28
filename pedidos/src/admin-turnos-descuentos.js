@@ -600,7 +600,11 @@ async function dcCargar() {
   if (!el) return;
   if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
   const discounts = await window.fb_loadDiscounts().catch(() => ({}));
-  const keys = Object.keys(discounts || {});
+  // Los códigos RAS-/RUL- los genera juegos.php para cada premio ganado en
+  // la Ruleta o el Rasca (origen: 'ruleta'|'rasca') — de un solo uso y
+  // caducan solos a las 48h. No son códigos que el admin haya creado a
+  // mano, así que no se listan aquí para no ahogar la lista.
+  const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
