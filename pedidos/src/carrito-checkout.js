@@ -35,6 +35,10 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   if (fidelizacionAmt > 0) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt;
+  if (_ahorroDrawer > 0) {
+    html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
+  }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
     // Si ya sabemos (en memoria) que hay premio activo para el teléfono actual,

@@ -2206,6 +2206,16 @@ function _animateAddToCart(id) {
       btn.addEventListener('animationend', () => btn.classList.remove('popping'), {
         once: true
       });
+      // Confirmación visual más clara que solo el rebote: el botón muestra
+      // un ✓ un instante y una miniatura "vuela" hasta el carrito/FAB.
+      btn.classList.add('add-check');
+      btn.textContent = '✓';
+      clearTimeout(btn._addCheckTimer);
+      btn._addCheckTimer = setTimeout(() => {
+        btn.classList.remove('add-check');
+        btn.textContent = '+';
+      }, 550);
+      _lanzarFlyGhost(btn);
     }
     card.classList.remove('flashing');
     void card.offsetWidth;
@@ -2232,6 +2242,30 @@ function _animateAddToCart(id) {
       once: true
     });
   }
+}
+// Crea una miniatura que "vuela" desde el botón pulsado hasta el carrito
+// (el FAB en móvil, o el contador de "Tu pedido" en escritorio, donde no
+// hay FAB) — refuerzo visual de que el producto se ha añadido, más allá
+// del rebote del propio botón.
+function _lanzarFlyGhost(btn) {
+  const fab = document.getElementById('cart-fab');
+  const target = (fab && !fab.classList.contains('hidden')) ? fab : document.getElementById('cart-count');
+  if (!target) return;
+  const btnRect = btn.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  if (!btnRect.width || !targetRect.width) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'fly-ghost';
+  ghost.textContent = '🥔';
+  const size = 26;
+  ghost.style.left = (btnRect.left + btnRect.width / 2 - size / 2) + 'px';
+  ghost.style.top = (btnRect.top + btnRect.height / 2 - size / 2) + 'px';
+  const dx = (targetRect.left + targetRect.width / 2) - (btnRect.left + btnRect.width / 2);
+  const dy = (targetRect.top + targetRect.height / 2) - (btnRect.top + btnRect.height / 2);
+  ghost.style.setProperty('--fly-target', 'translate(' + dx + 'px,' + dy + 'px)');
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => ghost.classList.add('flying'));
+  setTimeout(() => ghost.remove(), 650);
 }
 // ── 🍰 Venta sugerida: dulce de postre ──────────────────────────────────────
 // Siempre sugiere tarta o galleta (nunca bebida). Varía según lo que ya
@@ -2345,7 +2379,7 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div>A\xF1ade productos de la carta</div>";
+    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>";
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
     return;
@@ -2443,6 +2477,19 @@ function renderCart() {
   }
   const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
+  // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
+  // la línea verde de cada uno ya existía, pero un badge aparte resalta
+  // más el ahorro real que solo ver un número distinto en el total.
+  const totalAhorro = discountAmt + fidelizacionAmt;
+  const savingsEl = document.getElementById('cart-savings-badge');
+  if (savingsEl) {
+    if (totalAhorro > 0) {
+      savingsEl.style.display = 'block';
+      document.getElementById('cart-savings-amount').textContent = '¡Ahorras ' + totalAhorro.toFixed(2).replace('.', ',') + ' €!';
+    } else {
+      savingsEl.style.display = 'none';
+    }
+  }
 
   // Only show total and form if orders are open
   // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
@@ -2502,6 +2549,10 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   }
   if (fidelizacionAmt > 0) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt;
+  if (_ahorroDrawer > 0) {
+    html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
