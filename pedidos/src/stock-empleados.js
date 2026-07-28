@@ -533,11 +533,7 @@ function stockQty(i, delta) {
   if (!ing) return;
   const current = _stockSelections[ing];
   if (current === undefined) {
-    // Antes ponía 0 aquí en vez de `delta` — el primer toque en "+" no
-    // cambiaba el número visible (seguía en 0), así que había que tocar
-    // dos veces para llegar a 1, y un solo toque real quedaba fuera del
-    // listado final (que solo incluye cantidades > 0).
-    if (delta > 0) { _stockSelections[ing] = delta; }
+    if (delta > 0) { _stockSelections[ing] = 0; }
     renderStockItems();
     return;
   }

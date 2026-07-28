@@ -463,6 +463,14 @@ function exportTodayCSV() {
   }
   downloadCSV(stats, "pedidos_".concat(todayKey, ".csv"));
 }
+// El nombre del cliente es texto libre sin restricción de caracteres — una
+// comilla suelta dentro de un campo entrecomillado corta el campo antes de
+// tiempo y desplaza el resto de comas de esa fila a las columnas
+// equivocadas al abrirlo en Excel/Sheets. Se duplica cada comilla interna,
+// que es como CSV espera que se escapen ("" dentro de un campo "...").
+function _csvEscape(str) {
+  return String(str == null ? '' : str).replace(/"/g, '""');
+}
 function exportHistorialCSV() {
   const hist = getHistorial();
   if (!hist.length) {
@@ -472,7 +480,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -488,7 +496,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'

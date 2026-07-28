@@ -61,10 +61,23 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
-  const turnos = getSlotTurnos();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  const turnosLocal = getSlotTurnos();
+  // Transacción real en vez de leer-modificar-guardar sin más — antes, si
+  // otro dispositivo acababa de añadir/quitar un turno justo antes de este
+  // guardado (que solo cambia el número máximo por turno), se escribía
+  // encima con la copia de turnos que este dispositivo tenía en caché,
+  // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
+  // patrón para las demás ediciones de turnos.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+      return { turnos: t, max: max };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
+  }
   showToast('slot-config-toast');
-  logActivity('🕐 Turnos actualizados — ' + turnos.length + ' franjas · max ' + max + ' pedidos/turno');
+  logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
 }
 

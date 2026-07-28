@@ -347,6 +347,19 @@ try {
     // si ya se alcanzó, solo deja elegir entre los premios sin descuento
     // (pct=0). Si no hay ninguno así configurado, se rechaza el giro con
     // un aviso claro en vez de dar un error genérico.
+    //
+    // El recuento se hace releyendo todos los giros del día, sin ningún
+    // bloqueo — dos giros casi simultáneos podían leer los dos "todavía no
+    // se ha llegado al tope" antes de que ninguno terminara de escribir su
+    // premio, y entregar los dos un premio con descuento, superando el
+    // tope por 1. Se serializa con un lock de archivo por juego+día para
+    // que solo un giro a la vez pueda contar/decidir/escribir — el tráfico
+    // esperado es bajo, así que no penaliza en la práctica, y PHP libera
+    // el lock solo al final de la petición (aunque se salga por `exit`).
+    $topeLockFile = $tmp_dir . '/dpf_juegos_topelock_' . $juego . '_' . $todayKey . '.json';
+    $topeLockFp = fopen($topeLockFile, 'c+');
+    if ($topeLockFp !== false) flock($topeLockFp, LOCK_EX);
+
     $tope = is_numeric($cfg['topeDiario'] ?? null) ? (int)$cfg['topeDiario'] : 0;
     $premiosDisponibles = $premios;
     if ($tope > 0) {
@@ -396,6 +409,7 @@ try {
     // Tope consumido solo ahora que el giro está guardado de verdad.
     dpf_juegos_marcar_ip_usada($ip_day_file);
 
+    if ($topeLockFp !== false) { flock($topeLockFp, LOCK_UN); fclose($topeLockFp); }
     echo json_encode(['success' => true, 'yaJugaste' => false, 'premio' => $premio, 'code' => $code]);
 } catch (Exception $e) {
     error_log('[juegos] Error: ' . $e->getMessage());

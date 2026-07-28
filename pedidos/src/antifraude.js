@@ -254,11 +254,30 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderTotal = 0;
   window.currentOrderItems = [];
   try {
-    window.currentOrderItems = Object.entries(cart).map(([id, qty]) => {
+    // Antes solo se leía `cart` (productos normales del menú) — los
+    // personalizados (Patata Al Gusto, Patata Bomba, vía custCart) y los
+    // complementos sueltos (extrasCart) se quedaban fuera, así que nunca
+    // se contaban en ventasProductos/{fecha}, la analítica que usa
+    // finanzas.js para "Estrellas y perdedores". Si el admin les asigna
+    // coste ahí, aparecían siempre con 0 ventas por mucho que se vendieran.
+    const itemsNormales = Object.entries(cart).map(([id, qty]) => {
       const item = MENU.find(m => m.id == id);
       if (!item) return null;
       return { id: item.id, qty, name: item.name, price: item.price * qty };
     }).filter(Boolean);
+    const itemsCustom = Object.values(custCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    const itemsExtras = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) : item.price;
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    window.currentOrderItems = [...itemsNormales, ...itemsCustom, ...itemsExtras];
     window.currentOrderTotal = window.currentOrderItems.reduce((s, i) => s + i.price, 0);
   } catch(e) {}
   recordProductSales(window.currentOrderItems);
@@ -493,11 +512,42 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
+// Resta de ventasProductos/{fecha} lo que sumó recordProductSales() para
+// este pedido — antes, cancelar un pedido (admin) o que el cliente lo
+// modificara (que primero lo borra y luego reenvía uno nuevo) dejaba sus
+// productos contados para siempre en la analítica de "Estrellas y
+// perdedores", aunque el pedido ya no existiera o se hubiera duplicado.
+// pedido.items no lleva el id del producto (solo name/qty/subtotal, tal
+// como lo guarda guardar-pedido.php), así que se busca por nombre.
+async function _revertirVentasProductos(items) {
+  if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
+  const fecha = new Date().toISOString().slice(0, 10);
+  try {
+    const ref = firebase.database().ref('ventasProductos/' + fecha);
+    const sn = await ref.once('value');
+    if (!sn.exists()) return;
+    const actual = sn.val();
+    items.forEach(it => {
+      if (it.isFee || !it.name) return;
+      const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
+      if (!menuItem) return;
+      const id = String(menuItem.id);
+      if (actual[id] == null) return;
+      actual[id] = Math.max(0, actual[id] - (it.qty || 0));
+      if (actual[id] === 0) delete actual[id];
+    });
+    await ref.set(actual);
+  } catch (e) {
+    console.warn('[ventasProductos] no se pudo revertir', e);
+  }
+}
 async function _borrarPedidoDeFirebase(orderNum) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
   // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
   await setOrderStatus(orderNum, 'cancelado');
+
+  let itemsParaRevertir = null;
 
   // 2. Borrar de Firebase stats y liberar slot si tenía uno
   let slotToFree = null;
@@ -507,6 +557,7 @@ async function _borrarPedidoDeFirebase(orderNum) {
       if (stats && stats.orders) {
         const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
         if (pedido && pedido.slot) slotToFree = pedido.slot;
+        if (pedido && pedido.items) itemsParaRevertir = pedido.items;
         stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
         stats.count = Math.max(0, (stats.count || 1) - 1);
         stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
@@ -521,12 +572,15 @@ async function _borrarPedidoDeFirebase(orderNum) {
     if (local.orders) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
+      if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
       local.total = local.orders.reduce((acc, o) => acc + (o.total || 0), 0);
       localStorage.setItem(STATS_KEY, JSON.stringify(local));
     }
   } catch {}
+
+  if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
 
   // 4. El slot NO se libera al cancelar — el turno quedó ocupado
 

@@ -733,9 +733,21 @@ function saveHorario() {
   const manClose = document.getElementById('h-man-close') ? document.getElementById('h-man-close').value : '';
   const tarOpen = document.getElementById('h-tar-open') ? document.getElementById('h-tar-open').value : '';
   const tarClose = document.getElementById('h-tar-close') ? document.getElementById('h-tar-close').value : '';
-  const closedMsgMid = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
-  const closedMsgNight = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
-  const closedMsgDay = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  // Estos 3 campos no tienen valor por defecto en el HTML (solo
+  // placeholder) y solo se rellenan cuando termina de cargar el horario
+  // desde Firebase (loadAdminHorario). Si se guarda en un dispositivo/
+  // sesión nueva antes de que esa carga termine, los campos están vacíos
+  // en pantalla sin que el admin haya tocado nada — así que si están
+  // vacíos aquí, se conserva el mensaje personalizado que ya hubiera
+  // guardado antes, en vez de borrarlo sin querer.
+  let _hPrev = {};
+  try { _hPrev = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}'); } catch {}
+  const closedMsgMidRaw = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
+  const closedMsgNightRaw = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
+  const closedMsgDayRaw = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  const closedMsgMid = closedMsgMidRaw || _hPrev.closedMsgMid || '';
+  const closedMsgNight = closedMsgNightRaw || _hPrev.closedMsgNight || '';
+  const closedMsgDay = closedMsgDayRaw || _hPrev.closedMsgDay || '';
   const h = {
     manOpen,
     manClose,

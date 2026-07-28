@@ -306,7 +306,25 @@ async function girarRuleta() {
       _ruletaEjecutando = false;
       return;
     }
-    const idx = Math.max(0, _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id)));
+    let idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    if (idx === -1) {
+      // La lista de premios cambió entre abrir la ruleta y girar (el admin
+      // la editó justo en medio) — el premio real que se ha ganado (texto,
+      // emoji y código) sigue siendo correcto porque viene del servidor,
+      // pero la ruleta dibujada localmente ya no tiene ese premio en
+      // ninguno de sus segmentos. Se recarga y redibuja con la lista
+      // actual antes de animar, para no parar visualmente en un segmento
+      // que no es el premio ganado de verdad.
+      try {
+        const cfgFresco = window.fb_loadRuletaConfig ? await window.fb_loadRuletaConfig() : null;
+        if (cfgFresco && Array.isArray(cfgFresco.premios)) {
+          _ruletaPremios = cfgFresco.premios;
+          _dibujarRuletaWheel(_ruletaPremios);
+        }
+      } catch (e) {}
+      idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    }
+    if (idx === -1) idx = 0;
     const seg = 360 / (_ruletaPremios.length || 1);
     const mid = idx * seg + seg / 2;
     const vueltas = 5 + Math.floor(Math.random() * 3);

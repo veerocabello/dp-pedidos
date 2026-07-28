@@ -3848,11 +3848,30 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderTotal = 0;
   window.currentOrderItems = [];
   try {
-    window.currentOrderItems = Object.entries(cart).map(([id, qty]) => {
+    // Antes solo se leía `cart` (productos normales del menú) — los
+    // personalizados (Patata Al Gusto, Patata Bomba, vía custCart) y los
+    // complementos sueltos (extrasCart) se quedaban fuera, así que nunca
+    // se contaban en ventasProductos/{fecha}, la analítica que usa
+    // finanzas.js para "Estrellas y perdedores". Si el admin les asigna
+    // coste ahí, aparecían siempre con 0 ventas por mucho que se vendieran.
+    const itemsNormales = Object.entries(cart).map(([id, qty]) => {
       const item = MENU.find(m => m.id == id);
       if (!item) return null;
       return { id: item.id, qty, name: item.name, price: item.price * qty };
     }).filter(Boolean);
+    const itemsCustom = Object.values(custCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    const itemsExtras = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) : item.price;
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    window.currentOrderItems = [...itemsNormales, ...itemsCustom, ...itemsExtras];
     window.currentOrderTotal = window.currentOrderItems.reduce((s, i) => s + i.price, 0);
   } catch(e) {}
   recordProductSales(window.currentOrderItems);
@@ -4087,11 +4106,42 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
+// Resta de ventasProductos/{fecha} lo que sumó recordProductSales() para
+// este pedido — antes, cancelar un pedido (admin) o que el cliente lo
+// modificara (que primero lo borra y luego reenvía uno nuevo) dejaba sus
+// productos contados para siempre en la analítica de "Estrellas y
+// perdedores", aunque el pedido ya no existiera o se hubiera duplicado.
+// pedido.items no lleva el id del producto (solo name/qty/subtotal, tal
+// como lo guarda guardar-pedido.php), así que se busca por nombre.
+async function _revertirVentasProductos(items) {
+  if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
+  const fecha = new Date().toISOString().slice(0, 10);
+  try {
+    const ref = firebase.database().ref('ventasProductos/' + fecha);
+    const sn = await ref.once('value');
+    if (!sn.exists()) return;
+    const actual = sn.val();
+    items.forEach(it => {
+      if (it.isFee || !it.name) return;
+      const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
+      if (!menuItem) return;
+      const id = String(menuItem.id);
+      if (actual[id] == null) return;
+      actual[id] = Math.max(0, actual[id] - (it.qty || 0));
+      if (actual[id] === 0) delete actual[id];
+    });
+    await ref.set(actual);
+  } catch (e) {
+    console.warn('[ventasProductos] no se pudo revertir', e);
+  }
+}
 async function _borrarPedidoDeFirebase(orderNum) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
   // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
   await setOrderStatus(orderNum, 'cancelado');
+
+  let itemsParaRevertir = null;
 
   // 2. Borrar de Firebase stats y liberar slot si tenía uno
   let slotToFree = null;
@@ -4101,6 +4151,7 @@ async function _borrarPedidoDeFirebase(orderNum) {
       if (stats && stats.orders) {
         const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
         if (pedido && pedido.slot) slotToFree = pedido.slot;
+        if (pedido && pedido.items) itemsParaRevertir = pedido.items;
         stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
         stats.count = Math.max(0, (stats.count || 1) - 1);
         stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
@@ -4115,12 +4166,15 @@ async function _borrarPedidoDeFirebase(orderNum) {
     if (local.orders) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
+      if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
       local.total = local.orders.reduce((acc, o) => acc + (o.total || 0), 0);
       localStorage.setItem(STATS_KEY, JSON.stringify(local));
     }
   } catch {}
+
+  if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
 
   // 4. El slot NO se libera al cancelar — el turno quedó ocupado
 
@@ -4442,10 +4496,23 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
-  const turnos = getSlotTurnos();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  const turnosLocal = getSlotTurnos();
+  // Transacción real en vez de leer-modificar-guardar sin más — antes, si
+  // otro dispositivo acababa de añadir/quitar un turno justo antes de este
+  // guardado (que solo cambia el número máximo por turno), se escribía
+  // encima con la copia de turnos que este dispositivo tenía en caché,
+  // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
+  // patrón para las demás ediciones de turnos.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+      return { turnos: t, max: max };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
+  }
   showToast('slot-config-toast');
-  logActivity('🕐 Turnos actualizados — ' + turnos.length + ' franjas · max ' + max + ' pedidos/turno');
+  logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
 }
 
@@ -7528,9 +7595,21 @@ function saveHorario() {
   const manClose = document.getElementById('h-man-close') ? document.getElementById('h-man-close').value : '';
   const tarOpen = document.getElementById('h-tar-open') ? document.getElementById('h-tar-open').value : '';
   const tarClose = document.getElementById('h-tar-close') ? document.getElementById('h-tar-close').value : '';
-  const closedMsgMid = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
-  const closedMsgNight = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
-  const closedMsgDay = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  // Estos 3 campos no tienen valor por defecto en el HTML (solo
+  // placeholder) y solo se rellenan cuando termina de cargar el horario
+  // desde Firebase (loadAdminHorario). Si se guarda en un dispositivo/
+  // sesión nueva antes de que esa carga termine, los campos están vacíos
+  // en pantalla sin que el admin haya tocado nada — así que si están
+  // vacíos aquí, se conserva el mensaje personalizado que ya hubiera
+  // guardado antes, en vez de borrarlo sin querer.
+  let _hPrev = {};
+  try { _hPrev = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}'); } catch {}
+  const closedMsgMidRaw = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
+  const closedMsgNightRaw = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
+  const closedMsgDayRaw = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  const closedMsgMid = closedMsgMidRaw || _hPrev.closedMsgMid || '';
+  const closedMsgNight = closedMsgNightRaw || _hPrev.closedMsgNight || '';
+  const closedMsgDay = closedMsgDayRaw || _hPrev.closedMsgDay || '';
   const h = {
     manOpen,
     manClose,
@@ -8795,6 +8874,14 @@ function exportTodayCSV() {
   }
   downloadCSV(stats, "pedidos_".concat(todayKey, ".csv"));
 }
+// El nombre del cliente es texto libre sin restricción de caracteres — una
+// comilla suelta dentro de un campo entrecomillado corta el campo antes de
+// tiempo y desplaza el resto de comas de esa fila a las columnas
+// equivocadas al abrirlo en Excel/Sheets. Se duplica cada comilla interna,
+// que es como CSV espera que se escapen ("" dentro de un campo "...").
+function _csvEscape(str) {
+  return String(str == null ? '' : str).replace(/"/g, '""');
+}
 function exportHistorialCSV() {
   const hist = getHistorial();
   if (!hist.length) {
@@ -8804,7 +8891,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -8820,7 +8907,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'
@@ -12039,11 +12126,7 @@ function stockQty(i, delta) {
   if (!ing) return;
   const current = _stockSelections[ing];
   if (current === undefined) {
-    // Antes ponía 0 aquí en vez de `delta` — el primer toque en "+" no
-    // cambiaba el número visible (seguía en 0), así que había que tocar
-    // dos veces para llegar a 1, y un solo toque real quedaba fuera del
-    // listado final (que solo incluye cantidades > 0).
-    if (delta > 0) { _stockSelections[ing] = delta; }
+    if (delta > 0) { _stockSelections[ing] = 0; }
     renderStockItems();
     return;
   }
@@ -12867,7 +12950,25 @@ async function girarRuleta() {
       _ruletaEjecutando = false;
       return;
     }
-    const idx = Math.max(0, _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id)));
+    let idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    if (idx === -1) {
+      // La lista de premios cambió entre abrir la ruleta y girar (el admin
+      // la editó justo en medio) — el premio real que se ha ganado (texto,
+      // emoji y código) sigue siendo correcto porque viene del servidor,
+      // pero la ruleta dibujada localmente ya no tiene ese premio en
+      // ninguno de sus segmentos. Se recarga y redibuja con la lista
+      // actual antes de animar, para no parar visualmente en un segmento
+      // que no es el premio ganado de verdad.
+      try {
+        const cfgFresco = window.fb_loadRuletaConfig ? await window.fb_loadRuletaConfig() : null;
+        if (cfgFresco && Array.isArray(cfgFresco.premios)) {
+          _ruletaPremios = cfgFresco.premios;
+          _dibujarRuletaWheel(_ruletaPremios);
+        }
+      } catch (e) {}
+      idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    }
+    if (idx === -1) idx = 0;
     const seg = 360 / (_ruletaPremios.length || 1);
     const mid = idx * seg + seg / 2;
     const vueltas = 5 + Math.floor(Math.random() * 3);
