@@ -512,7 +512,7 @@
     position: absolute;
     top: -9px;
     right: 10px;
-    background: var(--amber-dark);
+    background: #e74c3c;
     color: var(--white);
     font-size: 9.5px;
     font-weight: 800;
