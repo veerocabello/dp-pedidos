@@ -98,10 +98,17 @@ if (document.readyState !== 'loading') _juegoFabVigilarBannerCookies();
 
 function _actualizarJuegoFab(juego) {
   const fab = document.getElementById('juego-fab');
+  const icon = document.getElementById('juego-fab-icon');
   if (fab) {
-    if (juego === 'ruleta') { fab.textContent = '🎡'; fab.classList.remove('hidden'); }
-    else if (juego === 'rasca') { fab.textContent = '🎫'; fab.classList.remove('hidden'); }
-    else { fab.classList.add('hidden'); }
+    if (juego === 'ruleta') {
+      if (icon) icon.textContent = '🎡';
+      fab.classList.remove('hidden');
+    } else if (juego === 'rasca') {
+      if (icon) icon.textContent = '🎫';
+      fab.classList.remove('hidden');
+    } else {
+      fab.classList.add('hidden');
+    }
   }
   document.querySelectorAll('#juego-activo-selector button').forEach(btn => {
     const on = btn.dataset.juego === juego;
