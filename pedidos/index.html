@@ -446,6 +446,11 @@
   <span id="cart-fab-count">0</span>
 </button>
 
+<!-- ── REPETIR ÚLTIMO PEDIDO (solo móvil, solo si el carrito está vacío) ── -->
+<button id="repeat-order-fab" class="hidden" onclick="repetirUltimoPedido()">
+  🔁 Repetir tu último pedido
+</button>
+
 <button id="juego-fab" class="hidden" onclick="abrirJuegoActivo()" aria-label="Jugar y ganar un premio">
   <span id="juego-fab-icon">🎡</span>
   <span class="juego-fab-dot"></span>
@@ -867,7 +872,7 @@
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1784581169495" defer></script>
-<script src="js/app.js?v=1785312347773" defer></script>
+<script src="js/app.js?v=1785314285091" defer></script>
 <script src="js/auth.js?v=1785276235746" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita

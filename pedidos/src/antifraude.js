@@ -312,6 +312,25 @@ async function showSuccess(orderNum, slotTime) {
     localStorage.setItem('dpf_active_order', JSON.stringify(window._lastOrderData));
   } catch (e) {}
 
+  // Guardar aparte, sin caducar, para "Repetir mi último pedido" en una
+  // visita futura — a diferencia de dpf_active_order (que se borra en
+  // cuanto se cierra la ventana de modificar/cancelar), esto se queda.
+  // Solo líneas de producto real: sin gastos de gestión (isFee) ni el
+  // descuento/aviso de fidelización (subtotal <= 0).
+  try {
+    const _itemsRepetibles = (_lastTicketData ? _lastTicketData.items || [] : []).filter(i => !i.isFee && i.subtotal > 0);
+    if (_itemsRepetibles.length) {
+      localStorage.setItem('dpf_ultimo_pedido', JSON.stringify({
+        items: _itemsRepetibles,
+        total: orderTotal,
+        cart: JSON.parse(JSON.stringify(cart)),
+        custCart: JSON.parse(JSON.stringify(custCart)),
+        extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+        ts: Date.now()
+      }));
+    }
+  } catch (e) {}
+
   // Registrar el slot
   if (slotTime) incrementSlot(slotTime);
 

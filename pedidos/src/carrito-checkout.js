@@ -11,6 +11,15 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-count').textContent = count;
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
+  // Botón "repetir último pedido" (solo móvil): ocupa el mismo hueco que
+  // el FAB del carrito cuando este está vacío — nunca se muestran los dos
+  // a la vez porque uno solo aparece cuando el otro está oculto.
+  const repeatFab = document.getElementById('repeat-order-fab');
+  if (repeatFab) {
+    let hayUltimoPedido = false;
+    try { hayUltimoPedido = !!localStorage.getItem('dpf_ultimo_pedido'); } catch (e) {}
+    repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
+  }
 }
 function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
   const drawerBody = document.getElementById('cart-drawer-body');

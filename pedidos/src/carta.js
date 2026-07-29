@@ -674,9 +674,10 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>";
+    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
+    _updateCartFab(0, 0);
     return;
   }
   let total = 0;
@@ -805,5 +806,53 @@ function renderCart() {
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
   _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
+}
+
+// ── REPETIR ÚLTIMO PEDIDO ──
+// dpf_ultimo_pedido lo guarda antifraude.js justo después de confirmar un
+// pedido (a diferencia de dpf_active_order, este no caduca) — si existe y
+// el carrito está vacío, se ofrece repetirlo con un toque en vez de
+// obligar a repasar toda la carta otra vez.
+function _bimbaTarjetaRepetirPedido() {
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items) || !data.items.length) return '';
+    const lineas = data.items.map(i => '<b>' + i.qty + '×</b> ' + i.name).join('<br>');
+    return '<div class="repeat-card">' +
+      '<div class="repeat-card__label">🔁 Pediste esto la última vez</div>' +
+      '<div class="repeat-card__items">' + lineas + '</div>' +
+      '<button type="button" class="repeat-card__btn" onclick="repetirUltimoPedido()">Repetir pedido — ' + (data.total || 0).toFixed(2).replace('.', ',') + ' €</button>' +
+      '</div>';
+  } catch (e) { return ''; }
+}
+function repetirUltimoPedido() {
+  if (isShopBlocked()) { showClosedToast(); return; }
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    let algoOmitido = false;
+    const disponible = id => {
+      const item = MENU.find(m => m.id == id);
+      return item && !item.hidden && !item.soldout;
+    };
+    Object.entries(data.cart || {}).forEach(([id, qty]) => {
+      if (!disponible(id)) { algoOmitido = true; return; }
+      cart[id] = (cart[id] || 0) + qty;
+    });
+    Object.entries(data.custCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      custCart[key] = c;
+    });
+    Object.entries(data.extrasCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      extrasCart[key] = c;
+    });
+    renderMenu();
+    renderCart();
+    showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');
+  } catch (e) {}
 }
 
