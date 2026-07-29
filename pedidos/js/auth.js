@@ -1485,7 +1485,7 @@ function bimbaRenderEmpleados() {
   if (listaEl) {
     const DN = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     listaEl.innerHTML = emps.map(e => `
-      <div style="background:${e.deBaja ? '#FDECD5' : '#fff'};border:1.5px solid ${e.deBaja ? '#E8943A' : '#F5E6C8'};border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div id="emp-row-${e.id}" style="background:${e.deBaja ? '#FDECD5' : '#fff'};border:1.5px solid ${e.deBaja ? '#E8943A' : '#F5E6C8'};border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:160px">
           <div style="font-size:14px;font-weight:700;color:#3D1F0D">${e.nombre}${e.deBaja ? ' <span style="font-size:11px;font-weight:700;color:#C2711A">🛌 DE BAJA</span>' : ''}</div>
           <div style="font-size:11px;color:#8A6A4E;margin-top:2px">DNI: ${e.dni ? e.dni.replace(/./g,(c,i,s)=>i<3||i>=s.length-2?c:'*') : '—'} · PIN: ••••</div>

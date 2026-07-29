@@ -32,6 +32,7 @@ const MODULOS = [
   'stock-empleados.js',
   'juegos.js',
   'init.js',
+  'buscador.js',
 ];
 
 const srcDir = path.join(__dirname, '..', 'src');
