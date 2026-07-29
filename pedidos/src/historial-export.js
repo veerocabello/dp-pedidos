@@ -577,17 +577,26 @@ function closePrintModal() {
 function doPrint() {
   if (!currentTicketData) return;
   const orderNum = currentTicketData.orderNum;
+  const ticketData = currentTicketData;
 
-  // Mandar a impresora térmica via Firebase
+  // Imprimir de verdad en la térmica (WebUSB)
+  imprimirTicketTermico(ticketData).then(() => {
+    _markAsImpreso(orderNum);
+  }).catch(e => {
+    console.warn('[Impresora] error al imprimir', e);
+    alert('⚠️ No se pudo imprimir en la térmica (' + e.message + '). Se abrirá el diálogo de impresión del navegador como alternativa.');
+    window.print();
+  });
+
+  // Guardar registro en Firebase (histórico de reimpresiones, usado también por fidelización)
   if (window.fb_saveTicket) {
     const reimprKey = 'R' + Date.now();
-    const ticketParaImpresora = Object.assign({}, currentTicketData, { _reimprimir: true });
+    const ticketParaImpresora = Object.assign({}, ticketData, { _reimprimir: true });
     window.fb_saveTicket(reimprKey, ticketParaImpresora)
-      .then(() => { _registrarEnvioTicket(orderNum, true); closePrintModal(); })
-      .catch(() => { _registrarEnvioTicket(orderNum, false); _avisarFalloEnvioTicket(orderNum); closePrintModal(); });
-  } else {
-    closePrintModal();
+      .then(() => { _registrarEnvioTicket(orderNum, true); })
+      .catch(() => { _registrarEnvioTicket(orderNum, false); _avisarFalloEnvioTicket(orderNum); });
   }
+  closePrintModal();
 }
 function printLastTicket() {
   if (_lastTicketData) openPrintModal(_lastTicketData);
@@ -598,7 +607,6 @@ function printLastTicket() {
 // doPrint(): este es el print "original" del sistema, no una reimpresión
 // manual desde el panel.
 function _autoImprimirPedido(order) {
-  if (!window.fb_saveTicket) return;
   const ticketData = {
     orderNum: order.num,
     name: order.name,
@@ -609,10 +617,21 @@ function _autoImprimirPedido(order) {
     total: order.total,
     time: order.time
   };
-  const key = 'A' + Date.now() + '_' + order.num;
-  window.fb_saveTicket(key, ticketData)
-    .then(() => _registrarEnvioTicket(order.num, true))
-    .catch(() => { _registrarEnvioTicket(order.num, false); _avisarFalloEnvioTicket(order.num); });
+
+  // Imprimir de verdad en la térmica (WebUSB) en esta tablet
+  imprimirTicketTermico(ticketData)
+    .then(() => { _markAsImpreso(order.num); _registrarEnvioTicket(order.num, true); })
+    .catch(e => {
+      console.warn('[Impresora] auto-imprimir falló para ' + order.num, e);
+      _registrarEnvioTicket(order.num, false);
+      _avisarFalloEnvioTicket(order.num);
+    });
+
+  // Guardar también en Firebase (histórico, usado por fidelización)
+  if (window.fb_saveTicket) {
+    const key = 'A' + Date.now() + '_' + order.num;
+    window.fb_saveTicket(key, ticketData).catch(() => {});
+  }
 }
 // Aviso real cuando el envío del ticket a Firebase falla (offline, permisos...).
 // No sabemos si la impresora física llegó a sacar el papel — de eso se encarga
@@ -829,6 +848,7 @@ function initFirebaseListeners() {
       const newCount = stats.count || 0;
       // Update localStorage cache
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+
       // First call — set baseline, don't alert, but refresh UI
       if (_fbLastCount === null) {
         var _document$getElementB1, _document$getElementB10;

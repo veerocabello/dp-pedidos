@@ -1598,7 +1598,7 @@
     <button class="admin-close" onclick="closeTicketConfigOverlay()">✕</button>
     <h2>🧾 Configuración del ticket</h2>
     <div class="admin-modal-body">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Esto cambia lo que se ve en el ticket en pantalla (y al imprimir desde aquí). Si imprimes con tu impresora térmica conectada por Node.js, esa parte tiene su propio texto y no se actualiza desde aquí — dime si quieres que también la haga configurable.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Esto cambia lo que se ve en el ticket en pantalla y también lo que se imprime en la impresora térmica.</p>
 
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Nombre del negocio</label>
       <input type="text" id="tc-nombre" placeholder="DULCE PATATA FOOD" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
@@ -1616,6 +1616,15 @@
       <input type="text" id="tc-texto-pago" placeholder="Pagar en caja" style="width:100%;padding:9px 12px;margin-bottom:16px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
 
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:6px 0 10px">Impresora térmica</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
+        <span id="pt-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
+        <div style="display:flex;gap:6px">
+          <button onclick="conectarImpresoraTermica()" style="background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔌 Conectar impresora</button>
+          <button onclick="imprimirTicketPrueba()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🧾 Probar</button>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin:-6px 0 14px">Solo funciona en Chrome/Edge. Conecta la impresora por USB (con adaptador OTG en la tablet) y pulsa "Conectar impresora" una vez — luego imprimirá sola.</p>
 
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Ancho del papel</label>
       <select id="tc-ancho-papel" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">

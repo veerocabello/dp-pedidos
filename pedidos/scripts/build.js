@@ -25,6 +25,7 @@ const MODULOS = [
   'admin-accesos.js',
   'slots-alertas.js',
   'admin-config.js',
+  'impresora-termica.js',
   'historial-export.js',
   'pedidos-vivo-cocina.js',
   'banner-pdf.js',
