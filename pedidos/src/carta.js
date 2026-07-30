@@ -634,8 +634,14 @@ function getUpsellDulce() {
     if (esPlural) {
       sugerido = MENU.find(m => m.id === 34); // Tarta de Queso La Viña, clásica
     } else {
-      const galletaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
-      sugerido = MENU.find(m => m.id === galletaId);
+      // Elegir una sola vez por sesión y reutilizar la misma — si se recalculara
+      // al azar en cada repintado del carrito (p.ej. tras comprobar fidelización
+      // mientras el cliente sigue escribiendo), la galleta sugerida cambiaba sola
+      // dando la sensación de que la tarjeta "parpadeaba".
+      if (!window._upsellGalletaElegidaId) {
+        window._upsellGalletaElegidaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
+      }
+      sugerido = MENU.find(m => m.id === window._upsellGalletaElegidaId);
     }
   }
   if (!sugerido) return null;

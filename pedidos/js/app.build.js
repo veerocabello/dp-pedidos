@@ -2432,8 +2432,14 @@ function getUpsellDulce() {
     if (esPlural) {
       sugerido = MENU.find(m => m.id === 34); // Tarta de Queso La Viña, clásica
     } else {
-      const galletaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
-      sugerido = MENU.find(m => m.id === galletaId);
+      // Elegir una sola vez por sesión y reutilizar la misma — si se recalculara
+      // al azar en cada repintado del carrito (p.ej. tras comprobar fidelización
+      // mientras el cliente sigue escribiendo), la galleta sugerida cambiaba sola
+      // dando la sensación de que la tarjeta "parpadeaba".
+      if (!window._upsellGalletaElegidaId) {
+        window._upsellGalletaElegidaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
+      }
+      sugerido = MENU.find(m => m.id === window._upsellGalletaElegidaId);
     }
   }
   if (!sugerido) return null;
@@ -8655,8 +8661,14 @@ async function _comprobarPremioFidelizacion(phoneClean) {
     }
     // Repintar el carrito para que el total ya refleje el premio (o deje
     // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
-    // el carrito para que se note el cambio.
-    if (typeof renderCart === 'function') renderCart();
+    // el carrito para que se note el cambio. PERO no si el cliente está
+    // escribiendo en ese momento (nombre/teléfono/notas) — renderCart()
+    // reconstruye esos campos desde cero y le borraría lo que ha escrito.
+    // El descuento se calcula igualmente bien al confirmar el pedido
+    // aunque el carrito no se repinte al instante.
+    const _campoActivo = document.activeElement ? document.activeElement.tagName : '';
+    const _escribiendoAhora = _campoActivo === 'INPUT' || _campoActivo === 'TEXTAREA';
+    if (typeof renderCart === 'function' && !_escribiendoAhora) renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {

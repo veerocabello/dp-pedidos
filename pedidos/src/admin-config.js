@@ -1439,8 +1439,14 @@ async function _comprobarPremioFidelizacion(phoneClean) {
     }
     // Repintar el carrito para que el total ya refleje el premio (o deje
     // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
-    // el carrito para que se note el cambio.
-    if (typeof renderCart === 'function') renderCart();
+    // el carrito para que se note el cambio. PERO no si el cliente está
+    // escribiendo en ese momento (nombre/teléfono/notas) — renderCart()
+    // reconstruye esos campos desde cero y le borraría lo que ha escrito.
+    // El descuento se calcula igualmente bien al confirmar el pedido
+    // aunque el carrito no se repinte al instante.
+    const _campoActivo = document.activeElement ? document.activeElement.tagName : '';
+    const _escribiendoAhora = _campoActivo === 'INPUT' || _campoActivo === 'TEXTAREA';
+    if (typeof renderCart === 'function' && !_escribiendoAhora) renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {
