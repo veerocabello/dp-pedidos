@@ -251,6 +251,19 @@ async function showSuccess(orderNum, slotTime) {
   // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
   // que rompía el resaltado de campos con error en submitOrderFromDrawer).
   if (typeof closeCartDrawer === 'function') closeCartDrawer();
+
+  // Restaurar el texto normal de "pedido confirmado" — si el cliente había
+  // cancelado un pedido antes en esta misma visita, cancelarPedido() dejó
+  // este mismo bloque con el texto de "❌ Pedido cancelado" puesto, y sin
+  // esto se quedaba así para siempre aunque el pedido SIGUIENTE sí se
+  // confirmara bien (confundía al cliente, que creía que había fallado y
+  // podía llegar a repetir el pedido).
+  const _icon = document.querySelector('#success-screen .success-icon');
+  const _title = document.querySelector('#success-screen .success-title');
+  const _sub = document.querySelector('#success-screen .success-sub');
+  if (_icon) _icon.textContent = '🥔';
+  if (_title) _title.textContent = '¡Pedido confirmado!';
+  if (_sub) _sub.textContent = 'Te esperamos en el local';
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
