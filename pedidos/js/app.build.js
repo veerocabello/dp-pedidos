@@ -2542,6 +2542,20 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
+  // Segundo gasto fijo, independiente del anterior (su propio interruptor)
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee2El = document.getElementById('cart-fee2-row');
+  if (fee2El) {
+    if (fee2Enabled) {
+      fee2El.style.display = 'flex';
+      document.getElementById('cart-fee2-label').textContent = fee2Label;
+      document.getElementById('cart-fee2-amount').textContent = fee2Amount.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fee2El.style.display = 'none';
+    }
+  }
   // Mostrar línea de descuento si hay un código aplicado (manual o ganado
   // en la ruleta/rasca) — antes el total mostrado en el carrito nunca
   // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
@@ -2575,7 +2589,7 @@ function renderCart() {
       fidelizacionEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
   // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
   // la línea verde de cada uno ya existía, pero un badge aparte resalta
@@ -2691,11 +2705,17 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   const feeEnabled = getFeeEnabled();
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fee2Enabled) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
   // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
@@ -3477,9 +3497,12 @@ async function _submitOrderInner() {
   const feeEnabled = getFeeEnabled();
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
   const _discountAmt = getDiscountAmount(subTotal);
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
-  const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
+  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
       id = _ref10[0],
@@ -3530,6 +3553,12 @@ async function _submitOrderInner() {
     subtotal: feeAmount,
     isFee: true
   }] : [];
+  const fee2Items = fee2Enabled ? [{
+    name: fee2Label,
+    qty: 1,
+    subtotal: fee2Amount,
+    isFee: true
+  }] : [];
   const fidelizacionItems = _fidelizacionDescuento > 0 ? [{
     name: '🎁 Premio fidelización (patata gratis)',
     qty: 1,
@@ -3544,7 +3573,7 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: 0
   }] : [];
-  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fidelizacionItems, ...fidelizacionAvisoItems];
+  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Datos estructurados del ticket (para impresión HTML)
@@ -6131,6 +6160,22 @@ function bimbaPintarTicketConfig() {
   const autoEl = document.getElementById('tc-auto-imprimir');
   autoEl.checked = tc.autoImprimir !== false;
   document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
+  const letraEl = document.getElementById('tc-letra-grande');
+  if (letraEl) letraEl.checked = !!tc.letraGrande;
+
+  // Gastos fijos (se guardan aparte, no dentro de TICKET_CONFIG_KEY)
+  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
+  if (tcFeeEnabled) {
+    tcFeeEnabled.checked = getFeeEnabled();
+    document.getElementById('tc-fee-amount').value = getFeeAmount();
+    document.getElementById('tc-fee-label').value = getFeeLabel();
+  }
+  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
+  if (tcFee2Enabled && typeof getFee2Enabled === 'function') {
+    tcFee2Enabled.checked = getFee2Enabled();
+    document.getElementById('tc-fee2-amount').value = getFee2Amount();
+    document.getElementById('tc-fee2-label').value = getFee2Label();
+  }
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
@@ -6150,9 +6195,25 @@ function bimbaGuardarTicketConfig() {
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
-    autoImprimir: document.getElementById('tc-auto-imprimir').checked
+    autoImprimir: document.getElementById('tc-auto-imprimir').checked,
+    letraGrande: document.getElementById('tc-letra-grande') ? document.getElementById('tc-letra-grande').checked : false
   };
   saveTicketConfig(cfg);
+
+  // Gastos fijos — cada uno con su propio guardado/interruptor
+  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
+  if (tcFeeEnabled) {
+    const amt = parseFloat(document.getElementById('tc-fee-amount').value) || 0;
+    const lbl = document.getElementById('tc-fee-label').value.trim() || 'Gastos de gestión online';
+    saveFeeConfig(tcFeeEnabled.checked, amt, lbl);
+  }
+  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
+  if (tcFee2Enabled && typeof saveFee2Config === 'function') {
+    const amt2 = parseFloat(document.getElementById('tc-fee2-amount').value) || 0;
+    const lbl2 = document.getElementById('tc-fee2-label').value.trim() || 'Otro gasto fijo';
+    saveFee2Config(tcFee2Enabled.checked, amt2, lbl2);
+  }
+
   if (msgEl) {
     msgEl.style.color = '#27855a';
     msgEl.textContent = '✅ Guardado';
@@ -8311,6 +8372,36 @@ function loadFeeFromFirebase() {
     renderCart();
   });
 }
+// ── SEGUNDO GASTO FIJO (independiente del anterior, con su propio interruptor) ──
+const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
+const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
+const FEE2_LABEL_KEY = 'dpf_fee2_label';
+function getFee2Enabled() {
+  return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
+}
+function getFee2Amount() {
+  return parseFloat(localStorage.getItem(FEE2_AMOUNT_KEY) || '0.50');
+}
+function getFee2Label() {
+  return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
+}
+function saveFee2Config(enabled, amount, label) {
+  localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
+  localStorage.setItem(FEE2_LABEL_KEY, label);
+  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' ' + label + ' ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
+}
+function loadFee2FromFirebase() {
+  if (!window.fb_listenFee2Config) return;
+  window.fb_listenFee2Config(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+    if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+    renderCart();
+  });
+}
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
@@ -8322,7 +8413,8 @@ const TICKET_CONFIG_DEFAULTS = {
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
   copias: 1,
-  autoImprimir: true
+  autoImprimir: true,
+  letraGrande: false
 };
 function getTicketConfig() {
   try {
@@ -8840,7 +8932,10 @@ function _ptBuildTicketBytes(ticket) {
   const center = () => d.push(ESC, 0x61, 0x01);
   const left = () => d.push(ESC, 0x61, 0x00);
   const big = () => d.push(ESC, 0x21, 0x30);
-  const normal = () => d.push(ESC, 0x21, 0x00);
+  // Altura doble opcional (ajustable en Configuración del ticket) — 0x00
+  // tamaño normal 1x1, 0x10 altura doble/ancho normal. No afecta al ajuste
+  // de columnas de los productos (el ancho del carácter no cambia).
+  const normal = () => d.push(ESC, 0x21, tc.letraGrande ? 0x10 : 0x00);
   const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
 
   // Inicializar
@@ -9902,6 +9997,7 @@ function initFirebaseListeners() {
 
   // Cargar config de gastos de gestión desde Firebase
   loadFeeFromFirebase();
+  if (typeof loadFee2FromFirebase === 'function') loadFee2FromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
 
@@ -10647,6 +10743,7 @@ function refreshKitchenGrid() {
     const timeColor = isUrgent ? '#e74c3c' : isWarning ? '#3D1F0D' : '#888';
     const cardStyle = isUrgent ? 'animation:pulse-red 1.2s infinite;' : '';
     const itemsHtml = o.items ? o.items.filter(function(it) {
+      if (it.isFee) return false;
       const n = (it.name || '').toLowerCase();
       return !n.includes('gesti\xF3n') && !n.includes('gestion') && !n.includes('fee') && !n.includes('cargo');
     }).map(function (it) {

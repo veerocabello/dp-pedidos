@@ -395,6 +395,7 @@ function refreshKitchenGrid() {
     const timeColor = isUrgent ? '#e74c3c' : isWarning ? '#3D1F0D' : '#888';
     const cardStyle = isUrgent ? 'animation:pulse-red 1.2s infinite;' : '';
     const itemsHtml = o.items ? o.items.filter(function(it) {
+      if (it.isFee) return false;
       const n = (it.name || '').toLowerCase();
       return !n.includes('gesti\xF3n') && !n.includes('gestion') && !n.includes('fee') && !n.includes('cargo');
     }).map(function (it) {

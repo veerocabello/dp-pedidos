@@ -28,11 +28,17 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   const feeEnabled = getFeeEnabled();
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fee2Enabled) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
   // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
@@ -814,9 +820,12 @@ async function _submitOrderInner() {
   const feeEnabled = getFeeEnabled();
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
   const _discountAmt = getDiscountAmount(subTotal);
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
-  const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
+  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
       id = _ref10[0],
@@ -867,6 +876,12 @@ async function _submitOrderInner() {
     subtotal: feeAmount,
     isFee: true
   }] : [];
+  const fee2Items = fee2Enabled ? [{
+    name: fee2Label,
+    qty: 1,
+    subtotal: fee2Amount,
+    isFee: true
+  }] : [];
   const fidelizacionItems = _fidelizacionDescuento > 0 ? [{
     name: '🎁 Premio fidelización (patata gratis)',
     qty: 1,
@@ -881,7 +896,7 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: 0
   }] : [];
-  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fidelizacionItems, ...fidelizacionAvisoItems];
+  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Datos estructurados del ticket (para impresión HTML)

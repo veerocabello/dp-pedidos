@@ -391,6 +391,9 @@ function _initFirebase() {
   // FEE CONFIG
   window.fb_saveFeeConfig = async function(enabled, amount, label) { await jset("config/feeConfig", {enabled:enabled, amount:amount, label:label}); };
   window.fb_listenFeeConfig = function(cb) { return jlisten("config/feeConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // FEE2 CONFIG (segundo gasto fijo, independiente del anterior)
+  window.fb_saveFee2Config = async function(enabled, amount, label) { await jset("config/fee2Config", {enabled:enabled, amount:amount, label:label}); };
+  window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   // READY
   window._firebaseReady = true;
   document.dispatchEvent(new Event("firebaseReady"));

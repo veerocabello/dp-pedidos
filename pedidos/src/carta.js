@@ -744,6 +744,20 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
+  // Segundo gasto fijo, independiente del anterior (su propio interruptor)
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee2El = document.getElementById('cart-fee2-row');
+  if (fee2El) {
+    if (fee2Enabled) {
+      fee2El.style.display = 'flex';
+      document.getElementById('cart-fee2-label').textContent = fee2Label;
+      document.getElementById('cart-fee2-amount').textContent = fee2Amount.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fee2El.style.display = 'none';
+    }
+  }
   // Mostrar línea de descuento si hay un código aplicado (manual o ganado
   // en la ruleta/rasca) — antes el total mostrado en el carrito nunca
   // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
@@ -777,7 +791,7 @@ function renderCart() {
       fidelizacionEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
   // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
   // la línea verde de cada uno ya existía, pero un badge aparte resalta

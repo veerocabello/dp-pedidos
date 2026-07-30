@@ -687,6 +687,22 @@ function bimbaPintarTicketConfig() {
   const autoEl = document.getElementById('tc-auto-imprimir');
   autoEl.checked = tc.autoImprimir !== false;
   document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
+  const letraEl = document.getElementById('tc-letra-grande');
+  if (letraEl) letraEl.checked = !!tc.letraGrande;
+
+  // Gastos fijos (se guardan aparte, no dentro de TICKET_CONFIG_KEY)
+  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
+  if (tcFeeEnabled) {
+    tcFeeEnabled.checked = getFeeEnabled();
+    document.getElementById('tc-fee-amount').value = getFeeAmount();
+    document.getElementById('tc-fee-label').value = getFeeLabel();
+  }
+  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
+  if (tcFee2Enabled && typeof getFee2Enabled === 'function') {
+    tcFee2Enabled.checked = getFee2Enabled();
+    document.getElementById('tc-fee2-amount').value = getFee2Amount();
+    document.getElementById('tc-fee2-label').value = getFee2Label();
+  }
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
@@ -706,9 +722,25 @@ function bimbaGuardarTicketConfig() {
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
-    autoImprimir: document.getElementById('tc-auto-imprimir').checked
+    autoImprimir: document.getElementById('tc-auto-imprimir').checked,
+    letraGrande: document.getElementById('tc-letra-grande') ? document.getElementById('tc-letra-grande').checked : false
   };
   saveTicketConfig(cfg);
+
+  // Gastos fijos — cada uno con su propio guardado/interruptor
+  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
+  if (tcFeeEnabled) {
+    const amt = parseFloat(document.getElementById('tc-fee-amount').value) || 0;
+    const lbl = document.getElementById('tc-fee-label').value.trim() || 'Gastos de gestión online';
+    saveFeeConfig(tcFeeEnabled.checked, amt, lbl);
+  }
+  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
+  if (tcFee2Enabled && typeof saveFee2Config === 'function') {
+    const amt2 = parseFloat(document.getElementById('tc-fee2-amount').value) || 0;
+    const lbl2 = document.getElementById('tc-fee2-label').value.trim() || 'Otro gasto fijo';
+    saveFee2Config(tcFee2Enabled.checked, amt2, lbl2);
+  }
+
   if (msgEl) {
     msgEl.style.color = '#27855a';
     msgEl.textContent = '✅ Guardado';

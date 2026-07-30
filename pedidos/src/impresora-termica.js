@@ -26,7 +26,10 @@ function _ptBuildTicketBytes(ticket) {
   const center = () => d.push(ESC, 0x61, 0x01);
   const left = () => d.push(ESC, 0x61, 0x00);
   const big = () => d.push(ESC, 0x21, 0x30);
-  const normal = () => d.push(ESC, 0x21, 0x00);
+  // Altura doble opcional (ajustable en Configuración del ticket) — 0x00
+  // tamaño normal 1x1, 0x10 altura doble/ancho normal. No afecta al ajuste
+  // de columnas de los productos (el ancho del carácter no cambia).
+  const normal = () => d.push(ESC, 0x21, tc.letraGrande ? 0x10 : 0x00);
   const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
 
   // Inicializar

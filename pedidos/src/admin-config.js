@@ -1076,6 +1076,36 @@ function loadFeeFromFirebase() {
     renderCart();
   });
 }
+// ── SEGUNDO GASTO FIJO (independiente del anterior, con su propio interruptor) ──
+const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
+const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
+const FEE2_LABEL_KEY = 'dpf_fee2_label';
+function getFee2Enabled() {
+  return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
+}
+function getFee2Amount() {
+  return parseFloat(localStorage.getItem(FEE2_AMOUNT_KEY) || '0.50');
+}
+function getFee2Label() {
+  return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
+}
+function saveFee2Config(enabled, amount, label) {
+  localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
+  localStorage.setItem(FEE2_LABEL_KEY, label);
+  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' ' + label + ' ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
+}
+function loadFee2FromFirebase() {
+  if (!window.fb_listenFee2Config) return;
+  window.fb_listenFee2Config(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+    if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+    renderCart();
+  });
+}
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
@@ -1087,7 +1117,8 @@ const TICKET_CONFIG_DEFAULTS = {
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
   copias: 1,
-  autoImprimir: true
+  autoImprimir: true,
+  letraGrande: false
 };
 function getTicketConfig() {
   try {

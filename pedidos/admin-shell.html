@@ -1658,6 +1658,45 @@
         <input type="checkbox" id="tc-auto-imprimir" checked style="width:20px;height:20px;flex-shrink:0">
       </div>
 
+      <div onclick="(function(){var c=document.getElementById('tc-letra-grande');c.checked=!c.checked;document.getElementById('tc-letra-row').style.background=c.checked?'#fff':'var(--white)';})()" id="tc-letra-row" style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:16px;cursor:pointer">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">Letra más grande en el ticket</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Altura doble, mismo ancho — pruébalo y ajusta a tu gusto</div>
+        </div>
+        <input type="checkbox" id="tc-letra-grande" style="width:20px;height:20px;flex-shrink:0">
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Gastos fijos</div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">💶 Gastos de gestión</span>
+          <input type="checkbox" id="tc-fee-enabled" style="width:20px;height:20px;flex-shrink:0">
+        </div>
+        <div style="display:grid;grid-template-columns:80px 1fr;gap:8px">
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="tc-fee-amount" min="0" max="10" step="0.10" value="0.50" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">€</span>
+          </div>
+          <input type="text" id="tc-fee-label" value="Gastos de gestión online" maxlength="40" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;box-sizing:border-box">
+        </div>
+      </div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">💶 Otro gasto fijo</span>
+          <input type="checkbox" id="tc-fee2-enabled" style="width:20px;height:20px;flex-shrink:0">
+        </div>
+        <div style="display:grid;grid-template-columns:80px 1fr;gap:8px">
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="tc-fee2-amount" min="0" max="10" step="0.10" value="0.50" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">€</span>
+          </div>
+          <input type="text" id="tc-fee2-label" value="Otro gasto fijo" maxlength="40" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;box-sizing:border-box">
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Independiente del anterior — se enciende y se apaga por su cuenta.</p>
+      </div>
+
       <button onclick="bimbaGuardarTicketConfig()" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Guardar</button>
       <div id="tc-msg" style="font-size:12px;margin-top:8px;text-align:center"></div>
 
