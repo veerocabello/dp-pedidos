@@ -14,7 +14,7 @@
     Header set X-Content-Type-Options "nosniff"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(self), magnetometer=(), gyroscope=(), accelerometer=()"
 
     # CSP activo (ya verificado en modo Report-Only sin romper nada)
     Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
