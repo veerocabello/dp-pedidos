@@ -12,6 +12,7 @@
     </div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div id="kitchen-clock" style="font-size:18px;font-weight:700;color:var(--white)"></div>
+      <button onclick="conectarImpresoraTermica()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">🔌 Impresora</button>
       <button onclick="confirmarTodosListos()" style="background:#27ae60;border:none;color:var(--white);padding:8px 16px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✅ Todos listos</button>
       <button onclick="toggleKitchenTheme()" id="kitchen-theme-btn" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:16px;cursor:pointer">🌙</button>
       <button onclick="closeKitchenMode()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--white);padding:8px 18px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✕ Salir</button>
@@ -362,7 +363,9 @@
             <span style="font-size:13px;font-weight:700;color:var(--brown)">Pedidos en tiempo real</span>
           </div>
           <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+            <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
+            <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 Conectar impresora</button>
             <button class="admin-save-btn" onclick="openKitchenMode()" style="background:var(--brown);padding:8px 18px;font-size:13px">🍳 Pantalla cocina</button>
             <button class="admin-save-btn" onclick="loadLiveOrders()" style="background:var(--brown);padding:8px 18px;font-size:13px">🔄 Actualizar</button>
             <button class="admin-save-btn" onclick="imprimirTodosLosActivos()" style="background:var(--brown);padding:8px 18px;font-size:13px">🖨️ Imprimir todos</button>
@@ -742,6 +745,15 @@
             <span class="row-icon">👥</span>
             <div class="row-text"><div class="row-title">Empleados</div><div class="row-desc">Fichajes, horarios y alertas</div></div>
             <span class="row-chevron">›</span>
+          </div>
+        </div>
+
+        <div class="sec-head">Impresora</div>
+        <div class="row-group">
+          <div class="row" onclick="conectarImpresoraTermica()">
+            <span class="row-icon">🖨️</span>
+            <div class="row-text"><div class="row-title">Impresora térmica</div><div class="row-desc pt-conn-status" style="color:#991B1B">🔴 Impresora no conectada</div></div>
+            <span class="row-chevron">🔌</span>
           </div>
         </div>
 
@@ -1621,7 +1633,7 @@
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:6px 0 10px">Impresora térmica</div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
-        <span id="pt-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
+        <span class="pt-conn-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
         <div style="display:flex;gap:6px">
           <button onclick="conectarImpresoraTermica()" style="background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔌 Conectar impresora</button>
           <button onclick="imprimirTicketPrueba()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🧾 Probar</button>

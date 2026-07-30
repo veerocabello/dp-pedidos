@@ -26,7 +26,10 @@ function _ptBuildTicketBytes(ticket) {
   const center = () => d.push(ESC, 0x61, 0x01);
   const left = () => d.push(ESC, 0x61, 0x00);
   const big = () => d.push(ESC, 0x21, 0x30);
-  const normal = () => d.push(ESC, 0x21, 0x00);
+  // Altura doble (ancho normal) en vez de tamaño 1x1 — letra algo más grande y
+  // fácil de leer en cocina, sin romper el ajuste de columnas de los productos
+  // (el ancho del carácter no cambia, solo la altura).
+  const normal = () => d.push(ESC, 0x21, 0x10);
   const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
 
   // Inicializar
@@ -76,7 +79,7 @@ function _ptBuildTicketBytes(ticket) {
   left();
   (ticket.items || []).forEach(item => {
     const partes = _ptEncodeStr(item.name || '').split(' + ');
-    const nombrePrincipal = partes[0];
+    const nombrePrincipal = partes[0].toUpperCase();
     const extrasNombre = partes.slice(1);
     const extrasArr = item.extras || [];
     const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
@@ -91,13 +94,13 @@ function _ptBuildTicketBytes(ticket) {
     }
     extrasNombre.forEach(extra => {
       const conParentesis = extra.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/, ' (+$1 EUR)').trim();
-      push('     - ' + _ptEncodeStr(conParentesis) + '\n');
+      push('     - ' + _ptEncodeStr(conParentesis).toUpperCase() + '\n');
     });
     if (Array.isArray(extrasArr)) {
       extrasArr.forEach(extra => {
         const nombreExtra = (extra && extra.name) ? extra.name : extra;
         const precioExtra = (extra && extra.price) ? ' (+' + parseFloat(extra.price).toFixed(2) + ' EUR)' : '';
-        push('     - ' + _ptEncodeStr(nombreExtra + precioExtra) + '\n');
+        push('     - ' + _ptEncodeStr(nombreExtra + precioExtra).toUpperCase() + '\n');
       });
     }
   });
@@ -133,11 +136,15 @@ function _ptBuildTicketBytes(ticket) {
 let _ptDevice = null;
 let _ptEndpointOut = null;
 
+// Puede haber varias copias del indicador de estado en distintas pantallas
+// (Configuración del ticket, Pedidos en vivo, Panel bimba) — se actualizan todas
+// a la vez porque comparten la misma conexión USB (misma pestaña del navegador).
 function _ptStatusUI(connected, msg) {
-  const el = document.getElementById('pt-status');
-  if (!el) return;
-  el.textContent = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
-  el.style.color = connected ? '#166534' : '#991B1B';
+  const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
+  document.querySelectorAll('.pt-conn-status').forEach(el => {
+    el.textContent = texto;
+    el.style.color = connected ? '#166534' : '#991B1B';
+  });
 }
 
 function _ptIsConnected() {
