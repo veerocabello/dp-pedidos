@@ -876,7 +876,10 @@ function initFirebaseListeners() {
           }
         }
         if (_adminLoggedIn) {
-          const _nuevosPedidos = (stats.orders || []).slice(-diff);
+          // guardar-pedido.php inserta los pedidos nuevos al PRINCIPIO del array
+          // (array_unshift), no al final — por eso se cogen los primeros "diff"
+          // elementos, no los últimos (si no, siempre se coge el pedido más viejo).
+          const _nuevosPedidos = (stats.orders || []).slice(0, diff);
           if (getTicketConfig().autoImprimir) {
             _nuevosPedidos.forEach(_autoImprimirPedido);
           }

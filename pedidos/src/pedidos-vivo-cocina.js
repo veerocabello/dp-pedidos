@@ -717,7 +717,8 @@ function checkForNewOrders(statsOverride) {
     _unseenOrders += diff;
     updateTabTitle(_unseenOrders);
     console.log('[DPF] NEW ORDER — calling showNewOrderNotification, diff=' + diff);
-    showNewOrderNotification((stats.orders || []).slice(-diff).map(o => o.num));
+    // guardar-pedido.php inserta los pedidos nuevos al principio del array (unshift)
+    showNewOrderNotification((stats.orders || []).slice(0, diff).map(o => o.num));
   }
 }
 
