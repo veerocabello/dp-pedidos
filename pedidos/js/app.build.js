@@ -8953,9 +8953,10 @@ async function conectarImpresoraTermica() {
     return false;
   }
   try {
-    const device = await navigator.usb.requestDevice({
-      filters: [{ vendorId: 0x0416, productId: 0x5011 }, { classCode: 7 }]
-    });
+    // Sin filtros: no sabemos con certeza el vendor/product ID de esta impresora,
+    // así que mostramos todos los dispositivos USB conectados y que el usuario
+    // elija el suyo de la lista (evita listas vacías por un filtro equivocado).
+    const device = await navigator.usb.requestDevice({ filters: [] });
     const epOut = await _ptClaimInterface(device);
     _ptDevice = device;
     _ptEndpointOut = epOut;
