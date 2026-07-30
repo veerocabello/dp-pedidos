@@ -94,6 +94,7 @@ async function loadLiveOrders() {
   _renderLiveOrders(stats, todayKey);
 }
 function _renderLiveOrders(stats, todayKey) {
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   // Sort by slot time, then by order time for orders without slot
   const orders = (stats.orders || []).slice().sort((a, b) => {
     const slotA = a.slot || '99:99';
@@ -305,6 +306,7 @@ function updateKitchenClock() {
   });
 }
 function refreshKitchenGrid() {
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats;
   try {

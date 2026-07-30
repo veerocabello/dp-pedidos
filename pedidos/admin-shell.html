@@ -7,7 +7,9 @@
 <!-- KITCHEN MODE -->
 <div id="kitchen-mode">
   <div class="kitchen-header">
-    <div class="kitchen-title">🍳 Dulce Patata — Cocina <span id="kitchen-active-count" style="font-size:14px;background:var(--gold);color:var(--brown);border-radius:99px;padding:2px 12px;margin-left:8px;vertical-align:middle;font-family:'DM Sans',sans-serif;font-weight:700"></span></div>
+    <div class="kitchen-title">🍳 Dulce Patata — Cocina <span id="kitchen-active-count" style="font-size:14px;background:var(--gold);color:var(--brown);border-radius:99px;padding:2px 12px;margin-left:8px;vertical-align:middle;font-family:'DM Sans',sans-serif;font-weight:700"></span>
+      <div id="pt-debug-status-kitchen" style="font-size:11px;color:#8A8580;font-weight:400"></div>
+    </div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div id="kitchen-clock" style="font-size:18px;font-weight:700;color:var(--white)"></div>
       <button onclick="confirmarTodosListos()" style="background:#27ae60;border:none;color:var(--white);padding:8px 16px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✅ Todos listos</button>
@@ -359,6 +361,7 @@
             <div id="live-dot" style="width:10px;height:10px;border-radius:50%;background:var(--brown);animation:pulse 1.5s infinite"></div>
             <span style="font-size:13px;font-weight:700;color:var(--brown)">Pedidos en tiempo real</span>
           </div>
+          <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             <button class="admin-save-btn" onclick="openKitchenMode()" style="background:var(--brown);padding:8px 18px;font-size:13px">🍳 Pantalla cocina</button>
             <button class="admin-save-btn" onclick="loadLiveOrders()" style="background:var(--brown);padding:8px 18px;font-size:13px">🔄 Actualizar</button>

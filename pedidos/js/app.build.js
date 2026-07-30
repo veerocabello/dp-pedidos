@@ -8929,6 +8929,25 @@ function _ptStatusUI(connected, msg) {
   el.style.color = connected ? '#166534' : '#991B1B';
 }
 
+function _ptIsConnected() {
+  return !!(_ptDevice && _ptEndpointOut !== null);
+}
+
+// Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
+// para diagnosticar por qué no imprime sola: si el admin no está "activo" en este
+// dispositivo, o el auto-imprimir está apagado, aquí sale sin tener que adivinar.
+function _ptUpdateDebugStatus() {
+  const el = document.getElementById('pt-debug-status');
+  const elKitchen = document.getElementById('pt-debug-status-kitchen');
+  if (!el && !elKitchen) return;
+  const admin = window._adminLoggedIn ? '🟢 Admin activo' : '🔴 Admin NO activo';
+  const auto = (typeof getTicketConfig === 'function' && getTicketConfig().autoImprimir) ? '🟢 Auto-imprimir ON' : '🔴 Auto-imprimir OFF';
+  const usb = _ptIsConnected() ? '🟢 USB conectada' : '🔴 USB no conectada';
+  const texto = admin + ' · ' + auto + ' · ' + usb;
+  if (el) el.textContent = texto;
+  if (elKitchen) elKitchen.textContent = texto;
+}
+
 // Busca en el dispositivo USB la interfaz que tenga un endpoint de salida (bulk OUT)
 // y la reclama. Es genérico: no depende de conocer de antemano el vendor/product ID.
 async function _ptClaimInterface(device) {
@@ -10239,6 +10258,7 @@ async function loadLiveOrders() {
   _renderLiveOrders(stats, todayKey);
 }
 function _renderLiveOrders(stats, todayKey) {
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   // Sort by slot time, then by order time for orders without slot
   const orders = (stats.orders || []).slice().sort((a, b) => {
     const slotA = a.slot || '99:99';
@@ -10450,6 +10470,7 @@ function updateKitchenClock() {
   });
 }
 function refreshKitchenGrid() {
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats;
   try {
