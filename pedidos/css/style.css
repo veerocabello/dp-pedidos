@@ -250,6 +250,11 @@
     #cart-fab { display: flex; }
     #cart-fab.hidden { display: none !important; }
   }
+  /* Con el panel admin abierto no debe verse el carrito flotante del pedido de cliente detrás */
+  body:has(#admin-overlay.open) #cart-fab,
+  body:has(#admin-overlay.open) #repeat-order-fab {
+    display: none !important;
+  }
 
   #repeat-order-fab {
     position: fixed;
