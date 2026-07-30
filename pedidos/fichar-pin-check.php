@@ -459,17 +459,34 @@ try {
         // intento contra el estado más reciente leído de Firebase, no
         // contra una copia que pudo quedarse desfasada por otro fichaje
         // guardado entre medias.
-        $resultado = fbModificarFichajesSeguro($databaseURL, $accessToken, function ($todos) use ($empId, $fecha, $tipo, $nuevoFichaje) {
-            $suyosHoy = array_values(array_filter($todos, function ($f) use ($empId, $fecha) {
-                return ($f['empId'] ?? '') === $empId && ($f['fecha'] ?? '') === $fecha;
+        // Se guarda aparte de $fecha porque, si el último fichaje de TODOS
+        // los días de este empleado (no solo hoy) sigue siendo una entrada
+        // sin salida de un día distinto, es que quedó huérfano (olvido,
+        // móvil sin batería...) — antes esto pasaba totalmente
+        // desapercibido: la guardia solo miraba los fichajes de HOY, así
+        // que el día siguiente no veía ninguna entrada activa y dejaba
+        // fichar una entrada nueva igual, dejando la de antes abierta para
+        // siempre (fuera de "quién trabaja ahora" y sin contar en las horas
+        // de personal de bimba, sin que nadie se enterase).
+        $entradaOrfanaDe = null;
+        $resultado = fbModificarFichajesSeguro($databaseURL, $accessToken, function ($todos) use ($empId, $fecha, $tipo, $nuevoFichaje, &$entradaOrfanaDe) {
+            $suyos = array_values(array_filter($todos, function ($f) use ($empId) {
+                return ($f['empId'] ?? '') === $empId;
             }));
-            usort($suyosHoy, function ($a, $b) { return strcmp($a['hora'] ?? '', $b['hora'] ?? ''); });
+            usort($suyos, function ($a, $b) { return strcmp(($a['fecha'] ?? '') . ($a['hora'] ?? ''), ($b['fecha'] ?? '') . ($b['hora'] ?? '')); });
+            $suyosHoy = array_values(array_filter($suyos, function ($f) use ($fecha) { return ($f['fecha'] ?? '') === $fecha; }));
             $ultimoTipo = count($suyosHoy) ? end($suyosHoy)['tipo'] : null;
             if ($tipo === 'entrada' && $ultimoTipo === 'entrada') {
                 return ['error' => 'Ya tienes una entrada registrada. Registra primero la salida.'];
             }
             if ($tipo === 'salida' && $ultimoTipo !== 'entrada') {
                 return ['error' => 'No tienes una entrada activa. Registra primero la entrada.'];
+            }
+            if ($tipo === 'entrada' && count($suyos)) {
+                $ultimoDeTodos = end($suyos);
+                if (($ultimoDeTodos['tipo'] ?? '') === 'entrada' && ($ultimoDeTodos['fecha'] ?? '') !== $fecha) {
+                    $entradaOrfanaDe = $ultimoDeTodos['fecha'] ?? null;
+                }
             }
             $todos[] = $nuevoFichaje;
             return ['todos' => $todos];
@@ -481,6 +498,11 @@ try {
             }
             echo json_encode(['success' => false, 'error' => $resultado['error']]);
             exit;
+        }
+
+        if ($entradaOrfanaDe) {
+            $nombreEmp = $emp['nombre'] ?? $empId;
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ ' . $nombreEmp . ' fichó entrada sin haber cerrado la del ' . $entradaOrfanaDe . ' — revísalo en Fichajes');
         }
 
         echo json_encode(['success' => true, 'hora' => $hora, 'tipo' => $tipo]);

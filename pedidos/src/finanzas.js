@@ -627,15 +627,27 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
-    });
-    await ref.set(actual);
+    // Transacción: ventasProductos/<fecha> también lo escribe cada pedido
+    // real de un cliente (recordProductSales, en antifraude.js) mientras se
+    // puede estar guardando una venta manual aquí — con un .set() plano
+    // (leer, sumar en memoria, sobreescribir todo el nodo) una venta real
+    // que llegara justo en medio se podía perder sin ningún aviso.
+    const mutator = function (current) {
+      const actual = current || {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
+    };
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();

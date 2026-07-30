@@ -3291,6 +3291,15 @@ async function submitOrder() {
   }
 }
 async function _submitOrderInner() {
+  // Igual que ya hace changeQty() al añadir al carrito — antes esta función
+  // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
+  // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se
+  // enviaba igual (el servidor ahora también lo rechaza, esto es solo para
+  // avisar al momento sin esperar la respuesta).
+  if (isShopBlocked()) {
+    showClosedToast();
+    return;
+  }
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
     _alertaConFoco("Por favor escribe tu nombre", "customer-name");
@@ -3692,11 +3701,12 @@ async function _finalizarPedido() {
       .then(res => res.json())
       .then(data => {
         if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
-        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
       })
       .catch((e) => {
         console.error('❌ Error guardando pedido:', e);
         logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
+        _avisarClienteFalloGuardado(orderNum);
       });
   } else {
     console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
@@ -3712,6 +3722,17 @@ async function _finalizarPedido() {
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
+}
+// Antes, si guardar-pedido.php fallaba, el cliente veía "pedido confirmado"
+// igual y solo quedaba un aviso en el log de actividad que ve el admin —
+// nadie en cocina se enteraba de que el pedido no había llegado. Ahora, si
+// el cliente sigue en la pantalla de éxito de ESE pedido, se lo decimos.
+function _avisarClienteFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'block';
 }
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
@@ -4154,6 +4175,10 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
+  // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
+  const saveWarning = document.getElementById('success-save-warning');
+  if (saveWarning) saveWarning.style.display = 'none';
   if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
@@ -4340,11 +4365,8 @@ async function cancelarPedido() {
 async function _revertirVentasProductos(items) {
   if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
   const fecha = new Date().toISOString().slice(0, 10);
-  try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    if (!sn.exists()) return;
-    const actual = sn.val();
+  const mutator = function (current) {
+    const actual = current || {};
     items.forEach(it => {
       if (it.isFee || !it.name) return;
       const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
@@ -4354,7 +4376,21 @@ async function _revertirVentasProductos(items) {
       actual[id] = Math.max(0, actual[id] - (it.qty || 0));
       if (actual[id] === 0) delete actual[id];
     });
-    await ref.set(actual);
+    return actual;
+  };
+  try {
+    // Transacción: este mismo nodo lo escribe también cada pedido real de
+    // un cliente al llegar (recordProductSales) — un .set() plano aquí
+    // podía perder esa cuenta si un pedido nuevo llegaba justo mientras se
+    // revertía otro cancelado.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      if (!sn.exists()) return;
+      await ref.set(mutator(sn.val()));
+    }
   } catch (e) {
     console.warn('[ventasProductos] no se pudo revertir', e);
   }
@@ -4369,18 +4405,28 @@ async function _borrarPedidoDeFirebase(orderNum) {
 
   // 2. Borrar de Firebase stats y liberar slot si tenía uno
   let slotToFree = null;
-  if (window.fb_getStats && window.fb_saveStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo (con su propia protección de condición de
+  // carrera) — un .set() plano aquí (leer, filtrar en memoria, sobreescribir
+  // el nodo entero) podía perder en silencio un pedido real que llegara
+  // justo mientras se cancelaba otro distinto desde el panel.
+  const mutatorStats = function (current) {
+    const stats = current || { orders: [] };
+    if (!Array.isArray(stats.orders)) stats.orders = [];
+    const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
+    if (pedido && pedido.slot) slotToFree = pedido.slot;
+    if (pedido && pedido.items) itemsParaRevertir = pedido.items;
+    stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
+    stats.count = Math.max(0, stats.orders.length);
+    stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
+    return stats;
+  };
+  if (window.fb_transactNative) {
+    try { await window.fb_transactNative('stats/' + todayKey, mutatorStats); } catch {}
+  } else if (window.fb_getStats && window.fb_saveStats) {
     try {
       const stats = await window.fb_getStats(todayKey);
-      if (stats && stats.orders) {
-        const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-        if (pedido && pedido.slot) slotToFree = pedido.slot;
-        if (pedido && pedido.items) itemsParaRevertir = pedido.items;
-        stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-        stats.count = Math.max(0, (stats.count || 1) - 1);
-        stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-        await window.fb_saveStats(stats);
-      }
+      if (stats) await window.fb_saveStats(mutatorStats(stats));
     } catch {}
   }
 
@@ -5994,15 +6040,27 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
-    });
-    await ref.set(actual);
+    // Transacción: ventasProductos/<fecha> también lo escribe cada pedido
+    // real de un cliente (recordProductSales, en antifraude.js) mientras se
+    // puede estar guardando una venta manual aquí — con un .set() plano
+    // (leer, sumar en memoria, sobreescribir todo el nodo) una venta real
+    // que llegara justo en medio se podía perder sin ningún aviso.
+    const mutator = function (current) {
+      const actual = current || {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
+    };
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();
@@ -8334,8 +8392,14 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
+    // Si cierra después de medianoche (closeEnd < openStart), hay que expresar
+    // closeEnd en el mismo "espacio extendido" que nowMin (que ya suma 1440
+    // antes de las 06:00) para poder comparar de forma continua — antes
+    // comparaba nowMin extendido contra closeEnd sin extender, así que entre
+    // el cierre real (ej. 00:30) y las 06:00 nunca detectaba que ya había
+    // cerrado (nowMin >= openStart seguía siendo cierto igual).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart || nowMin < closeEnd)
+      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado
@@ -12918,40 +12982,39 @@ async function saveOrderTotal(orderNum, rawValue) {
     return;
   }
   const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  if (window.fb_getStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo — un .set() plano aquí (leer, cambiar el
+  // total de un pedido en memoria, sobreescribir el nodo entero) podía
+  // perder un pedido real llegado justo mientras se editaba este total.
+  let ordenNoEncontrada = false;
+  let oldTotal = null;
+  const mutator = function (current) {
+    const stats = current || {};
+    if (!stats.orders) { ordenNoEncontrada = true; return stats; }
+    const order = stats.orders.find(o => o.num === orderNum);
+    if (!order) { ordenNoEncontrada = true; return stats; }
+    oldTotal = order.total;
+    order.total = newTotal;
+    stats.total = parseFloat((stats.orders.reduce((s, o) => s + (o.total || 0), 0)).toFixed(2));
+    return stats;
+  };
+  let statsFinal = null;
+  if (window.fb_transactNative) {
+    try { statsFinal = await window.fb_transactNative('stats/' + todayKey, mutator); } catch (e) { console.warn('Firebase stats error', e); }
+  } else if (window.fb_getStats) {
     try {
       const fb = await window.fb_getStats(todayKey);
-      if (fb) stats = fb;
-    } catch (e) {}
+      if (fb) {
+        statsFinal = mutator(fb);
+        if (window.fb_saveStats) await window.fb_saveStats(statsFinal);
+      }
+    } catch (e) { console.warn('Firebase stats error', e); }
   }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {
-      stats = {};
-    }
-  }
-  if (!stats || !stats.orders) {
+  if (ordenNoEncontrada || !statsFinal) {
     loadLiveOrders();
     return;
   }
-  const order = stats.orders.find(o => o.num === orderNum);
-  if (!order) {
-    loadLiveOrders();
-    return;
-  }
-  const oldTotal = order.total;
-  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
-  order.total = newTotal;
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
+  localStorage.setItem(STATS_KEY, JSON.stringify(statsFinal));
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();

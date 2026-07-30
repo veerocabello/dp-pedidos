@@ -368,6 +368,68 @@ function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
     return $avisos;
 }
 
+// ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
+// pedido) ── Antes esto solo se comprobaba en el navegador (isOutsideHours,
+// isTodayOpen, getOrdersOpen en admin-config.js) para decidir si mostrar el
+// formulario, actualizado cada 60s por un setInterval. Si el cliente ya
+// tenía el formulario abierto cuando cerró la tienda (o el admin activó
+// vacaciones/pausó pedidos), el navegador dejaba pasar el pedido igual
+// porque este script nunca comprobaba nada del lado servidor. La lógica de
+// horario reproduce exactamente isOutsideHours()/isTodayOpen() del
+// navegador (mismo criterio de "día de servicio" antes de las 06:00, mismo
+// tratamiento de sesión continua manOpen→tarClose con posible cruce de
+// medianoche) para no rechazar pedidos que la propia web sí deja hacer.
+function comprobarTiendaAbierta($databaseURL, $accessToken) {
+    $vac = fbGetConEtag($databaseURL, 'config/vacacionesActivo', $accessToken);
+    if ($vac['data'] === true) {
+        return 'Estamos de vacaciones ahora mismo. No se aceptan pedidos.';
+    }
+    $ordersOpen = fbGetConEtag($databaseURL, 'config/ordersOpen', $accessToken);
+    if ($ordersOpen['data'] === false) {
+        return 'No estamos aceptando pedidos en este momento.';
+    }
+    $horResp = fbGetConEtag($databaseURL, 'config/horario', $accessToken);
+    $h = is_array($horResp['data']) ? $horResp['data'] : null;
+    if (!$h) return null; // sin horario configurado: mismo criterio que el navegador, asumir abierto
+
+    $now = time();
+    $hour = (int)date('G', $now);
+    $minute = (int)date('i', $now);
+    $dow = (int)date('w', $now); // 0=domingo, igual que Date.getDay() en JS
+
+    $serviceDay = ($hour < 6) ? (($dow + 6) % 7) : $dow;
+    $diasAbiertos = isset($h['diasAbiertos']) && is_array($h['diasAbiertos']) ? $h['diasAbiertos'] : [2, 3, 4, 5, 6, 0];
+    if (!in_array($serviceDay, $diasAbiertos, true)) {
+        return 'Hoy no abrimos.';
+    }
+
+    if (!empty($h['manOpen']) || !empty($h['tarOpen'])) {
+        $rawMin = $hour * 60 + $minute;
+        $nowMin = ($hour < 6) ? $rawMin + 1440 : $rawMin;
+        $getMin = function ($timeStr, $isClose = false) {
+            if (!$timeStr) return null;
+            $parts = explode(':', (string)$timeStr);
+            $hh = (int)($parts[0] ?? 0);
+            $mm = (int)($parts[1] ?? 0);
+            $mins = $hh * 60 + $mm;
+            return ($isClose && $mins === 0) ? 1440 : $mins;
+        };
+        $openStart = $getMin($h['manOpen'] ?? null);
+        if ($openStart === null) $openStart = $getMin($h['tarOpen'] ?? null);
+        $closeEnd = $getMin($h['tarClose'] ?? null, true);
+        if ($closeEnd === null) $closeEnd = $getMin($h['manClose'] ?? null, true);
+        if ($openStart !== null && $closeEnd !== null) {
+            $inSession = ($closeEnd < $openStart)
+                ? ($nowMin >= $openStart && $nowMin < $closeEnd + 1440)
+                : ($nowMin >= $openStart && $nowMin < $closeEnd);
+            if (!$inSession) {
+                return 'Estamos cerrados ahora mismo.';
+            }
+        }
+    }
+    return null;
+}
+
 // ── Comprobación (solo aviso, nunca bloquea el pedido) de que el TOTAL
 // enviado no sea más bajo de lo que un descuento/premio legítimo podría
 // explicar. La comprobación de precios de arriba solo mira productos que
@@ -611,6 +673,13 @@ try {
         exit;
     }
 
+    // ── TIENDA CERRADA / VACACIONES / PEDIDOS PAUSADOS: SÍ bloquea el pedido ──
+    $errorHorario = comprobarTiendaAbierta($databaseURL, $accessToken);
+    if ($errorHorario) {
+        echo json_encode(['success' => false, 'error' => $errorHorario]);
+        exit;
+    }
+
     // ── 0. COMPROBACIÓN DE PRECIOS Y TOTAL (solo aviso, nunca bloquea el pedido) ──
     $avisosPrecios = comprobarPreciosSospechosos($databaseURL, $accessToken, $items);
     if ($avisosPrecios) {
@@ -698,7 +767,16 @@ try {
             if (!$cupon) break; // el código no existe, nada que incrementar
             $usos = is_numeric($cupon['uses'] ?? null) ? (int)$cupon['uses'] : 0;
             $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
-            if ($maxUsos !== null && $usos >= $maxUsos) break; // ya agotado, no seguir incrementando
+            if ($maxUsos !== null && $usos >= $maxUsos) {
+                // Antes esto se quedaba callado: el código seguía "funcionando"
+                // indefinidamente para el total ya calculado en el navegador
+                // (el descuento no se revierte, por el mismo motivo que el
+                // total sospechoso de más abajo solo se avisa y no se
+                // bloquea) — pero al menos ahora el admin se entera de que
+                // se ha superado el cupo, en vez de no verlo nunca.
+                fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Código de descuento ' . $discountCode . ' usado en el pedido ' . $orderNum . ' aunque ya había superado el máximo de usos (' . $usos . '/' . $maxUsos . ')');
+                break;
+            }
             // Premios de la ruleta/rasca caducados a las 48h (expiraEn) — los
             // códigos creados a mano desde el panel no llevan este campo.
             if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) break;

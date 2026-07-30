@@ -1009,40 +1009,39 @@ async function saveOrderTotal(orderNum, rawValue) {
     return;
   }
   const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  if (window.fb_getStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo — un .set() plano aquí (leer, cambiar el
+  // total de un pedido en memoria, sobreescribir el nodo entero) podía
+  // perder un pedido real llegado justo mientras se editaba este total.
+  let ordenNoEncontrada = false;
+  let oldTotal = null;
+  const mutator = function (current) {
+    const stats = current || {};
+    if (!stats.orders) { ordenNoEncontrada = true; return stats; }
+    const order = stats.orders.find(o => o.num === orderNum);
+    if (!order) { ordenNoEncontrada = true; return stats; }
+    oldTotal = order.total;
+    order.total = newTotal;
+    stats.total = parseFloat((stats.orders.reduce((s, o) => s + (o.total || 0), 0)).toFixed(2));
+    return stats;
+  };
+  let statsFinal = null;
+  if (window.fb_transactNative) {
+    try { statsFinal = await window.fb_transactNative('stats/' + todayKey, mutator); } catch (e) { console.warn('Firebase stats error', e); }
+  } else if (window.fb_getStats) {
     try {
       const fb = await window.fb_getStats(todayKey);
-      if (fb) stats = fb;
-    } catch (e) {}
+      if (fb) {
+        statsFinal = mutator(fb);
+        if (window.fb_saveStats) await window.fb_saveStats(statsFinal);
+      }
+    } catch (e) { console.warn('Firebase stats error', e); }
   }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {
-      stats = {};
-    }
-  }
-  if (!stats || !stats.orders) {
+  if (ordenNoEncontrada || !statsFinal) {
     loadLiveOrders();
     return;
   }
-  const order = stats.orders.find(o => o.num === orderNum);
-  if (!order) {
-    loadLiveOrders();
-    return;
-  }
-  const oldTotal = order.total;
-  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
-  order.total = newTotal;
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
+  localStorage.setItem(STATS_KEY, JSON.stringify(statsFinal));
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();

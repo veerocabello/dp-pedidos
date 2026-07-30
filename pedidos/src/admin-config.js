@@ -1212,8 +1212,14 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
+    // Si cierra después de medianoche (closeEnd < openStart), hay que expresar
+    // closeEnd en el mismo "espacio extendido" que nowMin (que ya suma 1440
+    // antes de las 06:00) para poder comparar de forma continua — antes
+    // comparaba nowMin extendido contra closeEnd sin extender, así que entre
+    // el cierre real (ej. 00:30) y las 06:00 nunca detectaba que ya había
+    // cerrado (nowMin >= openStart seguía siendo cierto igual).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart || nowMin < closeEnd)
+      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado

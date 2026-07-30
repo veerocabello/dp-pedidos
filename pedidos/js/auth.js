@@ -153,8 +153,28 @@ function fichajesLoad() {
   }
 }
 function fichajesSave(a) {
+  // config/fichajes también lo escribe fichar-pin-check.php cada vez que un
+  // empleado ficha (con su propia protección de condición de carrera vía
+  // fbModificarFichajesSeguro) — guardar aquí con un .set() plano, basado en
+  // lo que había en caché al empezar esta edición del panel, podía perder
+  // sin aviso un fichaje real llegado justo en medio. Se hace un merge de 3
+  // vías: "base" es lo que había en caché ANTES de este cambio (lo que el
+  // admin tenía cargado al editar), "current" es lo último de verdad en
+  // Firebase — cualquier entrada en current que no estuviera ya en base es
+  // nueva desde entonces, así que se conserva encima de lo que se guarda.
+  let base = [];
+  try { base = JSON.parse(localStorage.getItem(FICHAJE_KEY) || '[]'); } catch (e) {}
   localStorage.setItem(FICHAJE_KEY, JSON.stringify(a));
-  if (window.fb_saveFichajes) window.fb_saveFichajes(a).catch(e => console.warn('Firebase fichajes error', e));
+  if (window.fb_transactJsonString) {
+    const baseSet = new Set(base.map(f => JSON.stringify(f)));
+    window.fb_transactJsonString('config/fichajes', function (current) {
+      const currentArr = Array.isArray(current) ? current : [];
+      const nuevosDesdeQueCargue = currentArr.filter(f => !baseSet.has(JSON.stringify(f)));
+      return [...a, ...nuevosDesdeQueCargue];
+    }).catch(e => console.warn('Firebase fichajes error', e));
+  } else if (window.fb_saveFichajes) {
+    window.fb_saveFichajes(a).catch(e => console.warn('Firebase fichajes error', e));
+  }
 }
 function getFicharToken() {
   return localStorage.getItem(EMP_FICHAR_KEY) || '';

@@ -634,6 +634,15 @@ async function submitOrder() {
   }
 }
 async function _submitOrderInner() {
+  // Igual que ya hace changeQty() al añadir al carrito — antes esta función
+  // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
+  // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se
+  // enviaba igual (el servidor ahora también lo rechaza, esto es solo para
+  // avisar al momento sin esperar la respuesta).
+  if (isShopBlocked()) {
+    showClosedToast();
+    return;
+  }
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
     _alertaConFoco("Por favor escribe tu nombre", "customer-name");
@@ -1035,11 +1044,12 @@ async function _finalizarPedido() {
       .then(res => res.json())
       .then(data => {
         if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
-        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
       })
       .catch((e) => {
         console.error('❌ Error guardando pedido:', e);
         logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
+        _avisarClienteFalloGuardado(orderNum);
       });
   } else {
     console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
@@ -1055,6 +1065,17 @@ async function _finalizarPedido() {
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
+}
+// Antes, si guardar-pedido.php fallaba, el cliente veía "pedido confirmado"
+// igual y solo quedaba un aviso en el log de actividad que ve el admin —
+// nadie en cocina se enteraba de que el pedido no había llegado. Ahora, si
+// el cliente sigue en la pantalla de éxito de ESE pedido, se lo decimos.
+function _avisarClienteFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'block';
 }
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────

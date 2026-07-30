@@ -360,6 +360,10 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
+  // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
+  const saveWarning = document.getElementById('success-save-warning');
+  if (saveWarning) saveWarning.style.display = 'none';
   if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
@@ -546,11 +550,8 @@ async function cancelarPedido() {
 async function _revertirVentasProductos(items) {
   if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
   const fecha = new Date().toISOString().slice(0, 10);
-  try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    if (!sn.exists()) return;
-    const actual = sn.val();
+  const mutator = function (current) {
+    const actual = current || {};
     items.forEach(it => {
       if (it.isFee || !it.name) return;
       const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
@@ -560,7 +561,21 @@ async function _revertirVentasProductos(items) {
       actual[id] = Math.max(0, actual[id] - (it.qty || 0));
       if (actual[id] === 0) delete actual[id];
     });
-    await ref.set(actual);
+    return actual;
+  };
+  try {
+    // Transacción: este mismo nodo lo escribe también cada pedido real de
+    // un cliente al llegar (recordProductSales) — un .set() plano aquí
+    // podía perder esa cuenta si un pedido nuevo llegaba justo mientras se
+    // revertía otro cancelado.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      if (!sn.exists()) return;
+      await ref.set(mutator(sn.val()));
+    }
   } catch (e) {
     console.warn('[ventasProductos] no se pudo revertir', e);
   }
@@ -575,18 +590,28 @@ async function _borrarPedidoDeFirebase(orderNum) {
 
   // 2. Borrar de Firebase stats y liberar slot si tenía uno
   let slotToFree = null;
-  if (window.fb_getStats && window.fb_saveStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo (con su propia protección de condición de
+  // carrera) — un .set() plano aquí (leer, filtrar en memoria, sobreescribir
+  // el nodo entero) podía perder en silencio un pedido real que llegara
+  // justo mientras se cancelaba otro distinto desde el panel.
+  const mutatorStats = function (current) {
+    const stats = current || { orders: [] };
+    if (!Array.isArray(stats.orders)) stats.orders = [];
+    const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
+    if (pedido && pedido.slot) slotToFree = pedido.slot;
+    if (pedido && pedido.items) itemsParaRevertir = pedido.items;
+    stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
+    stats.count = Math.max(0, stats.orders.length);
+    stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
+    return stats;
+  };
+  if (window.fb_transactNative) {
+    try { await window.fb_transactNative('stats/' + todayKey, mutatorStats); } catch {}
+  } else if (window.fb_getStats && window.fb_saveStats) {
     try {
       const stats = await window.fb_getStats(todayKey);
-      if (stats && stats.orders) {
-        const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-        if (pedido && pedido.slot) slotToFree = pedido.slot;
-        if (pedido && pedido.items) itemsParaRevertir = pedido.items;
-        stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-        stats.count = Math.max(0, (stats.count || 1) - 1);
-        stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-        await window.fb_saveStats(stats);
-      }
+      if (stats) await window.fb_saveStats(mutatorStats(stats));
     } catch {}
   }
 
