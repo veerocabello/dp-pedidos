@@ -46,7 +46,7 @@ async function closeAdmin() {
   if (eyeOpen) eyeOpen.style.display = 'block';
   if (eyeClosed) eyeClosed.style.display = 'none';
   stopAlertLoop();
-  _alertPendingOrders = 0;
+  _resetPedidosPendientesAlerta();
   document.getElementById('admin-overlay').classList.remove('open');
   // Resetear estado login/panel para la próxima apertura
   document.getElementById('admin-login').style.display = 'block';
@@ -320,7 +320,29 @@ function loadUrlTokenUI() {
     }
   }
 }
-let _adminFailedAttempts = 0;
+// Antes _adminFailedAttempts solo vivía en memoria: recargar la pantalla de
+// login (F5) lo volvía a poner a 0 y se saltaba el retraso progresivo
+// entero. Se persiste en localStorage (con la hora del último fallo, para
+// que 30 minutos sin ningún fallo lo reseteen solos y no penalice a un
+// admin de verdad que vuelve más tarde).
+const ADMIN_FAILED_KEY = 'dpf_admin_failed_attempts';
+const ADMIN_FAILED_RESET_MS = 30 * 60 * 1000;
+function _cargarIntentosFallidosAdmin() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ADMIN_FAILED_KEY) || 'null');
+    if (raw && typeof raw.count === 'number' && typeof raw.ts === 'number' && (Date.now() - raw.ts) < ADMIN_FAILED_RESET_MS) {
+      return raw.count;
+    }
+  } catch (e) {}
+  return 0;
+}
+function _guardarIntentosFallidosAdmin(count) {
+  try {
+    if (count > 0) localStorage.setItem(ADMIN_FAILED_KEY, JSON.stringify({ count, ts: Date.now() }));
+    else localStorage.removeItem(ADMIN_FAILED_KEY);
+  } catch (e) {}
+}
+let _adminFailedAttempts = _cargarIntentosFallidosAdmin();
 let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
@@ -432,6 +454,7 @@ async function checkAdminPwd() {
   if (result.ok) {
     var _document$getElementB6, _document$getElementB7;
     _adminFailedAttempts = 0;
+    _guardarIntentosFallidosAdmin(0);
     const trustedChecked = (_document$getElementB6 = document.getElementById('trusted-device-check')) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.checked;
     const trustedName = ((_document$getElementB7 = document.getElementById('trusted-device-name')) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value.trim()) || 'Sin nombre';
     if (trustedChecked) await setTrustedDevice(true, trustedName);
@@ -451,6 +474,7 @@ async function checkAdminPwd() {
     logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
   } else {
     _adminFailedAttempts++;
+    _guardarIntentosFallidosAdmin(_adminFailedAttempts);
     const errMsg = result.msg || 'Error al iniciar sesión';
     let errDisplay = errMsg;
     if (_adminFailedAttempts >= 3) {

@@ -874,10 +874,16 @@ function checkAutoCloseWarning() {
     return;
   }
   const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Mismo criterio de "día de servicio" que isOutsideHours()/isTodayOpen():
+  // antes de las 06:00 se trata como parte del día anterior (y su minuto se
+  // extiende +1440) — sin esto, un cierre después de medianoche (ej. 00:30)
+  // hacía que este punto verde/rojo dijera "cerrado" o "día cerrado"
+  // contradiciendo al formulario de pedido, que con isOutsideHours() ya
+  // corregido seguía activo debajo.
+  const nowMin = (now.getHours() < 6) ? (now.getHours() * 60 + now.getMinutes() + 1440) : (now.getHours() * 60 + now.getMinutes());
 
   // Bloquear pedidos si hoy es día cerrado (independientemente del toggle manual)
-  const todayDay = now.getDay();
+  const todayDay = (now.getHours() < 6) ? (now.getDay() + 6) % 7 : now.getDay();
   const diasAbiertos = (_h$diasAbiertos2 = h.diasAbiertos) !== null && _h$diasAbiertos2 !== void 0 ? _h$diasAbiertos2 : [2, 3, 4, 5, 6, 0];
   if (!diasAbiertos.includes(todayDay)) {
     const dot2 = document.querySelector('.dot');
@@ -944,7 +950,13 @@ function checkAutoCloseWarning() {
   // mediodía). manOpen/tarClose siguen editándose por separado en el panel,
   // pero aquí solo se usan los extremos.
   const openStartMin = getMinutes(h.manOpen) ?? getMinutes(h.tarOpen);
-  const closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  let closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  // Si cierra después de medianoche, expresarlo en el mismo espacio
+  // extendido que nowMin (ver más arriba) para poder comparar de forma
+  // continua — mismo arreglo que en isOutsideHours().
+  if (openStartMin !== null && closeEndMin !== null && closeEndMin < openStartMin) {
+    closeEndMin += 1440;
+  }
   const sessions = (openStartMin !== null && closeEndMin !== null)
     ? [{ open: openStartMin, close: closeEndMin }]
     : [];
@@ -1141,7 +1153,10 @@ function toggleFeeEnabled() {
   showToast('fee-toast');
 }
 function saveFeeFromPanel() {
-  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
+  // Antes "|| 0.50" trataba un 0 escrito a propósito como si no se hubiera
+  // escrito nada (0 es falsy en JS) y lo sustituía por 0,50€ sin avisar.
+  const parsedAmount = parseFloat(document.getElementById('fee-amount-input').value);
+  const amount = (isNaN(parsedAmount) || parsedAmount < 0) ? 0.50 : parsedAmount;
   const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
   saveFeeConfig(getFeeEnabled(), amount, label);
   loadFeeUI();

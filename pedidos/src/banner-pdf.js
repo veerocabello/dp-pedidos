@@ -456,7 +456,10 @@ function exportClientesCSV() {
   clientes.forEach(c => {
     rows.push([c.phone, [...c.names].join(' / '), c.count, c.total.toFixed(2).replace('.', ','), c.lastDate]);
   });
-  const csv = rows.map(r => r.map(v => "\"".concat(v, "\"")).join(',')).join('\n');
+  // _csvEscape (historial-export.js) dobla las comillas internas — sin
+  // esto, un nombre de cliente con una " cortaba la fila antes de tiempo y
+  // desplazaba las columnas siguientes al abrir el CSV en Excel/Sheets.
+  const csv = rows.map(r => r.map(v => "\"".concat(_csvEscape(v), "\"")).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], {
     type: 'text/csv;charset=utf-8;'
   });
@@ -701,7 +704,7 @@ function showAdminSection(id, btn) {
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
-    _alertPendingOrders = 0;
+    _resetPedidosPendientesAlerta();
     loadLiveOrdersWithLocalFirst();
     _lastKnownOrderCount = null;
     checkForNewOrders();

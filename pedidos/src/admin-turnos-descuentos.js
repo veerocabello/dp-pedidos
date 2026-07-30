@@ -448,7 +448,19 @@ async function activarFinDeNoche() {
   }
   const pedidos = ((_stats = stats) === null || _stats === void 0 ? void 0 : _stats.count) || 0;
   const total = ((_stats2 = stats) === null || _stats2 === void 0 || (_stats2 = _stats2.total) === null || _stats2 === void 0 ? void 0 : _stats2.toFixed(2)) || '0.00';
+  // Antes esto se quedaba siempre vacío — el HTML de abajo ya estaba
+  // preparado para pintar el top 3 con medallas, pero nadie lo rellenaba.
   const topSorted = [];
+  if (stats && Array.isArray(stats.orders)) {
+    const conteoProductos = {};
+    stats.orders.forEach(o => {
+      (o.items || []).forEach(it => {
+        if (it.isFee || !it.name) return;
+        conteoProductos[it.name] = (conteoProductos[it.name] || 0) + (it.qty || 0);
+      });
+    });
+    topSorted.push(...Object.entries(conteoProductos).sort((a, b) => b[1] - a[1]).slice(0, 3));
+  }
 
   // 3. Resetear turnos
   _slotsCache = {};

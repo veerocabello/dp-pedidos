@@ -162,7 +162,11 @@ function bimbaRenderMargenes() {
     const tieneCoste = !(i.coste === undefined || i.coste === null || i.coste === '');
     i._tieneCoste = tieneCoste;
     i._margenEur = tieneCoste ? (i.price - i.coste) : null;
-    i._margenPct = tieneCoste && i.price > 0 ? (i._margenEur / i.price) * 100 : null;
+    // Si price es 0 (o el producto no tiene coste), _margenPct cae a 0 en
+    // vez de null — antes, con coste puesto y precio 0€, _margenPct
+    // quedaba en null y el .toFixed(0) de más abajo rompía la tabla
+    // ENTERA (el .map() de toda la lista), no solo la fila de ese producto.
+    i._margenPct = tieneCoste ? (i.price > 0 ? (i._margenEur / i.price) * 100 : 0) : null;
   });
 
   // Orden real de categorías: el mismo en que aparecen en la carta (MENU), no alfabético

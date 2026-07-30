@@ -28,9 +28,9 @@ async function imprimirTodosLosActivos() {
 
 function _markAsImpreso(orderNum) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Idempotente:
+  // reimprimir el mismo pedido no vuelve a restar del contador.
+  _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';

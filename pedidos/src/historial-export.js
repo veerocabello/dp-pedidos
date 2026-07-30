@@ -854,10 +854,15 @@ function initFirebaseListeners() {
           }
         }
         if (_adminLoggedIn) {
+          const _nuevosPedidos = (stats.orders || []).slice(-diff);
           if (getTicketConfig().autoImprimir) {
-            (stats.orders || []).slice(-diff).forEach(_autoImprimirPedido);
+            _nuevosPedidos.forEach(_autoImprimirPedido);
           }
-          _alertPendingOrders = diff;
+          // Se SUMA cada pedido nuevo al contador (por número, no se puede
+          // duplicar) en vez de sobreescribirlo — antes, si llegaban dos
+          // avisos de "pedido nuevo" seguidos antes de atender el primero,
+          // el segundo pisaba el contador entero en vez de sumarse.
+          _nuevosPedidos.forEach(o => _marcarPedidoPendienteAlerta(o.num));
           startAlertLoop();
           const toast = document.getElementById('new-order-toast');
           if (toast) {
