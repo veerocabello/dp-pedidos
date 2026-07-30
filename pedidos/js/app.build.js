@@ -9264,6 +9264,26 @@ function doPrint() {
 function printLastTicket() {
   if (_lastTicketData) openPrintModal(_lastTicketData);
 }
+// Envía un pedido nuevo directo a la impresora térmica sin pasar por el
+// modal de vista previa — lo dispara el listener de fb_listenStats cuando
+// getTicketConfig().autoImprimir está activo. Sin el flag _reimprimir de
+// doPrint(): este es el print "original" del sistema, no una reimpresión
+// manual desde el panel.
+function _autoImprimirPedido(order) {
+  if (!window.fb_saveTicket) return;
+  const ticketData = {
+    orderNum: order.num,
+    name: order.name,
+    phone: order.phone || '',
+    notes: order.notes || '',
+    slotTime: order.slot || null,
+    items: order.items || [],
+    total: order.total,
+    time: order.time
+  };
+  const key = 'A' + Date.now() + '_' + order.num;
+  window.fb_saveTicket(key, ticketData).catch(() => {});
+}
 let _lastTicketData = null;
 async function printOrderFromStats(num, name, time, total, slot) {
   // Try to get items from Firebase stats, fall back to localStorage
@@ -9477,6 +9497,9 @@ function initFirebaseListeners() {
           }
         }
         if (_adminLoggedIn) {
+          if (getTicketConfig().autoImprimir) {
+            (stats.orders || []).slice(-diff).forEach(_autoImprimirPedido);
+          }
           _alertPendingOrders = diff;
           startAlertLoop();
           const toast = document.getElementById('new-order-toast');
