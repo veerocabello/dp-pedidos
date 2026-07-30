@@ -18,6 +18,48 @@
 
 header('Content-Type: text/html; charset=utf-8');
 
+// Antes esto se ejecutaba con solo abrir la URL (GET), sin contraseña ni
+// confirmación — cualquiera que la encontrara (o un bot rastreando enlaces)
+// podía sobrescribir la configuración de premios en cualquier momento,
+// aunque llevara meses ajustada a mano. Ahora hace falta confirmar con un
+// botón (POST) antes de tocar nada, y las peticiones repetidas se limitan
+// igual que el resto de endpoints de esta web.
+$CONFIRM_TOKEN = 'SI-QUIERO-SUSTITUIR-LOS-PREMIOS-ACTUALES';
+$esConfirmacion = $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['confirmar'] ?? '') === $CONFIRM_TOKEN;
+
+if (!$esConfirmacion) {
+    echo '<h2>⚠️ Precargar premios de ejemplo</h2>'
+       . '<p>Esto SUSTITUYE la configuración actual de la ruleta y el rasca por 12 premios de ejemplo, y activa ambos juegos (activa:true).</p>'
+       . '<p>Si ya tenías premios ajustados a mano, se perderán.</p>'
+       . '<form method="POST">'
+       . '<input type="hidden" name="confirmar" value="' . htmlspecialchars($CONFIRM_TOKEN) . '">'
+       . '<button type="submit" style="padding:12px 20px;font-size:15px;cursor:pointer">Sí, sustituir por los premios de ejemplo</button>'
+       . '</form>';
+    exit;
+}
+
+$tmp_dir = sys_get_temp_dir();
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
+$lock_file = $tmp_dir . '/dpf_seed_premios_' . md5($ip) . '.lock';
+$fp = fopen($lock_file, 'c+');
+if ($fp !== false) {
+    flock($fp, LOCK_EX);
+    $ultima = filesize($lock_file) > 0 ? (int)fread($fp, 32) : 0;
+    if ($ultima && (time() - $ultima) < 60) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(429);
+        echo '<p>Espera un momento antes de volver a intentarlo.</p>';
+        exit;
+    }
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, (string)time());
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+
 $rutaCredenciales = __DIR__ . '/../../firebase-credenciales.json';
 $databaseURL = 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app';
 

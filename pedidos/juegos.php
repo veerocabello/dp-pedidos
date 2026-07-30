@@ -321,13 +321,25 @@ try {
     // ── Idempotente: si ya jugó hoy, se le devuelve lo que ya ganó (no
     // vuelve a sortear, no da error) — así puede recuperar su código si
     // recargó la página o lo perdió, sin poder jugar dos veces.
+    //
+    // El teléfono NO demuestra que quien pregunta es quien jugó — es un
+    // campo de texto libre, sin verificación SMS en este juego. Sin más
+    // comprobación, cualquiera que supiera o probara un teléfono ajeno
+    // (9 dígitos) podía robar el código de descuento de otra persona con
+    // solo "recuperar" su jugada. Por eso el giro guarda también un token
+    // aleatorio que solo conoce el navegador que jugó (se lo guarda en su
+    // propio localStorage) — sin ese token exacto, se confirma que ya
+    // jugó pero no se revela el premio ni el código.
     $giroLeido = fbGetConEtag($databaseURL, $giroPath, $accessToken);
     if (is_array($giroLeido['data'])) {
+        $tokenRecibido = isset($payload['token']) ? (string)$payload['token'] : '';
+        $tokenGuardado = (string)($giroLeido['data']['token'] ?? '');
+        $esDueno = $tokenGuardado !== '' && hash_equals($tokenGuardado, $tokenRecibido);
         echo json_encode([
             'success'   => true,
             'yaJugaste' => true,
-            'premio'    => $giroLeido['data']['premio'] ?? null,
-            'code'      => $giroLeido['data']['code'] ?? null,
+            'premio'    => $esDueno ? ($giroLeido['data']['premio'] ?? null) : null,
+            'code'      => $esDueno ? ($giroLeido['data']['code'] ?? null) : null,
         ]);
         exit;
     }
@@ -389,7 +401,8 @@ try {
     $pct = isset($premio['pct']) ? max(0, min(100, (float)$premio['pct'])) : 0;
     $code = $pct > 0 ? crearCodigoPremio($databaseURL, $accessToken, $juego, $pct, $telefono) : null;
 
-    $giroData = ['premio' => $premio, 'code' => $code, 'ts' => (int)(microtime(true) * 1000)];
+    $token = bin2hex(random_bytes(16));
+    $giroData = ['premio' => $premio, 'code' => $code, 'ts' => (int)(microtime(true) * 1000), 'token' => $token];
     // Si esta escritura pierde una carrera muy rara (dos pestañas del mismo
     // teléfono a la vez), el segundo intento simplemente sobreescribe con
     // OTRO premio recién sorteado — no hay forma de jugar dos veces de
@@ -410,7 +423,7 @@ try {
     dpf_juegos_marcar_ip_usada($ip_day_file);
 
     if ($topeLockFp !== false) { flock($topeLockFp, LOCK_UN); fclose($topeLockFp); }
-    echo json_encode(['success' => true, 'yaJugaste' => false, 'premio' => $premio, 'code' => $code]);
+    echo json_encode(['success' => true, 'yaJugaste' => false, 'premio' => $premio, 'code' => $code, 'token' => $token]);
 } catch (Exception $e) {
     error_log('[juegos] Error: ' . $e->getMessage());
     http_response_code(500);

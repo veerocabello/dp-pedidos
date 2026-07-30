@@ -128,13 +128,26 @@ function _juegoTelefonoGuardado() {
   try { return localStorage.getItem('dpf_customer_phone') || ''; } catch (e) { return ''; }
 }
 
+// El teléfono no demuestra que quien pregunta jugó de verdad (sin
+// verificación SMS aquí) — juegos.php ahora exige también este token para
+// devolver el premio/código al "recuperar" una jugada de hoy, para que no
+// baste con probar un teléfono ajeno para robarle su código de descuento.
+function _juegoTokenKey(juego) {
+  return 'dpf_juego_token_' + juego;
+}
 async function _juegoGirar(juego, telefono) {
+  let token = '';
+  try { token = localStorage.getItem(_juegoTokenKey(juego)) || ''; } catch (e) {}
   const res = await fetch('juegos.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'girar', juego, telefono })
+    body: JSON.stringify({ action: 'girar', juego, telefono, token })
   });
-  return res.json();
+  const data = await res.json();
+  if (data && data.token) {
+    try { localStorage.setItem(_juegoTokenKey(juego), data.token); } catch (e) {}
+  }
+  return data;
 }
 
 function _aplicarPremioComun(juego) {
@@ -556,8 +569,11 @@ function _pintarResumenHoy(elId, resumen, tope) {
     el.innerHTML = 'Todavía nadie ha jugado hoy.';
     return;
   }
+  // premio.nombre lo escribe el admin en texto libre al configurar los
+  // premios — sin escapar aquí, un nombre con HTML se ejecutaba en cuanto
+  // cualquier admin abriera este resumen.
   const desglose = Object.entries(resumen.porPremio)
-    .map(([nombre, n]) => n + '× ' + nombre)
+    .map(([nombre, n]) => n + '× ' + escapeHtml(nombre))
     .join(' · ');
   const topeTxt = tope > 0
     ? '<br><b>' + resumen.conDescuento + ' / ' + tope + '</b> premios con descuento entregados hoy' + (resumen.conDescuento >= tope ? ' — <span style="color:#c0392b;font-weight:700">tope alcanzado, solo queda "sin premio" hasta mañana</span>' : '')

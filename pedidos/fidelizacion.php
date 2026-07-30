@@ -214,6 +214,7 @@ function normOrderKey($num) {
 // fiaba de lo que dijera el cliente (orderNum, tienePatata, teléfono), así
 // que se podían inventar números de pedido para sumar sellos y premios sin
 // límite, sin haber pedido nada de verdad.
+// Devuelve el ticket (array) si es válido para sumar sello, o null si no.
 function ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono) {
     $todayKey = date('Y-m-d');
     $ticketKey = normOrderKey($orderNum);
@@ -223,14 +224,45 @@ function ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono)
     $response = curl_exec($ch);
     curl_close($ch);
     $ticket = json_decode($response, true);
-    if (!is_array($ticket)) return false;
+    if (!is_array($ticket)) return null;
     $telefonoTicket = preg_replace('/[^0-9]/', '', (string)($ticket['phone'] ?? ''));
-    if ($telefonoTicket !== $telefono) return false;
+    if ($telefonoTicket !== $telefono) return null;
     foreach (($ticket['items'] ?? []) as $it) {
         $nombre = isset($it['name']) ? mb_strtolower(trim((string)$it['name'])) : '';
-        if (strpos($nombre, 'patata') === 0) return true;
+        if (strpos($nombre, 'patata') === 0) return $ticket;
     }
-    return false;
+    return null;
+}
+
+// El navegador manda "consumioPremio" para saber si hay que restar el
+// premio pendiente, pero es solo lo que dice el propio cliente — nada
+// impedía llamar a este endpoint a mano con consumioPremio:false mientras
+// el pedido real (guardado en el ticket) sí llevaba el descuento de la
+// patata gratis ya aplicado, conservando el premio para reusarlo sin
+// límite. Esto mira el ticket de verdad: si el total es al menos el
+// precio de la patata más cara por debajo de la suma de productos, es que
+// se aplicó un descuento grande (premio o código) — no se puede distinguir
+// con certeza cuál de los dos fue, pero en ambos casos es más seguro
+// restar el premio que dejar que un "consumioPremio:false" lo conserve
+// intacto sobre un pedido que claramente ya se benefició de un descuento
+// de ese tamaño.
+function _ticketPareceConDescuentoGrande($ticket) {
+    $itemsSum = 0;
+    $maxPatataUnit = 0;
+    foreach (($ticket['items'] ?? []) as $it) {
+        if (!empty($it['isFee'])) continue;
+        $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : 0;
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 1;
+        $itemsSum += $subtotal;
+        $nombre = isset($it['name']) ? mb_strtolower(trim((string)$it['name'])) : '';
+        if (strpos($nombre, 'patata') === 0) {
+            $unit = $subtotal / $qty;
+            if ($unit > $maxPatataUnit) $maxPatataUnit = $unit;
+        }
+    }
+    if ($maxPatataUnit <= 0) return false;
+    $total = isset($ticket['total']) ? (float)$ticket['total'] : $itemsSum;
+    return $total <= ($itemsSum - $maxPatataUnit + 0.05);
 }
 
 // Añade una entrada al mismo "Registro de actividad" que ya se ve en el
@@ -272,6 +304,39 @@ try {
 
     // ── CONSULTAR: sellos/premios actuales de este teléfono ──
     if ($action === 'consultar') {
+        // El teléfono no demuestra que quien pregunta es su dueño (sin login
+        // de cliente en toda la web) — el límite general de arriba (30
+        // peticiones/5min por IP) no distingue si son 30 consultas del mismo
+        // número (normal: alguien corrigiendo un typo) o 30 números
+        // DISTINTOS (alguien recorriendo teléfonos para fisgonear sellos
+        // ajenos). Esto limita aparte cuántos números distintos puede
+        // consultar una misma IP en la ventana — sin restringir repetir el
+        // mismo número las veces que haga falta.
+        $max_telefonos_distintos = 5;
+        $vistos_file = $tmp_dir . '/dpf_fidelizacion_vistos_' . md5($ip) . '.json';
+        $fp = fopen($vistos_file, 'c+');
+        if ($fp !== false) {
+            flock($fp, LOCK_EX);
+            $now = time();
+            $size = filesize($vistos_file) ?: 0;
+            $raw2 = $size > 0 ? fread($fp, $size) : '';
+            $vistos = json_decode($raw2, true) ?: [];
+            $vistos = array_filter($vistos, function ($ts) use ($now, $window) { return ($now - $ts) < $window; });
+            if (!isset($vistos[$telefono]) && count($vistos) >= $max_telefonos_distintos) {
+                flock($fp, LOCK_UN);
+                fclose($fp);
+                http_response_code(429);
+                echo json_encode(['success' => false, 'error' => 'Demasiadas consultas distintas. Espera unos minutos.']);
+                exit;
+            }
+            $vistos[$telefono] = $now;
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($vistos));
+            fflush($fp);
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
         $leido = fbGetClienteConEtag($databaseURL, $telefono, $accessToken);
         $cliente = $leido['cliente'];
         $sellos = is_numeric($cliente['sellos'] ?? null) ? (int)$cliente['sellos'] : 0;
@@ -299,9 +364,13 @@ try {
             echo json_encode(['success' => true, 'skipped' => true]);
             exit;
         }
-        if (!ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono)) {
+        $ticket = ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono);
+        if (!$ticket) {
             echo json_encode(['success' => false, 'error' => 'Pedido no encontrado']);
             exit;
+        }
+        if (!$consumioPremio && _ticketPareceConDescuentoGrande($ticket)) {
+            $consumioPremio = true;
         }
 
         $guardado = null;
@@ -353,9 +422,14 @@ try {
 
             // Registro de cuándo se pone cada sello (con el pedido que lo
             // generó), para detectar ritmos sospechosos y para la
-            // idempotencia de arriba. Solo los últimos 15.
+            // idempotencia de arriba. Con solo los últimos 15, un cliente
+            // que hiciera 15 pedidos reales más después de uno dado dejaba
+            // ese orderNum fuera de la ventana y se podía volver a mandar
+            // para sumar otro sello indebido por el mismo pedido — 100 hace
+            // ese hueco mucho menos realista de explotar sin dejar de ser
+            // un array pequeño.
             $historialSellos[] = ['ts' => (int)(microtime(true) * 1000), 'fecha' => date('c'), 'orderNum' => $orderNum];
-            if (count($historialSellos) > 15) $historialSellos = array_slice($historialSellos, -15);
+            if (count($historialSellos) > 100) $historialSellos = array_slice($historialSellos, -100);
             $cliente['historialSellos'] = $historialSellos;
 
             if (fbSetClienteSiCoincide($databaseURL, $telefono, $accessToken, $cliente, $leido['etag'])) {

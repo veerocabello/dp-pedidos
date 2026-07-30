@@ -11764,14 +11764,19 @@ function _filtrarYPintarFidelizacion() {
     const sospechosoTexto = c.sospechoso ? ' · 🚨 ritmo sospechoso (sellos muy seguidos)' : '';
     const nombreMostrar = escapeHtml(c.nombre || 'Sin nombre');
     const telMostrar = escapeHtml(c.telefono);
+    // escapeHtml no basta dentro de un onclick="fn('...')": el navegador
+    // decodifica las entidades HTML (incluida &#39;) ANTES de ejecutar el
+    // JS del atributo, así que una comilla simple sobrevivía y rompía la
+    // llamada — escapeAttr la escapa también para el propio string de JS.
+    const telAttr = escapeAttr(c.telefono);
     let h = '<div style="background:' + bg + ';border:1.5px solid ' + border + ';border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
     h += '<div>';
     h += '<div style="font-weight:700;color:#3D1F0D;font-size:14px">' + nombreMostrar + ' <span style="color:#8A6A4E;font-weight:500">(' + telMostrar + ')</span></div>';
     h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + '</div>';
     h += '</div>';
-    h += '<button onclick="cargarFidelizacionParaEditar(\'' + telMostrar + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
+    h += '<button onclick="cargarFidelizacionParaEditar(\'' + telAttr + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
     h += '</div>';
-    h += '<div onclick="toggleFidelizacionDetalle(\'' + telMostrar + '\')" style="cursor:pointer;font-size:12px;color:#8A6A4E;padding:4px 16px 8px;border-bottom:1.5px solid ' + border + '">👇 Ver canjes y pedidos</div>';
+    h += '<div onclick="toggleFidelizacionDetalle(\'' + telAttr + '\')" style="cursor:pointer;font-size:12px;color:#8A6A4E;padding:4px 16px 8px;border-bottom:1.5px solid ' + border + '">👇 Ver canjes y pedidos</div>';
     h += '<div id="fidel-detalle-' + telMostrar + '" style="display:none;padding:10px 16px;border-bottom:1.5px solid ' + border + ';font-size:12px;background:#FFFDF8"></div>';
     return h;
   }).join('<div style="height:2px"></div>');
@@ -11786,16 +11791,17 @@ function toggleFidelizacionDetalle(telefono) {
   el.style.display = 'block';
   const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || {};
   const canjes = cliente.historialCanjes || [];
+  const telAttr = escapeAttr(telefono);
   let h = '';
   if (canjes.length) {
     h += '<div style="font-weight:700;color:#3D1F0D;margin-bottom:6px">🎁 Premios canjeados (' + canjes.length + ')</div>';
-    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telefono + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
+    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telAttr + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
   } else {
     h += '<div style="color:#8A6A4E;margin-bottom:8px">Sin premios canjeados todavía.</div>';
   }
-  h += '<button onclick="cargarPedidosClienteFidelizacion(\'' + telefono + '\')" style="margin-top:8px;padding:6px 14px;background:#fff;border:1.5px solid #3D1F0D;color:#3D1F0D;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Ver todos sus pedidos</button>';
+  h += '<button onclick="cargarPedidosClienteFidelizacion(\'' + telAttr + '\')" style="margin-top:8px;padding:6px 14px;background:#fff;border:1.5px solid #3D1F0D;color:#3D1F0D;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Ver todos sus pedidos</button>';
   h += '<div id="fidel-pedidos-' + telefono + '" style="margin-top:8px"></div>';
-  h += '<button onclick="borrarClienteFidelizacion(\'' + telefono + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
+  h += '<button onclick="borrarClienteFidelizacion(\'' + telAttr + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
   el.innerHTML = h;
 }
 async function anularCanjeFidelizacion(telefono, indice) {
@@ -11806,9 +11812,23 @@ async function anularCanjeFidelizacion(telefono, indice) {
       alert('No se ha encontrado ese canje (puede que la lista esté desactualizada). Pulsa Actualizar e inténtalo de nuevo.');
       return;
     }
-    cliente.historialCanjes.splice(indice, 1);
-    cliente.premiosPendientes = (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : 0) + 1;
-    await window.fb_saveFidelizacionCliente(telefono, cliente);
+    // Transacción: fidelizacion/<telefono> también lo escribe fidelizacion.php
+    // cada vez que ese cliente gana un sello o canjea un premio de verdad —
+    // un .set() plano aquí podía perder ese cambio si pasaba justo mientras
+    // el admin anulaba este canje.
+    const mutator = function (current) {
+      const c = current || {};
+      if (Array.isArray(c.historialCanjes) && c.historialCanjes[indice]) {
+        c.historialCanjes.splice(indice, 1);
+      }
+      c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
     renderFidelizacionList();
   } catch (e) {
     alert('Error al anular el canje: ' + e.message);
@@ -11898,22 +11918,30 @@ async function guardarFidelizacionManual() {
   let vecesCompletado = parseInt(document.getElementById('fidel-edit-veces-completado').value, 10);
   if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
 
-  let existente = null;
-  try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
-  const cliente = {
-    nombre: nombre || (existente && existente.nombre) || '',
-    sellos,
-    premiosPendientes,
-    vecesCompletado,
-    historialCanjes: (existente && existente.historialCanjes) || [],
-    // fb_saveFidelizacionCliente sobrescribe el registro entero (no hace
-    // merge) — antes esta edición manual no arrastraba historialSellos, así
-    // que guardar aquí borraba el historial de fechas de sellos que usa
-    // _clienteConRitmoSospechoso() para detectar abuso, aunque solo se
-    // estuviera corrigiendo el nombre.
-    historialSellos: (existente && existente.historialSellos) || []
+  // Transacción: nombre/sellos/premiosPendientes/vecesCompletado son lo que
+  // el admin ha editado a propósito en el formulario, pero historialCanjes/
+  // historialSellos deben venir siempre de lo último de verdad en Firebase
+  // (no de una lectura que pudo quedarse desfasada mientras el admin
+  // rellenaba el formulario) — si no, un sello o canje real de ese cliente
+  // llegado justo en medio se perdía sin aviso al guardar.
+  const mutator = function (current) {
+    const existente = current || {};
+    return {
+      nombre: nombre || existente.nombre || '',
+      sellos,
+      premiosPendientes,
+      vecesCompletado,
+      historialCanjes: existente.historialCanjes || [],
+      historialSellos: existente.historialSellos || []
+    };
   };
-  await window.fb_saveFidelizacionCliente(telefono, cliente);
+  if (window.fb_transactJsonString) {
+    await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+  } else {
+    let existente = null;
+    try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
+    await window.fb_saveFidelizacionCliente(telefono, mutator(existente));
+  }
   showToast('fidel-toast');
   renderFidelizacionList();
 }
@@ -11960,16 +11988,26 @@ async function renderAccesosLog() {
 async function recordProductSales(items) {
   if (!items || !items.length) return;
   const fecha = new Date().toISOString().slice(0, 10);
-  try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
+  const mutator = function (current) {
+    const actual = current || {};
     items.forEach(it => {
       if (it.id == null) return;
       const id = String(it.id);
       actual[id] = (actual[id] || 0) + (it.qty || 0);
     });
-    await ref.set(actual);
+    return actual;
+  };
+  try {
+    // Transacción: igual que recordOrderStats justo debajo (que ya lo hace
+    // por el mismo motivo) — dos pedidos completándose casi a la vez podían
+    // pisarse el conteo de ventas por producto con un .set() plano.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
   } catch (e) {
     console.warn('[ventasProductos] no se pudo guardar', e);
   }
@@ -12765,11 +12803,15 @@ function renderStockHistorial() {
   let html = '';
 
   // Latest entry (always visible)
-  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + latest.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>';
+  // Cada línea es texto libre que cualquier empleado puede escribir al
+  // añadir un ingrediente/nota — sin escapar aquí se ejecutaba en cuanto un
+  // admin abriera este historial (renderStockItems, la lista en vivo, ya
+  // escapaba esto; aquí se había quedado fuera).
+  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + escapeHtml(latest.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>';
 
   // Older entries in a collapsible folder
   if (older.length) {
-    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + entry.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>').join('') + '</div></details>';
+    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + escapeHtml(entry.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>').join('') + '</div></details>';
   }
   el.innerHTML = html;
 }
@@ -12777,7 +12819,7 @@ function exportStockPDF() {
   const lines = window._lastStockLines || [];
   const ts = window._lastStockTs || '';
   if (!lines.length) return;
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(ts, "</p>\n  <ul>").concat(lines.map(l => '<li>' + l + '</li>').join(''), "</ul>\n  </body></html>");
+  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(escapeHtml(ts), "</p>\n  <ul>").concat(lines.map(l => '<li>' + escapeHtml(l) + '</li>').join(''), "</ul>\n  </body></html>");
   const blob = new Blob([html], {
     type: 'text/html'
   });
@@ -12867,7 +12909,7 @@ function mostrarUltimoStock() {
     const last = arr[arr.length - 1];
     tsEl.textContent = '\uD83D\uDCC5 ' + (last.ts || '');
     const lines = normalizeHist(last.lines);
-    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + l + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
+    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + escapeHtml(l) + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
   }
   function tryLoad(intentos) {
     if (window.fb_loadStockHistorial) {
@@ -13235,13 +13277,26 @@ function _juegoTelefonoGuardado() {
   try { return localStorage.getItem('dpf_customer_phone') || ''; } catch (e) { return ''; }
 }
 
+// El teléfono no demuestra que quien pregunta jugó de verdad (sin
+// verificación SMS aquí) — juegos.php ahora exige también este token para
+// devolver el premio/código al "recuperar" una jugada de hoy, para que no
+// baste con probar un teléfono ajeno para robarle su código de descuento.
+function _juegoTokenKey(juego) {
+  return 'dpf_juego_token_' + juego;
+}
 async function _juegoGirar(juego, telefono) {
+  let token = '';
+  try { token = localStorage.getItem(_juegoTokenKey(juego)) || ''; } catch (e) {}
   const res = await fetch('juegos.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'girar', juego, telefono })
+    body: JSON.stringify({ action: 'girar', juego, telefono, token })
   });
-  return res.json();
+  const data = await res.json();
+  if (data && data.token) {
+    try { localStorage.setItem(_juegoTokenKey(juego), data.token); } catch (e) {}
+  }
+  return data;
 }
 
 function _aplicarPremioComun(juego) {
@@ -13663,8 +13718,11 @@ function _pintarResumenHoy(elId, resumen, tope) {
     el.innerHTML = 'Todavía nadie ha jugado hoy.';
     return;
   }
+  // premio.nombre lo escribe el admin en texto libre al configurar los
+  // premios — sin escapar aquí, un nombre con HTML se ejecutaba en cuanto
+  // cualquier admin abriera este resumen.
   const desglose = Object.entries(resumen.porPremio)
-    .map(([nombre, n]) => n + '× ' + nombre)
+    .map(([nombre, n]) => n + '× ' + escapeHtml(nombre))
     .join(' · ');
   const topeTxt = tope > 0
     ? '<br><b>' + resumen.conDescuento + ' / ' + tope + '</b> premios con descuento entregados hoy' + (resumen.conDescuento >= tope ? ' — <span style="color:#c0392b;font-weight:700">tope alcanzado, solo queda "sin premio" hasta mañana</span>' : '')
