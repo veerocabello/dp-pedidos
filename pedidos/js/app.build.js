@@ -6046,6 +6046,7 @@ function bimbaPintarTicketConfig() {
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
   bimbaPintarTicketConfig();
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
 function closeTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.remove('open');
@@ -9249,14 +9250,15 @@ function closePrintModal() {
 }
 function doPrint() {
   if (!currentTicketData) return;
+  const orderNum = currentTicketData.orderNum;
 
   // Mandar a impresora térmica via Firebase
   if (window.fb_saveTicket) {
     const reimprKey = 'R' + Date.now();
     const ticketParaImpresora = Object.assign({}, currentTicketData, { _reimprimir: true });
     window.fb_saveTicket(reimprKey, ticketParaImpresora)
-      .then(() => { closePrintModal(); })
-      .catch(() => { closePrintModal(); });
+      .then(() => { _registrarEnvioTicket(orderNum, true); closePrintModal(); })
+      .catch(() => { _registrarEnvioTicket(orderNum, false); _avisarFalloEnvioTicket(orderNum); closePrintModal(); });
   } else {
     closePrintModal();
   }
@@ -9282,7 +9284,36 @@ function _autoImprimirPedido(order) {
     time: order.time
   };
   const key = 'A' + Date.now() + '_' + order.num;
-  window.fb_saveTicket(key, ticketData).catch(() => {});
+  window.fb_saveTicket(key, ticketData)
+    .then(() => _registrarEnvioTicket(order.num, true))
+    .catch(() => { _registrarEnvioTicket(order.num, false); _avisarFalloEnvioTicket(order.num); });
+}
+// Aviso real cuando el envío del ticket a Firebase falla (offline, permisos...).
+// No sabemos si la impresora física llegó a sacar el papel — de eso se encarga
+// el programa que la conecta, fuera de esta web — pero al menos esto ya no se
+// queda callado como antes.
+function _avisarFalloEnvioTicket(orderNum) {
+  logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión');
+}
+const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
+function _registrarEnvioTicket(orderNum, ok) {
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  log.unshift({ num: orderNum, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
+  localStorage.setItem(TICKET_SEND_LOG_KEY, JSON.stringify(log.slice(0, 15)));
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
+}
+function _renderTicketSendLog() {
+  const el = document.getElementById('tc-envios-log');
+  if (!el) return;
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  el.innerHTML = log.length ? log.map(e =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:12px">'
+    + '<span>Pedido #' + escapeHtml(String(e.num)) + '</span>'
+    + '<span style="color:' + (e.ok ? '#27855a' : '#c0392b') + ';font-weight:700">' + (e.ok ? '✅ Enviado · ' : '❌ Falló · ') + e.time + '</span>'
+    + '</div>'
+  ).join('') : '<div style="font-size:12px;color:var(--muted)">Todavía no se ha enviado ningún ticket en este dispositivo</div>';
 }
 let _lastTicketData = null;
 async function printOrderFromStats(num, name, time, total, slot) {

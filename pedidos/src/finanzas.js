@@ -679,6 +679,7 @@ function bimbaPintarTicketConfig() {
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
   bimbaPintarTicketConfig();
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
 function closeTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.remove('open');
