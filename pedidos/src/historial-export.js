@@ -579,22 +579,24 @@ function doPrint() {
   const orderNum = currentTicketData.orderNum;
   const ticketData = currentTicketData;
 
-  // Imprimir de verdad en la térmica (WebUSB)
+  // Imprimir de verdad en la térmica (WebUSB) — el registro de abajo refleja
+  // este resultado (si de verdad salió por la impresora), no el guardado en Firebase.
   imprimirTicketTermico(ticketData).then(() => {
     _markAsImpreso(orderNum);
+    _registrarEnvioTicket(orderNum, true);
   }).catch(e => {
     console.warn('[Impresora] error al imprimir', e);
+    _registrarEnvioTicket(orderNum, false);
+    _avisarFalloEnvioTicket(orderNum);
     alert('⚠️ No se pudo imprimir en la térmica (' + e.message + '). Se abrirá el diálogo de impresión del navegador como alternativa.');
     window.print();
   });
 
-  // Guardar registro en Firebase (histórico de reimpresiones, usado también por fidelización)
+  // Guardar también en Firebase (histórico de reimpresiones, usado también por fidelización)
   if (window.fb_saveTicket) {
     const reimprKey = 'R' + Date.now();
     const ticketParaImpresora = Object.assign({}, ticketData, { _reimprimir: true });
-    window.fb_saveTicket(reimprKey, ticketParaImpresora)
-      .then(() => { _registrarEnvioTicket(orderNum, true); })
-      .catch(() => { _registrarEnvioTicket(orderNum, false); _avisarFalloEnvioTicket(orderNum); });
+    window.fb_saveTicket(reimprKey, ticketParaImpresora).catch(() => {});
   }
   closePrintModal();
 }
