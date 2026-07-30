@@ -11,17 +11,42 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-count').textContent = count;
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
+  // Botón "repetir último pedido" (solo móvil): ocupa el mismo hueco que
+  // el FAB del carrito cuando este está vacío — nunca se muestran los dos
+  // a la vez porque uno solo aparece cuando el otro está oculto.
+  const repeatFab = document.getElementById('repeat-order-fab');
+  if (repeatFab) {
+    let hayUltimoPedido = false;
+    try { hayUltimoPedido = !!localStorage.getItem('dpf_ultimo_pedido'); } catch (e) {}
+    repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
+  }
 }
-function _syncCartDrawer(cartHtml, total) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
   const feeEnabled = getFeeEnabled();
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
+  discountAmt = discountAmt || 0;
+  fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
+  // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
+  // tambi\u00E9n deje claro por qu\u00E9 el total baj\u00F3 (c\u00F3digo manual o premio
+  // ganado en la ruleta/rasca).
+  if (discountAmt > 0 && discountCode) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fidelizacionAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt;
+  if (_ahorroDrawer > 0) {
+    html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
@@ -39,7 +64,7 @@ function _syncCartDrawer(cartHtml, total) {
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value\"></textarea>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
@@ -182,11 +207,9 @@ function submitOrderFromDrawer() {
   if (n) document.getElementById('customer-name').value = n.value;
   if (p) document.getElementById('customer-phone').value = p.value;
   if (t) document.getElementById('customer-notes').value = t.value;
-  // Guardar slot antes de cerrar
-  var slotActual = selectedSlot;
-  closeCartDrawer();
-  // Restaurar slot por si closeCartDrawer lo resetea
-  if (slotActual) selectedSlot = slotActual;
+  // No cerramos el drawer aquí: si falta un dato, _alertaConFoco necesita
+  // que siga abierto para resaltar el campo correcto (drawer-customer-*).
+  // Se cierra solo al confirmar con éxito, desde showSuccess().
   submitOrder();
 }
 function removeItem(id) {
@@ -220,32 +243,29 @@ function formatNombreConBadgeNuevo(nombre) {
   return escapeHtml(limpio) + ' <span style="display:inline-block;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:9px;color:#fff;background:#C0392B;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;vertical-align:middle">Nuevo</span>';
 }
 
-// Genera número de pedido usando contador atómico en Firebase.
-// El contador se resetea cada día (clave = fecha de hoy).
-// Fallback a aleatorio solo si Firebase no está disponible.
+// Genera número de pedido reservándolo en el servidor (guardar-pedido.php,
+// cuenta de servicio) para evitar colisiones entre pedidos simultáneos.
+// Antes el propio navegador escribía directo en usedOrderNums/ vía la SDK
+// de Firebase, lo que exigía dejar esa escritura abierta a cualquier
+// visitante anónimo en las reglas — cualquiera podía rellenar
+// usedOrderNums/<fecha>/ sin llegar a pedir nada.
+// Fallback a aleatorio solo si el servidor no responde.
 async function generateOrderNumber() {
-  // Transacción atómica: reserva el número en Firebase antes de devolverlo.
-  // Si dos pedidos llegan a la vez, Firebase garantiza que obtienen números distintos.
-  const todayKey = new Date().toISOString().slice(0, 10);
-  if (typeof firebase !== 'undefined' && firebase.database) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const rnd = Math.floor(Math.random() * 9000) + 1000;
-      const ref = firebase.database().ref('usedOrderNums/' + todayKey + '/' + rnd);
-      let reserved = false;
-      try {
-        await ref.transaction(function(current) {
-          if (current === null) { reserved = true; return true; }
-          return undefined; // ya existe, abortar
-        });
-        if (reserved) return 'T' + rnd;
-      } catch (e) {
-        console.warn('[orderNum] transaction error:', e);
-      }
-    }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarNumeroPedido' })
+    });
+    const data = await res.json();
+    if (data.success && data.orderNum) return data.orderNum;
+    console.warn('[orderNum] reserva en servidor falló:', data.error);
+  } catch (e) {
+    console.warn('[orderNum] fetch error:', e);
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime) {
+function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento) {
   const tc = getTicketConfig();
   const lines = Object.entries(cart).map(_ref5 => {
     let _ref6 = _slicedToArray(_ref5, 2),
@@ -273,7 +293,12 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
   const allLines = [...lines, ...custLines, ...extLines2];
-  const total = Object.entries(cart).reduce((s, _ref7) => {
+  // El total final se recibe ya calculado desde submitOrder() (orderTotal)
+  // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
+  // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
+  // premio de fidelizaci\u00F3n, as\u00ED que el "TOTAL:" del ticket enviado por
+  // email pod\u00EDa no coincidir con lo que de verdad se cobra.
+  const itemsSubtotal = Object.entries(cart).reduce((s, _ref7) => {
     let _ref8 = _slicedToArray(_ref7, 2),
       id = _ref8[0],
       q = _ref8[1];
@@ -285,12 +310,18 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
   }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
+  const extraLineas = [];
+  if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
+  if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
+  if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
+  const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
   const now = new Date().toLocaleString('es-ES');
   const phoneCleanTxt = (phone || '').replace(/\D/g, '');
   const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
     ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
     : "";
-  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\nTOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
+  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
 }
 
 // ══════════════════════════════════════════
@@ -409,14 +440,17 @@ function getSlotCount(slotTime) {
 async function incrementSlot(slotTime) {
   // Update local cache immediately for UI responsiveness
   _slotsCache[slotTime] = (_slotsCache[slotTime] || 0) + 1;
-  // Persist to Firebase (atomic increment)
-  if (window.fb_incrementSlot) {
-    try {
-      await window.fb_incrementSlot(slotTime);
-    } catch (e) {
-      console.warn('Firebase slot error', e);
-    }
-  } else {
+  // Reservar en el servidor (guardar-pedido.php, cuenta de servicio) — antes
+  // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
+  // slots/ abierto a escritura anónima en las reglas.
+  try {
+    await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarSlot', slotTime })
+    });
+  } catch (e) {
+    console.warn('Slot reserve error', e);
     saveSlotsData(getSlotsData());
   }
 }
@@ -555,14 +589,67 @@ function selectSlot(slot) {
 
   // Aviso franja poco margen ahora es inline en el botón
 }
+
+// Precio a descontar por el premio de fidelización activo (patata gratis) —
+// la patata más cara del carrito, en beneficio del cliente. Compartida entre
+// el total mostrado mientras se compra (renderCart(), en carta.js) y el del
+// pedido final (submitOrder(), aquí abajo) para que nunca puedan mostrar
+// cifras distintas — antes solo se calculaba aquí, así que el total del
+// carrito no bajaba hasta confirmar el pedido, igual que pasaba con los
+// códigos de descuento manuales antes de arreglarlo.
+function getFidelizacionDescuento(phoneClean) {
+  if (!window._fidelizacionPremioActivo || window._fidelizacionPremioActivo !== phoneClean) return 0;
+  const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
+    const it = MENU.find(m => m.id == id);
+    return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
+  });
+  const preciosPatatasCustom = Object.values(custCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+  });
+  const preciosPatatasExtras = Object.values(extrasCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return getExtrasItemPrice(c);
+  });
+  const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
+  return todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
+}
+// Guarda contra doble envío — antes el botón "Confirmar pedido" no se
+// deshabilitaba hasta después de varias llamadas de red seguidas (lista
+// negra, cooldown, turnos, número de pedido), así que un doble-toque en
+// una conexión lenta podía lanzar dos submitOrder() a la vez: dos números
+// de pedido reservados, dos emails de confirmación, y _pendingOrderData/
+// _pendingTicketData del segundo pisando los del primero en mitad del
+// proceso, todo para lo que el cliente vivió como un único clic.
+let _submitOrderEnCurso = false;
 async function submitOrder() {
+  if (_submitOrderEnCurso) return;
+  _submitOrderEnCurso = true;
+  try {
+    await _submitOrderInner();
+  } finally {
+    _submitOrderEnCurso = false;
+  }
+}
+async function _submitOrderInner() {
+  // Igual que ya hace changeQty() al añadir al carrito — antes esta función
+  // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
+  // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se
+  // enviaba igual (el servidor ahora también lo rechaza, esto es solo para
+  // avisar al momento sin esperar la respuesta).
+  if (isShopBlocked()) {
+    showClosedToast();
+    return;
+  }
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
-    showAlert("Por favor escribe tu nombre");
+    _alertaConFoco("Por favor escribe tu nombre", "customer-name");
     return;
   }
   if (name.length > 60) {
-    showAlert("El nombre es demasiado largo (máximo 60 caracteres)");
+    _alertaConFoco("El nombre es demasiado largo (máximo 60 caracteres)", "customer-name");
     return;
   }
   if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0) {
@@ -574,44 +661,52 @@ async function submitOrder() {
   const phone = document.getElementById("customer-phone").value.trim();
   const phoneClean = phone.replace(/[\s\-().+]/g, '');
   if (!phone) {
-    showAlert("Por favor escribe tu teléfono");
+    _alertaConFoco("Por favor escribe tu teléfono", "customer-phone");
     return;
   }
   if (!/^\d{9}$/.test(phoneClean)) {
-    showAlert("El teléfono debe tener exactamente 9 dígitos");
+    _alertaConFoco("El teléfono debe tener exactamente 9 dígitos", "customer-phone");
     return;
   }
   // Prefijo válido español: móviles 6/7, fijos 8/9 — excluye 800/900/901/902 y similares
   if (!/^[6789]/.test(phoneClean)) {
-    showAlert("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9");
+    _alertaConFoco("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9", "customer-phone");
     return;
   }
   // Excluir numeración especial: 800, 900, 901, 902, 803, 806, 807
   if (/^(800|900|901|902|803|806|807)/.test(phoneClean)) {
-    showAlert("No se admiten números de tarificación especial");
+    _alertaConFoco("No se admiten números de tarificación especial", "customer-phone");
     return;
   }
   // Detectar números absurdos: todos iguales, secuencias obvias
   const _absurdos = ['000000000', '111111111', '222222222', '333333333', '444444444', '555555555', '666666666', '777777777', '888888888', '999999999', '123456789', '987654321', '600000000', '700000000', '612345678'];
   if (_absurdos.includes(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
   // Detectar repetición: 7+ dígitos iguales consecutivos (ej. 611111111, 699999999)
   if (/(\d)\1{6,}/.test(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
 
   // ── Honeypot anti-bots: si el campo oculto está relleno, es un bot
   const hp = document.getElementById('hp-website');
   if (hp && hp.value.trim()) {
-    btn.disabled = true;
-    btn.textContent = 'Enviando pedido…';
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = 'Confirmar pedido';
-    }, 2000);
+    // `btn` (más abajo, para el resto de la función) todavía no existe en
+    // este punto — usarlo aquí lanzaba un ReferenceError ("Cannot access
+    // 'btn' before initialization") por ser un `const` del mismo scope
+    // referenciado antes de su declaración, así que se busca el elemento
+    // aparte en vez de depender de esa variable.
+    const hpBtn = document.getElementById('submit-btn');
+    if (hpBtn) {
+      hpBtn.disabled = true;
+      hpBtn.textContent = 'Enviando pedido…';
+      setTimeout(() => {
+        hpBtn.disabled = false;
+        hpBtn.textContent = 'Confirmar pedido';
+      }, 2000);
+    }
     return;
   }
 
@@ -694,7 +789,7 @@ async function submitOrder() {
   }
   const notes = document.getElementById("customer-notes").value.trim();
   if (notes.length > 300) {
-    showAlert("La nota del pedido es demasiado larga (máximo 300 caracteres)");
+    _alertaConFoco("La nota del pedido es demasiado larga (máximo 300 caracteres)", "customer-notes");
     return;
   }
   const orderNum = await generateOrderNumber();
@@ -720,28 +815,7 @@ async function submitOrder() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
   const _discountAmt = getDiscountAmount(subTotal);
-  // Premio de fidelización: si hay premio activo para este teléfono y el
-  // carrito incluye al menos 1 patata, se descuenta el precio de la patata
-  // más cara del carrito (la de mayor valor, en beneficio del cliente).
-  let _fidelizacionDescuento = 0;
-  if (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean) {
-    const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
-      const it = MENU.find(m => m.id == id);
-      return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
-    });
-    const preciosPatatasCustom = Object.values(custCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    });
-    const preciosPatatasExtras = Object.values(extrasCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return getExtrasItemPrice(c);
-    });
-    const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
-    _fidelizacionDescuento = todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
-  }
+  const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
@@ -825,7 +899,7 @@ async function submitOrder() {
   window._pendingTicketData = ticketData;
 
   // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot);
+  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";
@@ -851,15 +925,16 @@ async function submitOrder() {
   } else {
     console.warn("EmailJS no cargado — email omitido");
   }
-  // Registrar uso del código de descuento
-  if (_activeDiscount && window.fb_incrementDiscountUse) {
-    window.fb_incrementDiscountUse(_activeDiscount.code).catch(() => {});
-    _activeDiscount = null;
-    const dcInput = document.getElementById('discount-input');
-    const dcFeedback = document.getElementById('discount-feedback');
-    if (dcInput) dcInput.value = '';
-    if (dcFeedback) dcFeedback.textContent = '';
-  }
+  // El uso del código de descuento se registra en el servidor al
+  // finalizar el pedido (ver guardar-pedido.php) — incrementar
+  // discounts/<code>/uses exige el UID de admin en las reglas, así que
+  // el navegador ya no puede hacerlo directamente.
+  const _discountCodeUsado = _activeDiscount ? _activeDiscount.code : null;
+  _activeDiscount = null;
+  const dcInput = document.getElementById('discount-input');
+  const dcFeedback = document.getElementById('discount-feedback');
+  if (dcInput) dcInput.value = '';
+  if (dcFeedback) dcFeedback.textContent = '';
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
@@ -867,7 +942,8 @@ async function submitOrder() {
     slotTime: needsSlot ? selectedSlot : null,
     phone,
     phoneClean,
-    ticketData: ticketData
+    ticketData: ticketData,
+    discountCode: _discountCodeUsado
   };
 
   // Teléfonos de prueba que saltan la verificación SMS
@@ -928,7 +1004,7 @@ async function submitOrder() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -936,29 +1012,70 @@ async function _finalizarPedido() {
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
 
-  // Guardar ticket completo en Firebase para impresión
-  if (window.fb_saveTicket && window._pendingTicketData) {
-    console.log('💾 Guardando ticket en Firebase:', orderNum);
-    window.fb_saveTicket(orderNum, window._pendingTicketData)
-      .then(() => { console.log('✅ Ticket guardado'); window._pendingTicketData = null; })
+  // Guardar el pedido en el servidor: ticket completo + estadísticas del
+  // día + uso del código de descuento (si lo hubo). tickets/ y stats/
+  // exigen el UID de admin en las reglas de Firebase, así que un cliente
+  // anónimo (cualquiera que pida sin haber iniciado sesión de admin) no
+  // puede escribir ahí directamente — lo hace guardar-pedido.php con la
+  // cuenta de servicio.
+  // No se espera aquí (para que la pantalla de éxito aparezca al instante),
+  // pero SÍ hay que esperar a que termine antes de pedir el sello de
+  // fidelización más abajo — fidelizacion.php ahora comprueba contra el
+  // ticket ya guardado en Firebase (tickets/<fecha>/<num>), así que si se
+  // llamara antes de que este guardado termine, el sello se rechazaría por
+  // "pedido no encontrado" en pedidos completamente legítimos.
+  let _pedidoGuardadoPromise = Promise.resolve();
+  if (window._pendingTicketData) {
+    console.log('💾 Guardando pedido en el servidor:', orderNum);
+    _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderNum,
+        name: window._pendingTicketData.name,
+        phone: window._pendingTicketData.phone,
+        notes: window._pendingTicketData.notes,
+        slotTime: window._pendingTicketData.slotTime,
+        items: window._pendingTicketData.items,
+        total: window._pendingTicketData.total,
+        discountCode: discountCode || null
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
+      })
       .catch((e) => {
-        console.error('❌ Error guardando ticket:', e);
-        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó en Firebase — ' + (e && e.message || 'error desconocido'));
+        console.error('❌ Error guardando pedido:', e);
+        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
+        _avisarClienteFalloGuardado(orderNum);
       });
   } else {
-    console.warn('⚠️ fb_saveTicket no disponible o _pendingTicketData vacío', !!window.fb_saveTicket, !!window._pendingTicketData);
+    console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
   }
 
   await showSuccess(orderNum, slotTime);
-  // Registrar teléfono en Firebase para cooldown/límite diario server-side
-  if (window.fb_logPhoneOrder && phone) {
-    window.fb_logPhoneOrder(phoneClean, Date.now()).catch(() => {});
-  }
+  // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
+  // guardar-pedido.php al guardar el pedido — hacerlo también aquí
+  // contaría cada pedido dos veces.
   // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
   const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
+  await _pedidoGuardadoPromise;
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
+}
+// Antes, si guardar-pedido.php fallaba, el cliente veía "pedido confirmado"
+// igual y solo quedaba un aviso en el log de actividad que ve el admin —
+// nadie en cocina se enteraba de que el pedido no había llegado. Ahora, si
+// el cliente sigue en la pantalla de éxito de ESE pedido, se lo decimos.
+function _avisarClienteFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'block';
 }
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
@@ -969,48 +1086,32 @@ function _ticketTienePatata(ticketData) {
 }
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
   if (!phoneClean || !_ticketTienePatata(ticketData)) return;
-  if (!window.fb_loadFidelizacionCliente || !window.fb_saveFidelizacionCliente) return;
-
-  let cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-  if (!cliente) {
-    cliente = { nombre: (ticketData && ticketData.name) || '', sellos: 0, premiosPendientes: 0, vecesCompletado: 0, historialCanjes: [] };
-  }
-  // Migración de clientes antiguos (formato con premioDisponible booleano)
-  if (typeof cliente.premiosPendientes !== 'number') {
-    cliente.premiosPendientes = cliente.premioDisponible ? 1 : 0;
-  }
-  if (typeof cliente.vecesCompletado !== 'number') cliente.vecesCompletado = 0;
-  delete cliente.premioDisponible;
-
-  // Mantener actualizado el nombre más reciente con el que pide el cliente
-  if (ticketData && ticketData.name) cliente.nombre = ticketData.name;
-
-  // Si este pedido consume un premio pendiente (la patata gratis ya se
-  // descontó en el carrito, ver el cálculo de _fidelizacionDescuento en
-  // submitOrder), se resta 1 premio pendiente y se registra en el historial
-  // de canjes. El contador de sellos no se toca aquí porque ya se resetea
-  // solo al llegar a 10.
-  if (consumioPremio && cliente.premiosPendientes > 0) {
-    cliente.premiosPendientes -= 1;
-    cliente.historialCanjes = cliente.historialCanjes || [];
-    cliente.historialCanjes.push({ fecha: new Date().toLocaleString('es-ES'), ticket: (ticketData && ticketData.orderNum) || null });
-  }
-
-  cliente.sellos = (cliente.sellos || 0) + 1;
-  if (cliente.sellos >= FIDELIZACION_META) {
-    cliente.sellos = 0;
-    cliente.premiosPendientes = (cliente.premiosPendientes || 0) + 1;
-    cliente.vecesCompletado = (cliente.vecesCompletado || 0) + 1;
-  }
-  // Registro de cuándo se pone cada sello, para poder detectar ritmos
-  // sospechosos (varios sellos en pocos minutos = posible abuso del
-  // sistema). Solo guardamos los últimos 15 para no hinchar el nodo.
-  cliente.historialSellos = cliente.historialSellos || [];
-  cliente.historialSellos.push({ ts: Date.now(), fecha: new Date().toLocaleString('es-ES') });
-  if (cliente.historialSellos.length > 15) {
-    cliente.historialSellos = cliente.historialSellos.slice(-15);
-  }
-  await window.fb_saveFidelizacionCliente(phoneClean, cliente);
+  // El cálculo del sello (sumar, resetear a los 10, descontar premio
+  // canjeado) se hace en el servidor (fidelizacion.php): el navegador ya
+  // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
+  // pueda regalarse sellos/premios abriendo las devtools.
+  try {
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'registrarSello',
+        telefono: phoneClean,
+        orderNum: (ticketData && ticketData.orderNum) || '',
+        tienePatata: true,
+        consumioPremio: !!consumioPremio,
+        nombre: (ticketData && ticketData.name) || ''
+      })
+    });
+    const data = await res.json();
+    // "skipped" es normal (pedido sin patata) — un success:false de verdad
+    // significa que el servidor rechazó el sello (antes esto se ignoraba
+    // en silencio, así que un cliente podía perder un sello legítimo sin
+    // que nadie se enterara).
+    if (!data.success && !data.skipped) {
+      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'));
+    }
+  } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.

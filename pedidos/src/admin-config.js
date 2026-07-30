@@ -329,11 +329,11 @@ function renderPromos() {
       '<span style="position:absolute;top:0;left:12px;background:#3D1F0D;color:#FFF8EE;font-size:11px;font-weight:700;padding:3px 12px;border-radius:20px">🔥 Promo</span>' +
       '<div style="background:#fdecd5;border:1.5px solid #3D1F0D;border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px">' +
       '<div style="flex:1">' +
-      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + p.nombre + '</div>' +
-      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + (p.descripcion || '') + '</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + escapeHtml(p.nombre) + '</div>' +
+      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(p.descripcion || '') + '</div>' +
       '<div>' + precioTachado + '<span style="font-size:14px;font-weight:700;color:#3D1F0D">' + parseFloat(p.precio).toFixed(2) + ' €</span></div>' +
       '</div>' +
-      '<button onclick="promoAnadir(\'' + p.id + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
+      '<button onclick="promoAnadir(\'' + escapeAttr(p.id) + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
       '</div></div>';
   }).join('');
 }
@@ -404,7 +404,7 @@ function promoAbrirModal(p) {
 
   var titleRow = document.createElement('div');
   titleRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px';
-  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + p.nombre + '</div>';
+  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + escapeHtml(p.nombre) + '</div>';
   var closeBtn = document.createElement('button');
   closeBtn.innerHTML = '×';
   closeBtn.style.cssText = 'background:none;border:none;font-size:22px;color:#8A6A4E;cursor:pointer;padding:0;line-height:1';
@@ -499,8 +499,9 @@ function renderMenu() {
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
+          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
@@ -537,14 +538,17 @@ function renderMenu() {
     } else {
       controls = '<button class="add-btn" onclick="changeQty(' + item.id + ',+1)" title="Añadir">+</button>';
     }
+    const esTopVentas = item.name && item.name.indexOf('🔥') !== -1;
+    const nombreParaBadge = esTopVentas ? item.name.replace('🔥', '').trim() : item.name;
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
       + ' data-name="' + escapeAttr(item.name) + '"'
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
+      + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
@@ -732,9 +736,21 @@ function saveHorario() {
   const manClose = document.getElementById('h-man-close') ? document.getElementById('h-man-close').value : '';
   const tarOpen = document.getElementById('h-tar-open') ? document.getElementById('h-tar-open').value : '';
   const tarClose = document.getElementById('h-tar-close') ? document.getElementById('h-tar-close').value : '';
-  const closedMsgMid = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
-  const closedMsgNight = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
-  const closedMsgDay = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  // Estos 3 campos no tienen valor por defecto en el HTML (solo
+  // placeholder) y solo se rellenan cuando termina de cargar el horario
+  // desde Firebase (loadAdminHorario). Si se guarda en un dispositivo/
+  // sesión nueva antes de que esa carga termine, los campos están vacíos
+  // en pantalla sin que el admin haya tocado nada — así que si están
+  // vacíos aquí, se conserva el mensaje personalizado que ya hubiera
+  // guardado antes, en vez de borrarlo sin querer.
+  let _hPrev = {};
+  try { _hPrev = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}'); } catch {}
+  const closedMsgMidRaw = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
+  const closedMsgNightRaw = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
+  const closedMsgDayRaw = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  const closedMsgMid = closedMsgMidRaw || _hPrev.closedMsgMid || '';
+  const closedMsgNight = closedMsgNightRaw || _hPrev.closedMsgNight || '';
+  const closedMsgDay = closedMsgDayRaw || _hPrev.closedMsgDay || '';
   const h = {
     manOpen,
     manClose,
@@ -858,10 +874,16 @@ function checkAutoCloseWarning() {
     return;
   }
   const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Mismo criterio de "día de servicio" que isOutsideHours()/isTodayOpen():
+  // antes de las 06:00 se trata como parte del día anterior (y su minuto se
+  // extiende +1440) — sin esto, un cierre después de medianoche (ej. 00:30)
+  // hacía que este punto verde/rojo dijera "cerrado" o "día cerrado"
+  // contradiciendo al formulario de pedido, que con isOutsideHours() ya
+  // corregido seguía activo debajo.
+  const nowMin = (now.getHours() < 6) ? (now.getHours() * 60 + now.getMinutes() + 1440) : (now.getHours() * 60 + now.getMinutes());
 
   // Bloquear pedidos si hoy es día cerrado (independientemente del toggle manual)
-  const todayDay = now.getDay();
+  const todayDay = (now.getHours() < 6) ? (now.getDay() + 6) % 7 : now.getDay();
   const diasAbiertos = (_h$diasAbiertos2 = h.diasAbiertos) !== null && _h$diasAbiertos2 !== void 0 ? _h$diasAbiertos2 : [2, 3, 4, 5, 6, 0];
   if (!diasAbiertos.includes(todayDay)) {
     const dot2 = document.querySelector('.dot');
@@ -928,7 +950,13 @@ function checkAutoCloseWarning() {
   // mediodía). manOpen/tarClose siguen editándose por separado en el panel,
   // pero aquí solo se usan los extremos.
   const openStartMin = getMinutes(h.manOpen) ?? getMinutes(h.tarOpen);
-  const closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  let closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  // Si cierra después de medianoche, expresarlo en el mismo espacio
+  // extendido que nowMin (ver más arriba) para poder comparar de forma
+  // continua — mismo arreglo que en isOutsideHours().
+  if (openStartMin !== null && closeEndMin !== null && closeEndMin < openStartMin) {
+    closeEndMin += 1440;
+  }
   const sessions = (openStartMin !== null && closeEndMin !== null)
     ? [{ open: openStartMin, close: closeEndMin }]
     : [];
@@ -1125,7 +1153,10 @@ function toggleFeeEnabled() {
   showToast('fee-toast');
 }
 function saveFeeFromPanel() {
-  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
+  // Antes "|| 0.50" trataba un 0 escrito a propósito como si no se hubiera
+  // escrito nada (0 es falsy en JS) y lo sustituía por 0,50€ sin avisar.
+  const parsedAmount = parseFloat(document.getElementById('fee-amount-input').value);
+  const amount = (isNaN(parsedAmount) || parsedAmount < 0) ? 0.50 : parsedAmount;
   const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
   saveFeeConfig(getFeeEnabled(), amount, label);
   loadFeeUI();
@@ -1196,8 +1227,14 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
+    // Si cierra después de medianoche (closeEnd < openStart), hay que expresar
+    // closeEnd en el mismo "espacio extendido" que nowMin (que ya suma 1440
+    // antes de las 06:00) para poder comparar de forma continua — antes
+    // comparaba nowMin extendido contra closeEnd sin extender, así que entre
+    // el cierre real (ej. 00:30) y las 06:00 nunca detectaba que ya había
+    // cerrado (nowMin >= openStart seguía siendo cierto igual).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart || nowMin < closeEnd)
+      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado
@@ -1367,12 +1404,19 @@ function formatPhone(input) {
 
 // ── FIDELIZACIÓN: comprobación de premio disponible al introducir teléfono ──
 async function _comprobarPremioFidelizacion(phoneClean) {
-  if (!window.fb_loadFidelizacionCliente) return;
+  // Consulta server-side (fidelizacion.php) en vez de leer Firebase
+  // directamente — así solo se ve lo mínimo (sellos/premios de ESTE
+  // teléfono) y nadie puede fisgonear el nombre/historial de otro cliente.
   try {
-    const cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-    const premiosPendientes = cliente
-      ? (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : (cliente.premioDisponible ? 1 : 0))
-      : 0;
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'consultar', telefono: phoneClean })
+    });
+    const data = await res.json();
+    if (!data.success) return;
+    const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
+    const premiosPendientes = cliente.premiosPendientes;
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
@@ -1393,6 +1437,10 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
     }
+    // Repintar el carrito para que el total ya refleje el premio (o deje
+    // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
+    // el carrito para que se note el cambio.
+    if (typeof renderCart === 'function') renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {

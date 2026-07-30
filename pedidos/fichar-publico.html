@@ -37,7 +37,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600&family=Oswald:wght@300;400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=122">
+<link rel="stylesheet" href="css/style.css?v=1785254860175">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -225,7 +225,8 @@
       <div id="cart-body">
         <div class="cart-empty">
           <div class="cart-empty-icon">🥔</div>
-          Añade productos de la carta
+          <div class="cart-empty-title">Tu carrito está en ayunas</div>
+          <div class="cart-empty-sub">dale algo de comer, anda...</div>
         </div>
       </div>
 
@@ -323,7 +324,10 @@
       <div style="background:#3D1F0D;border-radius:16px;padding:18px 24px;margin-bottom:16px;display:inline-block;min-width:200px;position:relative;overflow:hidden">
         <div style="position:absolute;top:0;left:0;right:0;height:4px;background:#F4C430"></div>
         <div style="font-family:'Oswald',sans-serif;font-size:11px;color:rgba(244,196,48,0.85);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Tu número de pedido</div>
-        <div id="order-num-display" style="font-size:30px;font-weight:700;color:#F4C430;letter-spacing:.04em;font-family:'Oswald',sans-serif">#0000</div>
+        <div onclick="copiarTexto(document.getElementById('order-num-display').textContent, '✅ Número copiado')" title="Toca para copiar" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <div id="order-num-display" style="font-size:30px;font-weight:700;color:#F4C430;letter-spacing:.04em;font-family:'Oswald',sans-serif">#0000</div>
+          <span style="font-size:16px;opacity:.65">📋</span>
+        </div>
         <div id="success-customer-info" style="font-size:16px;font-weight:700;color:#FFF8EE;margin-top:8px">👤 <span id="success-customer-name">–</span></div>
       </div>
 
@@ -678,9 +682,9 @@
      archivo. -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=20260707b" defer></script>
-<script src="js/app.js?v=20260707c" defer></script>
-<script src="js/auth.js?v=20260707a" defer></script>
+<script src="js/config.js?v=1784581169495" defer></script>
+<script src="js/app.js?v=1785314285091" defer></script>
+<script src="js/auth.js?v=1785276235746" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita
   var _adminShellLoaded = false;
@@ -694,7 +698,7 @@
           document.getElementById('admin-shell-container').innerHTML = html;
           _adminShellLoaded = true;
           // Fix: mover modales de empleados fuera de admin-stock-config
-          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal'].forEach(function(id) {
+          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal','emp-import-modal'].forEach(function(id) {
             var el = document.getElementById(id);
             if (el && el.parentElement && el.parentElement.id === 'admin-stock-config') {
               document.body.appendChild(el);

@@ -356,6 +356,99 @@ function showClosedToast() {
     t.style.opacity = "0";
   }, 2800);
 }
+// Toast genérico reutilizable — mismo patrón que showClosedToast(), para
+// confirmar visualmente acciones rápidas (copiar algo al portapapeles, etc.)
+// que antes no daban ningún feedback.
+function showCopyToast(msg) {
+  var t = document.getElementById("copy-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "copy-toast";
+    t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:14px 24px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = msg;
+  clearTimeout(t._timer);
+  t.style.opacity = "1";
+  t._timer = setTimeout(function () {
+    t.style.opacity = "0";
+  }, 1800);
+}
+function copiarTexto(text, mensajeExito) {
+  function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(function () {
+      _copiarConExecCommand(text);
+      onOk();
+    });
+  } else {
+    _copiarConExecCommand(text);
+    onOk();
+  }
+}
+function _copiarConExecCommand(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+// Contador de caracteres restantes para el campo de notas — antes solo se
+// sabía que se había llegado al límite de 300 cuando el textarea dejaba de
+// aceptar más texto, sin ningún aviso previo.
+function _actualizarContadorNotas(textareaId, counterId) {
+  const ta = document.getElementById(textareaId);
+  const counter = document.getElementById(counterId);
+  if (!ta || !counter) return;
+  const max = parseInt(ta.getAttribute('maxlength'), 10) || 300;
+  const restantes = max - ta.value.length;
+  counter.textContent = restantes + ' caracteres restantes';
+  counter.style.color = restantes <= 20 ? '#c0392b' : 'var(--muted, #8A6A4E)';
+}
+// Muestra el aviso de dato que falta/es inválido Y desplaza hasta el campo
+// correspondiente, resaltándolo un instante — antes solo salía la alerta,
+// sin llevar al cliente hasta dónde está el problema (con el formulario
+// largo, tocaba buscarlo a ojo). Detecta si el cliente está en el drawer
+// móvil (donde los campos visibles son drawer-customer-*, no los del
+// formulario de escritorio que solo se sincronizan por debajo) para
+// desplazarse al campo que de verdad se ve en pantalla.
+function _alertaConFoco(msg, fieldIdBase) {
+  showAlert(msg);
+  const drawer = document.getElementById('cart-drawer');
+  const enDrawer = drawer && drawer.classList.contains('open');
+  const fieldId = enDrawer ? ('drawer-' + fieldIdBase) : fieldIdBase;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.add('campo-con-error');
+  setTimeout(() => field.classList.remove('campo-con-error'), 2000);
+  setTimeout(() => { if (typeof field.focus === 'function') field.focus(); }, 350);
+}
+// Un único "ding" suave al confirmar el pedido — mismo patrón (Web Audio,
+// sin archivos externos) que ya usa _sonidoCelebracion() en la ruleta, pero
+// una sola nota discreta en vez del arpegio de premio.
+function _sonidoConfirmacionPedido() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880; // La5
+    const start = ctx.currentTime;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.13, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.55);
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
 function isShopBlocked() {
   var _document$getElementB;
   // 1. Si el banner de cerrado está visible
@@ -408,6 +501,16 @@ function _animateAddToCart(id) {
       btn.addEventListener('animationend', () => btn.classList.remove('popping'), {
         once: true
       });
+      // Confirmación visual más clara que solo el rebote: el botón muestra
+      // un ✓ un instante y una miniatura "vuela" hasta el carrito/FAB.
+      btn.classList.add('add-check');
+      btn.textContent = '✓';
+      clearTimeout(btn._addCheckTimer);
+      btn._addCheckTimer = setTimeout(() => {
+        btn.classList.remove('add-check');
+        btn.textContent = '+';
+      }, 550);
+      _lanzarFlyGhost(btn);
     }
     card.classList.remove('flashing');
     void card.offsetWidth;
@@ -434,6 +537,30 @@ function _animateAddToCart(id) {
       once: true
     });
   }
+}
+// Crea una miniatura que "vuela" desde el botón pulsado hasta el carrito
+// (el FAB en móvil, o el contador de "Tu pedido" en escritorio, donde no
+// hay FAB) — refuerzo visual de que el producto se ha añadido, más allá
+// del rebote del propio botón.
+function _lanzarFlyGhost(btn) {
+  const fab = document.getElementById('cart-fab');
+  const target = (fab && !fab.classList.contains('hidden')) ? fab : document.getElementById('cart-count');
+  if (!target) return;
+  const btnRect = btn.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  if (!btnRect.width || !targetRect.width) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'fly-ghost';
+  ghost.textContent = '🥔';
+  const size = 26;
+  ghost.style.left = (btnRect.left + btnRect.width / 2 - size / 2) + 'px';
+  ghost.style.top = (btnRect.top + btnRect.height / 2 - size / 2) + 'px';
+  const dx = (targetRect.left + targetRect.width / 2) - (btnRect.left + btnRect.width / 2);
+  const dy = (targetRect.top + targetRect.height / 2) - (btnRect.top + btnRect.height / 2);
+  ghost.style.setProperty('--fly-target', 'translate(' + dx + 'px,' + dy + 'px)');
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => ghost.classList.add('flying'));
+  setTimeout(() => ghost.remove(), 650);
 }
 // ── 🍰 Venta sugerida: dulce de postre ──────────────────────────────────────
 // Siempre sugiere tarta o galleta (nunca bebida). Varía según lo que ya
@@ -547,9 +674,10 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div>A\xF1ade productos de la carta</div>";
+    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
+    _updateCartFab(0, 0);
     return;
   }
   let total = 0;
@@ -591,7 +719,7 @@ function renderCart() {
     const extras = [];
     if (c.queso) extras.push('+ Queso +1,00€');
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
@@ -610,8 +738,54 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
-  const grandTotal = feeEnabled ? total + feeAmount : total;
+  // Mostrar línea de descuento si hay un código aplicado (manual o ganado
+  // en la ruleta/rasca) — antes el total mostrado en el carrito nunca
+  // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
+  // que aunque el código sí se aplicaba de verdad, la clienta no veía
+  // ningún cambio en el número y parecía que no había pasado nada.
+  const discountAmt = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
+  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
+  const discountEl = document.getElementById('cart-discount-row');
+  if (discountEl) {
+    if (discountAmt > 0 && discountCode) {
+      discountEl.style.display = 'flex';
+      document.getElementById('cart-discount-label').textContent = 'Descuento (' + discountCode + ')';
+      document.getElementById('cart-discount-amount').textContent = '-' + discountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      discountEl.style.display = 'none';
+    }
+  }
+  // Premio de fidelización (patata gratis) — mismo cálculo que usa
+  // submitOrder() al confirmar (getFidelizacionDescuento en
+  // carrito-checkout.js), para que el total mostrado mientras se compra
+  // ya lo refleje en vez de solo cambiar al confirmar el pedido.
+  const _fidTelInput = document.getElementById('customer-phone');
+  const _fidPhoneClean = _fidTelInput ? _fidTelInput.value.replace(/\D/g, '').slice(0, 9) : '';
+  const fidelizacionAmt = (typeof getFidelizacionDescuento === 'function') ? getFidelizacionDescuento(_fidPhoneClean) : 0;
+  const fidelizacionEl = document.getElementById('cart-fidelizacion-row');
+  if (fidelizacionEl) {
+    if (fidelizacionAmt > 0) {
+      fidelizacionEl.style.display = 'flex';
+      document.getElementById('cart-fidelizacion-amount').textContent = '-' + fidelizacionAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fidelizacionEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
+  // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
+  // la línea verde de cada uno ya existía, pero un badge aparte resalta
+  // más el ahorro real que solo ver un número distinto en el total.
+  const totalAhorro = discountAmt + fidelizacionAmt;
+  const savingsEl = document.getElementById('cart-savings-badge');
+  if (savingsEl) {
+    if (totalAhorro > 0) {
+      savingsEl.style.display = 'block';
+      document.getElementById('cart-savings-amount').textContent = '¡Ahorras ' + totalAhorro.toFixed(2).replace('.', ',') + ' €!';
+    } else {
+      savingsEl.style.display = 'none';
+    }
+  }
 
   // Only show total and form if orders are open
   // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
@@ -631,6 +805,54 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
+}
+
+// ── REPETIR ÚLTIMO PEDIDO ──
+// dpf_ultimo_pedido lo guarda antifraude.js justo después de confirmar un
+// pedido (a diferencia de dpf_active_order, este no caduca) — si existe y
+// el carrito está vacío, se ofrece repetirlo con un toque en vez de
+// obligar a repasar toda la carta otra vez.
+function _bimbaTarjetaRepetirPedido() {
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items) || !data.items.length) return '';
+    const lineas = data.items.map(i => '<b>' + i.qty + '×</b> ' + i.name).join('<br>');
+    return '<div class="repeat-card">' +
+      '<div class="repeat-card__label">🔁 Pediste esto la última vez</div>' +
+      '<div class="repeat-card__items">' + lineas + '</div>' +
+      '<button type="button" class="repeat-card__btn" onclick="repetirUltimoPedido()">Repetir pedido — ' + (data.total || 0).toFixed(2).replace('.', ',') + ' €</button>' +
+      '</div>';
+  } catch (e) { return ''; }
+}
+function repetirUltimoPedido() {
+  if (isShopBlocked()) { showClosedToast(); return; }
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    let algoOmitido = false;
+    const disponible = id => {
+      const item = MENU.find(m => m.id == id);
+      return item && !item.hidden && !item.soldout;
+    };
+    Object.entries(data.cart || {}).forEach(([id, qty]) => {
+      if (!disponible(id)) { algoOmitido = true; return; }
+      cart[id] = (cart[id] || 0) + qty;
+    });
+    Object.entries(data.custCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      custCart[key] = c;
+    });
+    Object.entries(data.extrasCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      extrasCart[key] = c;
+    });
+    renderMenu();
+    renderCart();
+    showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');
+  } catch (e) {}
 }
 

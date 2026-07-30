@@ -37,7 +37,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600&family=Oswald:wght@300;400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=1784404563445">
+<link rel="stylesheet" href="css/style.css?v=1785398890491">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -240,7 +240,13 @@
         <div style="font-size:12px;color:var(--muted)">Los pedidos pueden tardar un poco más de lo normal — gracias por la paciencia 💛 🥔</div>
       </div>
     </div>
-    <div class="section-title">Nuestra carta</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px">
+      <div class="section-title" style="margin-bottom:0">Nuestra carta</div>
+      <a href="https://wa.me/?text=Mira%20la%20carta%20de%20Dulce%20Patata%20Food%20y%20haz%20tu%20pedido%3A%20https%3A%2F%2Fdulcepatatafood.es%2F" target="_blank" rel="noopener" class="wa-bubble">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m0 1.67a8.2 8.2 0 0 1 5.83 2.42 8.19 8.19 0 0 1 2.41 5.82c0 4.55-3.7 8.24-8.25 8.24a8.2 8.2 0 0 1-4.17-1.14l-.3-.17-3.12.82.83-3.04-.2-.32a8.2 8.2 0 0 1-1.26-4.39c0-4.55 3.7-8.24 8.23-8.24m-4.53 4.7c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.03s.87 2.36.99 2.52c.12.16 1.7 2.72 4.2 3.71 2.08.82 2.5.66 2.95.62.45-.04 1.46-.6 1.66-1.17.2-.58.2-1.08.14-1.18-.06-.1-.22-.16-.46-.28-.24-.12-1.46-.72-1.68-.8-.23-.09-.39-.13-.56.13-.16.24-.64.8-.78.97-.15.16-.29.18-.53.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.35-1.67-.14-.24-.02-.37.11-.5.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.56-1.35-.77-1.85-.2-.48-.4-.42-.56-.43z"/></svg>
+        Compartir carta
+      </a>
+    </div>
     <div style="padding:0 0 10px">
       <input type="search" id="menu-search-input" placeholder="🔍 Buscar en la carta…" autocomplete="off" oninput="filterMenuBySearch(this.value)"
         style="width:100%;padding:10px 14px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--brown);background:var(--cream);box-sizing:border-box;outline:none">
@@ -271,7 +277,8 @@
       <div id="cart-body">
         <div class="cart-empty">
           <div class="cart-empty-icon">🥔</div>
-          Añade productos de la carta
+          <div class="cart-empty-title">Tu carrito está en ayunas</div>
+          <div class="cart-empty-sub">dale algo de comer, anda...</div>
         </div>
       </div>
 
@@ -282,6 +289,13 @@
       <div id="cart-discount-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
         <span id="cart-discount-label">Descuento</span>
         <span id="cart-discount-amount">-0,00 €</span>
+      </div>
+      <div id="cart-fidelizacion-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span>🎁 Patata gratis (fidelización)</span>
+        <span id="cart-fidelizacion-amount">-0,00 €</span>
+      </div>
+      <div id="cart-savings-badge" style="display:none;margin:2px 0 4px;">
+        <span class="cart-savings-pill">🎉 <span id="cart-savings-amount">¡Ahorras 0,00 €!</span></span>
       </div>
       <div id="cart-total-row" style="display:none" class="cart-total">
         <span>Total</span>
@@ -323,7 +337,8 @@
         </div>
         <div class="form-group">
           <label>Notas del pedido</label>
-          <textarea id="customer-notes" placeholder="" maxlength="300"></textarea>
+          <textarea id="customer-notes" placeholder="" maxlength="300" oninput="_actualizarContadorNotas('customer-notes','notes-char-count')"></textarea>
+          <div id="notes-char-count" style="text-align:right;font-size:11px;color:var(--muted);margin-top:2px">300 caracteres restantes</div>
         </div>
 
         <!-- HORA DE RECOGIDA (solo visible si el pedido incluye patatas en horario 19:30-23:30) -->
@@ -371,7 +386,10 @@
       <div style="background:var(--brown);border-radius:16px;padding:18px 24px;margin-bottom:16px;display:inline-block;min-width:200px;position:relative;overflow:hidden">
         <div style="position:absolute;top:0;left:0;right:0;height:4px;background:var(--gold)"></div>
         <div style="font-family:'Oswald',sans-serif;font-size:11px;color:rgba(244,196,48,0.85);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Tu número de pedido</div>
-        <div id="order-num-display" style="font-size:30px;font-weight:700;color:var(--gold);letter-spacing:.04em;font-family:'Oswald',sans-serif">#0000</div>
+        <div onclick="copiarTexto(document.getElementById('order-num-display').textContent, '✅ Número copiado')" title="Toca para copiar" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <div id="order-num-display" style="font-size:30px;font-weight:700;color:var(--gold);letter-spacing:.04em;font-family:'Oswald',sans-serif">#0000</div>
+          <span style="font-size:16px;opacity:.65">📋</span>
+        </div>
         <div id="success-customer-info" style="font-size:16px;font-weight:700;color:var(--cream);margin-top:8px">👤 <span id="success-customer-name">–</span></div>
       </div>
 
@@ -428,6 +446,18 @@
   <span id="cart-fab-count">0</span>
 </button>
 
+<!-- ── REPETIR ÚLTIMO PEDIDO (solo móvil, solo si el carrito está vacío) ── -->
+<button id="repeat-order-fab" class="hidden" onclick="repetirUltimoPedido()">
+  🔁 Repetir tu último pedido
+</button>
+
+<button id="juego-fab" class="hidden" onclick="abrirJuegoActivo()" aria-label="Jugar y ganar un premio">
+  <span id="juego-fab-icon">🎡</span>
+  <span class="juego-fab-dot"></span>
+</button>
+
+<button id="back-to-top-fab" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Subir arriba">↑</button>
+
 <!-- ── DRAWER CARRITO ── -->
 <div id="cart-drawer-overlay" onclick="closeCartDrawer()"></div>
 <div id="cart-drawer">
@@ -468,6 +498,11 @@
   <!-- Reseña -->
   <div style="display:flex;justify-content:center;margin-bottom:20px;">
     <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:10px 22px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;">⭐ Déjanos una reseña</a>
+  </div>
+
+  <!-- Formulario de incidencias -->
+  <div style="display:flex;justify-content:center;margin-bottom:20px;">
+    <a href="https://tally.so/r/zxvMMq" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--brown);text-decoration:none;padding:9px 18px;border-radius:99px;border:1.5px solid var(--brown);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;">🚩 ¿Algún problema con tu pedido?</a>
   </div>
 
   <!-- Copyright -->
@@ -535,6 +570,11 @@
       <div class="ruleta-title">🎡 ¡Gira y gana!</div>
       <p class="ruleta-sub">Una vuelta gratis al día. A ver qué te toca hoy 👇</p>
 
+      <div class="juego-tel-group">
+        <input type="tel" id="ruleta-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+        <div class="juego-tel-error" id="ruleta-tel-error">Introduce un teléfono válido de 9 dígitos</div>
+      </div>
+
       <div class="ruleta-wheel-wrap">
         <div class="ruleta-pointer">▼</div>
         <canvas id="ruleta-canvas" width="280" height="280"></canvas>
@@ -569,14 +609,24 @@
       <div class="rasca-title">🎫 ¡Rasca y gana!</div>
       <p class="rasca-sub">Rasca la tarjeta con el dedo o el ratón y descubre tu premio 👇</p>
 
-      <div class="rasca-card-wrap">
-        <div class="rasca-premio-debajo">
-          <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
-          <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+      <div id="rasca-tel-paso">
+        <div class="juego-tel-group">
+          <input type="tel" id="rasca-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+          <div class="juego-tel-error" id="rasca-tel-error">Introduce un teléfono válido de 9 dígitos</div>
         </div>
-        <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        <button class="ruleta-spin-btn" id="rasca-empezar-btn" onclick="empezarRasca()">Destapar mi tarjeta</button>
       </div>
-      <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+
+      <div id="rasca-tarjeta-paso" style="display:none">
+        <div class="rasca-card-wrap">
+          <div class="rasca-premio-debajo">
+            <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
+            <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+          </div>
+          <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        </div>
+        <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+      </div>
     </div>
 
     <div id="rasca-resultado" style="display:none">
@@ -821,9 +871,9 @@
      archivo. -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1784203617352" defer></script>
-<script src="js/app.js?v=1784404563445" defer></script>
-<script src="js/auth.js?v=20260708c" defer></script>
+<script src="js/config.js?v=1784581169495" defer></script>
+<script src="js/app.js?v=1785428485882" defer></script>
+<script src="js/auth.js?v=1785401656310" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita
   var _adminShellLoaded = false;
@@ -837,7 +887,7 @@
           document.getElementById('admin-shell-container').innerHTML = html;
           _adminShellLoaded = true;
           // Fix: mover modales de empleados fuera de admin-stock-config
-          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal'].forEach(function(id) {
+          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal','emp-import-modal'].forEach(function(id) {
             var el = document.getElementById(id);
             if (el && el.parentElement && el.parentElement.id === 'admin-stock-config') {
               document.body.appendChild(el);

@@ -250,6 +250,34 @@
     #cart-fab { display: flex; }
     #cart-fab.hidden { display: none !important; }
   }
+  /* Con el panel admin abierto no debe verse el carrito flotante del pedido de cliente detrás */
+  body:has(#admin-overlay.open) #cart-fab,
+  body:has(#admin-overlay.open) #repeat-order-fab {
+    display: none !important;
+  }
+
+  #repeat-order-fab {
+    position: fixed;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--z-cart-fab);
+    background: var(--cream);
+    color: var(--brown);
+    border: 1.5px dashed var(--amber-dark);
+    border-radius: 99px;
+    padding: 12px 22px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.3);
+    white-space: nowrap;
+  }
+  #repeat-order-fab.hidden { display: none !important; }
+  @media (min-width: 701px) {
+    #repeat-order-fab { display: none !important; }
+  }
 
   /* ── DRAWER CARRITO ── */
   #cart-drawer-overlay {
@@ -412,21 +440,36 @@
   .menu-cat-sep {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 14px;
     background: #3D1F0D;
-    border-radius: 10px;
-    padding: 10px 14px;
+    background-image: radial-gradient(rgba(250,240,221,0.05) 1.3px, transparent 1.3px), radial-gradient(130% 100% at 90% -20%, rgba(244,196,48,0.16), transparent 55%);
+    background-size: 16px 16px, 100% 100%;
+    border-radius: 14px;
+    padding: 14px 16px;
     margin: 22px 0 10px;
     unicode-bidi: plaintext;
   }
   .menu-cat-sep:first-child { margin-top: 4px; }
-  .menu-cat-left { display: flex; flex-direction: column; }
+  .menu-cat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: radial-gradient(circle at 32% 28%, #F9DD7A, var(--gold) 55%, var(--amber-dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.25), inset 0 -3px 6px rgba(0,0,0,0.12);
+  }
+  .menu-cat-left { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   .menu-cat-name {
     font-family: 'Oswald', sans-serif;
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 700;
     color: var(--gold);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
   }
   .menu-cat-emoji {
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
@@ -438,7 +481,7 @@
   }
   .menu-cat-sub {
     font-family: 'Caveat', cursive;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     color: rgba(245,234,211,0.85);
     margin-top: 2px;
@@ -448,15 +491,17 @@
     color: #2B1712;
     font-size: 11px;
     font-weight: 700;
-    padding: 3px 10px;
+    padding: 4px 11px;
     border-radius: 99px;
     white-space: nowrap;
     font-family: 'Oswald', sans-serif;
+    flex-shrink: 0;
   }
 
   /* ── MENU ITEMS ── */
   .menu-grid { display: flex; flex-direction: column; gap: 10px; }
   .item-card {
+    position: relative;
     background: var(--white);
     border-radius: 10px;
     border: 1.5px solid var(--gold);
@@ -467,6 +512,19 @@
     gap: 8px;
     box-shadow: 3px 3px 0 rgba(196,113,26,0.13);
     transition: border-color .15s, box-shadow .15s, transform .15s;
+  }
+  .tag-top-ventas {
+    position: absolute;
+    top: -9px;
+    right: 10px;
+    background: #e74c3c;
+    color: var(--white);
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
   .item-card:hover {
     border-color: var(--amber);
@@ -560,6 +618,32 @@
   #cart-fab.bumping { animation: cartFabBump 0.35s cubic-bezier(.36,.07,.19,.97) both; }
   #cart-fab-count.popping { animation: countPop 0.35s cubic-bezier(.36,.07,.19,.97) both; }
   .item-card.flashing { animation: cardFlash 0.4s ease both; }
+  .add-btn.add-check, .qty-btn.add-check {
+    background: #2B8A4E !important;
+    color: #fff !important;
+    transition: background .15s;
+  }
+  .fly-ghost {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    opacity: 0;
+  }
+  .fly-ghost.flying { animation: flyToCart 0.6s cubic-bezier(.3,.6,.35,1) forwards; }
+  @keyframes flyToCart {
+    0%   { opacity: 1; transform: translate(0,0) scale(1) rotate(0deg); }
+    70%  { opacity: 1; }
+    100% { opacity: 0; transform: var(--fly-target) scale(0.3) rotate(20deg); }
+  }
 
 
   /* ── CART / ORDER PANEL ── */
@@ -617,7 +701,67 @@
     font-size: 14px;
     padding: 24px 0;
   }
-  .cart-empty-icon { font-size: 36px; margin-bottom: 8px; }
+  .cart-empty-icon {
+    font-size: 40px;
+    margin-bottom: 8px;
+    display: inline-block;
+    animation: cartEmptyIdle 2.6s ease-in-out infinite;
+  }
+  @keyframes cartEmptyIdle {
+    0%, 100% { transform: rotate(-4deg) translateY(0); }
+    50% { transform: rotate(4deg) translateY(-4px); }
+  }
+  .cart-empty-title {
+    font-family: 'Anton', sans-serif;
+    font-size: 17px;
+    color: var(--brown);
+    letter-spacing: 0.01em;
+    margin-top: 2px;
+  }
+  .cart-empty-sub {
+    font-family: 'Caveat', cursive;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--amber-dark);
+    margin-top: 2px;
+  }
+  .repeat-card {
+    margin-top: 14px;
+    background: var(--cream);
+    border: 1.5px dashed var(--amber-dark);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .repeat-card__label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--amber-dark);
+    margin-bottom: 6px;
+  }
+  .repeat-card__items {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--brown);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .repeat-card__btn {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--brown);
+    color: var(--cream);
+    border: none;
+    border-radius: 10px;
+    padding: 11px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: center;
+  }
   .cart-line {
     display: flex;
     justify-content: space-between;
@@ -715,6 +859,19 @@
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  .cart-savings-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: linear-gradient(135deg, #E9F7EE, #D3F0DC);
+    border: 1.5px solid #7BC896;
+    color: #1f6e3f;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 99px;
+    font-family: 'DM Sans', sans-serif;
+  }
   .cart-total {
     display: flex;
     justify-content: space-between;
@@ -771,6 +928,16 @@
     box-shadow: 0 0 0 3px rgba(200,134,10,0.12);
   }
   .form-group textarea { resize: vertical; min-height: 64px; }
+  .campo-con-error {
+    border-color: #e74c3c !important;
+    box-shadow: 0 0 0 3px rgba(231,76,60,0.18) !important;
+    animation: campoErrorShake 0.4s ease;
+  }
+  @keyframes campoErrorShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
 
   .submit-btn {
     width: 100%;
@@ -1054,6 +1221,7 @@
     margin-bottom: 8px;
   }
   .admin-tab {
+    position: relative;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 5px; padding: 10px 4px;
     border-radius: 14px; border: none;
@@ -1064,12 +1232,85 @@
   }
   .admin-tab .admin-tab-icon { font-size: 20px; line-height: 1; }
   .admin-tab.active { background: var(--gold); color: #3D1F0D; font-weight: 700; }
+  .admin-tab-badge {
+    position: absolute; top: 2px; right: 6px;
+    min-width: 15px; height: 15px; padding: 0 3px;
+    border-radius: 99px; background: var(--error); color: #fff;
+    font-size: 9px; font-weight: 800; line-height: 15px; text-align: center;
+    box-shadow: 0 0 0 2px #5A3D24;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .admin-tab.active .admin-tab-badge { box-shadow: 0 0 0 2px var(--gold); }
   @media (min-width: 600px) {
-    .admin-tabs { grid-template-columns: repeat(7, 1fr); gap: 12px; }
+    .admin-tabs { grid-template-columns: repeat(8, 1fr); gap: 12px; }
     .admin-tab { padding: 12px 6px; border-radius: 16px; }
     .admin-tab .admin-tab-icon { font-size: 22px; }
     .admin-tab { font-size: 11px; }
+    .admin-modal { max-width: 760px; }
   }
+
+  /* ── BUSCADOR del panel admin y del panel bimba ── */
+  .buscador-wrap { position: relative; margin-bottom: 12px; }
+  .buscador-wrap input {
+    width: 100%; box-sizing: border-box;
+    padding: 11px 14px 11px 38px;
+    border: 1.5px solid var(--warm);
+    border-radius: 12px;
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    background: var(--cream);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .buscador-wrap input:focus {
+    border-color: var(--amber-dark);
+    box-shadow: 0 0 0 3px rgba(196,113,26,0.18);
+  }
+  .buscador-wrap .buscador-icon {
+    position: absolute; left: 12px; top: 12px;
+    font-size: 14px; opacity: .55; pointer-events: none;
+  }
+  .buscador-results {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+    background: var(--white);
+    border: 1.5px solid var(--warm);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(61,31,13,0.18);
+    max-height: 340px; overflow-y: auto;
+    padding: 6px;
+    z-index: 60;
+    display: none;
+  }
+  .buscador-results.open { display: block; }
+  .buscador-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: 9px;
+    cursor: pointer; text-align: left;
+    background: none; border: none; width: 100%;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .buscador-row:hover { background: var(--cream); }
+  .buscador-row-icon { font-size: 17px; width: 22px; text-align: center; flex-shrink: 0; }
+  .buscador-row-text { flex: 1; min-width: 0; }
+  .buscador-row-top { display: flex; align-items: center; gap: 6px; }
+  .buscador-row-name { font-size: 13.5px; font-weight: 700; color: var(--text); }
+  .buscador-row-name mark, .buscador-row-path mark {
+    background: var(--gold); color: var(--text); border-radius: 3px; padding: 0 1px;
+  }
+  .buscador-row-path { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .buscador-badge {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    padding: 1.5px 6px; border-radius: 20px; color: #fff; flex-shrink: 0;
+  }
+  .buscador-badge--section { background: var(--muted); }
+  .buscador-badge--emp { background: #2E7D5B; }
+  .buscador-badge--code { background: var(--amber-dark); }
+  .buscador-badge--prod { background: #4A6FA5; }
+  .buscador-badge--premio { background: #A64AA5; }
+  .buscador-empty { font-size: 13px; color: var(--muted); padding: 14px 8px; text-align: center; }
+  @keyframes buscadorFlash { 0%, 100% { background: transparent; } 30% { background: rgba(244,196,48,0.45); } }
+  .buscador-flash { animation: buscadorFlash 1.4s ease; }
 
   /* ── PESTAÑA "HOY" (estadísticas) — estilo carta ── */
   .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
@@ -1711,6 +1952,93 @@
   .loading-overlay-text {
     color: var(--cream); font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600;
   }
+
+  /* ── FAB DEL JUEGO ACTIVO (ruleta/rasca) ── */
+  #juego-fab {
+    position: fixed;
+    left: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: var(--z-cart-fab);
+    background: var(--brown);
+    color: #FFF8EE;
+    border: 2px solid var(--gold);
+    border-radius: 99px;
+    width: 56px; height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    animation: juegoFabPulse 2.2s ease-in-out infinite;
+  }
+  #juego-fab.hidden { display: none !important; }
+  #juego-fab-icon { font-size: 26px; line-height: 1; }
+  .juego-fab-dot {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    width: 14px;
+    height: 14px;
+    background: #E23D3D;
+    border: 2px solid var(--cream);
+    border-radius: 50%;
+  }
+  .wa-bubble {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #25D366;
+    color: #fff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 7px 12px;
+    border-radius: 14px 14px 3px 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    white-space: nowrap;
+  }
+  #back-to-top-fab {
+    position: fixed;
+    right: 16px;
+    bottom: 90px;
+    z-index: var(--z-fab);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--brown);
+    color: var(--gold);
+    border: 1.5px solid var(--gold);
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(61,31,13,0.35);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity .2s, transform .2s;
+  }
+  #back-to-top-fab.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  @keyframes juegoConfetiCae {
+    to { transform: translateY(105vh) rotate(720deg); opacity: 0; }
+  }
+  /* El banner de cookies (#cookies-banner) tapa toda la parte de abajo de
+     la pantalla en móvil hasta que se acepta/rechaza — mientras esté
+     visible, el botón del juego sube por encima para no quedar oculto. */
+  #juego-fab.sobre-banner-cookies { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
+  @keyframes juegoFabPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  .juego-tel-group { margin-bottom: 16px; text-align: left; }
+  .juego-tel-group input {
+    width: 100%; box-sizing: border-box; padding: 11px 14px;
+    border: 1.5px solid var(--warm); border-radius: 10px;
+    font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none;
+  }
+  .juego-tel-error { font-size: 12px; color: #c0392b; margin-top: 6px; display: none; font-weight: 600; }
 
   /* ── RULETA DE PREMIOS ── */
   #ruleta-modal {

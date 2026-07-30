@@ -55,8 +55,21 @@ RewriteRule ^fichar-pin-check\.php$ - [L]
 #    empleado no tenga que leer la lista completa de compañeros para
 #    comprobar su propio PIN) que existe da igual si la web tiene
 #    contraseña o no.
+#
+#    NOTA DE SEGURIDAD: antes esto comprobaba solo que el Referer
+#    CONTUVIERA el texto "fichar=" en cualquier parte — el Referer lo
+#    manda el propio navegador de quien pide la página, así que
+#    cualquiera podía falsificarlo (curl -e, o incluso enlazando desde
+#    una URL propia que también tuviera "fichar=" en la query) y saltarse
+#    el aviso de "cerrado por obras" para TODA la web sin saber nada.
+#    Ahora exige que el Referer sea la URL exacta de fichar-standalone.html
+#    con un token de forma plausible (16+ caracteres) — mucho más difícil
+#    de falsificar a ciegas, aunque un Apache .htaccess no puede comprobar
+#    por sí solo si ese token es EL REAL (eso solo lo sabe Firebase). El
+#    farol solo dura hasta la reapertura, así que no merece la pena montar
+#    algo más elaborado (ej. una cookie firmada por PHP) para esto.
 <IfModule mod_setenvif.c>
-    SetEnvIf Referer "fichar=" allow_fichar
+    SetEnvIf Referer "^https://pedidos\.dulcepatatafood\.es/fichar-standalone\.html\?fichar=[A-Za-z0-9_-]{16,}$" allow_fichar
 </IfModule>
 
 # admin-shell.html: siempre con contraseña, sin excepción de fichar

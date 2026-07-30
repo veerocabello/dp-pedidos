@@ -4,7 +4,12 @@ async function _checkSlotAlmostFull(slotTime, count, max) {
   if (!slotTime || !max) return;
   const pct = Math.round((count / max) * 100);
   if (pct < 80) return;
-  const key = slotTime + '_' + count;
+  // La fecha va incluida en la clave para que la alerta pueda volver a
+  // dispararse cada día — antes, si la pantalla de cocina se quedaba
+  // abierta pasada la medianoche (uso normal en una pantalla siempre
+  // encendida), un slot que llegara otra vez a ese mismo recuento al día
+  // siguiente no volvía a avisar hasta recargar la página.
+  const key = new Date().toISOString().slice(0, 10) + '_' + slotTime + '_' + count;
   if (_slotAlertSent[key]) return;
   _slotAlertSent[key] = true;
   try {
@@ -41,7 +46,7 @@ async function closeAdmin() {
   if (eyeOpen) eyeOpen.style.display = 'block';
   if (eyeClosed) eyeClosed.style.display = 'none';
   stopAlertLoop();
-  _alertPendingOrders = 0;
+  _resetPedidosPendientesAlerta();
   document.getElementById('admin-overlay').classList.remove('open');
   // Resetear estado login/panel para la próxima apertura
   document.getElementById('admin-login').style.display = 'block';
@@ -110,8 +115,13 @@ function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
@@ -171,6 +181,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -180,13 +197,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -242,18 +255,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
@@ -314,7 +320,29 @@ function loadUrlTokenUI() {
     }
   }
 }
-let _adminFailedAttempts = 0;
+// Antes _adminFailedAttempts solo vivía en memoria: recargar la pantalla de
+// login (F5) lo volvía a poner a 0 y se saltaba el retraso progresivo
+// entero. Se persiste en localStorage (con la hora del último fallo, para
+// que 30 minutos sin ningún fallo lo reseteen solos y no penalice a un
+// admin de verdad que vuelve más tarde).
+const ADMIN_FAILED_KEY = 'dpf_admin_failed_attempts';
+const ADMIN_FAILED_RESET_MS = 30 * 60 * 1000;
+function _cargarIntentosFallidosAdmin() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ADMIN_FAILED_KEY) || 'null');
+    if (raw && typeof raw.count === 'number' && typeof raw.ts === 'number' && (Date.now() - raw.ts) < ADMIN_FAILED_RESET_MS) {
+      return raw.count;
+    }
+  } catch (e) {}
+  return 0;
+}
+function _guardarIntentosFallidosAdmin(count) {
+  try {
+    if (count > 0) localStorage.setItem(ADMIN_FAILED_KEY, JSON.stringify({ count, ts: Date.now() }));
+    else localStorage.removeItem(ADMIN_FAILED_KEY);
+  } catch (e) {}
+}
+let _adminFailedAttempts = _cargarIntentosFallidosAdmin();
 let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
@@ -426,11 +454,13 @@ async function checkAdminPwd() {
   if (result.ok) {
     var _document$getElementB6, _document$getElementB7;
     _adminFailedAttempts = 0;
+    _guardarIntentosFallidosAdmin(0);
     const trustedChecked = (_document$getElementB6 = document.getElementById('trusted-device-check')) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.checked;
     const trustedName = ((_document$getElementB7 = document.getElementById('trusted-device-name')) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value.trim()) || 'Sin nombre';
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();
@@ -444,6 +474,7 @@ async function checkAdminPwd() {
     logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
   } else {
     _adminFailedAttempts++;
+    _guardarIntentosFallidosAdmin(_adminFailedAttempts);
     const errMsg = result.msg || 'Error al iniciar sesión';
     let errDisplay = errMsg;
     if (_adminFailedAttempts >= 3) {

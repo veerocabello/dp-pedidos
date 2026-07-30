@@ -232,18 +232,19 @@ async function emergencySyncFromLocal() {
   }
 }
 function setLiveStatus(num, status) {
-  // Parar el sonido cuando se marca cualquier pedido
+  // Parar el sonido al momento cuando se marca cualquier pedido
   if (status === 'entregado' || status === 'recibido' || status === 'listo') {
     stopAlertLoop();
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-    if (_alertPendingOrders > 0) startAlertLoop && startAlertLoop();
   }
   setOrderStatus(num, status);
-  // Si se acepta un pedido, reducir contador de pendientes
-  if (status === 'preparando' || status === 'listo') {
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 0) - 1);
-    if (_alertPendingOrders === 0) stopAlertLoop();
+  // Cualquiera de estos estados cuenta como "ya visto" — se marca una sola
+  // vez por pedido (_marcarPedidoAtendido no hace nada si ya estaba
+  // marcado), así que da igual si pasa antes por "preparando" y luego por
+  // "listo": solo resta del contador la primera vez.
+  if (status === 'entregado' || status === 'recibido' || status === 'listo' || status === 'preparando') {
+    _marcarPedidoAtendido(num);
   }
+  if (_alertPendingOrders > 0) startAlertLoop();
   loadLiveOrders();
   refreshKitchenGrid();
 }
@@ -714,7 +715,7 @@ function checkForNewOrders(statsOverride) {
     _unseenOrders += diff;
     updateTabTitle(_unseenOrders);
     console.log('[DPF] NEW ORDER — calling showNewOrderNotification, diff=' + diff);
-    showNewOrderNotification(diff);
+    showNewOrderNotification((stats.orders || []).slice(-diff).map(o => o.num));
   }
 }
 
@@ -727,6 +728,30 @@ function clearUnseenOrders() {
 // Alert loop state
 let _alertLoopInterval = null;
 let _alertPendingOrders = 0;
+// Antes _alertPendingOrders era un contador suelto que varios sitios subían
+// o bajaban a mano (sobreescribiéndolo entero al detectar pedidos nuevos, o
+// restándole 1 desde tres sitios distintos: imprimir, marcar listo, marcar
+// entregado) — un mismo pedido marcado "listo" restaba dos veces porque
+// 'listo' entraba en dos condiciones distintas seguidas, y dos avisos de
+// "pedido nuevo" casi seguidos podían pisarse el contador en vez de sumar.
+// Ahora se lleva la cuenta por número de pedido concreto: añadir/quitar el
+// mismo pedido dos veces no hace nada la segunda vez.
+let _alertPendingOrderNumsSet = new Set();
+function _marcarPedidoPendienteAlerta(num) {
+  if (!num || _alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.add(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+}
+function _marcarPedidoAtendido(num) {
+  if (!num || !_alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.delete(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+  if (_alertPendingOrders === 0) stopAlertLoop();
+}
+function _resetPedidosPendientesAlerta() {
+  _alertPendingOrderNumsSet.clear();
+  _alertPendingOrders = 0;
+}
 function startAlertLoop() {
   if (_alertLoopInterval) return; // ya está sonando
   playNotificationSound();
@@ -754,11 +779,11 @@ function stopAlertLoop() {
     _alertLoopInterval = null;
   }
 }
-function showNewOrderNotification(count) {
-  console.log('[DPF] showNewOrderNotification: count=' + count + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
+function showNewOrderNotification(nums) {
+  console.log('[DPF] showNewOrderNotification: nums=' + JSON.stringify(nums) + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
   // Solo sonar si hay sesión de admin activa (no al cliente que hace el pedido)
   if (_adminLoggedIn) {
-    _alertPendingOrders = count;
+    (nums || []).forEach(_marcarPedidoPendienteAlerta);
     startAlertLoop();
     const toast = document.getElementById('new-order-toast');
     if (toast) {
@@ -787,19 +812,22 @@ function markAllKitchenReady() {
   const orders = stats.orders || [];
   if (!orders.length) return;
   const statuses = getOrderStatuses();
-  let changed = 0;
-  orders.forEach(o => {
+  const aCambiar = orders.filter(o => {
     const key = _normOrderKey(o.num);
-    if ((statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado') {
-      statuses[key] = 'listo';
-      changed++;
-    }
+    return (statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado';
   });
-  if (!changed) return;
-  localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(statuses));
+  if (!aCambiar.length) return;
+  // setOrderStatus() actualiza localStorage Y Firebase (fb_setOrderStatus)
+  // por pedido \u2014 antes este bot\u00f3n solo tocaba localStorage directamente,
+  // as\u00ed que un pedido marcado "listo" aqu\u00ed pod\u00eda volver a aparecer como
+  // pendiente en cuanto llegara cualquier otro cambio de estado: el
+  // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
+  // window._orderStatusCache entero con lo que haya en Firebase, que nunca
+  // se hab\u00eda enterado de este cambio.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
   refreshKitchenGrid();
   loadLiveOrders();
-  logActivity("\u2705 ".concat(changed, " pedido").concat(changed !== 1 ? 's' : '', " marcado").concat(changed !== 1 ? 's' : '', " como listo desde cocina"));
+  logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
 }
 
 // Polling de fallback: solo actúa si Firebase no está disponible

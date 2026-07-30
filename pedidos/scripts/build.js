@@ -30,7 +30,9 @@ const MODULOS = [
   'banner-pdf.js',
   'fidelizacion-admin.js',
   'stock-empleados.js',
+  'juegos.js',
   'init.js',
+  'buscador.js',
 ];
 
 const srcDir = path.join(__dirname, '..', 'src');

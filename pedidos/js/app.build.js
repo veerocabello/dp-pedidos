@@ -738,12 +738,28 @@ function pp2LoadState() {
     return {};
   }
 }
-function pp2SaveState(s) {
+// Aplica mutatorFn (que modifica el objeto de estado in-place) de forma
+// atómica: actualiza localStorage al instante para que la UI responda sin
+// esperar, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos tocan
+// cantidades/proveedores a la vez, Firebase reintenta con el dato fresco
+// en vez de que uno pise el cambio del otro.
+function pp2MutateState(mutatorFn) {
+  const s = pp2LoadState();
+  mutatorFn(s);
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
-  if (window.fb_savePP2) {
+  if (window.fb_transactNative) {
+    window._pp2LocalWrite = Date.now();
+    window.fb_transactNative('pp2/state', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
     window.fb_savePP2('state', s).catch(() => {});
   }
+  return s;
 }
 function pp2LoadCustom() {
   try {
@@ -814,6 +830,20 @@ function pp2AllProvs() {
 function pp2AllItems() {
   return pp2AllItemsOrdered();
 }
+// Compara el nombre de un ingrediente con la línea del historial de stock
+// que le corresponde — antes se usaba un .includes() sin límite de
+// palabra en ambos sentidos, así que "Sal" coincidía con cualquier línea
+// que contuviera "sal" en medio de otra palabra (p. ej. "Salsa Ketchup"),
+// mostrando el stock de un producto distinto en la tarjeta equivocada.
+function _stockNombreCoincide(a, b) {
+  if (a === b) return true;
+  const corto = a.length <= b.length ? a : b;
+  const largo = a.length <= b.length ? b : a;
+  if (!corto) return false;
+  const escapado = corto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(^|[^a-zà-ÿ0-9])' + escapado + '($|[^a-zà-ÿ0-9])', 'i');
+  return re.test(largo);
+}
 function pp2GetStockBadge(itemId, nombre) {
   const minimos = pp2LoadMinimos();
   const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
@@ -829,7 +859,7 @@ function pp2GetStockBadge(itemId, nombre) {
           const lineName = text.slice(0, colonIdx).trim().toLowerCase();
           const lineVal = text.slice(colonIdx + 1).trim();
           const itemName = nombre.toLowerCase();
-          if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+          if (_stockNombreCoincide(lineName, itemName)) {
             const m = lineVal.match(/^(\d+)\s*(.*)/);
             const qty = m ? parseInt(m[1]) : null;
             const unit = m ? m[2] || '' : lineVal;
@@ -972,7 +1002,7 @@ function pp2Render() {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName = nombre.toLowerCase();
-      if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+      if (_stockNombreCoincide(lineName, itemName)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty = m ? parseInt(m[1]) : null;
         const unit = m ? m[2] || '' : lineVal;
@@ -1016,13 +1046,13 @@ function pp2Render() {
       const delCb = _pp2DeleteMode ? "<input type=\"checkbox\" ".concat(_pp2DeleteSel.has(item.id) ? 'checked' : '', " onchange=\"pp2DelToggle('").concat(item.id, "',this.checked)\"\n                   style=\"width:18px;height:18px;accent-color:#c0392b;flex-shrink:0;cursor:pointer;margin-right:2px\">") : '';
 
       // Badge stock con color según mínimo
-      const stockBadge = stock !== null ? "<span data-stock-badge style=\"font-size:13px;font-weight:700;color:".concat(stock.bajo ? '#c0392b' : '#27855a', ";background:").concat(stock.bajo ? '#fdf0ee' : '#eafaf1', ";border:1.5px solid ").concat(stock.bajo ? '#e74c3c' : '#a9dfbf', ";border-radius:8px;padding:2px 10px;white-space:nowrap;flex-shrink:0\">\n                  ").concat(stock.bajo ? '⚠️ ' : '', "En tienda: ").concat(stock.qty).concat(stock.unit ? ' ' + stock.unit : '').concat(stock.min !== null ? ' (mín. ' + stock.min + ')' : '', "\n                 </span>") : '';
+      const stockBadge = stock !== null ? "<span data-stock-badge style=\"font-size:13px;font-weight:700;color:".concat(stock.bajo ? '#c0392b' : '#27855a', ";background:").concat(stock.bajo ? '#fdf0ee' : '#eafaf1', ";border:1.5px solid ").concat(stock.bajo ? '#e74c3c' : '#a9dfbf', ";border-radius:8px;padding:2px 10px;white-space:nowrap;flex-shrink:0\">\n                  ").concat(stock.bajo ? '⚠️ ' : '', "En tienda: ").concat(escapeHtml(stock.qty)).concat(stock.unit ? ' ' + escapeHtml(stock.unit) : '').concat(stock.min !== null ? ' (mín. ' + escapeHtml(String(stock.min)) + ')' : '', "\n                 </span>") : '';
 
       // Botón proveedor: si es habitual lo distinguimos visualmente
       const provBtnStyle = prov ? isHabitual ? "border:1.5px dashed #3D1F0D;background:rgba(244,196,48,0.08);color:#3D1F0D" : "border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D" : "border:1.5px solid #F5E6C8;background:#FFFFFF;color:#8A6A4E";
-      return "<div class=\"pp2-row\" id=\"pp2-row-".concat(item.id, "\" data-id=\"").concat(item.id, "\" data-cat=\"").concat(cat.replace(/"/g, '&quot;'), "\"\n                draggable=\"true\"\n                ondragstart=\"pp2DragStart(event)\"\n                ondragover=\"pp2DragOver(event)\"\n                ondrop=\"pp2Drop(event)\"\n                ondragend=\"pp2DragEnd(event)\"\n                ondragleave=\"this.style.background=''\"\n                style=\"display:flex;align-items:center;background:").concat(bg, ";border:2px solid ").concat(border, ";border-radius:12px;padding:11px 14px;margin-bottom:8px;cursor:default\">\n              ").concat(delCb, "\n              <span style=\"font-size:18px;color:#8A6A4E;cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;touch-action:none\" title=\"Arrastrar\">\u283F</span>\n              <div style=\"flex:1;min-width:0\">\n                <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap\">\n                  <span style=\"font-size:15px;font-weight:600;color:#3D1F0D\">").concat(item.nombre, "</span>\n                  ").concat(stockBadge, "\n                </div>\n                <div style=\"display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap\">\n                  ").concat(fixedUnit ? "<span style=\"padding:3px 9px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif\">".concat(fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1), "</span>") : "<button data-unit=\"cajas\" onclick=\"pp2SetUnit('".concat(item.id, "','cajas')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'cajas' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'cajas' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'cajas' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F4E6; Cajas\n                      </button>\n                      <button data-unit=\"unidades\" onclick=\"pp2SetUnit('").concat(item.id, "','unidades')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'unidades' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'unidades' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'unidades' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F522; Unidades\n                      </button>"), "\n                </div>\n              </div>\n              <div style=\"display:flex;align-items:center;gap:4px;flex-shrink:0\">\n                <button onclick=\"pp2Qty('").concat(item.id, "',-1)\" style=\"width:34px;height:34px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:20px;font-weight:700;cursor:pointer;color:#3D1F0D\">&#x2212;</button>\n                <span data-qty style=\"font-size:18px;font-weight:900;color:#3D1F0D;min-width:24px;text-align:center\">").concat(qty || '', "</span>\n                <button onclick=\"pp2Qty('").concat(item.id, "',1)\" style=\"width:34px;height:34px;border-radius:50%;border:none;background:#3D1F0D;font-size:20px;font-weight:700;cursor:pointer;color:#fff\">+</button>\n              </div>\n              <button data-prov-btn onclick=\"pp2PickerOpen('").concat(item.id, "')\"\n                style=\"flex-shrink:0;padding:5px 10px;border-radius:8px;").concat(provBtnStyle, ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis\">\n                ").concat(prov ? provLabel : '+ Prov.', "\n              </button>\n            </div>");
+      return "<div class=\"pp2-row\" id=\"pp2-row-".concat(item.id, "\" data-id=\"").concat(item.id, "\" data-cat=\"").concat(cat.replace(/"/g, '&quot;'), "\"\n                draggable=\"true\"\n                ondragstart=\"pp2DragStart(event)\"\n                ondragover=\"pp2DragOver(event)\"\n                ondrop=\"pp2Drop(event)\"\n                ondragend=\"pp2DragEnd(event)\"\n                ondragleave=\"this.style.background=''\"\n                style=\"display:flex;align-items:center;background:").concat(bg, ";border:2px solid ").concat(border, ";border-radius:12px;padding:11px 14px;margin-bottom:8px;cursor:default\">\n              ").concat(delCb, "\n              <span style=\"font-size:18px;color:#8A6A4E;cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;touch-action:none\" title=\"Arrastrar\">\u283F</span>\n              <div style=\"flex:1;min-width:0\">\n                <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap\">\n                  <span style=\"font-size:15px;font-weight:600;color:#3D1F0D\">").concat(escapeHtml(item.nombre), "</span>\n                  ").concat(stockBadge, "\n                </div>\n                <div style=\"display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap\">\n                  ").concat(fixedUnit ? "<span style=\"padding:3px 9px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif\">".concat(fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1), "</span>") : "<button data-unit=\"cajas\" onclick=\"pp2SetUnit('".concat(item.id, "','cajas')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'cajas' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'cajas' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'cajas' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F4E6; Cajas\n                      </button>\n                      <button data-unit=\"unidades\" onclick=\"pp2SetUnit('").concat(item.id, "','unidades')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'unidades' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'unidades' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'unidades' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F522; Unidades\n                      </button>"), "\n                </div>\n              </div>\n              <div style=\"display:flex;align-items:center;gap:4px;flex-shrink:0\">\n                <button onclick=\"pp2Qty('").concat(item.id, "',-1)\" style=\"width:34px;height:34px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:20px;font-weight:700;cursor:pointer;color:#3D1F0D\">&#x2212;</button>\n                <span data-qty style=\"font-size:18px;font-weight:900;color:#3D1F0D;min-width:24px;text-align:center\">").concat(qty || '', "</span>\n                <button onclick=\"pp2Qty('").concat(item.id, "',1)\" style=\"width:34px;height:34px;border-radius:50%;border:none;background:#3D1F0D;font-size:20px;font-weight:700;cursor:pointer;color:#fff\">+</button>\n              </div>\n              <button data-prov-btn onclick=\"pp2PickerOpen('").concat(item.id, "')\"\n                style=\"flex-shrink:0;padding:5px 10px;border-radius:8px;").concat(provBtnStyle, ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis\">\n                ").concat(prov ? escapeHtml(provLabel) : '+ Prov.', "\n              </button>\n            </div>");
     }).join('');
-    return "<div style=\"margin-bottom:4px\">\n            <div style=\"font-family:'Anton',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em\">".concat(cat, "</div>\n            ").concat(rows, "\n          </div>");
+    return "<div style=\"margin-bottom:4px\">\n            <div style=\"font-family:'Anton',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em\">".concat(escapeHtml(cat), "</div>\n            ").concat(rows, "\n          </div>");
   }
 
   // Renderizar por chunks usando requestAnimationFrame para no bloquear el hilo principal
@@ -1082,7 +1112,7 @@ function pp2RenderRow(id) {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName2 = nombre2.toLowerCase();
-      if (lineName === itemName2 || itemName2.includes(lineName) || lineName.includes(itemName2)) {
+      if (_stockNombreCoincide(lineName, itemName2)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty2 = m ? parseInt(m[1]) : null;
         const unit2 = m ? m[2] || '' : lineVal;
@@ -1157,17 +1187,17 @@ function pp2RenderRow(id) {
 
 // ── quantity & unit ──────────────────────────────────────
 function pp2Qty(id, delta) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
+  });
   pp2RenderRow(id);
 }
 function pp2SetUnit(id, unit) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].unit = unit;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].unit = unit;
+  });
   pp2RenderRow(id);
 }
 
@@ -1185,16 +1215,16 @@ function pp2PickerOpen(itemId) {
   btns.innerHTML = pp2AllProvs().map(p => {
     const isSelected = current === p.id;
     const isHab = habitual === p.id && !isSelected;
-    return "<button onclick=\"pp2PickerSelect('".concat(p.id, "')\"\n            style=\"padding:8px 14px;border-radius:10px;border:2px solid ").concat(isSelected ? '#3D1F0D' : isHab ? '#3D1F0D' : '#F5E6C8', ";background:").concat(isSelected ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(isSelected ? '#3D1F0D' : '#2A1506', ";font-size:13px;font-weight:").concat(isSelected ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif;position:relative\">\n            ").concat(p.label).concat(isHab ? ' <span style="font-size:9px;vertical-align:super;color:#3D1F0D">habitual</span>' : '', "\n          </button>");
+    return "<button onclick=\"pp2PickerSelect('".concat(p.id, "')\"\n            style=\"padding:8px 14px;border-radius:10px;border:2px solid ").concat(isSelected ? '#3D1F0D' : isHab ? '#3D1F0D' : '#F5E6C8', ";background:").concat(isSelected ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(isSelected ? '#3D1F0D' : '#2A1506', ";font-size:13px;font-weight:").concat(isSelected ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif;position:relative\">\n            ").concat(escapeHtml(p.label)).concat(isHab ? ' <span style="font-size:9px;vertical-align:super;color:#3D1F0D">habitual</span>' : '', "\n          </button>");
   }).join('') + "<button onclick=\"pp2NuevoProveedorModal()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #27855a;background:#eafaf1;color:#27855a;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x2795; Nuevo proveedor\n        </button>\n        <button onclick=\"pp2EliminarProveedorModal()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #c0392b;background:#fdf0ee;color:#c0392b;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x1F5D1; Eliminar proveedor\n        </button>" + "<button onclick=\"pp2PickerClose()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #ccc;background:#f5f5f5;color:#888;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x2715; Salir\n        </button>";
   const picker = document.getElementById('pp2-picker');
   picker.style.display = 'flex';
 }
 function pp2PickerSelect(provId) {
-  const s = pp2LoadState();
-  if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
-  s[_pp2CurrentItem].prov = provId;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
+    s[_pp2CurrentItem].prov = provId;
+  });
   // Guardar como habitual si se asigna uno (no si se quita)
   if (provId) {
     const hab = pp2LoadProvHab();
@@ -1347,15 +1377,14 @@ function pp2ConfirmDelete() {
 // ── nueva semana ─────────────────────────────────────────
 function pp2NuevaSemana() {
   if (!confirm('¿Nueva semana? Se borran todas las cantidades. Los proveedores habituales se mantienen y se precargarán automáticamente.')) return;
-  const s = pp2LoadState();
-  const hab = pp2LoadProvHab();
   // Limpiar cantidades y proveedores del estado; los habituales se aplican en render
-  Object.keys(s).forEach(id => {
-    s[id].qty = 0;
-    s[id].prov = '';
-    s[id].unit = s[id].unit || 'cajas';
+  pp2MutateState(function (s) {
+    Object.keys(s).forEach(id => {
+      s[id].qty = 0;
+      s[id].prov = '';
+      s[id].unit = s[id].unit || 'cajas';
+    });
   });
-  pp2SaveState(s);
   pp2Render();
   const t = document.getElementById('pp2-toast');
   t.textContent = '🔄 ¡Nueva semana! Proveedores habituales precargados.';
@@ -1366,19 +1395,29 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
-  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  hist.push({
-    fecha,
-    nota
-  }); // más antiguo primero, más reciente al final
-  if (hist.length > 50) hist.shift(); // máximo 50 entradas
-  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
-  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
+  const entrada = { fecha, nota };
+  // Añadir la entrada localmente al instante (UI responde ya)...
+  const histLocal = pp2LoadHistorial();
+  histLocal.push(entrada);
+  if (histLocal.length > 50) histLocal.shift();
+  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(histLocal));
+  // ...y de forma atómica contra Firebase, para no perder el pedido que
+  // otro dispositivo acaba de guardar en el historial casi al mismo tiempo.
+  if (window.fb_transactNative) {
+    window.fb_transactNative('pp2/historial', function (current) {
+      const hist = Array.isArray(current) ? current.slice() : [];
+      hist.push(entrada);
+      if (hist.length > 50) hist.shift();
+      return hist;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
+    window.fb_savePP2('historial', histLocal).catch(() => {});
+  }
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();
@@ -1388,7 +1427,7 @@ function pp2VerHistorial() {
     list.innerHTML = '<p style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin historial aún. Los pedidos enviados por WhatsApp se guardan aquí automáticamente.</p>';
   } else {
     // Mostrar de más antiguo (índice 0) a más reciente (último)
-    list.innerHTML = hist.map((h, i) => "\n            <div style=\"border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;margin-bottom:10px;background:#FFFFFF\">\n              <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap\">\n                <span style=\"font-size:17px;font-weight:900;color:#3D1F0D\">\uD83D\uDCE6 ".concat(h.fecha, "</span>\n                <div style=\"display:flex\">\n                  <button onclick=\"pp2HistDescargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 8px;background:#FFFFFF;color:#3D1F0D;border:1.5px solid #F5E6C8;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">\uD83D\uDCBE</button>\n                  <button onclick=\"pp2HistRecargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">Usar de base</button>\n                </div>\n              </div>\n              <pre style=\"font-size:12px;color:#2A1506;white-space:pre-wrap;margin:0;line-height:1.5;font-family:'DM Sans',sans-serif\">").concat(h.nota, "</pre>\n            </div>")).join('');
+    list.innerHTML = hist.map((h, i) => "\n            <div style=\"border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;margin-bottom:10px;background:#FFFFFF\">\n              <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap\">\n                <span style=\"font-size:17px;font-weight:900;color:#3D1F0D\">\uD83D\uDCE6 ".concat(escapeHtml(h.fecha), "</span>\n                <div style=\"display:flex\">\n                  <button onclick=\"pp2HistDescargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 8px;background:#FFFFFF;color:#3D1F0D;border:1.5px solid #F5E6C8;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">\uD83D\uDCBE</button>\n                  <button onclick=\"pp2HistRecargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">Usar de base</button>\n                </div>\n              </div>\n              <pre style=\"font-size:12px;color:#2A1506;white-space:pre-wrap;margin:0;line-height:1.5;font-family:'DM Sans',sans-serif\">").concat(escapeHtml(h.nota), "</pre>\n            </div>")).join('');
   }
   modal.style.display = 'block';
 }
@@ -1443,7 +1482,7 @@ function pp2VerMinimos() {
   const list = document.getElementById('pp2-min-list');
   list.innerHTML = items.map(item => {
     const val = minimos[item.id] !== undefined ? minimos[item.id] : '';
-    return "<div style=\"display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #F5E6C8\">\n            <span style=\"flex:1;font-size:13px;font-weight:600;color:#3D1F0D\">".concat(item.nombre, "</span>\n            <input type=\"number\" min=\"0\" value=\"").concat(val, "\" placeholder=\"\u2014\"\n              onchange=\"pp2SetMinimo('").concat(item.id, "',this.value)\"\n              style=\"width:64px;padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;background:#FFFFFF\">\n          </div>");
+    return "<div style=\"display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #F5E6C8\">\n            <span style=\"flex:1;font-size:13px;font-weight:600;color:#3D1F0D\">".concat(escapeHtml(item.nombre), "</span>\n            <input type=\"number\" min=\"0\" value=\"").concat(val, "\" placeholder=\"\u2014\"\n              onchange=\"pp2SetMinimo('").concat(item.id, "',this.value)\"\n              style=\"width:64px;padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;background:#FFFFFF\">\n          </div>");
   }).join('');
   modal.style.display = 'block';
 }
@@ -1519,12 +1558,19 @@ function pp2BuildNota() {
   const byProv = {};
   items.forEach(item => {
     const s = state[item.id] || {};
-    if (!s.qty || s.qty <= 0 || !s.prov) return;
-    if (!byProv[s.prov]) byProv[s.prov] = [];
-    byProv[s.prov].push(item);
+    if (!s.qty || s.qty <= 0) return;
+    // Antes, si se ponía cantidad pero se olvidaba asignar proveedor, el
+    // ingrediente se omitía en silencio del pedido (aquí y en el enviado
+    // por WhatsApp) sin ningún aviso. Ahora se agrupa bajo "SIN
+    // PROVEEDOR", igual que ya hacía pp2Save() al guardar en el historial.
+    const prov = s.prov || '__sin__';
+    if (!byProv[prov]) byProv[prov] = [];
+    byProv[prov].push(item);
   });
   if (!Object.keys(byProv).length) return null;
   const sortedProvs = Object.keys(byProv).sort((a, b) => {
+    if (a === '__sin__') return 1;
+    if (b === '__sin__') return -1;
     const la = (PP_PROVS.find(p => p.id === a) || {
       label: a
     }).label;
@@ -1536,7 +1582,7 @@ function pp2BuildNota() {
   let txt = '🛒 PEDIDO\n';
   sortedProvs.forEach(provId => {
     const allProvs = pp2AllProvs();
-    const provLabel = (allProvs.find(p => p.id === provId) || {
+    const provLabel = provId === '__sin__' ? 'SIN PROVEEDOR' : (allProvs.find(p => p.id === provId) || {
       label: provId
     }).label.toUpperCase();
     txt += '\n' + provLabel + ':\n';
@@ -1552,7 +1598,7 @@ function pp2BuildNota() {
 function pp2SaveToPad() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   document.getElementById('pp2-pad-text').value = txt;
@@ -1587,7 +1633,7 @@ function pp2PadWA() {
 function pp2ExportWA() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
@@ -2108,6 +2154,99 @@ function showClosedToast() {
     t.style.opacity = "0";
   }, 2800);
 }
+// Toast genérico reutilizable — mismo patrón que showClosedToast(), para
+// confirmar visualmente acciones rápidas (copiar algo al portapapeles, etc.)
+// que antes no daban ningún feedback.
+function showCopyToast(msg) {
+  var t = document.getElementById("copy-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "copy-toast";
+    t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:14px 24px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = msg;
+  clearTimeout(t._timer);
+  t.style.opacity = "1";
+  t._timer = setTimeout(function () {
+    t.style.opacity = "0";
+  }, 1800);
+}
+function copiarTexto(text, mensajeExito) {
+  function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(function () {
+      _copiarConExecCommand(text);
+      onOk();
+    });
+  } else {
+    _copiarConExecCommand(text);
+    onOk();
+  }
+}
+function _copiarConExecCommand(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+// Contador de caracteres restantes para el campo de notas — antes solo se
+// sabía que se había llegado al límite de 300 cuando el textarea dejaba de
+// aceptar más texto, sin ningún aviso previo.
+function _actualizarContadorNotas(textareaId, counterId) {
+  const ta = document.getElementById(textareaId);
+  const counter = document.getElementById(counterId);
+  if (!ta || !counter) return;
+  const max = parseInt(ta.getAttribute('maxlength'), 10) || 300;
+  const restantes = max - ta.value.length;
+  counter.textContent = restantes + ' caracteres restantes';
+  counter.style.color = restantes <= 20 ? '#c0392b' : 'var(--muted, #8A6A4E)';
+}
+// Muestra el aviso de dato que falta/es inválido Y desplaza hasta el campo
+// correspondiente, resaltándolo un instante — antes solo salía la alerta,
+// sin llevar al cliente hasta dónde está el problema (con el formulario
+// largo, tocaba buscarlo a ojo). Detecta si el cliente está en el drawer
+// móvil (donde los campos visibles son drawer-customer-*, no los del
+// formulario de escritorio que solo se sincronizan por debajo) para
+// desplazarse al campo que de verdad se ve en pantalla.
+function _alertaConFoco(msg, fieldIdBase) {
+  showAlert(msg);
+  const drawer = document.getElementById('cart-drawer');
+  const enDrawer = drawer && drawer.classList.contains('open');
+  const fieldId = enDrawer ? ('drawer-' + fieldIdBase) : fieldIdBase;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.add('campo-con-error');
+  setTimeout(() => field.classList.remove('campo-con-error'), 2000);
+  setTimeout(() => { if (typeof field.focus === 'function') field.focus(); }, 350);
+}
+// Un único "ding" suave al confirmar el pedido — mismo patrón (Web Audio,
+// sin archivos externos) que ya usa _sonidoCelebracion() en la ruleta, pero
+// una sola nota discreta en vez del arpegio de premio.
+function _sonidoConfirmacionPedido() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880; // La5
+    const start = ctx.currentTime;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.13, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.55);
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
 function isShopBlocked() {
   var _document$getElementB;
   // 1. Si el banner de cerrado está visible
@@ -2160,6 +2299,16 @@ function _animateAddToCart(id) {
       btn.addEventListener('animationend', () => btn.classList.remove('popping'), {
         once: true
       });
+      // Confirmación visual más clara que solo el rebote: el botón muestra
+      // un ✓ un instante y una miniatura "vuela" hasta el carrito/FAB.
+      btn.classList.add('add-check');
+      btn.textContent = '✓';
+      clearTimeout(btn._addCheckTimer);
+      btn._addCheckTimer = setTimeout(() => {
+        btn.classList.remove('add-check');
+        btn.textContent = '+';
+      }, 550);
+      _lanzarFlyGhost(btn);
     }
     card.classList.remove('flashing');
     void card.offsetWidth;
@@ -2186,6 +2335,30 @@ function _animateAddToCart(id) {
       once: true
     });
   }
+}
+// Crea una miniatura que "vuela" desde el botón pulsado hasta el carrito
+// (el FAB en móvil, o el contador de "Tu pedido" en escritorio, donde no
+// hay FAB) — refuerzo visual de que el producto se ha añadido, más allá
+// del rebote del propio botón.
+function _lanzarFlyGhost(btn) {
+  const fab = document.getElementById('cart-fab');
+  const target = (fab && !fab.classList.contains('hidden')) ? fab : document.getElementById('cart-count');
+  if (!target) return;
+  const btnRect = btn.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  if (!btnRect.width || !targetRect.width) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'fly-ghost';
+  ghost.textContent = '🥔';
+  const size = 26;
+  ghost.style.left = (btnRect.left + btnRect.width / 2 - size / 2) + 'px';
+  ghost.style.top = (btnRect.top + btnRect.height / 2 - size / 2) + 'px';
+  const dx = (targetRect.left + targetRect.width / 2) - (btnRect.left + btnRect.width / 2);
+  const dy = (targetRect.top + targetRect.height / 2) - (btnRect.top + btnRect.height / 2);
+  ghost.style.setProperty('--fly-target', 'translate(' + dx + 'px,' + dy + 'px)');
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => ghost.classList.add('flying'));
+  setTimeout(() => ghost.remove(), 650);
 }
 // ── 🍰 Venta sugerida: dulce de postre ──────────────────────────────────────
 // Siempre sugiere tarta o galleta (nunca bebida). Varía según lo que ya
@@ -2299,9 +2472,10 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div>A\xF1ade productos de la carta</div>";
+    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
+    _updateCartFab(0, 0);
     return;
   }
   let total = 0;
@@ -2343,7 +2517,7 @@ function renderCart() {
     const extras = [];
     if (c.queso) extras.push('+ Queso +1,00€');
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
@@ -2362,13 +2536,62 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
-  const grandTotal = feeEnabled ? total + feeAmount : total;
+  // Mostrar línea de descuento si hay un código aplicado (manual o ganado
+  // en la ruleta/rasca) — antes el total mostrado en el carrito nunca
+  // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
+  // que aunque el código sí se aplicaba de verdad, la clienta no veía
+  // ningún cambio en el número y parecía que no había pasado nada.
+  const discountAmt = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
+  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
+  const discountEl = document.getElementById('cart-discount-row');
+  if (discountEl) {
+    if (discountAmt > 0 && discountCode) {
+      discountEl.style.display = 'flex';
+      document.getElementById('cart-discount-label').textContent = 'Descuento (' + discountCode + ')';
+      document.getElementById('cart-discount-amount').textContent = '-' + discountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      discountEl.style.display = 'none';
+    }
+  }
+  // Premio de fidelización (patata gratis) — mismo cálculo que usa
+  // submitOrder() al confirmar (getFidelizacionDescuento en
+  // carrito-checkout.js), para que el total mostrado mientras se compra
+  // ya lo refleje en vez de solo cambiar al confirmar el pedido.
+  const _fidTelInput = document.getElementById('customer-phone');
+  const _fidPhoneClean = _fidTelInput ? _fidTelInput.value.replace(/\D/g, '').slice(0, 9) : '';
+  const fidelizacionAmt = (typeof getFidelizacionDescuento === 'function') ? getFidelizacionDescuento(_fidPhoneClean) : 0;
+  const fidelizacionEl = document.getElementById('cart-fidelizacion-row');
+  if (fidelizacionEl) {
+    if (fidelizacionAmt > 0) {
+      fidelizacionEl.style.display = 'flex';
+      document.getElementById('cart-fidelizacion-amount').textContent = '-' + fidelizacionAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fidelizacionEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, (feeEnabled ? total + feeAmount : total) - discountAmt - fidelizacionAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
+  // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
+  // la línea verde de cada uno ya existía, pero un badge aparte resalta
+  // más el ahorro real que solo ver un número distinto en el total.
+  const totalAhorro = discountAmt + fidelizacionAmt;
+  const savingsEl = document.getElementById('cart-savings-badge');
+  if (savingsEl) {
+    if (totalAhorro > 0) {
+      savingsEl.style.display = 'block';
+      document.getElementById('cart-savings-amount').textContent = '¡Ahorras ' + totalAhorro.toFixed(2).replace('.', ',') + ' €!';
+    } else {
+      savingsEl.style.display = 'none';
+    }
+  }
 
-  // Sync mobile FAB and drawer
-  _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
   // Only show total and form if orders are open
+  // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
+  // porque _syncCartDrawer() (a través de _syncDrawerSlotPicker()) copia el
+  // estado visible de #slot-picker-group al drawer móvil. Si se sincroniza
+  // primero, el drawer copia el estado del render ANTERIOR (desactualizado),
+  // provocando que "Hora de recogida" no aparezca en el drawer justo tras
+  // el primer cambio de carrito (bug intermitente en móvil).
   if (getOrdersOpen()) {
     totalRowEl.style.display = "flex";
     formEl.style.display = "block";
@@ -2377,6 +2600,58 @@ function renderCart() {
     totalRowEl.style.display = "none";
     formEl.style.display = "none";
   }
+
+  // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
+  _updateCartFab(totalItems, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
+}
+
+// ── REPETIR ÚLTIMO PEDIDO ──
+// dpf_ultimo_pedido lo guarda antifraude.js justo después de confirmar un
+// pedido (a diferencia de dpf_active_order, este no caduca) — si existe y
+// el carrito está vacío, se ofrece repetirlo con un toque en vez de
+// obligar a repasar toda la carta otra vez.
+function _bimbaTarjetaRepetirPedido() {
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items) || !data.items.length) return '';
+    const lineas = data.items.map(i => '<b>' + i.qty + '×</b> ' + i.name).join('<br>');
+    return '<div class="repeat-card">' +
+      '<div class="repeat-card__label">🔁 Pediste esto la última vez</div>' +
+      '<div class="repeat-card__items">' + lineas + '</div>' +
+      '<button type="button" class="repeat-card__btn" onclick="repetirUltimoPedido()">Repetir pedido — ' + (data.total || 0).toFixed(2).replace('.', ',') + ' €</button>' +
+      '</div>';
+  } catch (e) { return ''; }
+}
+function repetirUltimoPedido() {
+  if (isShopBlocked()) { showClosedToast(); return; }
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    let algoOmitido = false;
+    const disponible = id => {
+      const item = MENU.find(m => m.id == id);
+      return item && !item.hidden && !item.soldout;
+    };
+    Object.entries(data.cart || {}).forEach(([id, qty]) => {
+      if (!disponible(id)) { algoOmitido = true; return; }
+      cart[id] = (cart[id] || 0) + qty;
+    });
+    Object.entries(data.custCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      custCart[key] = c;
+    });
+    Object.entries(data.extrasCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      extrasCart[key] = c;
+    });
+    renderMenu();
+    renderCart();
+    showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');
+  } catch (e) {}
 }
 
 
@@ -2393,17 +2668,42 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-count').textContent = count;
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
+  // Botón "repetir último pedido" (solo móvil): ocupa el mismo hueco que
+  // el FAB del carrito cuando este está vacío — nunca se muestran los dos
+  // a la vez porque uno solo aparece cuando el otro está oculto.
+  const repeatFab = document.getElementById('repeat-order-fab');
+  if (repeatFab) {
+    let hayUltimoPedido = false;
+    try { hayUltimoPedido = !!localStorage.getItem('dpf_ultimo_pedido'); } catch (e) {}
+    repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
+  }
 }
-function _syncCartDrawer(cartHtml, total) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
   const feeEnabled = getFeeEnabled();
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
+  discountAmt = discountAmt || 0;
+  fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
+  // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
+  // tambi\u00E9n deje claro por qu\u00E9 el total baj\u00F3 (c\u00F3digo manual o premio
+  // ganado en la ruleta/rasca).
+  if (discountAmt > 0 && discountCode) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fidelizacionAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt;
+  if (_ahorroDrawer > 0) {
+    html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
@@ -2421,7 +2721,7 @@ function _syncCartDrawer(cartHtml, total) {
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value\"></textarea>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
@@ -2564,11 +2864,9 @@ function submitOrderFromDrawer() {
   if (n) document.getElementById('customer-name').value = n.value;
   if (p) document.getElementById('customer-phone').value = p.value;
   if (t) document.getElementById('customer-notes').value = t.value;
-  // Guardar slot antes de cerrar
-  var slotActual = selectedSlot;
-  closeCartDrawer();
-  // Restaurar slot por si closeCartDrawer lo resetea
-  if (slotActual) selectedSlot = slotActual;
+  // No cerramos el drawer aquí: si falta un dato, _alertaConFoco necesita
+  // que siga abierto para resaltar el campo correcto (drawer-customer-*).
+  // Se cierra solo al confirmar con éxito, desde showSuccess().
   submitOrder();
 }
 function removeItem(id) {
@@ -2602,32 +2900,29 @@ function formatNombreConBadgeNuevo(nombre) {
   return escapeHtml(limpio) + ' <span style="display:inline-block;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:9px;color:#fff;background:#C0392B;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;vertical-align:middle">Nuevo</span>';
 }
 
-// Genera número de pedido usando contador atómico en Firebase.
-// El contador se resetea cada día (clave = fecha de hoy).
-// Fallback a aleatorio solo si Firebase no está disponible.
+// Genera número de pedido reservándolo en el servidor (guardar-pedido.php,
+// cuenta de servicio) para evitar colisiones entre pedidos simultáneos.
+// Antes el propio navegador escribía directo en usedOrderNums/ vía la SDK
+// de Firebase, lo que exigía dejar esa escritura abierta a cualquier
+// visitante anónimo en las reglas — cualquiera podía rellenar
+// usedOrderNums/<fecha>/ sin llegar a pedir nada.
+// Fallback a aleatorio solo si el servidor no responde.
 async function generateOrderNumber() {
-  // Transacción atómica: reserva el número en Firebase antes de devolverlo.
-  // Si dos pedidos llegan a la vez, Firebase garantiza que obtienen números distintos.
-  const todayKey = new Date().toISOString().slice(0, 10);
-  if (typeof firebase !== 'undefined' && firebase.database) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const rnd = Math.floor(Math.random() * 9000) + 1000;
-      const ref = firebase.database().ref('usedOrderNums/' + todayKey + '/' + rnd);
-      let reserved = false;
-      try {
-        await ref.transaction(function(current) {
-          if (current === null) { reserved = true; return true; }
-          return undefined; // ya existe, abortar
-        });
-        if (reserved) return 'T' + rnd;
-      } catch (e) {
-        console.warn('[orderNum] transaction error:', e);
-      }
-    }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarNumeroPedido' })
+    });
+    const data = await res.json();
+    if (data.success && data.orderNum) return data.orderNum;
+    console.warn('[orderNum] reserva en servidor falló:', data.error);
+  } catch (e) {
+    console.warn('[orderNum] fetch error:', e);
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime) {
+function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento) {
   const tc = getTicketConfig();
   const lines = Object.entries(cart).map(_ref5 => {
     let _ref6 = _slicedToArray(_ref5, 2),
@@ -2655,7 +2950,12 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
   const allLines = [...lines, ...custLines, ...extLines2];
-  const total = Object.entries(cart).reduce((s, _ref7) => {
+  // El total final se recibe ya calculado desde submitOrder() (orderTotal)
+  // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
+  // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
+  // premio de fidelizaci\u00F3n, as\u00ED que el "TOTAL:" del ticket enviado por
+  // email pod\u00EDa no coincidir con lo que de verdad se cobra.
+  const itemsSubtotal = Object.entries(cart).reduce((s, _ref7) => {
     let _ref8 = _slicedToArray(_ref7, 2),
       id = _ref8[0],
       q = _ref8[1];
@@ -2667,12 +2967,18 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
   }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
+  const extraLineas = [];
+  if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
+  if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
+  if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
+  const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
   const now = new Date().toLocaleString('es-ES');
   const phoneCleanTxt = (phone || '').replace(/\D/g, '');
   const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
     ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
     : "";
-  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\nTOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
+  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
 }
 
 // ══════════════════════════════════════════
@@ -2791,14 +3097,17 @@ function getSlotCount(slotTime) {
 async function incrementSlot(slotTime) {
   // Update local cache immediately for UI responsiveness
   _slotsCache[slotTime] = (_slotsCache[slotTime] || 0) + 1;
-  // Persist to Firebase (atomic increment)
-  if (window.fb_incrementSlot) {
-    try {
-      await window.fb_incrementSlot(slotTime);
-    } catch (e) {
-      console.warn('Firebase slot error', e);
-    }
-  } else {
+  // Reservar en el servidor (guardar-pedido.php, cuenta de servicio) — antes
+  // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
+  // slots/ abierto a escritura anónima en las reglas.
+  try {
+    await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarSlot', slotTime })
+    });
+  } catch (e) {
+    console.warn('Slot reserve error', e);
     saveSlotsData(getSlotsData());
   }
 }
@@ -2937,14 +3246,67 @@ function selectSlot(slot) {
 
   // Aviso franja poco margen ahora es inline en el botón
 }
+
+// Precio a descontar por el premio de fidelización activo (patata gratis) —
+// la patata más cara del carrito, en beneficio del cliente. Compartida entre
+// el total mostrado mientras se compra (renderCart(), en carta.js) y el del
+// pedido final (submitOrder(), aquí abajo) para que nunca puedan mostrar
+// cifras distintas — antes solo se calculaba aquí, así que el total del
+// carrito no bajaba hasta confirmar el pedido, igual que pasaba con los
+// códigos de descuento manuales antes de arreglarlo.
+function getFidelizacionDescuento(phoneClean) {
+  if (!window._fidelizacionPremioActivo || window._fidelizacionPremioActivo !== phoneClean) return 0;
+  const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
+    const it = MENU.find(m => m.id == id);
+    return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
+  });
+  const preciosPatatasCustom = Object.values(custCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+  });
+  const preciosPatatasExtras = Object.values(extrasCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return getExtrasItemPrice(c);
+  });
+  const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
+  return todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
+}
+// Guarda contra doble envío — antes el botón "Confirmar pedido" no se
+// deshabilitaba hasta después de varias llamadas de red seguidas (lista
+// negra, cooldown, turnos, número de pedido), así que un doble-toque en
+// una conexión lenta podía lanzar dos submitOrder() a la vez: dos números
+// de pedido reservados, dos emails de confirmación, y _pendingOrderData/
+// _pendingTicketData del segundo pisando los del primero en mitad del
+// proceso, todo para lo que el cliente vivió como un único clic.
+let _submitOrderEnCurso = false;
 async function submitOrder() {
+  if (_submitOrderEnCurso) return;
+  _submitOrderEnCurso = true;
+  try {
+    await _submitOrderInner();
+  } finally {
+    _submitOrderEnCurso = false;
+  }
+}
+async function _submitOrderInner() {
+  // Igual que ya hace changeQty() al añadir al carrito — antes esta función
+  // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
+  // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se
+  // enviaba igual (el servidor ahora también lo rechaza, esto es solo para
+  // avisar al momento sin esperar la respuesta).
+  if (isShopBlocked()) {
+    showClosedToast();
+    return;
+  }
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
-    showAlert("Por favor escribe tu nombre");
+    _alertaConFoco("Por favor escribe tu nombre", "customer-name");
     return;
   }
   if (name.length > 60) {
-    showAlert("El nombre es demasiado largo (máximo 60 caracteres)");
+    _alertaConFoco("El nombre es demasiado largo (máximo 60 caracteres)", "customer-name");
     return;
   }
   if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0) {
@@ -2956,44 +3318,52 @@ async function submitOrder() {
   const phone = document.getElementById("customer-phone").value.trim();
   const phoneClean = phone.replace(/[\s\-().+]/g, '');
   if (!phone) {
-    showAlert("Por favor escribe tu teléfono");
+    _alertaConFoco("Por favor escribe tu teléfono", "customer-phone");
     return;
   }
   if (!/^\d{9}$/.test(phoneClean)) {
-    showAlert("El teléfono debe tener exactamente 9 dígitos");
+    _alertaConFoco("El teléfono debe tener exactamente 9 dígitos", "customer-phone");
     return;
   }
   // Prefijo válido español: móviles 6/7, fijos 8/9 — excluye 800/900/901/902 y similares
   if (!/^[6789]/.test(phoneClean)) {
-    showAlert("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9");
+    _alertaConFoco("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9", "customer-phone");
     return;
   }
   // Excluir numeración especial: 800, 900, 901, 902, 803, 806, 807
   if (/^(800|900|901|902|803|806|807)/.test(phoneClean)) {
-    showAlert("No se admiten números de tarificación especial");
+    _alertaConFoco("No se admiten números de tarificación especial", "customer-phone");
     return;
   }
   // Detectar números absurdos: todos iguales, secuencias obvias
   const _absurdos = ['000000000', '111111111', '222222222', '333333333', '444444444', '555555555', '666666666', '777777777', '888888888', '999999999', '123456789', '987654321', '600000000', '700000000', '612345678'];
   if (_absurdos.includes(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
   // Detectar repetición: 7+ dígitos iguales consecutivos (ej. 611111111, 699999999)
   if (/(\d)\1{6,}/.test(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
 
   // ── Honeypot anti-bots: si el campo oculto está relleno, es un bot
   const hp = document.getElementById('hp-website');
   if (hp && hp.value.trim()) {
-    btn.disabled = true;
-    btn.textContent = 'Enviando pedido…';
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = 'Confirmar pedido';
-    }, 2000);
+    // `btn` (más abajo, para el resto de la función) todavía no existe en
+    // este punto — usarlo aquí lanzaba un ReferenceError ("Cannot access
+    // 'btn' before initialization") por ser un `const` del mismo scope
+    // referenciado antes de su declaración, así que se busca el elemento
+    // aparte en vez de depender de esa variable.
+    const hpBtn = document.getElementById('submit-btn');
+    if (hpBtn) {
+      hpBtn.disabled = true;
+      hpBtn.textContent = 'Enviando pedido…';
+      setTimeout(() => {
+        hpBtn.disabled = false;
+        hpBtn.textContent = 'Confirmar pedido';
+      }, 2000);
+    }
     return;
   }
 
@@ -3076,7 +3446,7 @@ async function submitOrder() {
   }
   const notes = document.getElementById("customer-notes").value.trim();
   if (notes.length > 300) {
-    showAlert("La nota del pedido es demasiado larga (máximo 300 caracteres)");
+    _alertaConFoco("La nota del pedido es demasiado larga (máximo 300 caracteres)", "customer-notes");
     return;
   }
   const orderNum = await generateOrderNumber();
@@ -3102,28 +3472,7 @@ async function submitOrder() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
   const _discountAmt = getDiscountAmount(subTotal);
-  // Premio de fidelización: si hay premio activo para este teléfono y el
-  // carrito incluye al menos 1 patata, se descuenta el precio de la patata
-  // más cara del carrito (la de mayor valor, en beneficio del cliente).
-  let _fidelizacionDescuento = 0;
-  if (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean) {
-    const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
-      const it = MENU.find(m => m.id == id);
-      return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
-    });
-    const preciosPatatasCustom = Object.values(custCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    });
-    const preciosPatatasExtras = Object.values(extrasCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return getExtrasItemPrice(c);
-    });
-    const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
-    _fidelizacionDescuento = todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
-  }
+  const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
@@ -3207,7 +3556,7 @@ async function submitOrder() {
   window._pendingTicketData = ticketData;
 
   // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot);
+  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";
@@ -3233,15 +3582,16 @@ async function submitOrder() {
   } else {
     console.warn("EmailJS no cargado — email omitido");
   }
-  // Registrar uso del código de descuento
-  if (_activeDiscount && window.fb_incrementDiscountUse) {
-    window.fb_incrementDiscountUse(_activeDiscount.code).catch(() => {});
-    _activeDiscount = null;
-    const dcInput = document.getElementById('discount-input');
-    const dcFeedback = document.getElementById('discount-feedback');
-    if (dcInput) dcInput.value = '';
-    if (dcFeedback) dcFeedback.textContent = '';
-  }
+  // El uso del código de descuento se registra en el servidor al
+  // finalizar el pedido (ver guardar-pedido.php) — incrementar
+  // discounts/<code>/uses exige el UID de admin en las reglas, así que
+  // el navegador ya no puede hacerlo directamente.
+  const _discountCodeUsado = _activeDiscount ? _activeDiscount.code : null;
+  _activeDiscount = null;
+  const dcInput = document.getElementById('discount-input');
+  const dcFeedback = document.getElementById('discount-feedback');
+  if (dcInput) dcInput.value = '';
+  if (dcFeedback) dcFeedback.textContent = '';
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
@@ -3249,7 +3599,8 @@ async function submitOrder() {
     slotTime: needsSlot ? selectedSlot : null,
     phone,
     phoneClean,
-    ticketData: ticketData
+    ticketData: ticketData,
+    discountCode: _discountCodeUsado
   };
 
   // Teléfonos de prueba que saltan la verificación SMS
@@ -3310,7 +3661,7 @@ async function submitOrder() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -3318,29 +3669,70 @@ async function _finalizarPedido() {
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
 
-  // Guardar ticket completo en Firebase para impresión
-  if (window.fb_saveTicket && window._pendingTicketData) {
-    console.log('💾 Guardando ticket en Firebase:', orderNum);
-    window.fb_saveTicket(orderNum, window._pendingTicketData)
-      .then(() => { console.log('✅ Ticket guardado'); window._pendingTicketData = null; })
+  // Guardar el pedido en el servidor: ticket completo + estadísticas del
+  // día + uso del código de descuento (si lo hubo). tickets/ y stats/
+  // exigen el UID de admin en las reglas de Firebase, así que un cliente
+  // anónimo (cualquiera que pida sin haber iniciado sesión de admin) no
+  // puede escribir ahí directamente — lo hace guardar-pedido.php con la
+  // cuenta de servicio.
+  // No se espera aquí (para que la pantalla de éxito aparezca al instante),
+  // pero SÍ hay que esperar a que termine antes de pedir el sello de
+  // fidelización más abajo — fidelizacion.php ahora comprueba contra el
+  // ticket ya guardado en Firebase (tickets/<fecha>/<num>), así que si se
+  // llamara antes de que este guardado termine, el sello se rechazaría por
+  // "pedido no encontrado" en pedidos completamente legítimos.
+  let _pedidoGuardadoPromise = Promise.resolve();
+  if (window._pendingTicketData) {
+    console.log('💾 Guardando pedido en el servidor:', orderNum);
+    _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderNum,
+        name: window._pendingTicketData.name,
+        phone: window._pendingTicketData.phone,
+        notes: window._pendingTicketData.notes,
+        slotTime: window._pendingTicketData.slotTime,
+        items: window._pendingTicketData.items,
+        total: window._pendingTicketData.total,
+        discountCode: discountCode || null
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
+      })
       .catch((e) => {
-        console.error('❌ Error guardando ticket:', e);
-        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó en Firebase — ' + (e && e.message || 'error desconocido'));
+        console.error('❌ Error guardando pedido:', e);
+        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
+        _avisarClienteFalloGuardado(orderNum);
       });
   } else {
-    console.warn('⚠️ fb_saveTicket no disponible o _pendingTicketData vacío', !!window.fb_saveTicket, !!window._pendingTicketData);
+    console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
   }
 
   await showSuccess(orderNum, slotTime);
-  // Registrar teléfono en Firebase para cooldown/límite diario server-side
-  if (window.fb_logPhoneOrder && phone) {
-    window.fb_logPhoneOrder(phoneClean, Date.now()).catch(() => {});
-  }
+  // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
+  // guardar-pedido.php al guardar el pedido — hacerlo también aquí
+  // contaría cada pedido dos veces.
   // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
   const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
+  await _pedidoGuardadoPromise;
   _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
+}
+// Antes, si guardar-pedido.php fallaba, el cliente veía "pedido confirmado"
+// igual y solo quedaba un aviso en el log de actividad que ve el admin —
+// nadie en cocina se enteraba de que el pedido no había llegado. Ahora, si
+// el cliente sigue en la pantalla de éxito de ESE pedido, se lo decimos.
+function _avisarClienteFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'block';
 }
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
@@ -3351,48 +3743,32 @@ function _ticketTienePatata(ticketData) {
 }
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
   if (!phoneClean || !_ticketTienePatata(ticketData)) return;
-  if (!window.fb_loadFidelizacionCliente || !window.fb_saveFidelizacionCliente) return;
-
-  let cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-  if (!cliente) {
-    cliente = { nombre: (ticketData && ticketData.name) || '', sellos: 0, premiosPendientes: 0, vecesCompletado: 0, historialCanjes: [] };
-  }
-  // Migración de clientes antiguos (formato con premioDisponible booleano)
-  if (typeof cliente.premiosPendientes !== 'number') {
-    cliente.premiosPendientes = cliente.premioDisponible ? 1 : 0;
-  }
-  if (typeof cliente.vecesCompletado !== 'number') cliente.vecesCompletado = 0;
-  delete cliente.premioDisponible;
-
-  // Mantener actualizado el nombre más reciente con el que pide el cliente
-  if (ticketData && ticketData.name) cliente.nombre = ticketData.name;
-
-  // Si este pedido consume un premio pendiente (la patata gratis ya se
-  // descontó en el carrito, ver el cálculo de _fidelizacionDescuento en
-  // submitOrder), se resta 1 premio pendiente y se registra en el historial
-  // de canjes. El contador de sellos no se toca aquí porque ya se resetea
-  // solo al llegar a 10.
-  if (consumioPremio && cliente.premiosPendientes > 0) {
-    cliente.premiosPendientes -= 1;
-    cliente.historialCanjes = cliente.historialCanjes || [];
-    cliente.historialCanjes.push({ fecha: new Date().toLocaleString('es-ES'), ticket: (ticketData && ticketData.orderNum) || null });
-  }
-
-  cliente.sellos = (cliente.sellos || 0) + 1;
-  if (cliente.sellos >= FIDELIZACION_META) {
-    cliente.sellos = 0;
-    cliente.premiosPendientes = (cliente.premiosPendientes || 0) + 1;
-    cliente.vecesCompletado = (cliente.vecesCompletado || 0) + 1;
-  }
-  // Registro de cuándo se pone cada sello, para poder detectar ritmos
-  // sospechosos (varios sellos en pocos minutos = posible abuso del
-  // sistema). Solo guardamos los últimos 15 para no hinchar el nodo.
-  cliente.historialSellos = cliente.historialSellos || [];
-  cliente.historialSellos.push({ ts: Date.now(), fecha: new Date().toLocaleString('es-ES') });
-  if (cliente.historialSellos.length > 15) {
-    cliente.historialSellos = cliente.historialSellos.slice(-15);
-  }
-  await window.fb_saveFidelizacionCliente(phoneClean, cliente);
+  // El cálculo del sello (sumar, resetear a los 10, descontar premio
+  // canjeado) se hace en el servidor (fidelizacion.php): el navegador ya
+  // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
+  // pueda regalarse sellos/premios abriendo las devtools.
+  try {
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'registrarSello',
+        telefono: phoneClean,
+        orderNum: (ticketData && ticketData.orderNum) || '',
+        tienePatata: true,
+        consumioPremio: !!consumioPremio,
+        nombre: (ticketData && ticketData.name) || ''
+      })
+    });
+    const data = await res.json();
+    // "skipped" es normal (pedido sin patata) — un success:false de verdad
+    // significa que el servidor rechazó el sello (antes esto se ignoraba
+    // en silencio, así que un cliente podía perder un sello legítimo sin
+    // que nadie se enterara).
+    if (!data.success && !data.skipped) {
+      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'));
+    }
+  } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.
@@ -3686,6 +4062,10 @@ async function resetDayStats() {
   loadDayStats();
 }
 async function showSuccess(orderNum, slotTime) {
+  // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
+  // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
+  // que rompía el resaltado de campos con error en submitOrderFromDrawer).
+  if (typeof closeCartDrawer === 'function') closeCartDrawer();
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -3693,11 +4073,30 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderTotal = 0;
   window.currentOrderItems = [];
   try {
-    window.currentOrderItems = Object.entries(cart).map(([id, qty]) => {
+    // Antes solo se leía `cart` (productos normales del menú) — los
+    // personalizados (Patata Al Gusto, Patata Bomba, vía custCart) y los
+    // complementos sueltos (extrasCart) se quedaban fuera, así que nunca
+    // se contaban en ventasProductos/{fecha}, la analítica que usa
+    // finanzas.js para "Estrellas y perdedores". Si el admin les asigna
+    // coste ahí, aparecían siempre con 0 ventas por mucho que se vendieran.
+    const itemsNormales = Object.entries(cart).map(([id, qty]) => {
       const item = MENU.find(m => m.id == id);
       if (!item) return null;
       return { id: item.id, qty, name: item.name, price: item.price * qty };
     }).filter(Boolean);
+    const itemsCustom = Object.values(custCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    const itemsExtras = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) : item.price;
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    window.currentOrderItems = [...itemsNormales, ...itemsCustom, ...itemsExtras];
     window.currentOrderTotal = window.currentOrderItems.reduce((s, i) => s + i.price, 0);
   } catch(e) {}
   recordProductSales(window.currentOrderItems);
@@ -3726,6 +4125,25 @@ async function showSuccess(orderNum, slotTime) {
   // Guardar en localStorage para recuperar si se cierra la pestaña
   try {
     localStorage.setItem('dpf_active_order', JSON.stringify(window._lastOrderData));
+  } catch (e) {}
+
+  // Guardar aparte, sin caducar, para "Repetir mi último pedido" en una
+  // visita futura — a diferencia de dpf_active_order (que se borra en
+  // cuanto se cierra la ventana de modificar/cancelar), esto se queda.
+  // Solo líneas de producto real: sin gastos de gestión (isFee) ni el
+  // descuento/aviso de fidelización (subtotal <= 0).
+  try {
+    const _itemsRepetibles = (_lastTicketData ? _lastTicketData.items || [] : []).filter(i => !i.isFee && i.subtotal > 0);
+    if (_itemsRepetibles.length) {
+      localStorage.setItem('dpf_ultimo_pedido', JSON.stringify({
+        items: _itemsRepetibles,
+        total: orderTotal,
+        cart: JSON.parse(JSON.stringify(cart)),
+        custCart: JSON.parse(JSON.stringify(custCart)),
+        extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+        ts: Date.now()
+      }));
+    }
   } catch (e) {}
 
   // Registrar el slot
@@ -3757,6 +4175,11 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
+  // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
+  const saveWarning = document.getElementById('success-save-warning');
+  if (saveWarning) saveWarning.style.display = 'none';
+  if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');
@@ -3932,25 +4355,78 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
+// Resta de ventasProductos/{fecha} lo que sumó recordProductSales() para
+// este pedido — antes, cancelar un pedido (admin) o que el cliente lo
+// modificara (que primero lo borra y luego reenvía uno nuevo) dejaba sus
+// productos contados para siempre en la analítica de "Estrellas y
+// perdedores", aunque el pedido ya no existiera o se hubiera duplicado.
+// pedido.items no lleva el id del producto (solo name/qty/subtotal, tal
+// como lo guarda guardar-pedido.php), así que se busca por nombre.
+async function _revertirVentasProductos(items) {
+  if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
+  const fecha = new Date().toISOString().slice(0, 10);
+  const mutator = function (current) {
+    const actual = current || {};
+    items.forEach(it => {
+      if (it.isFee || !it.name) return;
+      const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
+      if (!menuItem) return;
+      const id = String(menuItem.id);
+      if (actual[id] == null) return;
+      actual[id] = Math.max(0, actual[id] - (it.qty || 0));
+      if (actual[id] === 0) delete actual[id];
+    });
+    return actual;
+  };
+  try {
+    // Transacción: este mismo nodo lo escribe también cada pedido real de
+    // un cliente al llegar (recordProductSales) — un .set() plano aquí
+    // podía perder esa cuenta si un pedido nuevo llegaba justo mientras se
+    // revertía otro cancelado.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      if (!sn.exists()) return;
+      await ref.set(mutator(sn.val()));
+    }
+  } catch (e) {
+    console.warn('[ventasProductos] no se pudo revertir', e);
+  }
+}
 async function _borrarPedidoDeFirebase(orderNum) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
   // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
   await setOrderStatus(orderNum, 'cancelado');
 
+  let itemsParaRevertir = null;
+
   // 2. Borrar de Firebase stats y liberar slot si tenía uno
   let slotToFree = null;
-  if (window.fb_getStats && window.fb_saveStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo (con su propia protección de condición de
+  // carrera) — un .set() plano aquí (leer, filtrar en memoria, sobreescribir
+  // el nodo entero) podía perder en silencio un pedido real que llegara
+  // justo mientras se cancelaba otro distinto desde el panel.
+  const mutatorStats = function (current) {
+    const stats = current || { orders: [] };
+    if (!Array.isArray(stats.orders)) stats.orders = [];
+    const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
+    if (pedido && pedido.slot) slotToFree = pedido.slot;
+    if (pedido && pedido.items) itemsParaRevertir = pedido.items;
+    stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
+    stats.count = Math.max(0, stats.orders.length);
+    stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
+    return stats;
+  };
+  if (window.fb_transactNative) {
+    try { await window.fb_transactNative('stats/' + todayKey, mutatorStats); } catch {}
+  } else if (window.fb_getStats && window.fb_saveStats) {
     try {
       const stats = await window.fb_getStats(todayKey);
-      if (stats && stats.orders) {
-        const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-        if (pedido && pedido.slot) slotToFree = pedido.slot;
-        stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-        stats.count = Math.max(0, (stats.count || 1) - 1);
-        stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-        await window.fb_saveStats(stats);
-      }
+      if (stats) await window.fb_saveStats(mutatorStats(stats));
     } catch {}
   }
 
@@ -3960,12 +4436,15 @@ async function _borrarPedidoDeFirebase(orderNum) {
     if (local.orders) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
+      if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
       local.total = local.orders.reduce((acc, o) => acc + (o.total || 0), 0);
       localStorage.setItem(STATS_KEY, JSON.stringify(local));
     }
   } catch {}
+
+  if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
 
   // 4. El slot NO se libera al cancelar — el turno quedó ocupado
 
@@ -4139,7 +4618,7 @@ function updateCustProgress() {
     if (sauceProg) sauceProg.style.display = 'none';
     document.getElementById('cust-sauce-badge').textContent = ns;
     document.getElementById('cust-ing-label').textContent = 'Total: ' + total + '/' + cfg.maxTotal + ' (salsas: ' + ns + ' · ing: ' + ni + ')';
-    document.getElementById('cust-ing-bar').style.width = pct + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pct / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill ' + cls;
     document.getElementById('cust-ing-badge').textContent = total + '/' + cfg.maxTotal;
   } else {
@@ -4148,11 +4627,11 @@ function updateCustProgress() {
     const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(ni / cfg.maxIngredients * 100));
     document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
-    document.getElementById('cust-sauce-bar').style.width = pctS + '%';
+    document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
     document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + ni + '/' + cfg.maxIngredients;
-    document.getElementById('cust-ing-bar').style.width = pctI + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
     document.getElementById('cust-ing-badge').textContent = ni + '/' + cfg.maxIngredients;
   }
@@ -4241,31 +4720,42 @@ function renderSlotTurnosList(turnos) {
   }
   list.innerHTML = turnos.map((t, i) => "\n    <div style=\"display:flex;align-items:center;flex-wrap:wrap;background:#F4F2EE;border-radius:8px;padding:10px 12px;margin-bottom:8px\">\n      <span style=\"font-size:12px;font-weight:700;color:#8A6A4E;min-width:20px\">".concat(i + 1, ".</span>\n      <label style=\"font-size:12px;color:#8A6A4E\">Desde</label>\n      <input type=\"time\" value=\"").concat(t.start, "\" onchange=\"updateSlotTurno(").concat(i, ",'start',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Hasta</label>\n      <input type=\"time\" value=\"").concat(t.end, "\" onchange=\"updateSlotTurno(").concat(i, ",'end',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Cada</label>\n      <select onchange=\"updateSlotTurno(").concat(i, ",'interval',parseInt(this.value))\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n        <option value=\"15\" ").concat(t.interval === 15 ? 'selected' : '', ">15 min</option>\n        <option value=\"20\" ").concat(t.interval === 20 ? 'selected' : '', ">20 min</option>\n        <option value=\"30\" ").concat(!t.interval || t.interval === 30 ? 'selected' : '', ">30 min</option>\n        <option value=\"45\" ").concat(t.interval === 45 ? 'selected' : '', ">45 min</option>\n        <option value=\"60\" ").concat(t.interval === 60 ? 'selected' : '', ">60 min</option>\n      </select>\n      <button onclick=\"removeSlotTurno(").concat(i, ")\"\n        style=\"margin-left:auto;background:#fff;border:1.5px solid #e74c3c;color:#c0392b;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">&#128465;</button>\n    </div>")).join('');
 }
-function _syncSlotTurnos(turnos) {
+// mutatorFn recibe el array de turnos actual (local o el más reciente de
+// Firebase, según el intento) y lo modifica in-place. Evita que dos
+// ediciones de turnos casi simultáneas (dos dispositivos) se pisen entre
+// sí — igual que el resto de escrituras "leer todo, modificar, guardar
+// todo" arregladas en esta misma pasada.
+function _mutateSlotTurnos(mutatorFn) {
+  const turnos = getSlotTurnos();
+  mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  const max = getSlotMax();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+      mutatorFn(t);
+      return { turnos: t, max: (current && current.max) || getSlotMax() };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
+  }
+  return turnos;
 }
 function addSlotTurno() {
-  const turnos = getSlotTurnos();
-  turnos.push({
-    start: '19:30',
-    end: '23:30',
-    interval: 30
+  const turnos = _mutateSlotTurnos(function (t) {
+    t.push({ start: '19:30', end: '23:30', interval: 30 });
   });
-  _syncSlotTurnos(turnos);
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
-  const turnos = getSlotTurnos();
-  turnos.splice(idx, 1);
-  _syncSlotTurnos(turnos);
+  const turnos = _mutateSlotTurnos(function (t) {
+    if (idx < t.length) t.splice(idx, 1);
+  });
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
-  const turnos = getSlotTurnos();
-  turnos[idx][field] = value;
-  _syncSlotTurnos(turnos);
+  _mutateSlotTurnos(function (t) {
+    if (t[idx]) t[idx][field] = value;
+  });
 }
 function saveSlotConfig() {
   const maxInp = document.getElementById('slot-max-input');
@@ -4276,10 +4766,23 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
-  const turnos = getSlotTurnos();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  const turnosLocal = getSlotTurnos();
+  // Transacción real en vez de leer-modificar-guardar sin más — antes, si
+  // otro dispositivo acababa de añadir/quitar un turno justo antes de este
+  // guardado (que solo cambia el número máximo por turno), se escribía
+  // encima con la copia de turnos que este dispositivo tenía en caché,
+  // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
+  // patrón para las demás ediciones de turnos.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+      return { turnos: t, max: max };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
+  }
   showToast('slot-config-toast');
-  logActivity('🕐 Turnos actualizados — ' + turnos.length + ' franjas · max ' + max + ' pedidos/turno');
+  logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
 }
 
@@ -4650,7 +5153,19 @@ async function activarFinDeNoche() {
   }
   const pedidos = ((_stats = stats) === null || _stats === void 0 ? void 0 : _stats.count) || 0;
   const total = ((_stats2 = stats) === null || _stats2 === void 0 || (_stats2 = _stats2.total) === null || _stats2 === void 0 ? void 0 : _stats2.toFixed(2)) || '0.00';
+  // Antes esto se quedaba siempre vacío — el HTML de abajo ya estaba
+  // preparado para pintar el top 3 con medallas, pero nadie lo rellenaba.
   const topSorted = [];
+  if (stats && Array.isArray(stats.orders)) {
+    const conteoProductos = {};
+    stats.orders.forEach(o => {
+      (o.items || []).forEach(it => {
+        if (it.isFee || !it.name) return;
+        conteoProductos[it.name] = (conteoProductos[it.name] || 0) + (it.qty || 0);
+      });
+    });
+    topSorted.push(...Object.entries(conteoProductos).sort((a, b) => b[1] - a[1]).slice(0, 3));
+  }
 
   // 3. Resetear turnos
   _slotsCache = {};
@@ -4802,16 +5317,51 @@ async function dcCargar() {
   if (!el) return;
   if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
   const discounts = await window.fb_loadDiscounts().catch(() => ({}));
-  const keys = Object.keys(discounts || {});
+  // Los códigos RAS-/RUL- los genera juegos.php para cada premio ganado en
+  // la Ruleta o el Rasca (origen: 'ruleta'|'rasca') — de un solo uso y
+  // caducan solos a las 48h. No son códigos que el admin haya creado a
+  // mano, así que no se listan aquí para no ahogar la lista.
+  const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
     const remaining = d.maxUses - (d.uses || 0);
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
+    return '<div id="dc-row-' + escapeAttr(code) + '" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
       + '<div><strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
       + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
       + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes</span></div>'
       + '<button data-code="' + escapeAttr(code) + '" onclick="dcEliminar(this.dataset.code)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Eliminar</button>'
+      + '</div>';
+  }).join('');
+}
+
+// Los premios de la Ruleta/Rasca (RAS-/RUL-) no aparecen en la lista de
+// arriba, pero siguen guardados en discounts/ con el teléfono con el que
+// jugó el cliente — esto permite encontrarlos si el cliente pierde su
+// código y llama pidiéndolo.
+async function dcBuscarPorTelefono() {
+  const el = document.getElementById('dc-buscar-resultado');
+  if (!el) return;
+  const tel = (document.getElementById('dc-buscar-tel').value || '').replace(/\D/g, '');
+  if (!/^\d{9}$/.test(tel)) { el.innerHTML = '<span style="color:#c0392b">Introduce un teléfono válido (9 dígitos)</span>'; return; }
+  if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
+  el.innerHTML = 'Buscando…';
+  const discounts = await window.fb_loadDiscounts().catch(() => ({}));
+  const ahoraMs = Date.now();
+  const codigos = Object.keys(discounts || {}).filter(code => discounts[code].telefono === tel);
+  if (!codigos.length) { el.innerHTML = '<span style="color:#8A6A4E">No se encontró ningún código de premio para ese teléfono</span>'; return; }
+  el.innerHTML = codigos.map(code => {
+    const d = discounts[code];
+    const usado = (d.uses || 0) >= d.maxUses;
+    const caducado = d.expiraEn && ahoraMs > d.expiraEn;
+    let estado = 'disponible', color = '#2e7d32';
+    if (usado) { estado = 'ya usado'; color = '#c0392b'; }
+    else if (caducado) { estado = 'caducado'; color = '#c0392b'; }
+    return '<div style="padding:6px 0;border-bottom:1px solid #F5E6C8">'
+      + '<strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
+      + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
+      + ' <span style="font-size:11px;font-weight:700;color:' + color + '">' + estado + '</span>'
+      + (d.origen ? ' <span style="font-size:11px;color:#8A6A4E">(' + escapeHtml(d.origen) + ')</span>' : '')
       + '</div>';
   }).join('');
 }
@@ -4845,6 +5395,10 @@ async function dcAplicar(code) {
   if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
   const d = await window.fb_getDiscount(code).catch(() => null);
   if (!d) { showDiscountError('Código no válido'); return; }
+  // Los premios de la ruleta/rasca caducan a las 48h (expiraEn) — los
+  // códigos creados a mano desde el panel no llevan ese campo, así que
+  // esta comprobación no les afecta.
+  if (d.expiraEn && Date.now() > d.expiraEn) { showDiscountError('Este código ha caducado'); return; }
   if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
   _activeDiscount = { code, pct: d.pct };
   showDiscountOk(code, d.pct);
@@ -5166,7 +5720,10 @@ function _bimbaPintarConfigEquipo(empleados) {
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
   _equipoPagoConfig[empId].tipoPago = tipo;
-  _bimbaGuardarPagoConfig();
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = {};
+    cfg[empId].tipoPago = tipo;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarCalcEquipo(empleados);
@@ -5174,12 +5731,29 @@ function bimbaSetTipoPago(empId, tipo) {
 function bimbaActualizarPago(empId, campo, valor) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = { tipoPago: 'hora' };
   const val = parseFloat(valor);
-  _equipoPagoConfig[empId][campo] = isNaN(val) ? null : val;
-  _bimbaGuardarPagoConfig();
+  const valorGuardado = isNaN(val) ? null : val;
+  _equipoPagoConfig[empId][campo] = valorGuardado;
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = { tipoPago: 'hora' };
+    cfg[empId][campo] = valorGuardado;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarCalcEquipo(empleados);
 }
-function _bimbaGuardarPagoConfig() {
+// mutatorFn modifica in-place la config de pago de UN empleado. Se aplica
+// contra el valor más reciente de Firebase (transacción), no contra la
+// copia en memoria de _equipoPagoConfig, que solo se cargó una vez al abrir
+// el overlay — así dos personas editando el pago de dos empleados distintos
+// a la vez no se pisan la una a la otra.
+function _bimbaGuardarPagoConfig(mutatorFn) {
+  if (window.fb_transactNative) {
+    window.fb_transactNative('config/empleadosPago', function (current) {
+      const cfg = current || {};
+      mutatorFn(cfg);
+      return cfg;
+    }).catch(() => {});
+    return;
+  }
   firebase.database().ref('config/empleadosPago').set(_equipoPagoConfig).catch(() => {});
 }
 function _bimbaCosteEmpleado(emp) {
@@ -5478,15 +6052,27 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
-    });
-    await ref.set(actual);
+    // Transacción: ventasProductos/<fecha> también lo escribe cada pedido
+    // real de un cliente (recordProductSales, en antifraude.js) mientras se
+    // puede estar guardando una venta manual aquí — con un .set() plano
+    // (leer, sumar en memoria, sobreescribir todo el nodo) una venta real
+    // que llegara justo en medio se podía perder sin ningún aviso.
+    const mutator = function (current) {
+      const actual = current || {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
+    };
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();
@@ -5530,6 +6116,7 @@ function bimbaPintarTicketConfig() {
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
   bimbaPintarTicketConfig();
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
 function closeTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.remove('open');
@@ -5595,9 +6182,9 @@ async function imprimirTodosLosActivos() {
 
 function _markAsImpreso(orderNum) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Idempotente:
+  // reimprimir el mismo pedido no vuelve a restar del contador.
+  _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';
@@ -5649,19 +6236,33 @@ function shareOrderWhatsApp(orderNum, name, slotTime, items, total) {
 }
 
 // ── DISPOSITIVO DE CONFIANZA ─────────────────────────────────────────────────
-// El token almacenado es: sha256(uid_firebase + contraseña_hasheada)
-// Así, aunque alguien acceda al localStorage, el token solo es válido
-// para el UID concreto de esta sesión Firebase — no es un string genérico.
+// El token de confianza es un secreto ALEATORIO generado en el momento de
+// marcar el dispositivo (no una fórmula a partir de datos que ya son
+// públicos o casi — antes era sha256(uid + hash de la contraseña), y el uid
+// y el hash por defecto están en el JS que se manda al navegador, así que
+// cualquiera que supiera el uid del admin podía calcular un token válido
+// sin haber iniciado sesión nunca). Solo se guarda su HASH en Firebase
+// (config/trustedDevices/<deviceId>), y la comprobación la hace el
+// servidor (bimba-verify.php) — así "Expulsar" desde el panel puede borrar
+// ese registro y el dispositivo pierde el acceso de verdad, no solo hasta
+// que recargue la página.
 const TRUSTED_KEY = 'dpf_trusted_device';
 const TRUSTED_NAME_KEY = 'dpf_trusted_device_name';
-const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // hash vinculado al UID
+const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado de nada público
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
+const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
 
-async function _buildTrustedToken(uid) {
-  // Token = SHA-256(uid + ADMIN_PWD_DEFAULT_HASH) — usa la contraseña hasheada como sal
-  const raw = uid + (localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH);
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = 'dev_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -5671,27 +6272,29 @@ function getTrustedExpiryDays() {
 
 async function isTrustedDevice() {
   if (localStorage.getItem(TRUSTED_KEY) !== 'yes') return false;
-  // Comprobar expiración
+  // Comprobar expiración local primero (evita una llamada de red inútil)
   const expiry = parseInt(localStorage.getItem(TRUSTED_EXPIRY_KEY) || '0');
   if (expiry && Date.now() > expiry) {
-    // Sesión expirada — limpiar
-    localStorage.removeItem(TRUSTED_KEY);
-    localStorage.removeItem(TRUSTED_TOKEN_KEY);
-    localStorage.removeItem(TRUSTED_EXPIRY_KEY);
+    await setTrustedDevice(false);
     console.log('[trusted] sesión expirada');
     return false;
   }
-  // Requiere sesión Firebase activa con UID
-  const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
-  if (!user || !user.uid) return false;
-  // Verificar que el token almacenado corresponde al UID actual
-  const storedToken = localStorage.getItem(TRUSTED_TOKEN_KEY);
-  if (!storedToken) return false;
+  const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+  if (!token) return false;
+  // Comprobación real en el servidor: si el admin ha "expulsado" este
+  // dispositivo desde el panel, su registro ya no existe en Firebase y
+  // esto falla aunque el token siga guardado en este navegador.
   try {
-    const expected = await _buildTrustedToken(user.uid);
-    return storedToken === expected;
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkTrustedDevice', deviceId: getDeviceId(), token })
+    });
+    const data = await res.json();
+    if (!data.success) { await setTrustedDevice(false); return false; }
+    return true;
   } catch (e) {
-    return false;
+    return false; // red caída: por seguridad, pedir login en vez de asumir confianza
   }
 }
 
@@ -5703,14 +6306,31 @@ async function setTrustedDevice(val, name) {
   if (val) {
     const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
     if (!user || !user.uid) return; // no guardar si no hay sesión real
-    const token = await _buildTrustedToken(user.uid);
+    const token = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '_' + Math.random().toString(36).slice(2));
+    const tokenHash = await _sha256Hex(token);
+    const deviceId = getDeviceId();
     const days = getTrustedExpiryDays();
     const expiry = Date.now() + days * 24 * 60 * 60 * 1000;
+    // Escritura autenticada (ya hay sesión real de admin en este momento) —
+    // el servidor solo guarda el HASH, nunca el token en sí.
+    await firebase.database().ref('config/trustedDevices/' + deviceId).set({
+      tokenHash: tokenHash,
+      name: name || 'Sin nombre',
+      createdAt: Date.now(),
+    });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');
     localStorage.setItem(TRUSTED_TOKEN_KEY, token);
     localStorage.setItem(TRUSTED_EXPIRY_KEY, String(expiry));
   } else {
+    // Si hay sesión real, limpiar también el registro en Firebase — igual
+    // que arriba, si no hay sesión (p.ej. venimos de una comprobación
+    // fallida sin login) esta escritura fallará en silencio y no pasa nada,
+    // el registro se queda pero el token local ya no sirve para nada.
+    try {
+      const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
+      if (user && user.uid) await firebase.database().ref('config/trustedDevices/' + getDeviceId()).remove();
+    } catch (e) {}
     localStorage.removeItem(TRUSTED_KEY);
     localStorage.removeItem(TRUSTED_NAME_KEY);
     localStorage.removeItem(TRUSTED_TOKEN_KEY);
@@ -5832,6 +6452,7 @@ async function openAdmin() {
       window._mySessionId = _SESSION_ID;
       await window.fb_registerSession({
         sid: _SESSION_ID,
+        deviceId: getDeviceId(),
         device: device,
         time: new Date().toLocaleString('es-ES'),
         ts: Date.now(),
@@ -6019,14 +6640,9 @@ async function openAdmin() {
 })();
 
 // ── ACCESO BIMBA POR CANDADO ────────────────────────────────────────────────
-// Contraseña almacenada como hash SHA-256 con sal — nunca en texto plano
-const _BIMBA_SALT = 'dpf_2026_x7q';
-const BIMBA_PWD_HASH = '94817839a2d2ae89cf3c0cd4afdf73526ab401525e7a2e557aadf7a8e4fcb4f8';
-async function hashBimbaPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd + _BIMBA_SALT));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// El PIN se comprueba en el servidor (bimba-verify.php), nunca en el
+// navegador — así no queda ningún hash extraíble en el JS público y el
+// límite de intentos es real (no se puede probar offline sin límite).
 function secureLockTap() {
   document.getElementById('secure-pin-input').value = '';
   document.getElementById('secure-pin-error').style.display = 'none';
@@ -6038,11 +6654,24 @@ function secureLockCerrar() {
 }
 async function secureLockConfirm() {
   const val = document.getElementById('secure-pin-input').value;
-  const hash = await hashBimbaPwd(val);
-  if (hash === BIMBA_PWD_HASH) {
+  let ok = false, errMsg = 'Contraseña incorrecta';
+  try {
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: val })
+    });
+    const data = await res.json();
+    ok = !!data.success;
+    if (data.error) errMsg = data.error;
+  } catch (e) {
+    errMsg = 'Error de conexión. Inténtalo de nuevo.';
+  }
+  if (ok) {
     document.getElementById('secure-pin-modal').style.display = 'none';
     setTimeout(_updateAudioBannerState, 200);
     _adminLoggedIn = true; window._adminLoggedIn = true;
+    _cargarDatosEmpleadosPrivados();
     if (window._bimbaTargetEmpleados) {
       window._bimbaTargetEmpleados = false;
       logActivity('👥 Acceso a empleados por bimba');
@@ -6054,8 +6683,6 @@ async function secureLockConfirm() {
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
       }, 100);
-      return;
-      showAdminSection('bimba-empleados', null);
     } else {
       logActivity('🔒 Acceso bimba por candado');
       openStockConfigSecret();
@@ -6066,6 +6693,7 @@ async function secureLockConfirm() {
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
   } else {
+    document.getElementById('secure-pin-error').textContent = errMsg;
     document.getElementById('secure-pin-error').style.display = 'block';
     document.getElementById('secure-pin-input').value = '';
     document.getElementById('secure-pin-input').focus();
@@ -6096,7 +6724,12 @@ async function _checkSlotAlmostFull(slotTime, count, max) {
   if (!slotTime || !max) return;
   const pct = Math.round((count / max) * 100);
   if (pct < 80) return;
-  const key = slotTime + '_' + count;
+  // La fecha va incluida en la clave para que la alerta pueda volver a
+  // dispararse cada día — antes, si la pantalla de cocina se quedaba
+  // abierta pasada la medianoche (uso normal en una pantalla siempre
+  // encendida), un slot que llegara otra vez a ese mismo recuento al día
+  // siguiente no volvía a avisar hasta recargar la página.
+  const key = new Date().toISOString().slice(0, 10) + '_' + slotTime + '_' + count;
   if (_slotAlertSent[key]) return;
   _slotAlertSent[key] = true;
   try {
@@ -6133,7 +6766,7 @@ async function closeAdmin() {
   if (eyeOpen) eyeOpen.style.display = 'block';
   if (eyeClosed) eyeClosed.style.display = 'none';
   stopAlertLoop();
-  _alertPendingOrders = 0;
+  _resetPedidosPendientesAlerta();
   document.getElementById('admin-overlay').classList.remove('open');
   // Resetear estado login/panel para la próxima apertura
   document.getElementById('admin-login').style.display = 'block';
@@ -6202,8 +6835,13 @@ function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
@@ -6263,6 +6901,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -6272,13 +6917,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -6334,18 +6975,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
@@ -6406,7 +7040,29 @@ function loadUrlTokenUI() {
     }
   }
 }
-let _adminFailedAttempts = 0;
+// Antes _adminFailedAttempts solo vivía en memoria: recargar la pantalla de
+// login (F5) lo volvía a poner a 0 y se saltaba el retraso progresivo
+// entero. Se persiste en localStorage (con la hora del último fallo, para
+// que 30 minutos sin ningún fallo lo reseteen solos y no penalice a un
+// admin de verdad que vuelve más tarde).
+const ADMIN_FAILED_KEY = 'dpf_admin_failed_attempts';
+const ADMIN_FAILED_RESET_MS = 30 * 60 * 1000;
+function _cargarIntentosFallidosAdmin() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ADMIN_FAILED_KEY) || 'null');
+    if (raw && typeof raw.count === 'number' && typeof raw.ts === 'number' && (Date.now() - raw.ts) < ADMIN_FAILED_RESET_MS) {
+      return raw.count;
+    }
+  } catch (e) {}
+  return 0;
+}
+function _guardarIntentosFallidosAdmin(count) {
+  try {
+    if (count > 0) localStorage.setItem(ADMIN_FAILED_KEY, JSON.stringify({ count, ts: Date.now() }));
+    else localStorage.removeItem(ADMIN_FAILED_KEY);
+  } catch (e) {}
+}
+let _adminFailedAttempts = _cargarIntentosFallidosAdmin();
 let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
@@ -6518,11 +7174,13 @@ async function checkAdminPwd() {
   if (result.ok) {
     var _document$getElementB6, _document$getElementB7;
     _adminFailedAttempts = 0;
+    _guardarIntentosFallidosAdmin(0);
     const trustedChecked = (_document$getElementB6 = document.getElementById('trusted-device-check')) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.checked;
     const trustedName = ((_document$getElementB7 = document.getElementById('trusted-device-name')) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value.trim()) || 'Sin nombre';
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();
@@ -6536,6 +7194,7 @@ async function checkAdminPwd() {
     logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
   } else {
     _adminFailedAttempts++;
+    _guardarIntentosFallidosAdmin(_adminFailedAttempts);
     const errMsg = result.msg || 'Error al iniciar sesión';
     let errDisplay = errMsg;
     if (_adminFailedAttempts >= 3) {
@@ -6886,11 +7545,11 @@ function renderPromos() {
       '<span style="position:absolute;top:0;left:12px;background:#3D1F0D;color:#FFF8EE;font-size:11px;font-weight:700;padding:3px 12px;border-radius:20px">🔥 Promo</span>' +
       '<div style="background:#fdecd5;border:1.5px solid #3D1F0D;border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px">' +
       '<div style="flex:1">' +
-      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + p.nombre + '</div>' +
-      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + (p.descripcion || '') + '</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + escapeHtml(p.nombre) + '</div>' +
+      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(p.descripcion || '') + '</div>' +
       '<div>' + precioTachado + '<span style="font-size:14px;font-weight:700;color:#3D1F0D">' + parseFloat(p.precio).toFixed(2) + ' €</span></div>' +
       '</div>' +
-      '<button onclick="promoAnadir(\'' + p.id + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
+      '<button onclick="promoAnadir(\'' + escapeAttr(p.id) + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
       '</div></div>';
   }).join('');
 }
@@ -6961,7 +7620,7 @@ function promoAbrirModal(p) {
 
   var titleRow = document.createElement('div');
   titleRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px';
-  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + p.nombre + '</div>';
+  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + escapeHtml(p.nombre) + '</div>';
   var closeBtn = document.createElement('button');
   closeBtn.innerHTML = '×';
   closeBtn.style.cssText = 'background:none;border:none;font-size:22px;color:#8A6A4E;cursor:pointer;padding:0;line-height:1';
@@ -7056,8 +7715,9 @@ function renderMenu() {
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
+          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
@@ -7094,14 +7754,17 @@ function renderMenu() {
     } else {
       controls = '<button class="add-btn" onclick="changeQty(' + item.id + ',+1)" title="Añadir">+</button>';
     }
+    const esTopVentas = item.name && item.name.indexOf('🔥') !== -1;
+    const nombreParaBadge = esTopVentas ? item.name.replace('🔥', '').trim() : item.name;
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
       + ' data-name="' + escapeAttr(item.name) + '"'
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
+      + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
@@ -7289,9 +7952,21 @@ function saveHorario() {
   const manClose = document.getElementById('h-man-close') ? document.getElementById('h-man-close').value : '';
   const tarOpen = document.getElementById('h-tar-open') ? document.getElementById('h-tar-open').value : '';
   const tarClose = document.getElementById('h-tar-close') ? document.getElementById('h-tar-close').value : '';
-  const closedMsgMid = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
-  const closedMsgNight = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
-  const closedMsgDay = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  // Estos 3 campos no tienen valor por defecto en el HTML (solo
+  // placeholder) y solo se rellenan cuando termina de cargar el horario
+  // desde Firebase (loadAdminHorario). Si se guarda en un dispositivo/
+  // sesión nueva antes de que esa carga termine, los campos están vacíos
+  // en pantalla sin que el admin haya tocado nada — así que si están
+  // vacíos aquí, se conserva el mensaje personalizado que ya hubiera
+  // guardado antes, en vez de borrarlo sin querer.
+  let _hPrev = {};
+  try { _hPrev = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}'); } catch {}
+  const closedMsgMidRaw = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
+  const closedMsgNightRaw = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
+  const closedMsgDayRaw = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  const closedMsgMid = closedMsgMidRaw || _hPrev.closedMsgMid || '';
+  const closedMsgNight = closedMsgNightRaw || _hPrev.closedMsgNight || '';
+  const closedMsgDay = closedMsgDayRaw || _hPrev.closedMsgDay || '';
   const h = {
     manOpen,
     manClose,
@@ -7415,10 +8090,16 @@ function checkAutoCloseWarning() {
     return;
   }
   const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Mismo criterio de "día de servicio" que isOutsideHours()/isTodayOpen():
+  // antes de las 06:00 se trata como parte del día anterior (y su minuto se
+  // extiende +1440) — sin esto, un cierre después de medianoche (ej. 00:30)
+  // hacía que este punto verde/rojo dijera "cerrado" o "día cerrado"
+  // contradiciendo al formulario de pedido, que con isOutsideHours() ya
+  // corregido seguía activo debajo.
+  const nowMin = (now.getHours() < 6) ? (now.getHours() * 60 + now.getMinutes() + 1440) : (now.getHours() * 60 + now.getMinutes());
 
   // Bloquear pedidos si hoy es día cerrado (independientemente del toggle manual)
-  const todayDay = now.getDay();
+  const todayDay = (now.getHours() < 6) ? (now.getDay() + 6) % 7 : now.getDay();
   const diasAbiertos = (_h$diasAbiertos2 = h.diasAbiertos) !== null && _h$diasAbiertos2 !== void 0 ? _h$diasAbiertos2 : [2, 3, 4, 5, 6, 0];
   if (!diasAbiertos.includes(todayDay)) {
     const dot2 = document.querySelector('.dot');
@@ -7485,7 +8166,13 @@ function checkAutoCloseWarning() {
   // mediodía). manOpen/tarClose siguen editándose por separado en el panel,
   // pero aquí solo se usan los extremos.
   const openStartMin = getMinutes(h.manOpen) ?? getMinutes(h.tarOpen);
-  const closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  let closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  // Si cierra después de medianoche, expresarlo en el mismo espacio
+  // extendido que nowMin (ver más arriba) para poder comparar de forma
+  // continua — mismo arreglo que en isOutsideHours().
+  if (openStartMin !== null && closeEndMin !== null && closeEndMin < openStartMin) {
+    closeEndMin += 1440;
+  }
   const sessions = (openStartMin !== null && closeEndMin !== null)
     ? [{ open: openStartMin, close: closeEndMin }]
     : [];
@@ -7682,7 +8369,10 @@ function toggleFeeEnabled() {
   showToast('fee-toast');
 }
 function saveFeeFromPanel() {
-  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
+  // Antes "|| 0.50" trataba un 0 escrito a propósito como si no se hubiera
+  // escrito nada (0 es falsy en JS) y lo sustituía por 0,50€ sin avisar.
+  const parsedAmount = parseFloat(document.getElementById('fee-amount-input').value);
+  const amount = (isNaN(parsedAmount) || parsedAmount < 0) ? 0.50 : parsedAmount;
   const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
   saveFeeConfig(getFeeEnabled(), amount, label);
   loadFeeUI();
@@ -7753,8 +8443,14 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
+    // Si cierra después de medianoche (closeEnd < openStart), hay que expresar
+    // closeEnd en el mismo "espacio extendido" que nowMin (que ya suma 1440
+    // antes de las 06:00) para poder comparar de forma continua — antes
+    // comparaba nowMin extendido contra closeEnd sin extender, así que entre
+    // el cierre real (ej. 00:30) y las 06:00 nunca detectaba que ya había
+    // cerrado (nowMin >= openStart seguía siendo cierto igual).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart || nowMin < closeEnd)
+      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado
@@ -7867,24 +8563,29 @@ function _ejecutarLoadOrdersStatus() {
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe
   checkVacationMode();
+  // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
+  // un cliente anónimo mirando la carta no tiene permiso de escritura en
+  // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
+  // generando avisos de "permission_denied" en la consola sin ningún efecto.
+  const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
       updateOpenBtn(false);
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
       localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
   const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
@@ -7919,12 +8620,19 @@ function formatPhone(input) {
 
 // ── FIDELIZACIÓN: comprobación de premio disponible al introducir teléfono ──
 async function _comprobarPremioFidelizacion(phoneClean) {
-  if (!window.fb_loadFidelizacionCliente) return;
+  // Consulta server-side (fidelizacion.php) en vez de leer Firebase
+  // directamente — así solo se ve lo mínimo (sellos/premios de ESTE
+  // teléfono) y nadie puede fisgonear el nombre/historial de otro cliente.
   try {
-    const cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-    const premiosPendientes = cliente
-      ? (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : (cliente.premioDisponible ? 1 : 0))
-      : 0;
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'consultar', telefono: phoneClean })
+    });
+    const data = await res.json();
+    if (!data.success) return;
+    const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
+    const premiosPendientes = cliente.premiosPendientes;
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
@@ -7945,6 +8653,10 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
     }
+    // Repintar el carrito para que el total ya refleje el premio (o deje
+    // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
+    // el carrito para que se note el cambio.
+    if (typeof renderCart === 'function') renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {
@@ -8114,20 +8826,33 @@ function getUrlToken() {
 function getBimbaToken() {
   return localStorage.getItem(BIMBA_TOKEN_KEY) || '';
 }
-(function checkUrlToken() {
+(async function checkUrlToken() {
   const params = new URLSearchParams(window.location.search);
+
+  // Ambos tokens (?key= y ?bimba=) se comprueban en el servidor
+  // (bimba-verify.php) con límite de intentos — antes se comparaban aquí
+  // contra un valor precargado en localStorage para TODO visitante, lo
+  // que permitía a cualquier cliente leer su propio localStorage y
+  // auto-concederse acceso sin conocer el token real.
 
   // Token admin normal
   const key = params.get('key');
   if (key) {
-    const saved = getUrlToken();
-    if (saved && key === saved) {
-      setTimeout(() => {
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('🔗 Acceso por URL token');
-        openAdmin();
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkAdminUrlToken', token: key })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => {
+          setTimeout(_updateAudioBannerState, 200);
+          logActivity('🔗 Acceso por URL token');
+          openAdmin();
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 
   // Token bimba — abre directamente el panel sin contraseña.
@@ -8136,17 +8861,32 @@ function getBimbaToken() {
   // tickets, gastos, fichajes, etc. Solo sirve para ver la interfaz.
   const bimbaKey = params.get('bimba');
   if (bimbaKey) {
-    const saved = getBimbaToken();
-    if (saved && bimbaKey === saved) {
-      setTimeout(() => {
-        logActivity('🔗 Acceso bimba por URL token');
-        _adminLoggedIn = true; window._adminLoggedIn = true;
-        openStockConfigSecret();
-        document.getElementById('admin-overlay').classList.add('open');
-        document.getElementById('admin-login').style.display = 'none';
-        document.getElementById('admin-panel').style.display = 'block';
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkBimbaToken', token: bimbaKey })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // admin-shell.html se inyecta de forma diferida (carga eager a los
+        // 2s, o al vuelo desde openAdmin()) — este acceso directo por URL
+        // puede llegar antes de que exista, así que hay que esperar a que
+        // esté listo antes de tocar sus elementos (si no, "#admin-overlay"
+        // aún no existe y todo esto revienta con un error silencioso).
+        if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
+          await new Promise(resolve => loadAdminShell(resolve));
+        }
+        setTimeout(() => {
+          logActivity('🔗 Acceso bimba por URL token');
+          _adminLoggedIn = true; window._adminLoggedIn = true;
+          openStockConfigSecret();
+          document.getElementById('admin-overlay').classList.add('open');
+          document.getElementById('admin-login').style.display = 'none';
+          document.getElementById('admin-panel').style.display = 'block';
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 })();
 
@@ -8202,18 +8942,10 @@ document.addEventListener('keydown', function (e) {
     var _document$getElementB9;
     window._secretKeyBuf += e.key.toLowerCase();
     if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    {
-      const _last5 = window._secretKeyBuf.slice(-5);
-      if (_last5.length === 5) {
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(_last5 + _BIMBA_SALT)).then(buf => {
-          const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-          if (h === BIMBA_PWD_HASH) {
-            window._secretKeyBuf = '';
-            openStockConfigSecret();
-          }
-        });
-      }
-    }
+    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
+    // en cualquier parte de la página se ha quitado — comprobaba el hash en
+    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
+    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
     if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
       const inp = document.getElementById('log-secret-input');
       if (inp) {
@@ -8261,6 +8993,7 @@ function logActivity(action) {
   if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
     window.fb_saveActivityLog(trimmed).catch(() => {});
   }
+  if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 function renderActivityLog() {
   const log = getActivityLog();
@@ -8270,7 +9003,103 @@ function renderActivityLog() {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin actividad registrada</div>';
     return;
   }
-  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(e.time, "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(e.action, "</span>\n    </div>")).join('');
+  // e.action pasa por logActivity() desde toda la app y a menudo lleva
+  // texto libre interpolado (nombres de ingredientes, proveedores,
+  // empleados, categorías...) — hay que escapar aquí, en el único sitio
+  // donde se renderiza, en vez de perseguir cada origen por separado.
+  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(escapeHtml(e.time), "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n    </div>")).join('');
+}
+
+// ══════════════════════════════════════════════
+//  ALERTAS (subconjunto del registro de actividad: fallos silenciosos
+//  al guardar pedidos/sellos y precios que no cuadran con la carta)
+// ══════════════════════════════════════════════
+const ALERTAS_SEEN_KEY = 'dpf_alertas_last_seen_ts';
+function isAlertEntry(action) {
+  return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0);
+}
+function getAlertEntries() {
+  return getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
+}
+function updateAlertBadge() {
+  const badge = document.getElementById('alertas-tab-badge');
+  if (!badge) return;
+  const lastSeen = localStorage.getItem(ALERTAS_SEEN_KEY) || '';
+  const unseen = getAlertEntries().filter(e => (e.ts || '') > lastSeen).length;
+  if (unseen > 0) {
+    badge.textContent = unseen > 99 ? '99+' : String(unseen);
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+// Persiste el log completo (local + Firebase si hay sesión) — usado tanto
+// por logActivity() como por resolverAlerta() al marcar una entrada.
+function _persistActivityLog(log) {
+  localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+  if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_saveActivityLog(log).catch(() => {});
+  }
+}
+// Marca una alerta como resuelta (desaparece de la lista y del badge, pero
+// sigue existiendo en el registro de actividad completo). Se usa tanto al
+// pulsar "Descartar" como automáticamente tras un "Reintentar" con éxito.
+function resolverAlerta(ts) {
+  const log = getActivityLog();
+  const entry = log.find(e => e.ts === ts);
+  if (!entry) return;
+  entry.resolved = true;
+  _persistActivityLog(log);
+  renderAlertas();
+}
+function _alertaDomId(ts) {
+  return 'alerta-' + String(ts).replace(/[^a-zA-Z0-9]/g, '');
+}
+async function reintentarGuardadoPedido(ts, orderNum, fecha) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reintentarStats', orderNum, fecha })
+    });
+    const data = await res.json();
+    if (data.success) {
+      resolverAlerta(ts); // vuelve a pintar la lista sin esta tarjeta
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+      if (statusEl) { statusEl.textContent = '❌ ' + (data.error || 'No se pudo recuperar.'); statusEl.style.display = 'block'; }
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+    if (statusEl) { statusEl.textContent = '❌ Error de conexión, inténtalo de nuevo.'; statusEl.style.display = 'block'; }
+  }
+}
+function renderAlertas() {
+  const entries = getAlertEntries();
+  const el = document.getElementById('alertas-list');
+  if (!el) return;
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos pendientes</div>';
+  } else {
+    el.innerHTML = entries.map(e => {
+      const critico = e.action.indexOf('🚨') === 0;
+      const bg = critico ? '#FBEAE7' : '#FDECD5';
+      const border = critico ? '#F0CFC8' : '#EFD6A9';
+      const puedeReintentar = e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha;
+      const retryBtn = puedeReintentar
+        ? "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>")
+        : '';
+      return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+    }).join('');
+  }
+  // Marcar como vistos: la próxima vez que se recalcule el badge, estos
+  // avisos ya no cuentan como nuevos.
+  if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
+  updateAlertBadge();
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
@@ -8303,17 +9132,22 @@ function applyAutoDelete() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  let hist = getHistorial();
-  const before = hist.length;
+  const original = getHistorial();
+  const before = original.length;
   // Cap de seguridad: nunca más de 365 entradas independientemente del filtro de fecha
-  hist = hist.filter(d => d.date >= cutoffStr).slice(0, 365);
+  const hist = original.filter(d => d.date >= cutoffStr).slice(0, 365);
   if (hist.length !== before) {
+    // Las fechas borradas se calculan ANTES de sobrescribir localStorage —
+    // antes se recalculaban leyendo getHistorial() DESPUÉS del
+    // localStorage.setItem() de abajo, así que siempre salía una lista
+    // vacía (ya no quedaba ninguna fecha antigua que leer) y stats/{fecha}
+    // nunca llegaba a borrarse de Firebase, solo de localStorage.
+    const deletedDates = original
+      .filter(d => d.date < cutoffStr)
+      .map(d => d.date);
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist));
     // Borrar también los días eliminados de Firebase (stats/{fecha})
     if (typeof firebase !== 'undefined' && firebase.database) {
-      const deletedDates = getHistorial()
-        .filter(d => d.date < cutoffStr)
-        .map(d => d.date);
       deletedDates.forEach(date => {
         firebase.database().ref('stats/' + date).remove().catch(() => {});
       });
@@ -8418,6 +9252,14 @@ function exportTodayCSV() {
   }
   downloadCSV(stats, "pedidos_".concat(todayKey, ".csv"));
 }
+// El nombre del cliente es texto libre sin restricción de caracteres — una
+// comilla suelta dentro de un campo entrecomillado corta el campo antes de
+// tiempo y desplaza el resto de comas de esa fila a las columnas
+// equivocadas al abrirlo en Excel/Sheets. Se duplica cada comilla interna,
+// que es como CSV espera que se escapen ("" dentro de un campo "...").
+function _csvEscape(str) {
+  return String(str == null ? '' : str).replace(/"/g, '""');
+}
 function exportHistorialCSV() {
   const hist = getHistorial();
   if (!hist.length) {
@@ -8427,7 +9269,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -8443,7 +9285,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'
@@ -8472,8 +9314,12 @@ function buildTicketHTML(data) {
   const tc = getTicketConfig();
   const sep = '─'.repeat(32);
   const sep2 = '═'.repeat(32);
+  // Los nombres de producto/extras vienen de lo que el navegador mand\u00F3 a
+  // guardar-pedido.php \u2014 pueden manipularse con una petici\u00F3n directa al
+  // servidor (sin pasar por la web), as\u00ED que hay que escaparlos igual que
+  // nombre/tel\u00E9fono/notas de abajo, no son m\u00E1s de fiar que esos.
   let itemsHTML = items.map(_ref21 => {
-    let n = _ref21.name,
+    let n = escapeHtml(_ref21.name),
       qty = _ref21.qty,
       subtotal = _ref21.subtotal,
       extras = _ref21.extras;
@@ -8481,7 +9327,7 @@ function buildTicketHTML(data) {
     const label = qty + 'x ' + n;
     if (extras && extras.length > 0) {
       const extrasList = extras.map(function(e) {
-        const extraName = (e && e.name) ? e.name : e;
+        const extraName = escapeHtml((e && e.name) ? e.name : e);
         const extraPrice = (e && e.price) ? '+' + parseFloat(e.price).toFixed(2).replace('.', ',') + ' \u20AC' : '';
         return '<div style="display:flex;justify-content:space-between"><span>&nbsp;&nbsp;&nbsp;\xB7 ' + extraName + '</span>' + (extraPrice ? '<span style="color:#aaa">' + extraPrice + '</span>' : '') + '</div>';
       }).join('');
@@ -8493,11 +9339,20 @@ function buildTicketHTML(data) {
     }
   }).join('');
 
-  const headerRow = slotTime
-    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + name.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
-    : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + name.toUpperCase() + '</div>';
+  // El nombre/tel\u00E9fono/notas los escribe el propio cliente en el checkout
+  // (solo se les limita la longitud, no los caracteres) y este HTML se
+  // inyecta luego con innerHTML en el panel de admin al ver/imprimir el
+  // ticket \u2014 sin escapar, un nombre o nota con <script> o <img onerror=...>
+  // se ejecutar\u00EDa en el navegador de quien lo abra con su sesi\u00F3n de admin.
+  const nameSafe = escapeHtml(name || '');
+  const notesSafe = escapeHtml(notes || '');
+  const phoneSafe = escapeHtml(phone || '');
 
-  return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phone ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phone + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " \u20AC</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notes ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notes, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
+  const headerRow = slotTime
+    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
+    : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + nameSafe.toUpperCase() + '</div>';
+
+  return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phoneSafe ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phoneSafe + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " \u20AC</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notesSafe ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notesSafe, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
 }
 function openPrintModal(ticketData) {
   currentTicketData = ticketData;
@@ -8510,20 +9365,70 @@ function closePrintModal() {
 }
 function doPrint() {
   if (!currentTicketData) return;
+  const orderNum = currentTicketData.orderNum;
 
   // Mandar a impresora térmica via Firebase
   if (window.fb_saveTicket) {
     const reimprKey = 'R' + Date.now();
     const ticketParaImpresora = Object.assign({}, currentTicketData, { _reimprimir: true });
     window.fb_saveTicket(reimprKey, ticketParaImpresora)
-      .then(() => { closePrintModal(); })
-      .catch(() => { closePrintModal(); });
+      .then(() => { _registrarEnvioTicket(orderNum, true); closePrintModal(); })
+      .catch(() => { _registrarEnvioTicket(orderNum, false); _avisarFalloEnvioTicket(orderNum); closePrintModal(); });
   } else {
     closePrintModal();
   }
 }
 function printLastTicket() {
   if (_lastTicketData) openPrintModal(_lastTicketData);
+}
+// Envía un pedido nuevo directo a la impresora térmica sin pasar por el
+// modal de vista previa — lo dispara el listener de fb_listenStats cuando
+// getTicketConfig().autoImprimir está activo. Sin el flag _reimprimir de
+// doPrint(): este es el print "original" del sistema, no una reimpresión
+// manual desde el panel.
+function _autoImprimirPedido(order) {
+  if (!window.fb_saveTicket) return;
+  const ticketData = {
+    orderNum: order.num,
+    name: order.name,
+    phone: order.phone || '',
+    notes: order.notes || '',
+    slotTime: order.slot || null,
+    items: order.items || [],
+    total: order.total,
+    time: order.time
+  };
+  const key = 'A' + Date.now() + '_' + order.num;
+  window.fb_saveTicket(key, ticketData)
+    .then(() => _registrarEnvioTicket(order.num, true))
+    .catch(() => { _registrarEnvioTicket(order.num, false); _avisarFalloEnvioTicket(order.num); });
+}
+// Aviso real cuando el envío del ticket a Firebase falla (offline, permisos...).
+// No sabemos si la impresora física llegó a sacar el papel — de eso se encarga
+// el programa que la conecta, fuera de esta web — pero al menos esto ya no se
+// queda callado como antes.
+function _avisarFalloEnvioTicket(orderNum) {
+  logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión');
+}
+const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
+function _registrarEnvioTicket(orderNum, ok) {
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  log.unshift({ num: orderNum, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
+  localStorage.setItem(TICKET_SEND_LOG_KEY, JSON.stringify(log.slice(0, 15)));
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
+}
+function _renderTicketSendLog() {
+  const el = document.getElementById('tc-envios-log');
+  if (!el) return;
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  el.innerHTML = log.length ? log.map(e =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:12px">'
+    + '<span>Pedido #' + escapeHtml(String(e.num)) + '</span>'
+    + '<span style="color:' + (e.ok ? '#27855a' : '#c0392b') + ';font-weight:700">' + (e.ok ? '✅ Enviado · ' : '❌ Falló · ') + e.time + '</span>'
+    + '</div>'
+  ).join('') : '<div style="font-size:12px;color:var(--muted)">Todavía no se ha enviado ningún ticket en este dispositivo</div>';
 }
 let _lastTicketData = null;
 async function printOrderFromStats(num, name, time, total, slot) {
@@ -8593,9 +9498,12 @@ function scheduleSlotMidnightReset() {
     localStorage.removeItem(OPEN_KEY);
     localStorage.removeItem(ORDERS_KEY);
     localStorage.removeItem('dpf_open_manual_override');
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    const _esAdminAutenticadoReset = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+    if (_esAdminAutenticadoReset) {
+      firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    }
     // También archivar el día anterior en historial
     try {
       const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8623,7 +9531,7 @@ function scheduleSlotMidnightReset() {
           modified = true;
         }
       });
-      if (modified) fichajesSave(fich);
+      if (modified && _esAdminAutenticadoReset) fichajesSave(fich);
     } catch (e) {
       console.warn('Auto-checkout error', e);
     }
@@ -8735,7 +9643,15 @@ function initFirebaseListeners() {
           }
         }
         if (_adminLoggedIn) {
-          _alertPendingOrders = diff;
+          const _nuevosPedidos = (stats.orders || []).slice(-diff);
+          if (getTicketConfig().autoImprimir) {
+            _nuevosPedidos.forEach(_autoImprimirPedido);
+          }
+          // Se SUMA cada pedido nuevo al contador (por número, no se puede
+          // duplicar) en vez de sobreescribirlo — antes, si llegaban dos
+          // avisos de "pedido nuevo" seguidos antes de atender el primero,
+          // el segundo pisaba el contador entero en vez de sumarse.
+          _nuevosPedidos.forEach(o => _marcarPedidoPendienteAlerta(o.num));
           startAlertLoop();
           const toast = document.getElementById('new-order-toast');
           if (toast) {
@@ -9194,18 +10110,19 @@ async function emergencySyncFromLocal() {
   }
 }
 function setLiveStatus(num, status) {
-  // Parar el sonido cuando se marca cualquier pedido
+  // Parar el sonido al momento cuando se marca cualquier pedido
   if (status === 'entregado' || status === 'recibido' || status === 'listo') {
     stopAlertLoop();
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-    if (_alertPendingOrders > 0) startAlertLoop && startAlertLoop();
   }
   setOrderStatus(num, status);
-  // Si se acepta un pedido, reducir contador de pendientes
-  if (status === 'preparando' || status === 'listo') {
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 0) - 1);
-    if (_alertPendingOrders === 0) stopAlertLoop();
+  // Cualquiera de estos estados cuenta como "ya visto" — se marca una sola
+  // vez por pedido (_marcarPedidoAtendido no hace nada si ya estaba
+  // marcado), así que da igual si pasa antes por "preparando" y luego por
+  // "listo": solo resta del contador la primera vez.
+  if (status === 'entregado' || status === 'recibido' || status === 'listo' || status === 'preparando') {
+    _marcarPedidoAtendido(num);
   }
+  if (_alertPendingOrders > 0) startAlertLoop();
   loadLiveOrders();
   refreshKitchenGrid();
 }
@@ -9676,7 +10593,7 @@ function checkForNewOrders(statsOverride) {
     _unseenOrders += diff;
     updateTabTitle(_unseenOrders);
     console.log('[DPF] NEW ORDER — calling showNewOrderNotification, diff=' + diff);
-    showNewOrderNotification(diff);
+    showNewOrderNotification((stats.orders || []).slice(-diff).map(o => o.num));
   }
 }
 
@@ -9689,6 +10606,30 @@ function clearUnseenOrders() {
 // Alert loop state
 let _alertLoopInterval = null;
 let _alertPendingOrders = 0;
+// Antes _alertPendingOrders era un contador suelto que varios sitios subían
+// o bajaban a mano (sobreescribiéndolo entero al detectar pedidos nuevos, o
+// restándole 1 desde tres sitios distintos: imprimir, marcar listo, marcar
+// entregado) — un mismo pedido marcado "listo" restaba dos veces porque
+// 'listo' entraba en dos condiciones distintas seguidas, y dos avisos de
+// "pedido nuevo" casi seguidos podían pisarse el contador en vez de sumar.
+// Ahora se lleva la cuenta por número de pedido concreto: añadir/quitar el
+// mismo pedido dos veces no hace nada la segunda vez.
+let _alertPendingOrderNumsSet = new Set();
+function _marcarPedidoPendienteAlerta(num) {
+  if (!num || _alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.add(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+}
+function _marcarPedidoAtendido(num) {
+  if (!num || !_alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.delete(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+  if (_alertPendingOrders === 0) stopAlertLoop();
+}
+function _resetPedidosPendientesAlerta() {
+  _alertPendingOrderNumsSet.clear();
+  _alertPendingOrders = 0;
+}
 function startAlertLoop() {
   if (_alertLoopInterval) return; // ya está sonando
   playNotificationSound();
@@ -9716,11 +10657,11 @@ function stopAlertLoop() {
     _alertLoopInterval = null;
   }
 }
-function showNewOrderNotification(count) {
-  console.log('[DPF] showNewOrderNotification: count=' + count + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
+function showNewOrderNotification(nums) {
+  console.log('[DPF] showNewOrderNotification: nums=' + JSON.stringify(nums) + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
   // Solo sonar si hay sesión de admin activa (no al cliente que hace el pedido)
   if (_adminLoggedIn) {
-    _alertPendingOrders = count;
+    (nums || []).forEach(_marcarPedidoPendienteAlerta);
     startAlertLoop();
     const toast = document.getElementById('new-order-toast');
     if (toast) {
@@ -9749,19 +10690,22 @@ function markAllKitchenReady() {
   const orders = stats.orders || [];
   if (!orders.length) return;
   const statuses = getOrderStatuses();
-  let changed = 0;
-  orders.forEach(o => {
+  const aCambiar = orders.filter(o => {
     const key = _normOrderKey(o.num);
-    if ((statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado') {
-      statuses[key] = 'listo';
-      changed++;
-    }
+    return (statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado';
   });
-  if (!changed) return;
-  localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(statuses));
+  if (!aCambiar.length) return;
+  // setOrderStatus() actualiza localStorage Y Firebase (fb_setOrderStatus)
+  // por pedido \u2014 antes este bot\u00f3n solo tocaba localStorage directamente,
+  // as\u00ed que un pedido marcado "listo" aqu\u00ed pod\u00eda volver a aparecer como
+  // pendiente en cuanto llegara cualquier otro cambio de estado: el
+  // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
+  // window._orderStatusCache entero con lo que haya en Firebase, que nunca
+  // se hab\u00eda enterado de este cambio.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
   refreshKitchenGrid();
   loadLiveOrders();
-  logActivity("\u2705 ".concat(changed, " pedido").concat(changed !== 1 ? 's' : '', " marcado").concat(changed !== 1 ? 's' : '', " como listo desde cocina"));
+  logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
 }
 
 // Polling de fallback: solo actúa si Firebase no está disponible
@@ -10238,7 +11182,10 @@ function exportClientesCSV() {
   clientes.forEach(c => {
     rows.push([c.phone, [...c.names].join(' / '), c.count, c.total.toFixed(2).replace('.', ','), c.lastDate]);
   });
-  const csv = rows.map(r => r.map(v => "\"".concat(v, "\"")).join(',')).join('\n');
+  // _csvEscape (historial-export.js) dobla las comillas internas — sin
+  // esto, un nombre de cliente con una " cortaba la fila antes de tiempo y
+  // desplazaba las columnas siguientes al abrir el CSV en Excel/Sheets.
+  const csv = rows.map(r => r.map(v => "\"".concat(_csvEscape(v), "\"")).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], {
     type: 'text/csv;charset=utf-8;'
   });
@@ -10411,7 +11358,7 @@ function expandHistorialDay(date) {
       let _ref24 = _slicedToArray(_ref23, 2),
         name = _ref24[0],
         qty = _ref24[1];
-      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(name, "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
+      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(escapeHtml(name), "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
     }).join('');
   }
   html += "<div style=\"font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px\">\uD83E\uDDFE Pedidos</div>";
@@ -10483,7 +11430,7 @@ function showAdminSection(id, btn) {
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
-    _alertPendingOrders = 0;
+    _resetPedidosPendientesAlerta();
     loadLiveOrdersWithLocalFirst();
     _lastKnownOrderCount = null;
     checkForNewOrders();
@@ -10491,6 +11438,7 @@ function showAdminSection(id, btn) {
     loadCatBlockUI();
   }
   if (id === 'log') renderActivityLog();
+  if (id === 'alertas') renderAlertas();
   if (id === 'pwd') loadUrlTokenUI();
   if (id === 'stock-config') {
     loadStockAdminList();
@@ -10575,6 +11523,16 @@ async function renderActiveSessionsList() {
 async function killSession(sid) {
   try {
     await firebase.database().ref('activeSessions/' + sid + '/killed').set(true);
+    // Si esa sesión ya no está conectada para pillar el aviso en directo,
+    // "killed" por sí solo no basta: el dispositivo seguiría entrando sin
+    // pedir contraseña la próxima vez gracias a "dispositivo de confianza".
+    // Por eso también se borra aquí su registro de confianza — así deja
+    // de valer de verdad, lo esté escuchando en ese momento o no.
+    try {
+      const snap = await firebase.database().ref('activeSessions/' + sid + '/deviceId').get();
+      const deviceId = snap.val();
+      if (deviceId) await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+    } catch (e) {}
     renderActiveSessionsList();
   } catch(e) {
     alert('Error al expulsar la sesión: ' + e.message);
@@ -10594,7 +11552,10 @@ async function killAllSessions() {
     );
     if (!ok) return;
     const updates = {};
-    otras.forEach(s => { updates['activeSessions/' + s.sid + '/killed'] = true; });
+    otras.forEach(s => {
+      updates['activeSessions/' + s.sid + '/killed'] = true;
+      if (s.deviceId) updates['config/trustedDevices/' + s.deviceId] = null; // revoca también la confianza, no solo la sesión en directo
+    });
     await firebase.database().ref().update(updates);
     logActivity('🚫 Expulsadas ' + otras.length + ' sesión' + (otras.length !== 1 ? 'es' : '') + ' a la vez');
     renderActiveSessionsList();
@@ -10803,14 +11764,19 @@ function _filtrarYPintarFidelizacion() {
     const sospechosoTexto = c.sospechoso ? ' · 🚨 ritmo sospechoso (sellos muy seguidos)' : '';
     const nombreMostrar = escapeHtml(c.nombre || 'Sin nombre');
     const telMostrar = escapeHtml(c.telefono);
+    // escapeHtml no basta dentro de un onclick="fn('...')": el navegador
+    // decodifica las entidades HTML (incluida &#39;) ANTES de ejecutar el
+    // JS del atributo, así que una comilla simple sobrevivía y rompía la
+    // llamada — escapeAttr la escapa también para el propio string de JS.
+    const telAttr = escapeAttr(c.telefono);
     let h = '<div style="background:' + bg + ';border:1.5px solid ' + border + ';border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
     h += '<div>';
     h += '<div style="font-weight:700;color:#3D1F0D;font-size:14px">' + nombreMostrar + ' <span style="color:#8A6A4E;font-weight:500">(' + telMostrar + ')</span></div>';
     h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + '</div>';
     h += '</div>';
-    h += '<button onclick="cargarFidelizacionParaEditar(\'' + telMostrar + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
+    h += '<button onclick="cargarFidelizacionParaEditar(\'' + telAttr + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
     h += '</div>';
-    h += '<div onclick="toggleFidelizacionDetalle(\'' + telMostrar + '\')" style="cursor:pointer;font-size:12px;color:#8A6A4E;padding:4px 16px 8px;border-bottom:1.5px solid ' + border + '">👇 Ver canjes y pedidos</div>';
+    h += '<div onclick="toggleFidelizacionDetalle(\'' + telAttr + '\')" style="cursor:pointer;font-size:12px;color:#8A6A4E;padding:4px 16px 8px;border-bottom:1.5px solid ' + border + '">👇 Ver canjes y pedidos</div>';
     h += '<div id="fidel-detalle-' + telMostrar + '" style="display:none;padding:10px 16px;border-bottom:1.5px solid ' + border + ';font-size:12px;background:#FFFDF8"></div>';
     return h;
   }).join('<div style="height:2px"></div>');
@@ -10825,16 +11791,17 @@ function toggleFidelizacionDetalle(telefono) {
   el.style.display = 'block';
   const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || {};
   const canjes = cliente.historialCanjes || [];
+  const telAttr = escapeAttr(telefono);
   let h = '';
   if (canjes.length) {
     h += '<div style="font-weight:700;color:#3D1F0D;margin-bottom:6px">🎁 Premios canjeados (' + canjes.length + ')</div>';
-    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telefono + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
+    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telAttr + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
   } else {
     h += '<div style="color:#8A6A4E;margin-bottom:8px">Sin premios canjeados todavía.</div>';
   }
-  h += '<button onclick="cargarPedidosClienteFidelizacion(\'' + telefono + '\')" style="margin-top:8px;padding:6px 14px;background:#fff;border:1.5px solid #3D1F0D;color:#3D1F0D;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Ver todos sus pedidos</button>';
+  h += '<button onclick="cargarPedidosClienteFidelizacion(\'' + telAttr + '\')" style="margin-top:8px;padding:6px 14px;background:#fff;border:1.5px solid #3D1F0D;color:#3D1F0D;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Ver todos sus pedidos</button>';
   h += '<div id="fidel-pedidos-' + telefono + '" style="margin-top:8px"></div>';
-  h += '<button onclick="borrarClienteFidelizacion(\'' + telefono + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
+  h += '<button onclick="borrarClienteFidelizacion(\'' + telAttr + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
   el.innerHTML = h;
 }
 async function anularCanjeFidelizacion(telefono, indice) {
@@ -10845,9 +11812,23 @@ async function anularCanjeFidelizacion(telefono, indice) {
       alert('No se ha encontrado ese canje (puede que la lista esté desactualizada). Pulsa Actualizar e inténtalo de nuevo.');
       return;
     }
-    cliente.historialCanjes.splice(indice, 1);
-    cliente.premiosPendientes = (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : 0) + 1;
-    await window.fb_saveFidelizacionCliente(telefono, cliente);
+    // Transacción: fidelizacion/<telefono> también lo escribe fidelizacion.php
+    // cada vez que ese cliente gana un sello o canjea un premio de verdad —
+    // un .set() plano aquí podía perder ese cambio si pasaba justo mientras
+    // el admin anulaba este canje.
+    const mutator = function (current) {
+      const c = current || {};
+      if (Array.isArray(c.historialCanjes) && c.historialCanjes[indice]) {
+        c.historialCanjes.splice(indice, 1);
+      }
+      c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
     renderFidelizacionList();
   } catch (e) {
     alert('Error al anular el canje: ' + e.message);
@@ -10937,16 +11918,30 @@ async function guardarFidelizacionManual() {
   let vecesCompletado = parseInt(document.getElementById('fidel-edit-veces-completado').value, 10);
   if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
 
-  let existente = null;
-  try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
-  const cliente = {
-    nombre: nombre || (existente && existente.nombre) || '',
-    sellos,
-    premiosPendientes,
-    vecesCompletado,
-    historialCanjes: (existente && existente.historialCanjes) || []
+  // Transacción: nombre/sellos/premiosPendientes/vecesCompletado son lo que
+  // el admin ha editado a propósito en el formulario, pero historialCanjes/
+  // historialSellos deben venir siempre de lo último de verdad en Firebase
+  // (no de una lectura que pudo quedarse desfasada mientras el admin
+  // rellenaba el formulario) — si no, un sello o canje real de ese cliente
+  // llegado justo en medio se perdía sin aviso al guardar.
+  const mutator = function (current) {
+    const existente = current || {};
+    return {
+      nombre: nombre || existente.nombre || '',
+      sellos,
+      premiosPendientes,
+      vecesCompletado,
+      historialCanjes: existente.historialCanjes || [],
+      historialSellos: existente.historialSellos || []
+    };
   };
-  await window.fb_saveFidelizacionCliente(telefono, cliente);
+  if (window.fb_transactJsonString) {
+    await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+  } else {
+    let existente = null;
+    try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
+    await window.fb_saveFidelizacionCliente(telefono, mutator(existente));
+  }
   showToast('fidel-toast');
   renderFidelizacionList();
 }
@@ -10993,16 +11988,26 @@ async function renderAccesosLog() {
 async function recordProductSales(items) {
   if (!items || !items.length) return;
   const fecha = new Date().toISOString().slice(0, 10);
-  try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
+  const mutator = function (current) {
+    const actual = current || {};
     items.forEach(it => {
       if (it.id == null) return;
       const id = String(it.id);
       actual[id] = (actual[id] || 0) + (it.qty || 0);
     });
-    await ref.set(actual);
+    return actual;
+  };
+  try {
+    // Transacción: igual que recordOrderStats justo debajo (que ya lo hace
+    // por el mismo motivo) — dos pedidos completándose casi a la vez podían
+    // pisarse el conteo de ventas por producto con un .set() plano.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
   } catch (e) {
     console.warn('[ventasProductos] no se pudo guardar', e);
   }
@@ -11170,12 +12175,28 @@ function getStockData() {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
-function saveStockData(data) {
+// Aplica mutatorFn (que modifica el objeto de ingredientes in-place) de
+// forma atómica: actualiza localStorage al instante para que la UI
+// responda, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos añaden,
+// borran o reordenan ingredientes casi a la vez, Firebase reintenta con
+// el dato fresco en vez de que uno pise el cambio del otro.
+function stockMutateData(mutatorFn) {
+  const data = getStockData();
+  mutatorFn(data);
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_saveStockData) {
+  if (window.fb_transactJsonString) {
+    window._stockDataLocalWrite = Date.now();
+    window.fb_transactJsonString('config/stockData', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }
+  return data;
 }
 
 // ── ADMIN: ingredient management ──
@@ -11187,7 +12208,7 @@ function loadStockAdminList() {
     let _ref26 = _slicedToArray(_ref25, 2),
       group = _ref26[0],
       items = _ref26[1];
-    return "\n    <div style=\"margin-bottom:18px\">\n      <div style=\"font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #F5E6C8\">".concat(STOCK_GROUP_LABELS[group] || group, "</div>\n      <div id=\"stock-drag-group-").concat(group, "\" data-group=\"").concat(group, "\" style=\"display:flex;flex-direction:column\">\n        ").concat(items.map((ing, i) => "\n          <div draggable=\"true\" data-group=\"".concat(group, "\" data-index=\"").concat(i, "\"\n               style=\"display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 12px;cursor:grab\"\n               ondragstart=\"stockDragStart(event)\" ondragover=\"stockDragOver(event)\" ondrop=\"stockDrop(event)\" ondragend=\"stockDragEnd(event)\">\n            <span style=\"color:#8A6A4E;font-size:16px;cursor:grab;user-select:none\">\u2630</span>\n            <span style=\"font-size:14px;color:#2A1506;flex:1\">").concat(ing, "</span>\n            <button onclick=\"removeStockItem('").concat(group, "',").concat(i, ")\" style=\"background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:700\">&#128465;</button>\n          </div>")).join(''), "\n      </div>\n    </div>");
+    return "\n    <div style=\"margin-bottom:18px\">\n      <div style=\"font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #F5E6C8\">".concat(STOCK_GROUP_LABELS[group] || group, "</div>\n      <div id=\"stock-drag-group-").concat(group, "\" data-group=\"").concat(group, "\" style=\"display:flex;flex-direction:column\">\n        ").concat(items.map((ing, i) => "\n          <div draggable=\"true\" data-group=\"".concat(group, "\" data-index=\"").concat(i, "\"\n               style=\"display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 12px;cursor:grab\"\n               ondragstart=\"stockDragStart(event)\" ondragover=\"stockDragOver(event)\" ondrop=\"stockDrop(event)\" ondragend=\"stockDragEnd(event)\">\n            <span style=\"color:#8A6A4E;font-size:16px;cursor:grab;user-select:none\">\u2630</span>\n            <span style=\"font-size:14px;color:#2A1506;flex:1\">").concat(escapeHtml(ing), "</span>\n            <button onclick=\"removeStockItem('").concat(group, "',").concat(i, ")\" style=\"background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:700\">&#128465;</button>\n          </div>")).join(''), "\n      </div>\n    </div>");
   }).join('');
   _initStockDrag();
 }
@@ -11216,13 +12237,12 @@ function stockDrop(e) {
   if (srcGroup !== dstGroup) return; // solo dentro del mismo grupo
   const srcIdx = parseInt(_stockDragSrc.dataset.index);
   const dstIdx = parseInt(e.currentTarget.dataset.index);
-  const data = getStockData();
-  const arr = data[srcGroup];
-  const _arr$splice = arr.splice(srcIdx, 1),
-    _arr$splice2 = _slicedToArray(_arr$splice, 1),
-    moved = _arr$splice2[0];
-  arr.splice(dstIdx, 0, moved);
-  saveStockData(data);
+  stockMutateData(function (data) {
+    const arr = data[srcGroup];
+    if (!arr || !arr[srcIdx]) return;
+    const moved = arr.splice(srcIdx, 1)[0];
+    arr.splice(dstIdx, 0, moved);
+  });
   loadStockAdminList();
   showToast('stock-config-toast');
 }
@@ -11268,13 +12288,12 @@ function _stockTouchEnd(e) {
     if (endY > rect.top && endY < rect.bottom) targetIdx = i;
   });
   if (targetIdx !== srcIdx) {
-    const data = getStockData();
-    const arr = data[group];
-    const _arr$splice3 = arr.splice(srcIdx, 1),
-      _arr$splice4 = _slicedToArray(_arr$splice3, 1),
-      moved = _arr$splice4[0];
-    arr.splice(targetIdx, 0, moved);
-    saveStockData(data);
+    stockMutateData(function (data) {
+      const arr = data[group];
+      if (!arr || !arr[srcIdx]) return;
+      const moved = arr.splice(srcIdx, 1)[0];
+      arr.splice(targetIdx, 0, moved);
+    });
     loadStockAdminList();
     showToast('stock-config-toast');
   }
@@ -11287,22 +12306,27 @@ function addStockIngredient() {
   const group = groupSel ? groupSel.value : 'ingredientes';
   if (!name) return;
   const data = getStockData();
-  if (!data[group]) data[group] = [];
-  if (data[group].includes(name)) {
+  if (data[group] && data[group].includes(name)) {
     alert('Ya existe en ese grupo');
     return;
   }
-  data[group].push(name);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) d[group] = [];
+    if (!d[group].includes(name)) d[group].push(name);
+  });
   input.value = '';
   loadStockAdminList();
   showToast('stock-config-toast');
 }
 function removeStockItem(group, i) {
   const data = getStockData();
-  if (!data[group]) return;
-  data[group].splice(i, 1);
-  saveStockData(data);
+  const ing = data[group] && data[group][i];
+  if (!ing) return;
+  stockMutateData(function (d) {
+    if (!d[group]) return;
+    const idx = d[group].indexOf(ing);
+    if (idx !== -1) d[group].splice(idx, 1);
+  });
   loadStockAdminList();
 }
 
@@ -11323,21 +12347,23 @@ function stockOverlayAddItem() {
   const name = document.getElementById('stock-edit-name').value.trim();
   if (!name) return;
   const data = getStockData();
-  if (!data[group]) data[group] = [];
-  if (data[group].includes(name)) {
+  if (data[group] && data[group].includes(name)) {
     alert('Ya existe en esa categoría');
     return;
   }
-  data[group].push(name);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) d[group] = [];
+    if (!d[group].includes(name)) d[group].push(name);
+  });
   document.getElementById('stock-edit-name').value = '';
   renderStockItems();
 }
 function stockOverlayRemoveItem(group, ing) {
   if (!confirm('¿Eliminar "' + ing + '"?')) return;
-  const data = getStockData();
-  data[group] = data[group].filter(i => i !== ing);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) return;
+    d[group] = d[group].filter(i => i !== ing);
+  });
   renderStockItems();
 }
 let _stockOverlayDragSrc = null;
@@ -11364,14 +12390,15 @@ function stockOverlayDrop(e) {
   if (srcGroup !== dstGroup) return;
   const srcIng = _stockOverlayDragSrc.dataset.ing;
   const dstIng = e.currentTarget.dataset.ing;
-  const data = getStockData();
-  const arr = data[srcGroup];
-  const srcIdx = arr.indexOf(srcIng);
-  const dstIdx = arr.indexOf(dstIng);
-  if (srcIdx === -1 || dstIdx === -1) return;
-  arr.splice(srcIdx, 1);
-  arr.splice(dstIdx, 0, srcIng);
-  saveStockData(data);
+  stockMutateData(function (data) {
+    const arr = data[srcGroup];
+    if (!arr) return;
+    const srcIdx = arr.indexOf(srcIng);
+    const dstIdx = arr.indexOf(dstIng);
+    if (srcIdx === -1 || dstIdx === -1) return;
+    arr.splice(srcIdx, 1);
+    arr.splice(dstIdx, 0, srcIng);
+  });
   renderStockItems();
 }
 function openStockFromAdmin() {
@@ -11529,12 +12556,12 @@ function renderStockItems() {
     const isExtras = group === 'extras';
     return '<div style="margin-bottom:4px">' + '<div style="font-family:\'Anton\',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em">' + (STOCK_GROUP_LABELS[group] || group) + '</div>' + items.map(ing => {
       if (_stockEditMode) {
-        return '<div draggable="true" data-group="' + group + '" data-ing="' + ing.replace(/"/g, '&quot;') + '"' + ' style="display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:grab"' + ' ondragstart="stockOverlayDragStart(event)" ondragover="stockOverlayDragOver(event)" ondrop="stockOverlayDrop(event)" ondragend="stockOverlayDragEnd(event)">' + '<span style="color:#8A6A4E;font-size:18px;user-select:none">☰</span>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<button onclick="stockOverlayRemoveItem(\'' + group + '\',\'' + ing.replace(/'/g, "\\'") + '\')" style="background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;cursor:pointer">✕</button>' + '</div>';
+        return '<div draggable="true" data-group="' + group + '" data-ing="' + ing.replace(/"/g, '&quot;') + '"' + ' style="display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:grab"' + ' ondragstart="stockOverlayDragStart(event)" ondragover="stockOverlayDragOver(event)" ondrop="stockOverlayDrop(event)" ondragend="stockOverlayDragEnd(event)">' + '<span style="color:#8A6A4E;font-size:18px;user-select:none">☰</span>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<button onclick="stockOverlayRemoveItem(\'' + group + '\',\'' + ing.replace(/'/g, "\\'") + '\')" style="background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;cursor:pointer">✕</button>' + '</div>';
       }
       const i = Object.values(window._stockItemIndex).indexOf(ing);
       if (isExtras) {
         const eid = 'extra_' + ing.replace(/[^a-z0-9]/gi, '_');
-        return '<div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:8px">' + '<div style="font-size:14px;font-weight:600;color:#3D1F0D;margin-bottom:6px">' + ing + '</div>' + '<textarea id="' + eid + '" placeholder="Escribe aqu\u00ED..." rows="2" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;resize:none;box-sizing:border-box"></textarea>' + '</div>';
+        return '<div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:8px">' + '<div style="font-size:14px;font-weight:600;color:#3D1F0D;margin-bottom:6px">' + escapeHtml(ing) + '</div>' + '<textarea id="' + eid + '" placeholder="Escribe aqu\u00ED..." rows="2" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;resize:none;box-sizing:border-box"></textarea>' + '</div>';
       }
       // ── LIMPIEZA (✅ Hay / ❌ No hay) ──
       if (STOCK_LIMPIEZA.has(ing)) {
@@ -11545,7 +12572,7 @@ function renderStockItems() {
         const btnBaseL = 'width:42px;height:42px;border-radius:50%;font-size:18px;cursor:pointer;border:2px solid ';
         const btnHay = state === 1 ? btnBaseL + '#27855a;background:#eafaf1' : btnBaseL + '#F5E6C8;background:#FFFFFF';
         const btnNo = state === -1 ? btnBaseL + '#c0392b;background:#fdf0ee' : btnBaseL + '#F5E6C8;background:#FFFFFF';
-        return '<div style="background:' + bgL + ';border:2px solid ' + borderL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<div style="display:flex;flex-shrink:0">' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',1)" style="' + btnHay + '">✅</button>' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',-1)" style="' + btnNo + '">❌</button>' + '</div></div></div>';
+        return '<div style="background:' + bgL + ';border:2px solid ' + borderL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;flex-shrink:0">' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',1)" style="' + btnHay + '">✅</button>' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',-1)" style="' + btnNo + '">❌</button>' + '</div></div></div>';
       }
 
       // ── CHECK + NOTA OPCIONAL (boles, papel térmico, etc.) ──
@@ -11558,7 +12585,7 @@ function renderStockItems() {
         const borderTL = checked ? '#3D1F0D' : '#F5E6C8';
         const btnBorderTL = checked ? '#3D1F0D' : '#F5E6C8';
         const btnBgTL = checked ? '#3D1F0D' : '#FFFFFF';
-        return '<div style="background:' + bgTL + ';border:2px solid ' + borderTL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<button onclick="stockCheckToggle(\'' + safeIngTL + '\')" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;border:2px solid ' + btnBorderTL + ';background:' + btnBgTL + ';font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">' + (checked ? '\u2705' : '') + '</button>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + (STOCK_DISPLAY_LABEL[ing] || ing) + '</span>' + '</div>' + (checked ? '<div style="margin-top:10px;display:flex;flex-direction:column">' + (STOCK_CHECK_MEDIO.has(ing) ? '<button onclick="stockNotaSetMedio(\'' + safeIngTL + '\')" style="align-self:flex-start;padding:5px 12px;border-radius:7px;border:1.5px solid #3D1F0D;background:' + (nota === '\u00bd paquete' ? 'rgba(244,196,48,0.08)' : '#FFFFFF') + ';color:' + (nota === '\u00bd paquete' ? '#3D1F0D' : '#8A6A4E') + ';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u00bd paquete</button>' : '') + '<input type="text" id="' + notaId + '" value="' + nota.replace(/"/g, '&quot;') + '" placeholder="Nota opcional\u2026" oninput="stockNotaChange(\'' + safeIngTL + '\',this.value)" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 12px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;box-sizing:border-box">' + '</div>' : '') + '</div>';
+        return '<div style="background:' + bgTL + ';border:2px solid ' + borderTL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<button onclick="stockCheckToggle(\'' + safeIngTL + '\')" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;border:2px solid ' + btnBorderTL + ';background:' + btnBgTL + ';font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">' + (checked ? '\u2705' : '') + '</button>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(STOCK_DISPLAY_LABEL[ing] || ing) + '</span>' + '</div>' + (checked ? '<div style="margin-top:10px;display:flex;flex-direction:column">' + (STOCK_CHECK_MEDIO.has(ing) ? '<button onclick="stockNotaSetMedio(\'' + safeIngTL + '\')" style="align-self:flex-start;padding:5px 12px;border-radius:7px;border:1.5px solid #3D1F0D;background:' + (nota === '\u00bd paquete' ? 'rgba(244,196,48,0.08)' : '#FFFFFF') + ';color:' + (nota === '\u00bd paquete' ? '#3D1F0D' : '#8A6A4E') + ';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u00bd paquete</button>' : '') + '<input type="text" id="' + notaId + '" value="' + nota.replace(/"/g, '&quot;') + '" placeholder="Nota opcional\u2026" oninput="stockNotaChange(\'' + safeIngTL + '\',this.value)" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 12px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;box-sizing:border-box">' + '</div>' : '') + '</div>';
       }
 
       // ── BOTE (cremas) ──
@@ -11568,7 +12595,7 @@ function renderStockItems() {
         const bgB = boteVal > 0 ? 'rgba(244,196,48,0.08)' : '#FFFFFF';
         const borderB = boteVal > 0 ? '#3D1F0D' : '#F5E6C8';
         const boteStr = boteVal > 0 ? boteVal % 1 === 0.5 ? Math.floor(boteVal) > 0 ? Math.floor(boteVal) + '\u00bd' : '\u00bd' : boteVal : '\u2013';
-        return '<div style="background:' + bgB + ';border:2px solid ' + borderB + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockSetBote(\'' + safeIngB + '\',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + '<button onclick="stockBoteMedio(\'' + safeIngB + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' + '<span style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center">' + boteStr + '</span>' + '<button onclick="stockSetBote(\'' + safeIngB + '\',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="margin-top:8px"><span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">Bote</span></div>' + '</div>';
+        return '<div style="background:' + bgB + ';border:2px solid ' + borderB + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockSetBote(\'' + safeIngB + '\',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + '<button onclick="stockBoteMedio(\'' + safeIngB + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' + '<span style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center">' + boteStr + '</span>' + '<button onclick="stockSetBote(\'' + safeIngB + '\',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="margin-top:8px"><span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">Bote</span></div>' + '</div>';
       }
 
       // ── CONTABLE ──
@@ -11585,7 +12612,7 @@ function renderStockItems() {
       const qtyId = 'stk-qty-' + i;
       const showMedio = STOCK_ADMITE_MEDIO.has(ing) || STOCK_ADMITE_MEDIO_CAJAS.has(ing) && unit === 'cajas';
       const medioBtn = showMedio ? '<button onclick="stockQtyMedio(\'' + safeIng + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' : '';
-      return '<div style="background:' + bg + ';border:2px solid ' + border + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span onclick="stockToggle(' + i + ')" style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1;cursor:pointer">' + ing + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockQty(' + i + ',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + medioBtn + '<span id="' + qtyId + '" onclick="stockActivateInput(' + i + ')" title="Pulsa para escribir" style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center;cursor:text;border-radius:6px;padding:2px 4px' + (qty > 0 ? ';background:rgba(0,0,0,0.05)' : '') + '">' + (qty !== null ? qty : '\u2013') + '</span>' + '<button onclick="stockQty(' + i + ',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="display:flex;margin-top:8px;align-items:center">' + (fixedUnit ? '<span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">' + fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1) + '</span>' : '<button onclick="stockSetUnit(\'' + safeIng + '\',\'cajas\')" style="' + unitCajas + '">📦 Cajas</button>' + '<button onclick="stockSetUnit(\'' + safeIng + '\',\'unidades\')" style="' + unitUds + '">🔢 Unidades</button>') + '</div></div>';
+      return '<div style="background:' + bg + ';border:2px solid ' + border + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span onclick="stockToggle(' + i + ')" style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1;cursor:pointer">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockQty(' + i + ',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + medioBtn + '<span id="' + qtyId + '" onclick="stockActivateInput(' + i + ')" title="Pulsa para escribir" style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center;cursor:text;border-radius:6px;padding:2px 4px' + (qty > 0 ? ';background:rgba(0,0,0,0.05)' : '') + '">' + (qty !== null ? qty : '\u2013') + '</span>' + '<button onclick="stockQty(' + i + ',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="display:flex;margin-top:8px;align-items:center">' + (fixedUnit ? '<span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">' + fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1) + '</span>' : '<button onclick="stockSetUnit(\'' + safeIng + '\',\'cajas\')" style="' + unitCajas + '">📦 Cajas</button>' + '<button onclick="stockSetUnit(\'' + safeIng + '\',\'unidades\')" style="' + unitUds + '">🔢 Unidades</button>') + '</div></div>';
     }).join('') + '</div>';
   }).join('');
 }
@@ -11716,18 +12743,26 @@ function getStockHistorial() {
   }
 }
 function saveToStockHistorial(ts, lines) {
-  const hist = getStockHistorial();
-  hist.push({
-    ts,
-    lines
-  });
-  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
+  const entrada = { ts, lines };
+  // Local al instante...
+  const histLocal = getStockHistorial();
+  histLocal.push(entrada);
+  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(histLocal));
 
-  // 🔥 Subir a Firebase — reintenta si aún no está listo
+  // ...y de forma atómica contra Firebase — reintenta si aún no está listo,
+  // y usa una transacción para no perder la reposición de otro dispositivo
+  // guardada casi al mismo tiempo.
   function subirAFirebase(intentos) {
-    if (window.fb_saveStockHistorial) {
+    if (window.fb_transactNative) {
       window._stockLocalWrite = Date.now();
-      window.fb_saveStockHistorial(hist).catch(e => console.warn('Firebase stock historial error:', e));
+      window.fb_transactNative('stock/historial', function (current) {
+        const hist = Array.isArray(current) ? current.slice() : [];
+        hist.push(entrada);
+        return hist;
+      }).catch(e => console.warn('Firebase stock historial error:', e));
+    } else if (window.fb_saveStockHistorial) {
+      window._stockLocalWrite = Date.now();
+      window.fb_saveStockHistorial(histLocal).catch(e => console.warn('Firebase stock historial error:', e));
     } else if (intentos > 0) {
       setTimeout(() => subirAFirebase(intentos - 1), 500);
     } else {
@@ -11768,11 +12803,15 @@ function renderStockHistorial() {
   let html = '';
 
   // Latest entry (always visible)
-  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + latest.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>';
+  // Cada línea es texto libre que cualquier empleado puede escribir al
+  // añadir un ingrediente/nota — sin escapar aquí se ejecutaba en cuanto un
+  // admin abriera este historial (renderStockItems, la lista en vivo, ya
+  // escapaba esto; aquí se había quedado fuera).
+  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + escapeHtml(latest.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>';
 
   // Older entries in a collapsible folder
   if (older.length) {
-    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + entry.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>').join('') + '</div></details>';
+    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + escapeHtml(entry.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>').join('') + '</div></details>';
   }
   el.innerHTML = html;
 }
@@ -11780,7 +12819,7 @@ function exportStockPDF() {
   const lines = window._lastStockLines || [];
   const ts = window._lastStockTs || '';
   if (!lines.length) return;
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(ts, "</p>\n  <ul>").concat(lines.map(l => '<li>' + l + '</li>').join(''), "</ul>\n  </body></html>");
+  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(escapeHtml(ts), "</p>\n  <ul>").concat(lines.map(l => '<li>' + escapeHtml(l) + '</li>').join(''), "</ul>\n  </body></html>");
   const blob = new Blob([html], {
     type: 'text/html'
   });
@@ -11870,7 +12909,7 @@ function mostrarUltimoStock() {
     const last = arr[arr.length - 1];
     tsEl.textContent = '\uD83D\uDCC5 ' + (last.ts || '');
     const lines = normalizeHist(last.lines);
-    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + l + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
+    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + escapeHtml(l) + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
   }
   function tryLoad(intentos) {
     if (window.fb_loadStockHistorial) {
@@ -12069,45 +13108,780 @@ async function saveOrderTotal(orderNum, rawValue) {
     return;
   }
   const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  if (window.fb_getStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo — un .set() plano aquí (leer, cambiar el
+  // total de un pedido en memoria, sobreescribir el nodo entero) podía
+  // perder un pedido real llegado justo mientras se editaba este total.
+  let ordenNoEncontrada = false;
+  let oldTotal = null;
+  const mutator = function (current) {
+    const stats = current || {};
+    if (!stats.orders) { ordenNoEncontrada = true; return stats; }
+    const order = stats.orders.find(o => o.num === orderNum);
+    if (!order) { ordenNoEncontrada = true; return stats; }
+    oldTotal = order.total;
+    order.total = newTotal;
+    stats.total = parseFloat((stats.orders.reduce((s, o) => s + (o.total || 0), 0)).toFixed(2));
+    return stats;
+  };
+  let statsFinal = null;
+  if (window.fb_transactNative) {
+    try { statsFinal = await window.fb_transactNative('stats/' + todayKey, mutator); } catch (e) { console.warn('Firebase stats error', e); }
+  } else if (window.fb_getStats) {
     try {
       const fb = await window.fb_getStats(todayKey);
-      if (fb) stats = fb;
-    } catch (e) {}
+      if (fb) {
+        statsFinal = mutator(fb);
+        if (window.fb_saveStats) await window.fb_saveStats(statsFinal);
+      }
+    } catch (e) { console.warn('Firebase stats error', e); }
   }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {
-      stats = {};
-    }
-  }
-  if (!stats || !stats.orders) {
+  if (ordenNoEncontrada || !statsFinal) {
     loadLiveOrders();
     return;
   }
-  const order = stats.orders.find(o => o.num === orderNum);
-  if (!order) {
-    loadLiveOrders();
-    return;
-  }
-  const oldTotal = order.total;
-  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
-  order.total = newTotal;
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
+  localStorage.setItem(STATS_KEY, JSON.stringify(statsFinal));
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();
 }
 
+
+// ═══════════════════════════════════════════════════════════
+//  RULETA DE PREMIOS / RASCA Y GANA
+//
+//  El premio lo decide juegos.php (cuenta de servicio) — este archivo
+//  solo pide "quiero girar/rascar" y dibuja/anima lo que el servidor
+//  devuelve. Nunca decide él mismo qué premio toca (por eso no hay
+//  ningún Math.random() de premios aquí, solo de estética: colores,
+//  vueltas extra de la ruleta, radio de cada rasca del cursor...).
+// ═══════════════════════════════════════════════════════════
+
+const JUEGO_COLORES = ['#3D1F0D', '#C0392B', '#D9A441', '#27855a', '#8A6A4E', '#1f6f8b', '#a5471f', '#6b4226'];
+const CONFETI_COLORES = ['#D9A441', '#C0392B', '#27855a', '#3D1F0D', '#FFF8EE', '#1f6f8b'];
+
+window._juegoActivoActual = 'ninguno';
+window._juegoState = { juego: null, premio: null, code: null };
+
+// Confeti + sonido al ganar un premio de verdad (pct>0) — solo estética,
+// no afecta a nada del cálculo/aplicación del premio. El sonido se
+// sintetiza con Web Audio (sin archivo de audio que subir); si el
+// navegador bloquea el audio por lo que sea, sigue mostrándose el confeti
+// igualmente.
+function _celebrarPremio() {
+  _lanzarConfeti();
+  _sonidoCelebracion();
+}
+function _lanzarConfeti() {
+  const cont = document.createElement('div');
+  cont.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:99999;overflow:hidden';
+  document.body.appendChild(cont);
+  const N = 60;
+  for (let i = 0; i < N; i++) {
+    const piece = document.createElement('div');
+    const color = CONFETI_COLORES[i % CONFETI_COLORES.length];
+    const left = Math.random() * 100;
+    const size = 6 + Math.random() * 6;
+    const duration = 2200 + Math.random() * 1400;
+    const delay = Math.random() * 300;
+    const rot = Math.random() * 360;
+    piece.style.cssText = 'position:absolute;top:-20px;left:' + left + 'vw;width:' + size + 'px;height:' + (size * 0.4) + 'px;background:' + color + ';opacity:.9;transform:rotate(' + rot + 'deg);border-radius:2px;' +
+      'animation:juegoConfetiCae ' + duration + 'ms ease-in ' + delay + 'ms forwards';
+    cont.appendChild(piece);
+  }
+  setTimeout(() => cont.remove(), 4200);
+}
+function _sonidoCelebracion() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notas = [523.25, 659.25, 783.99, 1046.5]; // Do-Mi-Sol-Do, un arpegio alegre
+    notas.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.4);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
+
+function _juegosInit() {
+  if (window.fb_listenJuegoActivo) {
+    window.fb_listenJuegoActivo(function (juego) {
+      window._juegoActivoActual = juego || 'ninguno';
+      _actualizarJuegoFab(window._juegoActivoActual);
+    });
+  }
+}
+if (window._firebaseReady) _juegosInit();
+document.addEventListener('firebaseReady', _juegosInit);
+
+// El banner de cookies (#cookies-banner, ver index.html) tapa toda la
+// franja de abajo de la pantalla en móvil hasta que se acepta/rechaza, con
+// un z-index mucho más alto que cualquier botón flotante — sin esto el
+// botón del juego queda escondido debajo la primera vez que alguien entra.
+// Se vigila con un observer en vez de tocar cookiesAceptar() directamente,
+// así funciona pase lo que pase cómo se cierre el banner.
+function _juegoFabVigilarBannerCookies() {
+  const banner = document.getElementById('cookies-banner');
+  const fab = document.getElementById('juego-fab');
+  if (!banner || !fab) return;
+  const actualizar = () => {
+    const visible = getComputedStyle(banner).display !== 'none';
+    fab.classList.toggle('sobre-banner-cookies', visible);
+  };
+  actualizar();
+  new MutationObserver(actualizar).observe(banner, { attributes: true, attributeFilter: ['style'] });
+}
+document.addEventListener('DOMContentLoaded', _juegoFabVigilarBannerCookies);
+if (document.readyState !== 'loading') _juegoFabVigilarBannerCookies();
+
+function _actualizarJuegoFab(juego) {
+  const fab = document.getElementById('juego-fab');
+  const icon = document.getElementById('juego-fab-icon');
+  if (fab) {
+    if (juego === 'ruleta') {
+      if (icon) icon.textContent = '🎡';
+      fab.classList.remove('hidden');
+    } else if (juego === 'rasca') {
+      if (icon) icon.textContent = '🎫';
+      fab.classList.remove('hidden');
+    } else {
+      fab.classList.add('hidden');
+    }
+  }
+  document.querySelectorAll('#juego-activo-selector button').forEach(btn => {
+    const on = btn.dataset.juego === juego;
+    btn.style.background = on ? 'var(--brown)' : 'var(--white)';
+    btn.style.color = on ? 'var(--gold)' : 'var(--brown)';
+  });
+}
+
+function abrirJuegoActivo() {
+  if (window._juegoActivoActual === 'ruleta') openRuleta();
+  else if (window._juegoActivoActual === 'rasca') openRasca();
+}
+
+// Teléfono guardado de un pedido anterior (mismo patrón que usa el resto
+// de la web para no pedirlo dos veces si ya lo tenemos).
+function _juegoTelefonoGuardado() {
+  try { return localStorage.getItem('dpf_customer_phone') || ''; } catch (e) { return ''; }
+}
+
+// El teléfono no demuestra que quien pregunta jugó de verdad (sin
+// verificación SMS aquí) — juegos.php ahora exige también este token para
+// devolver el premio/código al "recuperar" una jugada de hoy, para que no
+// baste con probar un teléfono ajeno para robarle su código de descuento.
+function _juegoTokenKey(juego) {
+  return 'dpf_juego_token_' + juego;
+}
+async function _juegoGirar(juego, telefono) {
+  let token = '';
+  try { token = localStorage.getItem(_juegoTokenKey(juego)) || ''; } catch (e) {}
+  const res = await fetch('juegos.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'girar', juego, telefono, token })
+  });
+  const data = await res.json();
+  if (data && data.token) {
+    try { localStorage.setItem(_juegoTokenKey(juego), data.token); } catch (e) {}
+  }
+  return data;
+}
+
+function _aplicarPremioComun(juego) {
+  const st = window._juegoState;
+  if (juego === 'ruleta') closeRuleta(); else closeRasca();
+  if (st && st.code) {
+    const input = document.getElementById('discount-input');
+    if (input) input.value = st.code;
+    if (typeof dcAplicar === 'function') dcAplicar(st.code);
+    showAlert('🎉 ¡Código ' + st.code + ' aplicado! El descuento ya está en tu pedido.', '¡Premio aplicado!');
+  }
+  if (typeof openCartDrawer === 'function' && window.innerWidth <= 700) openCartDrawer();
+  else { const panel = document.querySelector('.order-panel'); if (panel) panel.scrollIntoView({ behavior: 'smooth' }); }
+}
+
+// ── RULETA ──────────────────────────────────────────────────────────────
+let _ruletaPremios = [];
+let _ruletaEjecutando = false;
+
+function openRuleta() {
+  document.getElementById('ruleta-modal').classList.add('open');
+  document.getElementById('ruleta-intro').style.display = 'block';
+  document.getElementById('ruleta-resultado').style.display = 'none';
+  document.getElementById('ruleta-ya-jugaste').style.display = 'none';
+  const btn = document.getElementById('ruleta-spin-btn');
+  btn.disabled = false;
+  btn.textContent = 'Girar la ruleta';
+  const tel = document.getElementById('ruleta-telefono');
+  if (tel) { tel.value = _juegoTelefonoGuardado(); if (tel.value) formatPhone(tel); }
+  document.getElementById('ruleta-tel-error').style.display = 'none';
+  const canvas = document.getElementById('ruleta-canvas');
+  canvas.style.transition = 'none';
+  canvas.style.transform = 'rotate(0deg)';
+  requestAnimationFrame(() => { canvas.style.transition = ''; });
+  (window.fb_loadRuletaConfig ? window.fb_loadRuletaConfig() : Promise.resolve(null)).then(cfg => {
+    _ruletaPremios = (cfg && Array.isArray(cfg.premios)) ? cfg.premios : [];
+    _dibujarRuletaWheel(_ruletaPremios);
+  }).catch(() => { _ruletaPremios = []; });
+}
+function closeRuleta() {
+  document.getElementById('ruleta-modal').classList.remove('open');
+}
+
+function _dibujarRuletaWheel(premios) {
+  const canvas = document.getElementById('ruleta-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2, r = w / 2;
+  ctx.clearRect(0, 0, w, h);
+  if (!premios.length) {
+    ctx.fillStyle = '#eee';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8A6A4E'; ctx.font = '13px DM Sans, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Sin premios configurados', cx, cy);
+    return;
+  }
+  const seg = (Math.PI * 2) / premios.length;
+  const n = premios.length;
+  const emojiSize = n > 8 ? 13 : n > 6 ? 15 : n > 4 ? 17 : 20;
+  const EMOJI_FONTS = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  // Ancho disponible para el texto: la cuerda del arco a la altura donde
+  // se dibuja, con un margen — así el ajuste se basa en el hueco real de
+  // cada porción (más estrecho cuantos más premios haya) y no en un
+  // recuento de caracteres a ojo.
+  const radialPos = r * 0.6;
+  const maxTextWidth = Math.max(30, 2 * radialPos * Math.sin(seg / 2) * 0.82);
+
+  // Reparte "nombre" en 1-2 líneas que quepan en maxTextWidth, reduciendo
+  // el tamaño de letra si hace falta (hasta un mínimo legible). Devuelve
+  // las líneas ya recortadas con "…" si ni así caben.
+  function _ajustarTexto(nombre) {
+    for (let size = 9; size >= 6; size--) {
+      ctx.font = '600 ' + size + 'px DM Sans, sans-serif';
+      if (ctx.measureText(nombre).width <= maxTextWidth) return { size, lineas: [nombre] };
+      const palabras = nombre.split(' ');
+      if (palabras.length > 1) {
+        // Envuelve en 2 líneas por el espacio más cercano a la mitad.
+        let mejor = 1, mejorDiff = Infinity;
+        let acumulado = 0;
+        for (let k = 0; k < palabras.length - 1; k++) {
+          acumulado += palabras[k].length + 1;
+          const diff = Math.abs(acumulado - nombre.length / 2);
+          if (diff < mejorDiff) { mejorDiff = diff; mejor = k + 1; }
+        }
+        const l1 = palabras.slice(0, mejor).join(' ');
+        const l2 = palabras.slice(mejor).join(' ');
+        if (ctx.measureText(l1).width <= maxTextWidth && ctx.measureText(l2).width <= maxTextWidth) {
+          return { size, lineas: [l1, l2] };
+        }
+      }
+    }
+    // Ni a tamaño mínimo cabe entero: recortar con "…"
+    ctx.font = '600 6px DM Sans, sans-serif';
+    let corto = nombre;
+    while (corto.length > 1 && ctx.measureText(corto + '…').width > maxTextWidth) {
+      corto = corto.slice(0, -1);
+    }
+    return { size: 6, lineas: [corto + '…'] };
+  }
+
+  premios.forEach((p, i) => {
+    // Ángulo 0 = arriba (donde está el puntero), sentido horario.
+    // En coordenadas de canvas eso equivale a restar 90°.
+    const start = i * seg - Math.PI / 2;
+    const end = start + seg;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.fillStyle = JUEGO_COLORES[i % JUEGO_COLORES.length];
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    const { size, lineas } = _ajustarTexto(p.nombre || '');
+
+    ctx.save();
+    // Recortar el dibujo del texto a la propia porción — así, sea cual
+    // sea el tamaño del nombre del premio, nunca puede "pintarse" por
+    // encima del color de la porción de al lado (antes se veía cortado
+    // a medias entre dos colores cuando el texto no cabía).
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.translate(cx, cy);
+    ctx.rotate(start + seg / 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFF8EE';
+    ctx.font = emojiSize + 'px ' + EMOJI_FONTS;
+    ctx.fillText(p.emoji || '🎁', radialPos, lineas.length > 1 ? -12 : -8);
+    ctx.font = '600 ' + size + 'px DM Sans, sans-serif';
+    lineas.forEach((linea, li) => {
+      ctx.fillText(linea, radialPos, 8 + li * (size + 2));
+    });
+    ctx.restore();
+  });
+}
+
+async function girarRuleta() {
+  if (_ruletaEjecutando) return;
+  const tel = document.getElementById('ruleta-telefono');
+  const digits = (tel.value || '').replace(/\D/g, '');
+  if (digits.length !== 9) {
+    document.getElementById('ruleta-tel-error').style.display = 'block';
+    return;
+  }
+  document.getElementById('ruleta-tel-error').style.display = 'none';
+  _ruletaEjecutando = true;
+  const btn = document.getElementById('ruleta-spin-btn');
+  btn.disabled = true;
+  btn.textContent = 'Girando…';
+  try {
+    const data = await _juegoGirar('ruleta', digits);
+    if (!data.success) {
+      showAlert(data.message || 'No se pudo girar la ruleta ahora mismo. Inténtalo más tarde.', 'Vaya…');
+      btn.disabled = false; btn.textContent = 'Girar la ruleta';
+      _ruletaEjecutando = false;
+      return;
+    }
+    if (data.yaJugaste) {
+      // Ya jugó hoy — en vez de la pantalla genérica "vuelve mañana", se
+      // reutiliza la de resultado con lo que ganó de verdad: si tenía un
+      // código sin aplicar (cerró el modal, cambió de dispositivo...) aquí
+      // puede recuperarlo, en vez de quedarse sin ninguna forma de verlo.
+      const premio = data.premio || {};
+      document.getElementById('ruleta-intro').style.display = 'none';
+      document.getElementById('ruleta-resultado').style.display = 'block';
+      document.getElementById('ruleta-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('ruleta-resultado-titulo').textContent = 'Ya has girado hoy';
+      document.getElementById('ruleta-resultado-desc').textContent = premio.pct > 0
+        ? 'Tu premio de hoy fue "' + premio.nombre + '" — aquí tienes tu código otra vez, por si no lo llegaste a usar.'
+        : (premio.nombre || 'Suerte la próxima vez') + '. Vuelve mañana para otra oportunidad.';
+      document.getElementById('ruleta-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      window._juegoState = { juego: 'ruleta', premio, code: data.code };
+      _ruletaEjecutando = false;
+      return;
+    }
+    let idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    if (idx === -1) {
+      // La lista de premios cambió entre abrir la ruleta y girar (el admin
+      // la editó justo en medio) — el premio real que se ha ganado (texto,
+      // emoji y código) sigue siendo correcto porque viene del servidor,
+      // pero la ruleta dibujada localmente ya no tiene ese premio en
+      // ninguno de sus segmentos. Se recarga y redibuja con la lista
+      // actual antes de animar, para no parar visualmente en un segmento
+      // que no es el premio ganado de verdad.
+      try {
+        const cfgFresco = window.fb_loadRuletaConfig ? await window.fb_loadRuletaConfig() : null;
+        if (cfgFresco && Array.isArray(cfgFresco.premios)) {
+          _ruletaPremios = cfgFresco.premios;
+          _dibujarRuletaWheel(_ruletaPremios);
+        }
+      } catch (e) {}
+      idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    }
+    if (idx === -1) idx = 0;
+    const seg = 360 / (_ruletaPremios.length || 1);
+    const mid = idx * seg + seg / 2;
+    const vueltas = 5 + Math.floor(Math.random() * 3);
+    const deg = 360 * vueltas - mid;
+    const canvas = document.getElementById('ruleta-canvas');
+    canvas.style.transform = 'rotate(' + deg + 'deg)';
+    window._juegoState = { juego: 'ruleta', premio: data.premio, code: data.code };
+    setTimeout(() => {
+      document.getElementById('ruleta-intro').style.display = 'none';
+      document.getElementById('ruleta-resultado').style.display = 'block';
+      const premio = data.premio || {};
+      document.getElementById('ruleta-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('ruleta-resultado-titulo').textContent = '¡Enhorabuena!';
+      document.getElementById('ruleta-resultado-desc').textContent = premio.pct > 0
+        ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
+        : (premio.nombre || 'Suerte la próxima vez');
+      document.getElementById('ruleta-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      if (premio.pct > 0) _celebrarPremio();
+      _ruletaEjecutando = false;
+    }, 4700);
+  } catch (e) {
+    showAlert('Error de conexión. Inténtalo de nuevo.', 'Vaya…');
+    btn.disabled = false; btn.textContent = 'Girar la ruleta';
+    _ruletaEjecutando = false;
+  }
+}
+function aplicarPremioRuleta() { _aplicarPremioComun('ruleta'); }
+
+// ── RASCA Y GANA ────────────────────────────────────────────────────────
+let _rascaEjecutando = false;
+let _rascaScratching = false;
+let _rascaRevelado = false;
+
+function openRasca() {
+  document.getElementById('rasca-modal').classList.add('open');
+  document.getElementById('rasca-intro').style.display = 'block';
+  document.getElementById('rasca-resultado').style.display = 'none';
+  document.getElementById('rasca-ya-jugaste').style.display = 'none';
+  document.getElementById('rasca-tel-paso').style.display = 'block';
+  document.getElementById('rasca-tarjeta-paso').style.display = 'none';
+  const tel = document.getElementById('rasca-telefono');
+  if (tel) { tel.value = _juegoTelefonoGuardado(); if (tel.value) formatPhone(tel); }
+  document.getElementById('rasca-tel-error').style.display = 'none';
+  _rascaRevelado = false;
+}
+function closeRasca() {
+  document.getElementById('rasca-modal').classList.remove('open');
+}
+
+async function empezarRasca() {
+  if (_rascaEjecutando) return;
+  const tel = document.getElementById('rasca-telefono');
+  const digits = (tel.value || '').replace(/\D/g, '');
+  if (digits.length !== 9) {
+    document.getElementById('rasca-tel-error').style.display = 'block';
+    return;
+  }
+  document.getElementById('rasca-tel-error').style.display = 'none';
+  _rascaEjecutando = true;
+  const btn = document.getElementById('rasca-empezar-btn');
+  btn.disabled = true;
+  btn.textContent = 'Cargando…';
+  try {
+    const data = await _juegoGirar('rasca', digits);
+    btn.disabled = false; btn.textContent = 'Destapar mi tarjeta';
+    if (!data.success) {
+      showAlert(data.message || 'No se pudo cargar la tarjeta ahora mismo. Inténtalo más tarde.', 'Vaya…');
+      _rascaEjecutando = false;
+      return;
+    }
+    window._juegoState = { juego: 'rasca', premio: data.premio, code: data.code };
+    if (data.yaJugaste) {
+      // Igual que en la ruleta: si ya rascó hoy, se le enseña directamente
+      // el resultado (con el botón de aplicar si aún tiene código sin usar)
+      // en vez de un "vuelve mañana" sin ninguna forma de recuperarlo.
+      const premio = data.premio || {};
+      document.getElementById('rasca-tel-paso').style.display = 'none';
+      document.getElementById('rasca-resultado').style.display = 'block';
+      document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('rasca-resultado-titulo').textContent = 'Ya rascaste hoy';
+      document.getElementById('rasca-resultado-desc').textContent = premio.pct > 0
+        ? 'Tu premio de hoy fue "' + premio.nombre + '" — aquí tienes tu código otra vez, por si no lo llegaste a usar.'
+        : (premio.nombre || 'Suerte la próxima vez') + '. Vuelve mañana para otra tarjeta.';
+      document.getElementById('rasca-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      _rascaEjecutando = false;
+      return;
+    }
+    const premio = data.premio || {};
+    document.getElementById('rasca-premio-emoji').textContent = premio.emoji || '🎁';
+    document.getElementById('rasca-premio-texto').textContent = premio.nombre || '';
+    document.getElementById('rasca-tel-paso').style.display = 'none';
+    document.getElementById('rasca-tarjeta-paso').style.display = 'block';
+    _dibujarRascaFoil();
+    _rascaEjecutando = false;
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Destapar mi tarjeta';
+    showAlert('Error de conexión. Inténtalo de nuevo.', 'Vaya…');
+    _rascaEjecutando = false;
+  }
+}
+
+function _dibujarRascaFoil() {
+  const canvas = document.getElementById('rasca-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.globalCompositeOperation = 'source-over';
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, '#C9A25A'); grad.addColorStop(1, '#8A6A4E');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.font = '600 15px DM Sans, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🎫 Rasca aquí', w / 2, h / 2);
+
+  let drawing = false;
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: (p.clientX - rect.left) * (w / rect.width), y: (p.clientY - rect.top) * (h / rect.height) };
+  }
+  function scratchAt(x, y) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  function checkRevealed() {
+    if (_rascaRevelado) return;
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let transparent = 0, total = 0;
+    for (let i = 3; i < data.length; i += 4 * 8) { // muestreo cada 8 píxeles, suficiente para estimar el %
+      total++;
+      if (data[i] === 0) transparent++;
+    }
+    if (total > 0 && transparent / total >= 0.5) {
+      _rascaRevelado = true;
+      ctx.clearRect(0, 0, w, h);
+      setTimeout(_mostrarResultadoRasca, 350);
+    }
+  }
+  function onDown(e) { drawing = true; const p = pos(e); scratchAt(p.x, p.y); e.preventDefault(); }
+  function onMove(e) { if (!drawing) return; const p = pos(e); scratchAt(p.x, p.y); checkRevealed(); e.preventDefault(); }
+  function onUp() { drawing = false; checkRevealed(); }
+
+  canvas.onpointerdown = onDown;
+  canvas.onpointermove = onMove;
+  canvas.onpointerup = onUp;
+  canvas.onpointerleave = onUp;
+}
+
+function _mostrarResultadoRasca() {
+  document.getElementById('rasca-tarjeta-paso').style.display = 'none';
+  document.getElementById('rasca-resultado').style.display = 'block';
+  const premio = (window._juegoState && window._juegoState.premio) || {};
+  document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
+  document.getElementById('rasca-resultado-titulo').textContent = '¡Enhorabuena!';
+  document.getElementById('rasca-resultado-desc').textContent = premio.pct > 0
+    ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
+    : (premio.nombre || 'Suerte la próxima vez');
+  document.getElementById('rasca-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+  if (premio.pct > 0) _celebrarPremio();
+}
+function aplicarPremioRasca() { _aplicarPremioComun('rasca'); }
+
+// ── ADMIN: PANEL DE CONFIGURACIÓN ──────────────────────────────────────
+let _ruletaAdminPremios = [];
+let _rascaAdminPremios = [];
+
+function _premioId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+function _renderPremiosAdmin(listaId, premios) {
+  const cont = document.getElementById(listaId);
+  if (!cont) return;
+  cont.innerHTML = premios.map((p, i) => (
+    '<div id="premio-row-' + p.id + '" style="display:flex;gap:6px;align-items:center;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:8px">' +
+      '<input value="' + (p.emoji || '').replace(/"/g, '&quot;') + '" data-i="' + i + '" data-f="emoji" style="width:38px;text-align:center;padding:6px 4px;border:1px solid var(--warm);border-radius:6px;font-size:16px" maxlength="4">' +
+      '<input value="' + (p.nombre || '').replace(/"/g, '&quot;') + '" data-i="' + i + '" data-f="nombre" placeholder="Nombre (ej. 10% descuento)" style="flex:1;min-width:0;padding:6px 8px;border:1px solid var(--warm);border-radius:6px;font-size:12px">' +
+      '<input value="' + (p.pct != null ? p.pct : 0) + '" data-i="' + i + '" data-f="pct" type="number" min="0" max="100" title="% de descuento (0 = sin premio)" style="width:52px;padding:6px 4px;border:1px solid var(--warm);border-radius:6px;font-size:12px">' +
+      '<input value="' + (p.peso != null ? p.peso : 1) + '" data-i="' + i + '" data-f="peso" type="number" min="0" title="Peso (probabilidad relativa)" style="width:48px;padding:6px 4px;border:1px solid var(--warm);border-radius:6px;font-size:12px">' +
+      '<button data-i="' + i + '" class="premio-del-btn" title="Eliminar" style="background:#fdecea;color:#c0392b;border:none;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px">✕</button>' +
+    '</div>'
+  )).join('') || '<div style="font-size:12px;color:var(--muted);text-align:center;padding:10px">Sin premios todavía — añade el primero.</div>';
+
+  cont.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const i = parseInt(inp.dataset.i, 10), f = inp.dataset.f;
+      const arr = listaId === 'ruleta-admin-lista' ? _ruletaAdminPremios : _rascaAdminPremios;
+      if (!arr[i]) return;
+      arr[i][f] = (f === 'pct' || f === 'peso') ? parseFloat(inp.value) || 0 : inp.value;
+    });
+  });
+  cont.querySelectorAll('.premio-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.i, 10);
+      if (listaId === 'ruleta-admin-lista') { _ruletaAdminPremios.splice(i, 1); _renderPremiosAdmin(listaId, _ruletaAdminPremios); }
+      else { _rascaAdminPremios.splice(i, 1); _renderPremiosAdmin(listaId, _rascaAdminPremios); }
+    });
+  });
+}
+
+// Resume los giros/rascados de hoy: total, cuántos tuvieron descuento de
+// verdad (lo que cuenta contra el tope diario) y un desglose por premio —
+// para que el admin vea de un vistazo cuánta gente juega y qué se lleva,
+// sin tener que ir a mirar Firebase directamente.
+function _resumenGirosHoy(giros) {
+  const lista = Object.values(giros || {}).filter(g => g && g.premio);
+  const total = lista.length;
+  let conDescuento = 0;
+  const porPremio = {};
+  lista.forEach(g => {
+    const nombre = g.premio.nombre || '?';
+    porPremio[nombre] = (porPremio[nombre] || 0) + 1;
+    if ((g.premio.pct || 0) > 0) conDescuento++;
+  });
+  return { total, conDescuento, porPremio };
+}
+function _pintarResumenHoy(elId, resumen, tope) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (resumen.total === 0) {
+    el.innerHTML = 'Todavía nadie ha jugado hoy.';
+    return;
+  }
+  // premio.nombre lo escribe el admin en texto libre al configurar los
+  // premios — sin escapar aquí, un nombre con HTML se ejecutaba en cuanto
+  // cualquier admin abriera este resumen.
+  const desglose = Object.entries(resumen.porPremio)
+    .map(([nombre, n]) => n + '× ' + escapeHtml(nombre))
+    .join(' · ');
+  const topeTxt = tope > 0
+    ? '<br><b>' + resumen.conDescuento + ' / ' + tope + '</b> premios con descuento entregados hoy' + (resumen.conDescuento >= tope ? ' — <span style="color:#c0392b;font-weight:700">tope alcanzado, solo queda "sin premio" hasta mañana</span>' : '')
+    : '';
+  el.innerHTML = '<b>' + resumen.total + '</b> jugada' + (resumen.total === 1 ? '' : 's') + ' hoy: ' + desglose + topeTxt;
+}
+
+async function renderRuletaAdmin() {
+  const cfg = window.fb_loadRuletaConfig ? await window.fb_loadRuletaConfig().catch(() => null) : null;
+  _ruletaAdminPremios = (cfg && Array.isArray(cfg.premios)) ? cfg.premios.map(p => Object.assign({}, p)) : [];
+  document.getElementById('ruleta-admin-activa').checked = !!(cfg && cfg.activa);
+  _actualizarTrack('ruleta-admin-toggle-track', !!(cfg && cfg.activa));
+  document.getElementById('ruleta-admin-tope').value = (cfg && cfg.topeDiario) || '';
+  _renderPremiosAdmin('ruleta-admin-lista', _ruletaAdminPremios);
+  document.getElementById('ruleta-admin-stats').textContent = (_ruletaAdminPremios.length) + ' premio' + (_ruletaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_ruletaAdminPremios.length === 1 ? '' : 's');
+  if (window.fb_loadRuletaGiros) {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    window.fb_loadRuletaGiros(todayKey).then(giros => {
+      _pintarResumenHoy('ruleta-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
+    }).catch(() => {});
+  }
+}
+function ruletaAdminAddPremio() {
+  _ruletaAdminPremios.push({ id: _premioId(), emoji: '🎁', nombre: '', pct: 10, peso: 1 });
+  _renderPremiosAdmin('ruleta-admin-lista', _ruletaAdminPremios);
+}
+function _ruletaTopeActual() {
+  const inp = document.getElementById('ruleta-admin-tope');
+  const v = inp ? parseInt(inp.value, 10) : 0;
+  return (v > 0) ? v : 0;
+}
+async function ruletaAdminGuardar() {
+  const activa = document.getElementById('ruleta-admin-activa').checked;
+  const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  const topeDiario = _ruletaTopeActual();
+  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
+  logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+  showToast('ruleta-config-toast');
+}
+async function ruletaAdminToggleActiva(checked) {
+  _actualizarTrack('ruleta-admin-toggle-track', checked);
+  const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
+  logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
+}
+
+async function renderRascaAdmin() {
+  const cfg = window.fb_loadRascaConfig ? await window.fb_loadRascaConfig().catch(() => null) : null;
+  _rascaAdminPremios = (cfg && Array.isArray(cfg.premios)) ? cfg.premios.map(p => Object.assign({}, p)) : [];
+  document.getElementById('rasca-admin-activa').checked = !!(cfg && cfg.activa);
+  _actualizarTrack('rasca-admin-toggle-track', !!(cfg && cfg.activa));
+  document.getElementById('rasca-admin-tope').value = (cfg && cfg.topeDiario) || '';
+  _renderPremiosAdmin('rasca-admin-lista', _rascaAdminPremios);
+  document.getElementById('rasca-admin-stats').textContent = (_rascaAdminPremios.length) + ' premio' + (_rascaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_rascaAdminPremios.length === 1 ? '' : 's');
+  if (window.fb_loadRascaGiros) {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    window.fb_loadRascaGiros(todayKey).then(giros => {
+      _pintarResumenHoy('rasca-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
+    }).catch(() => {});
+  }
+}
+function rascaAdminAddPremio() {
+  _rascaAdminPremios.push({ id: _premioId(), emoji: '🎁', nombre: '', pct: 10, peso: 1 });
+  _renderPremiosAdmin('rasca-admin-lista', _rascaAdminPremios);
+}
+function _rascaTopeActual() {
+  const inp = document.getElementById('rasca-admin-tope');
+  const v = inp ? parseInt(inp.value, 10) : 0;
+  return (v > 0) ? v : 0;
+}
+async function rascaAdminGuardar() {
+  const activa = document.getElementById('rasca-admin-activa').checked;
+  const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  const topeDiario = _rascaTopeActual();
+  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
+  logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+  showToast('rasca-config-toast');
+}
+async function rascaAdminToggleActiva(checked) {
+  _actualizarTrack('rasca-admin-toggle-track', checked);
+  const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
+  logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
+}
+
+function _actualizarTrack(id, activo) {
+  const el = document.getElementById(id);
+  if (el) el.style.background = activo ? 'var(--brown)' : '#ccc';
+}
+
+async function guardarJuegoActivo(juego) {
+  if (window.fb_saveJuegoActivo) await window.fb_saveJuegoActivo(juego);
+  window._juegoActivoActual = juego;
+  _actualizarJuegoFab(juego);
+  const nombres = { ruleta: 'Ruleta de premios', rasca: 'Rasca y gana', ninguno: 'Ninguno' };
+  logActivity('🎮 Juego activo para clientes: ' + (nombres[juego] || juego));
+}
+
+// ── DATOS PRIVADOS DE EMPLEADOS ──────────────────────────────────────
+// Empleados y fichajes (PIN, DNI, teléfono, firmas) son datos sensibles.
+// Solo se cargan tras un login real (Firebase Auth admin o PIN bimba
+// verificado en el servidor) — nunca al abrir la página como visitante.
+// Llamar desde checkAdminPwd() (slots-alertas.js) y secureLockConfirm()
+// (admin-accesos.js) justo después de confirmar el acceso.
+function _cargarDatosEmpleadosPrivados() {
+  if (window.fb_loadEmpleados) {
+    window.fb_loadEmpleados().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_empleados', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadFichajes) {
+    window.fb_loadFichajes().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  // El badge de 🔔 Alertas necesita datos frescos del log nada más
+  // entrar al panel, sin esperar a que se abra esa pestaña en concreto.
+  if (window.fb_loadActivityLog) {
+    window.fb_loadActivityLog().then(log => {
+      if (log && log.length) localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    }).catch(() => {
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  } else if (typeof updateAlertBadge === 'function') {
+    updateAlertBadge();
+  }
+  // Tokens de acceso (?bimba=/?key=) y clave de stock: solo se cargan al
+  // panel de ajustes DESPUÉS de un login real, para no exponerlos a
+  // cualquier visitante. La comprobación de ?bimba=/?key= en sí la hace
+  // el servidor (bimba-verify.php), este valor cacheado solo sirve para
+  // que la propia admin pueda ver/copiar el enlace desde Ajustes.
+  if (window.fb_loadUrlToken) {
+    window.fb_loadUrlToken().then(t => {
+      if (t) {
+        localStorage.setItem(URL_TOKEN_KEY, t);
+        if (typeof loadUrlTokenUI === 'function') loadUrlTokenUI();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadBimbaToken) {
+    window.fb_loadBimbaToken().then(t => {
+      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+    }).catch(() => {});
+  }
+  if (window.fb_loadStockPwd) {
+    window.fb_loadStockPwd().then(pwd => {
+      if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
+    }).catch(() => {});
+  }
+}
 
 // ── INIT ADMIN DATA ──
 loadSavedMenu();
@@ -12218,26 +13992,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     });
   }
 
-  // Carga inicial de datos críticos desde Firebase (empleados, fichajes, cats, slots)
+  // Carga inicial de datos críticos desde Firebase (cats, slots, etc.)
+  // NOTA DE SEGURIDAD: empleados y fichajes NO se cargan aquí — esta
+  // función corre para cualquier visitante. Ver _cargarDatosEmpleadosPrivados().
   function _cargarCriticosDesdeFirebase() {
-    if (window.fb_loadEmpleados) {
-      window.fb_loadEmpleados().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB31;
-          localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-          if ((_document$getElementB31 = document.getElementById('admin-empleados')) !== null && _document$getElementB31 !== void 0 && _document$getElementB31.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadFichajes) {
-      window.fb_loadFichajes().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB32;
-          localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-          if ((_document$getElementB32 = document.getElementById('admin-empleados')) !== null && _document$getElementB32 !== void 0 && _document$getElementB32.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
     if (window.fb_loadBlockedCats) {
       window.fb_loadBlockedCats().then(cats => {
         if (cats) {
@@ -12324,26 +14082,14 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {
@@ -12865,3 +14611,309 @@ function _mostrarAlertaTablet(data) {
 
   document.body.appendChild(overlay);
 }
+
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
+  if (!btn) return;
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
+})();
+
+// ── BUSCADOR del panel admin y del panel bimba ──
+// Busca en secciones (navegación estática) y en contenido real: productos
+// de la carta, ingredientes de stock, empleados, códigos de descuento y
+// premios de ruleta/rasca. Al hacer clic navega de verdad a la sección y,
+// si el resultado es contenido concreto, hace scroll + resalta la fila.
+
+let _buscadorLastAdmin = [];
+let _buscadorLastBimba = [];
+let _buscadorDiscountsCache = null;
+let _buscadorPremiosCache = null; // { ruleta: [...], rasca: [...] }
+
+function _buscadorNorm(s) {
+  // La coma decimal ("5,90") se normaliza a punto para que encuentre
+  // precios como "5.90 €", que es como los formatea el resto de la app.
+  return (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/,/g, '.');
+}
+
+function _buscadorHighlight(text, q) {
+  const t = String(text == null ? '' : text);
+  if (!q) return escapeHtml(t);
+  const i = _buscadorNorm(t).indexOf(_buscadorNorm(q));
+  if (i === -1) return escapeHtml(t);
+  return escapeHtml(t.slice(0, i)) + '<mark>' + escapeHtml(t.slice(i, i + q.length)) + '</mark>' + escapeHtml(t.slice(i + q.length));
+}
+
+function _buscadorItemMatches(item, q) {
+  if (!q) return true;
+  const nq = _buscadorNorm(q);
+  if (_buscadorNorm(item.nombre).includes(nq)) return true;
+  return (item.meta || []).some(m => _buscadorNorm(m.valor).includes(nq));
+}
+
+function _buscadorScrollFlash(id, delay) {
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('buscador-flash');
+    setTimeout(() => el.classList.remove('buscador-flash'), 1500);
+  }, delay || 300);
+}
+
+// Abre el acordeón bimba `panelId` simulando un clic en su fila `rowId`
+// (reutiliza el toggle ya existente) solo si está cerrado.
+function _buscadorAbrirBimbaAcordeon(panelId, rowId) {
+  const panel = document.getElementById(panelId);
+  const row = document.getElementById(rowId);
+  if (panel && row && panel.style.display === 'none') row.click();
+}
+
+// ── SECCIONES (navegación estática) ──────────────────────────────────────
+function _buscadorSeccionesAdmin() {
+  const tab = id => document.querySelector('.admin-tab[data-section="' + id + '"]');
+  return [
+    { icon: '🍽️', badge: 'section', tipo: 'Sección', nombre: 'Carta', ruta: 'Panel admin', meta: [], go: () => showAdminSection('productos', tab('productos')) },
+    { icon: '🏪', badge: 'section', tipo: 'Sección', nombre: 'Local', ruta: 'Panel admin', meta: [], go: () => showAdminSection('local', tab('local')) },
+    { icon: '🔴', badge: 'section', tipo: 'Sección', nombre: 'En vivo', ruta: 'Panel admin · pedidos', meta: [], go: () => showAdminSection('pedidos', tab('pedidos')) },
+    { icon: '📊', badge: 'section', tipo: 'Sección', nombre: 'Hoy', ruta: 'Panel admin · estadísticas', meta: [], go: () => showAdminSection('stats', tab('stats')) },
+    { icon: '📅', badge: 'section', tipo: 'Sección', nombre: 'Historial', ruta: 'Panel admin', meta: [], go: () => showAdminSection('historial', tab('historial')) },
+    { icon: '📦', badge: 'section', tipo: 'Sección', nombre: 'Stock', ruta: 'Panel admin', meta: [], go: () => { document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); if (typeof openStockInline === 'function') openStockInline(); } },
+    { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Fidelización', ruta: 'Panel admin', meta: [], go: () => { showAdminSection('fidelizacion', tab('fidelizacion')); if (typeof renderFidelizacionList === 'function') renderFidelizacionList(); } },
+    { icon: '🔔', badge: 'section', tipo: 'Sección', nombre: 'Alertas', ruta: 'Panel admin', meta: [], go: () => showAdminSection('alertas', tab('alertas')) },
+    { icon: '🛡️', badge: 'section', tipo: 'Sección', nombre: 'Configuración de pedidos', ruta: 'Panel admin · ⚙️ Ajustes', meta: [], go: () => showAdminSection('pedidos-config', null) },
+  ];
+}
+
+function _buscadorSeccionesBimba() {
+  const volverYAbrir = (panelId, rowId) => () => {
+    if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+    setTimeout(() => _buscadorAbrirBimbaAcordeon(panelId, rowId), 200);
+  };
+  return [
+    { icon: '🔥', badge: 'section', tipo: 'Sección', nombre: 'Promociones', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('bimba-promos-body', 'mkt-row-promos') },
+    { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Códigos de descuento', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('dc-panel', 'mkt-row-codigos') },
+    { icon: '🎡', badge: 'section', tipo: 'Sección', nombre: 'Ruleta de premios', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('ruleta-admin-panel', 'mkt-row-ruleta') },
+    { icon: '🎫', badge: 'section', tipo: 'Sección', nombre: 'Rasca y gana', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('rasca-admin-panel', 'mkt-row-rasca') },
+    {
+      icon: '👥', badge: 'section', tipo: 'Sección', nombre: 'Lista de empleados', ruta: 'bimba · Empleados', meta: [],
+      go: () => { if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados(); setTimeout(() => _buscadorAbrirBimbaAcordeon('bimba-emp-body', 'emp-row-lista'), 100); }
+    },
+    {
+      icon: '📋', badge: 'section', tipo: 'Sección', nombre: 'Historial de fichajes', ruta: 'bimba · Empleados', meta: [],
+      go: () => { if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados(); setTimeout(() => _buscadorAbrirBimbaAcordeon('bimba-hist-body', 'emp-row-hist'), 100); }
+    },
+  ];
+}
+
+// ── CONTENIDO REAL ────────────────────────────────────────────────────────
+function _buscadorContenidoAdmin() {
+  const items = [];
+  if (typeof MENU !== 'undefined') {
+    MENU.forEach(p => {
+      items.push({
+        icon: '🍽️', badge: 'prod', tipo: 'Producto', nombre: p.name,
+        ruta: 'Carta · ' + p.cat + ' · ' + p.price.toFixed(2) + ' €',
+        meta: [{ etiqueta: 'categoría', valor: p.cat }, { etiqueta: 'precio', valor: p.price.toFixed(2) }],
+        go: () => {
+          showAdminSection('productos', document.querySelector('.admin-tab[data-section="productos"]'));
+          _buscadorScrollFlash('arow-' + p.id, 150);
+        }
+      });
+    });
+  }
+  if (typeof pp2AllItems === 'function') {
+    try {
+      pp2AllItems().forEach(ing => {
+        items.push({
+          icon: '📦', badge: 'prod', tipo: 'Ingrediente', nombre: ing.nombre,
+          ruta: 'Pedidos proveedores' + (ing.cat ? ' · ' + ing.cat : ''),
+          meta: [{ etiqueta: 'grupo', valor: ing.cat || '' }],
+          go: () => {
+            if (typeof openPedidosProvOverlay === 'function') openPedidosProvOverlay();
+            _pp2SearchQuery = ing.nombre;
+            const sb = document.getElementById('pp2-search');
+            if (sb) sb.value = ing.nombre;
+            setTimeout(() => {
+              if (typeof pp2Render === 'function') pp2Render();
+              _buscadorScrollFlash('pp2-row-' + ing.id, 80);
+            }, 450);
+          }
+        });
+      });
+    } catch (e) {}
+  }
+  return items;
+}
+
+function _buscadorContenidoBimba() {
+  const items = [];
+  if (typeof empLoadAll === 'function') {
+    try {
+      empLoadAll().forEach(e => {
+        items.push({
+          icon: '👤', badge: 'emp', tipo: 'Empleado', nombre: e.nombre,
+          ruta: 'bimba · Empleados' + (e.deBaja ? ' · de baja' : ''),
+          meta: [{ etiqueta: 'DNI', valor: e.dni || '' }, { etiqueta: 'tel', valor: e.tel || '' }],
+          go: () => {
+            if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados();
+            setTimeout(() => {
+              _buscadorAbrirBimbaAcordeon('bimba-emp-body', 'emp-row-lista');
+              _buscadorScrollFlash('emp-row-' + e.id, 200);
+            }, 100);
+          }
+        });
+      });
+    } catch (e) {}
+  }
+  // Solo códigos creados a mano — los RAS-/RUL- de premios no se listan
+  // aquí tampoco (mismo criterio que dcCargar, ver admin-turnos-descuentos.js)
+  if (_buscadorDiscountsCache) {
+    Object.keys(_buscadorDiscountsCache).filter(code => !_buscadorDiscountsCache[code].origen).forEach(code => {
+      const d = _buscadorDiscountsCache[code];
+      items.push({
+        icon: '🏷️', badge: 'code', tipo: 'Código', nombre: code,
+        ruta: 'bimba · Códigos · ' + d.pct + '% · ' + (d.uses || 0) + '/' + d.maxUses + ' usos',
+        meta: [],
+        go: () => {
+          if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+          setTimeout(() => {
+            _buscadorAbrirBimbaAcordeon('dc-panel', 'mkt-row-codigos');
+            _buscadorScrollFlash('dc-row-' + code, 200);
+          }, 300);
+        }
+      });
+    });
+  }
+  if (_buscadorPremiosCache) {
+    (_buscadorPremiosCache.ruleta || []).filter(p => p.nombre).forEach(p => {
+      items.push({
+        icon: '🎡', badge: 'premio', tipo: 'Premio', nombre: p.nombre, ruta: 'bimba · Ruleta de premios', meta: [],
+        go: () => {
+          if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+          setTimeout(() => {
+            _buscadorAbrirBimbaAcordeon('ruleta-admin-panel', 'mkt-row-ruleta');
+            _buscadorScrollFlash('premio-row-' + p.id, 350);
+          }, 300);
+        }
+      });
+    });
+    (_buscadorPremiosCache.rasca || []).filter(p => p.nombre).forEach(p => {
+      items.push({
+        icon: '🎫', badge: 'premio', tipo: 'Premio', nombre: p.nombre, ruta: 'bimba · Rasca y gana', meta: [],
+        go: () => {
+          if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+          setTimeout(() => {
+            _buscadorAbrirBimbaAcordeon('rasca-admin-panel', 'mkt-row-rasca');
+            _buscadorScrollFlash('premio-row-' + p.id, 350);
+          }, 300);
+        }
+      });
+    });
+  }
+  return items;
+}
+
+// ── RENDER + WIRING ────────────────────────────────────────────────────────
+function _buscadorRenderRow(item, q) {
+  let nombreHtml, rutaHtml;
+  if (!q || _buscadorNorm(item.nombre).includes(_buscadorNorm(q))) {
+    nombreHtml = _buscadorHighlight(item.nombre, q);
+    rutaHtml = escapeHtml(item.ruta);
+  } else {
+    const hit = (item.meta || []).find(m => _buscadorNorm(m.valor).includes(_buscadorNorm(q)));
+    nombreHtml = escapeHtml(item.nombre);
+    rutaHtml = escapeHtml(item.ruta) + (hit ? ' · coincide en ' + escapeHtml(hit.etiqueta) + ': ' + _buscadorHighlight(hit.valor, q) : '');
+  }
+  return '<button type="button" class="buscador-row" data-idx="' + item._idx + '">'
+    + '<span class="buscador-row-icon">' + item.icon + '</span>'
+    + '<span class="buscador-row-text">'
+    + '<span class="buscador-row-top">'
+    + '<span class="buscador-row-name">' + nombreHtml + '</span>'
+    + '<span class="buscador-badge buscador-badge--' + item.badge + '">' + escapeHtml(item.tipo) + '</span>'
+    + '</span>'
+    + '<span class="buscador-row-path">' + rutaHtml + '</span>'
+    + '</span>'
+    + '</button>';
+}
+
+function _buscadorRenderizar(inputEl, resultsEl, seccionesFn, contenidoFn, tipoPanel) {
+  const q = inputEl.value.trim();
+  const items = q ? seccionesFn().concat(contenidoFn()) : seccionesFn();
+  const found = (q ? items.filter(it => _buscadorItemMatches(it, q)) : items).slice(0, 24);
+  if (tipoPanel === 'admin') _buscadorLastAdmin = found; else _buscadorLastBimba = found;
+  resultsEl.innerHTML = found.length
+    ? found.map((it, i) => _buscadorRenderRow(Object.assign({}, it, { _idx: i }), q)).join('')
+    : '<div class="buscador-empty">Sin resultados' + (q ? ' para "' + escapeHtml(q) + '"' : '') + '</div>';
+  resultsEl.classList.add('open');
+}
+
+function _buscadorWireResultsClick(resultsEl, tipoPanel, inputEl) {
+  resultsEl.addEventListener('click', e => {
+    const row = e.target.closest('.buscador-row');
+    if (!row) return;
+    const idx = parseInt(row.dataset.idx, 10);
+    const item = (tipoPanel === 'admin' ? _buscadorLastAdmin : _buscadorLastBimba)[idx];
+    if (!item) return;
+    resultsEl.classList.remove('open');
+    inputEl.blur();
+    try { item.go(); } catch (err) { console.error('[buscador] error al navegar:', err); }
+  });
+}
+
+function _buscadorRefreshBimbaCache(inputEl, resultsEl) {
+  const rerenderSiHayTexto = () => { if (inputEl.value.trim()) _buscadorRenderizar(inputEl, resultsEl, _buscadorSeccionesBimba, _buscadorContenidoBimba, 'bimba'); };
+  if (window.fb_loadDiscounts) {
+    window.fb_loadDiscounts().then(d => { _buscadorDiscountsCache = d || {}; rerenderSiHayTexto(); }).catch(() => {});
+  }
+  if (window.fb_loadRuletaConfig) {
+    window.fb_loadRuletaConfig().then(c => {
+      _buscadorPremiosCache = _buscadorPremiosCache || {};
+      _buscadorPremiosCache.ruleta = (c && c.premios) || [];
+      rerenderSiHayTexto();
+    }).catch(() => {});
+  }
+  if (window.fb_loadRascaConfig) {
+    window.fb_loadRascaConfig().then(c => {
+      _buscadorPremiosCache = _buscadorPremiosCache || {};
+      _buscadorPremiosCache.rasca = (c && c.premios) || [];
+      rerenderSiHayTexto();
+    }).catch(() => {});
+  }
+}
+
+function _buscadorInit() {
+  const ai = document.getElementById('buscador-admin-input');
+  const ar = document.getElementById('buscador-admin-results');
+  if (ai && ar) {
+    const renderAdmin = () => _buscadorRenderizar(ai, ar, _buscadorSeccionesAdmin, _buscadorContenidoAdmin, 'admin');
+    ai.addEventListener('input', renderAdmin);
+    ai.addEventListener('focus', renderAdmin);
+    ai.addEventListener('keydown', e => { if (e.key === 'Escape') { ar.classList.remove('open'); ai.blur(); } });
+    document.addEventListener('click', e => { if (!ai.contains(e.target) && !ar.contains(e.target)) ar.classList.remove('open'); });
+    _buscadorWireResultsClick(ar, 'admin', ai);
+  }
+  const bi = document.getElementById('buscador-bimba-input');
+  const br = document.getElementById('buscador-bimba-results');
+  if (bi && br) {
+    const renderBimba = () => _buscadorRenderizar(bi, br, _buscadorSeccionesBimba, _buscadorContenidoBimba, 'bimba');
+    bi.addEventListener('input', renderBimba);
+    bi.addEventListener('focus', () => { _buscadorRefreshBimbaCache(bi, br); renderBimba(); });
+    bi.addEventListener('keydown', e => { if (e.key === 'Escape') { br.classList.remove('open'); bi.blur(); } });
+    document.addEventListener('click', e => { if (!bi.contains(e.target) && !br.contains(e.target)) br.classList.remove('open'); });
+    _buscadorWireResultsClick(br, 'bimba', bi);
+  }
+}
+document.addEventListener('adminShellLoaded', _buscadorInit);

@@ -16,7 +16,14 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 
 // ── LOGIN / LOGOUT ──
-function hacerLogin() {
+// Mismo retraso progresivo que el panel de pedidos/ (slots-alertas.js:
+// checkAdminPwd) y mismo registro en Firebase (loginLog/), para que los
+// intentos fallidos de las dos apps queden juntos y sean fáciles de
+// auditar. El contador vive solo en memoria (se resetea al recargar),
+// igual que en pedidos/ — no es infalible, pero frena los intentos
+// automatizados sin complicar el login legítimo.
+let _loginFailedAttempts = 0;
+async function hacerLogin() {
   const email = document.getElementById('login-email').value.trim();
   const pwd = document.getElementById('login-pwd').value;
   const btn = document.getElementById('login-btn');
@@ -26,8 +33,32 @@ function hacerLogin() {
   if (!pwd) { errEl.textContent = 'Introduce la contraseña.'; return; }
   btn.disabled = true;
   btn.textContent = 'Entrando...';
-  auth.signInWithEmailAndPassword(email, pwd).catch(function (e) {
-    let msg = 'Error al iniciar sesión';
+
+  const _delays = [0, 0, 5, 15, 30, 60, 180]; // segundos por intento
+  const _delaySeconds = _delays[Math.min(_loginFailedAttempts, _delays.length - 1)];
+  if (_delaySeconds > 0) {
+    let remaining = _delaySeconds;
+    const interval = setInterval(() => {
+      remaining--;
+      errEl.textContent = '⏳ Demasiados intentos fallidos. Espera ' + remaining + ' segundos...';
+      if (remaining <= 0) clearInterval(interval);
+    }, 1000);
+    errEl.textContent = '⏳ Demasiados intentos fallidos. Espera ' + _delaySeconds + ' segundos...';
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+    await new Promise(r => setTimeout(r, _delaySeconds * 1000));
+    clearInterval(interval);
+    btn.disabled = true;
+    btn.textContent = 'Entrando...';
+    errEl.textContent = '';
+  }
+
+  let ok = false, msg = '';
+  try {
+    await auth.signInWithEmailAndPassword(email, pwd);
+    ok = true;
+  } catch (e) {
+    msg = 'Error al iniciar sesión';
     if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
       msg = 'Email o contraseña incorrectos';
     } else if (e.code === 'auth/too-many-requests') {
@@ -35,10 +66,43 @@ function hacerLogin() {
     } else if (e.code === 'auth/invalid-email') {
       msg = 'Email no válido';
     }
-    errEl.textContent = msg;
+  }
+
+  _guardarIntentoLogin(email, ok, msg);
+
+  if (ok) {
+    _loginFailedAttempts = 0;
+  } else {
+    _loginFailedAttempts++;
+    let display = msg;
+    if (_loginFailedAttempts >= 3) {
+      const next = [0, 0, 0, 15, 30, 60, 180][Math.min(_loginFailedAttempts, 6)];
+      display += ' (' + _loginFailedAttempts + ' intentos fallidos' + (next > 0 ? ' — próximo intento bloqueado ' + next + 's' : '') + ')';
+    }
+    errEl.textContent = display;
     btn.disabled = false;
     btn.textContent = 'Entrar';
-  });
+  }
+}
+async function _guardarIntentoLogin(email, ok, msg) {
+  let ip = 'desconocida';
+  try {
+    const ipRes = await Promise.race([
+      fetch('https://api.ipify.org?format=json'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))
+    ]);
+    ip = (await ipRes.json()).ip || 'desconocida';
+  } catch (e) {}
+  try {
+    await firebase.database().ref('loginLog').push({
+      ts: Date.now(),
+      fecha: new Date().toLocaleString('es-ES'),
+      email: email,
+      resultado: ok ? '✅ Acceso correcto (administración)' : '⛔ Fallo (administración): ' + msg,
+      ip: ip,
+      dispositivo: navigator.userAgent.slice(0, 120)
+    });
+  } catch (e) { console.error('[loginLog] error al guardar:', e); }
 }
 function hacerLogout() {
   firebase.auth().signOut();
@@ -56,13 +120,17 @@ auth.onAuthStateChanged(function (user) {
   const appScreen = document.getElementById('app-screen');
   const btn = document.getElementById('login-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
-  if (user) {
+  // Un usuario anónimo NO cuenta como sesión de socio — solo existe para
+  // poder escribir en loginLog/ (las reglas de Firebase exigen auth != null),
+  // igual que hace pedidos/ para registrar intentos fallidos de login.
+  if (user && !user.isAnonymous) {
     loginScreen.style.display = 'none';
     appScreen.style.display = 'block';
     cargarDatosIniciales();
   } else {
     loginScreen.style.display = 'flex';
     appScreen.style.display = 'none';
+    if (!user) auth.signInAnonymously().catch(function () {});
   }
 });
 
@@ -162,7 +230,11 @@ function bimbaRenderMargenes() {
     const tieneCoste = !(i.coste === undefined || i.coste === null || i.coste === '');
     i._tieneCoste = tieneCoste;
     i._margenEur = tieneCoste ? (i.price - i.coste) : null;
-    i._margenPct = tieneCoste && i.price > 0 ? (i._margenEur / i.price) * 100 : null;
+    // Si price es 0 (o el producto no tiene coste), _margenPct cae a 0 en
+    // vez de null — antes, con coste puesto y precio 0€, _margenPct
+    // quedaba en null y el .toFixed(0) de más abajo rompía la tabla
+    // ENTERA (el .map() de toda la lista), no solo la fila de ese producto.
+    i._margenPct = tieneCoste ? (i.price > 0 ? (i._margenEur / i.price) * 100 : 0) : null;
   });
 
   // Orden real de categorías: el mismo en que aparecen en la carta (MENU), no alfabético

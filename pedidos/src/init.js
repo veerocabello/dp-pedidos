@@ -1,3 +1,65 @@
+// ── DATOS PRIVADOS DE EMPLEADOS ──────────────────────────────────────
+// Empleados y fichajes (PIN, DNI, teléfono, firmas) son datos sensibles.
+// Solo se cargan tras un login real (Firebase Auth admin o PIN bimba
+// verificado en el servidor) — nunca al abrir la página como visitante.
+// Llamar desde checkAdminPwd() (slots-alertas.js) y secureLockConfirm()
+// (admin-accesos.js) justo después de confirmar el acceso.
+function _cargarDatosEmpleadosPrivados() {
+  if (window.fb_loadEmpleados) {
+    window.fb_loadEmpleados().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_empleados', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadFichajes) {
+    window.fb_loadFichajes().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  // El badge de 🔔 Alertas necesita datos frescos del log nada más
+  // entrar al panel, sin esperar a que se abra esa pestaña en concreto.
+  if (window.fb_loadActivityLog) {
+    window.fb_loadActivityLog().then(log => {
+      if (log && log.length) localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    }).catch(() => {
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  } else if (typeof updateAlertBadge === 'function') {
+    updateAlertBadge();
+  }
+  // Tokens de acceso (?bimba=/?key=) y clave de stock: solo se cargan al
+  // panel de ajustes DESPUÉS de un login real, para no exponerlos a
+  // cualquier visitante. La comprobación de ?bimba=/?key= en sí la hace
+  // el servidor (bimba-verify.php), este valor cacheado solo sirve para
+  // que la propia admin pueda ver/copiar el enlace desde Ajustes.
+  if (window.fb_loadUrlToken) {
+    window.fb_loadUrlToken().then(t => {
+      if (t) {
+        localStorage.setItem(URL_TOKEN_KEY, t);
+        if (typeof loadUrlTokenUI === 'function') loadUrlTokenUI();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadBimbaToken) {
+    window.fb_loadBimbaToken().then(t => {
+      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+    }).catch(() => {});
+  }
+  if (window.fb_loadStockPwd) {
+    window.fb_loadStockPwd().then(pwd => {
+      if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
+    }).catch(() => {});
+  }
+}
+
 // ── INIT ADMIN DATA ──
 loadSavedMenu();
 initTabs(); // re-renderizar pestañas con el menú guardado
@@ -107,26 +169,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     });
   }
 
-  // Carga inicial de datos críticos desde Firebase (empleados, fichajes, cats, slots)
+  // Carga inicial de datos críticos desde Firebase (cats, slots, etc.)
+  // NOTA DE SEGURIDAD: empleados y fichajes NO se cargan aquí — esta
+  // función corre para cualquier visitante. Ver _cargarDatosEmpleadosPrivados().
   function _cargarCriticosDesdeFirebase() {
-    if (window.fb_loadEmpleados) {
-      window.fb_loadEmpleados().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB31;
-          localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-          if ((_document$getElementB31 = document.getElementById('admin-empleados')) !== null && _document$getElementB31 !== void 0 && _document$getElementB31.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadFichajes) {
-      window.fb_loadFichajes().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB32;
-          localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-          if ((_document$getElementB32 = document.getElementById('admin-empleados')) !== null && _document$getElementB32 !== void 0 && _document$getElementB32.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
     if (window.fb_loadBlockedCats) {
       window.fb_loadBlockedCats().then(cats => {
         if (cats) {
@@ -213,26 +259,14 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {
@@ -754,3 +788,22 @@ function _mostrarAlertaTablet(data) {
 
   document.body.appendChild(overlay);
 }
+
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
+  if (!btn) return;
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
+})();

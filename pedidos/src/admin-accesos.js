@@ -28,9 +28,9 @@ async function imprimirTodosLosActivos() {
 
 function _markAsImpreso(orderNum) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Idempotente:
+  // reimprimir el mismo pedido no vuelve a restar del contador.
+  _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';
@@ -82,19 +82,33 @@ function shareOrderWhatsApp(orderNum, name, slotTime, items, total) {
 }
 
 // ── DISPOSITIVO DE CONFIANZA ─────────────────────────────────────────────────
-// El token almacenado es: sha256(uid_firebase + contraseña_hasheada)
-// Así, aunque alguien acceda al localStorage, el token solo es válido
-// para el UID concreto de esta sesión Firebase — no es un string genérico.
+// El token de confianza es un secreto ALEATORIO generado en el momento de
+// marcar el dispositivo (no una fórmula a partir de datos que ya son
+// públicos o casi — antes era sha256(uid + hash de la contraseña), y el uid
+// y el hash por defecto están en el JS que se manda al navegador, así que
+// cualquiera que supiera el uid del admin podía calcular un token válido
+// sin haber iniciado sesión nunca). Solo se guarda su HASH en Firebase
+// (config/trustedDevices/<deviceId>), y la comprobación la hace el
+// servidor (bimba-verify.php) — así "Expulsar" desde el panel puede borrar
+// ese registro y el dispositivo pierde el acceso de verdad, no solo hasta
+// que recargue la página.
 const TRUSTED_KEY = 'dpf_trusted_device';
 const TRUSTED_NAME_KEY = 'dpf_trusted_device_name';
-const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // hash vinculado al UID
+const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado de nada público
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
+const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
 
-async function _buildTrustedToken(uid) {
-  // Token = SHA-256(uid + ADMIN_PWD_DEFAULT_HASH) — usa la contraseña hasheada como sal
-  const raw = uid + (localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH);
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = 'dev_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -104,27 +118,29 @@ function getTrustedExpiryDays() {
 
 async function isTrustedDevice() {
   if (localStorage.getItem(TRUSTED_KEY) !== 'yes') return false;
-  // Comprobar expiración
+  // Comprobar expiración local primero (evita una llamada de red inútil)
   const expiry = parseInt(localStorage.getItem(TRUSTED_EXPIRY_KEY) || '0');
   if (expiry && Date.now() > expiry) {
-    // Sesión expirada — limpiar
-    localStorage.removeItem(TRUSTED_KEY);
-    localStorage.removeItem(TRUSTED_TOKEN_KEY);
-    localStorage.removeItem(TRUSTED_EXPIRY_KEY);
+    await setTrustedDevice(false);
     console.log('[trusted] sesión expirada');
     return false;
   }
-  // Requiere sesión Firebase activa con UID
-  const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
-  if (!user || !user.uid) return false;
-  // Verificar que el token almacenado corresponde al UID actual
-  const storedToken = localStorage.getItem(TRUSTED_TOKEN_KEY);
-  if (!storedToken) return false;
+  const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+  if (!token) return false;
+  // Comprobación real en el servidor: si el admin ha "expulsado" este
+  // dispositivo desde el panel, su registro ya no existe en Firebase y
+  // esto falla aunque el token siga guardado en este navegador.
   try {
-    const expected = await _buildTrustedToken(user.uid);
-    return storedToken === expected;
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkTrustedDevice', deviceId: getDeviceId(), token })
+    });
+    const data = await res.json();
+    if (!data.success) { await setTrustedDevice(false); return false; }
+    return true;
   } catch (e) {
-    return false;
+    return false; // red caída: por seguridad, pedir login en vez de asumir confianza
   }
 }
 
@@ -136,14 +152,31 @@ async function setTrustedDevice(val, name) {
   if (val) {
     const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
     if (!user || !user.uid) return; // no guardar si no hay sesión real
-    const token = await _buildTrustedToken(user.uid);
+    const token = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '_' + Math.random().toString(36).slice(2));
+    const tokenHash = await _sha256Hex(token);
+    const deviceId = getDeviceId();
     const days = getTrustedExpiryDays();
     const expiry = Date.now() + days * 24 * 60 * 60 * 1000;
+    // Escritura autenticada (ya hay sesión real de admin en este momento) —
+    // el servidor solo guarda el HASH, nunca el token en sí.
+    await firebase.database().ref('config/trustedDevices/' + deviceId).set({
+      tokenHash: tokenHash,
+      name: name || 'Sin nombre',
+      createdAt: Date.now(),
+    });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');
     localStorage.setItem(TRUSTED_TOKEN_KEY, token);
     localStorage.setItem(TRUSTED_EXPIRY_KEY, String(expiry));
   } else {
+    // Si hay sesión real, limpiar también el registro en Firebase — igual
+    // que arriba, si no hay sesión (p.ej. venimos de una comprobación
+    // fallida sin login) esta escritura fallará en silencio y no pasa nada,
+    // el registro se queda pero el token local ya no sirve para nada.
+    try {
+      const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
+      if (user && user.uid) await firebase.database().ref('config/trustedDevices/' + getDeviceId()).remove();
+    } catch (e) {}
     localStorage.removeItem(TRUSTED_KEY);
     localStorage.removeItem(TRUSTED_NAME_KEY);
     localStorage.removeItem(TRUSTED_TOKEN_KEY);
@@ -265,6 +298,7 @@ async function openAdmin() {
       window._mySessionId = _SESSION_ID;
       await window.fb_registerSession({
         sid: _SESSION_ID,
+        deviceId: getDeviceId(),
         device: device,
         time: new Date().toLocaleString('es-ES'),
         ts: Date.now(),
@@ -452,14 +486,9 @@ async function openAdmin() {
 })();
 
 // ── ACCESO BIMBA POR CANDADO ────────────────────────────────────────────────
-// Contraseña almacenada como hash SHA-256 con sal — nunca en texto plano
-const _BIMBA_SALT = 'dpf_2026_x7q';
-const BIMBA_PWD_HASH = '94817839a2d2ae89cf3c0cd4afdf73526ab401525e7a2e557aadf7a8e4fcb4f8';
-async function hashBimbaPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd + _BIMBA_SALT));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// El PIN se comprueba en el servidor (bimba-verify.php), nunca en el
+// navegador — así no queda ningún hash extraíble en el JS público y el
+// límite de intentos es real (no se puede probar offline sin límite).
 function secureLockTap() {
   document.getElementById('secure-pin-input').value = '';
   document.getElementById('secure-pin-error').style.display = 'none';
@@ -471,11 +500,24 @@ function secureLockCerrar() {
 }
 async function secureLockConfirm() {
   const val = document.getElementById('secure-pin-input').value;
-  const hash = await hashBimbaPwd(val);
-  if (hash === BIMBA_PWD_HASH) {
+  let ok = false, errMsg = 'Contraseña incorrecta';
+  try {
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: val })
+    });
+    const data = await res.json();
+    ok = !!data.success;
+    if (data.error) errMsg = data.error;
+  } catch (e) {
+    errMsg = 'Error de conexión. Inténtalo de nuevo.';
+  }
+  if (ok) {
     document.getElementById('secure-pin-modal').style.display = 'none';
     setTimeout(_updateAudioBannerState, 200);
     _adminLoggedIn = true; window._adminLoggedIn = true;
+    _cargarDatosEmpleadosPrivados();
     if (window._bimbaTargetEmpleados) {
       window._bimbaTargetEmpleados = false;
       logActivity('👥 Acceso a empleados por bimba');
@@ -487,8 +529,6 @@ async function secureLockConfirm() {
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
       }, 100);
-      return;
-      showAdminSection('bimba-empleados', null);
     } else {
       logActivity('🔒 Acceso bimba por candado');
       openStockConfigSecret();
@@ -499,6 +539,7 @@ async function secureLockConfirm() {
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
   } else {
+    document.getElementById('secure-pin-error').textContent = errMsg;
     document.getElementById('secure-pin-error').style.display = 'block';
     document.getElementById('secure-pin-input').value = '';
     document.getElementById('secure-pin-input').focus();

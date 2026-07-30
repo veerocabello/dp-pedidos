@@ -37,20 +37,33 @@ function getUrlToken() {
 function getBimbaToken() {
   return localStorage.getItem(BIMBA_TOKEN_KEY) || '';
 }
-(function checkUrlToken() {
+(async function checkUrlToken() {
   const params = new URLSearchParams(window.location.search);
+
+  // Ambos tokens (?key= y ?bimba=) se comprueban en el servidor
+  // (bimba-verify.php) con límite de intentos — antes se comparaban aquí
+  // contra un valor precargado en localStorage para TODO visitante, lo
+  // que permitía a cualquier cliente leer su propio localStorage y
+  // auto-concederse acceso sin conocer el token real.
 
   // Token admin normal
   const key = params.get('key');
   if (key) {
-    const saved = getUrlToken();
-    if (saved && key === saved) {
-      setTimeout(() => {
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('🔗 Acceso por URL token');
-        openAdmin();
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkAdminUrlToken', token: key })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => {
+          setTimeout(_updateAudioBannerState, 200);
+          logActivity('🔗 Acceso por URL token');
+          openAdmin();
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 
   // Token bimba — abre directamente el panel sin contraseña.
@@ -59,17 +72,32 @@ function getBimbaToken() {
   // tickets, gastos, fichajes, etc. Solo sirve para ver la interfaz.
   const bimbaKey = params.get('bimba');
   if (bimbaKey) {
-    const saved = getBimbaToken();
-    if (saved && bimbaKey === saved) {
-      setTimeout(() => {
-        logActivity('🔗 Acceso bimba por URL token');
-        _adminLoggedIn = true; window._adminLoggedIn = true;
-        openStockConfigSecret();
-        document.getElementById('admin-overlay').classList.add('open');
-        document.getElementById('admin-login').style.display = 'none';
-        document.getElementById('admin-panel').style.display = 'block';
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkBimbaToken', token: bimbaKey })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // admin-shell.html se inyecta de forma diferida (carga eager a los
+        // 2s, o al vuelo desde openAdmin()) — este acceso directo por URL
+        // puede llegar antes de que exista, así que hay que esperar a que
+        // esté listo antes de tocar sus elementos (si no, "#admin-overlay"
+        // aún no existe y todo esto revienta con un error silencioso).
+        if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
+          await new Promise(resolve => loadAdminShell(resolve));
+        }
+        setTimeout(() => {
+          logActivity('🔗 Acceso bimba por URL token');
+          _adminLoggedIn = true; window._adminLoggedIn = true;
+          openStockConfigSecret();
+          document.getElementById('admin-overlay').classList.add('open');
+          document.getElementById('admin-login').style.display = 'none';
+          document.getElementById('admin-panel').style.display = 'block';
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 })();
 
@@ -125,18 +153,10 @@ document.addEventListener('keydown', function (e) {
     var _document$getElementB9;
     window._secretKeyBuf += e.key.toLowerCase();
     if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    {
-      const _last5 = window._secretKeyBuf.slice(-5);
-      if (_last5.length === 5) {
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(_last5 + _BIMBA_SALT)).then(buf => {
-          const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-          if (h === BIMBA_PWD_HASH) {
-            window._secretKeyBuf = '';
-            openStockConfigSecret();
-          }
-        });
-      }
-    }
+    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
+    // en cualquier parte de la página se ha quitado — comprobaba el hash en
+    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
+    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
     if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
       const inp = document.getElementById('log-secret-input');
       if (inp) {
@@ -184,6 +204,7 @@ function logActivity(action) {
   if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
     window.fb_saveActivityLog(trimmed).catch(() => {});
   }
+  if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 function renderActivityLog() {
   const log = getActivityLog();
@@ -193,7 +214,103 @@ function renderActivityLog() {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin actividad registrada</div>';
     return;
   }
-  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(e.time, "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(e.action, "</span>\n    </div>")).join('');
+  // e.action pasa por logActivity() desde toda la app y a menudo lleva
+  // texto libre interpolado (nombres de ingredientes, proveedores,
+  // empleados, categorías...) — hay que escapar aquí, en el único sitio
+  // donde se renderiza, en vez de perseguir cada origen por separado.
+  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(escapeHtml(e.time), "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n    </div>")).join('');
+}
+
+// ══════════════════════════════════════════════
+//  ALERTAS (subconjunto del registro de actividad: fallos silenciosos
+//  al guardar pedidos/sellos y precios que no cuadran con la carta)
+// ══════════════════════════════════════════════
+const ALERTAS_SEEN_KEY = 'dpf_alertas_last_seen_ts';
+function isAlertEntry(action) {
+  return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0);
+}
+function getAlertEntries() {
+  return getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
+}
+function updateAlertBadge() {
+  const badge = document.getElementById('alertas-tab-badge');
+  if (!badge) return;
+  const lastSeen = localStorage.getItem(ALERTAS_SEEN_KEY) || '';
+  const unseen = getAlertEntries().filter(e => (e.ts || '') > lastSeen).length;
+  if (unseen > 0) {
+    badge.textContent = unseen > 99 ? '99+' : String(unseen);
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+// Persiste el log completo (local + Firebase si hay sesión) — usado tanto
+// por logActivity() como por resolverAlerta() al marcar una entrada.
+function _persistActivityLog(log) {
+  localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+  if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_saveActivityLog(log).catch(() => {});
+  }
+}
+// Marca una alerta como resuelta (desaparece de la lista y del badge, pero
+// sigue existiendo en el registro de actividad completo). Se usa tanto al
+// pulsar "Descartar" como automáticamente tras un "Reintentar" con éxito.
+function resolverAlerta(ts) {
+  const log = getActivityLog();
+  const entry = log.find(e => e.ts === ts);
+  if (!entry) return;
+  entry.resolved = true;
+  _persistActivityLog(log);
+  renderAlertas();
+}
+function _alertaDomId(ts) {
+  return 'alerta-' + String(ts).replace(/[^a-zA-Z0-9]/g, '');
+}
+async function reintentarGuardadoPedido(ts, orderNum, fecha) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reintentarStats', orderNum, fecha })
+    });
+    const data = await res.json();
+    if (data.success) {
+      resolverAlerta(ts); // vuelve a pintar la lista sin esta tarjeta
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+      if (statusEl) { statusEl.textContent = '❌ ' + (data.error || 'No se pudo recuperar.'); statusEl.style.display = 'block'; }
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+    if (statusEl) { statusEl.textContent = '❌ Error de conexión, inténtalo de nuevo.'; statusEl.style.display = 'block'; }
+  }
+}
+function renderAlertas() {
+  const entries = getAlertEntries();
+  const el = document.getElementById('alertas-list');
+  if (!el) return;
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos pendientes</div>';
+  } else {
+    el.innerHTML = entries.map(e => {
+      const critico = e.action.indexOf('🚨') === 0;
+      const bg = critico ? '#FBEAE7' : '#FDECD5';
+      const border = critico ? '#F0CFC8' : '#EFD6A9';
+      const puedeReintentar = e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha;
+      const retryBtn = puedeReintentar
+        ? "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>")
+        : '';
+      return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+    }).join('');
+  }
+  // Marcar como vistos: la próxima vez que se recalcule el badge, estos
+  // avisos ya no cuentan como nuevos.
+  if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
+  updateAlertBadge();
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
@@ -226,17 +343,22 @@ function applyAutoDelete() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  let hist = getHistorial();
-  const before = hist.length;
+  const original = getHistorial();
+  const before = original.length;
   // Cap de seguridad: nunca más de 365 entradas independientemente del filtro de fecha
-  hist = hist.filter(d => d.date >= cutoffStr).slice(0, 365);
+  const hist = original.filter(d => d.date >= cutoffStr).slice(0, 365);
   if (hist.length !== before) {
+    // Las fechas borradas se calculan ANTES de sobrescribir localStorage —
+    // antes se recalculaban leyendo getHistorial() DESPUÉS del
+    // localStorage.setItem() de abajo, así que siempre salía una lista
+    // vacía (ya no quedaba ninguna fecha antigua que leer) y stats/{fecha}
+    // nunca llegaba a borrarse de Firebase, solo de localStorage.
+    const deletedDates = original
+      .filter(d => d.date < cutoffStr)
+      .map(d => d.date);
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist));
     // Borrar también los días eliminados de Firebase (stats/{fecha})
     if (typeof firebase !== 'undefined' && firebase.database) {
-      const deletedDates = getHistorial()
-        .filter(d => d.date < cutoffStr)
-        .map(d => d.date);
       deletedDates.forEach(date => {
         firebase.database().ref('stats/' + date).remove().catch(() => {});
       });
@@ -341,6 +463,14 @@ function exportTodayCSV() {
   }
   downloadCSV(stats, "pedidos_".concat(todayKey, ".csv"));
 }
+// El nombre del cliente es texto libre sin restricción de caracteres — una
+// comilla suelta dentro de un campo entrecomillado corta el campo antes de
+// tiempo y desplaza el resto de comas de esa fila a las columnas
+// equivocadas al abrirlo en Excel/Sheets. Se duplica cada comilla interna,
+// que es como CSV espera que se escapen ("" dentro de un campo "...").
+function _csvEscape(str) {
+  return String(str == null ? '' : str).replace(/"/g, '""');
+}
 function exportHistorialCSV() {
   const hist = getHistorial();
   if (!hist.length) {
@@ -350,7 +480,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -366,7 +496,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'
@@ -395,8 +525,12 @@ function buildTicketHTML(data) {
   const tc = getTicketConfig();
   const sep = '─'.repeat(32);
   const sep2 = '═'.repeat(32);
+  // Los nombres de producto/extras vienen de lo que el navegador mand\u00F3 a
+  // guardar-pedido.php \u2014 pueden manipularse con una petici\u00F3n directa al
+  // servidor (sin pasar por la web), as\u00ED que hay que escaparlos igual que
+  // nombre/tel\u00E9fono/notas de abajo, no son m\u00E1s de fiar que esos.
   let itemsHTML = items.map(_ref21 => {
-    let n = _ref21.name,
+    let n = escapeHtml(_ref21.name),
       qty = _ref21.qty,
       subtotal = _ref21.subtotal,
       extras = _ref21.extras;
@@ -404,7 +538,7 @@ function buildTicketHTML(data) {
     const label = qty + 'x ' + n;
     if (extras && extras.length > 0) {
       const extrasList = extras.map(function(e) {
-        const extraName = (e && e.name) ? e.name : e;
+        const extraName = escapeHtml((e && e.name) ? e.name : e);
         const extraPrice = (e && e.price) ? '+' + parseFloat(e.price).toFixed(2).replace('.', ',') + ' \u20AC' : '';
         return '<div style="display:flex;justify-content:space-between"><span>&nbsp;&nbsp;&nbsp;\xB7 ' + extraName + '</span>' + (extraPrice ? '<span style="color:#aaa">' + extraPrice + '</span>' : '') + '</div>';
       }).join('');
@@ -416,11 +550,20 @@ function buildTicketHTML(data) {
     }
   }).join('');
 
-  const headerRow = slotTime
-    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + name.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
-    : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + name.toUpperCase() + '</div>';
+  // El nombre/tel\u00E9fono/notas los escribe el propio cliente en el checkout
+  // (solo se les limita la longitud, no los caracteres) y este HTML se
+  // inyecta luego con innerHTML en el panel de admin al ver/imprimir el
+  // ticket \u2014 sin escapar, un nombre o nota con <script> o <img onerror=...>
+  // se ejecutar\u00EDa en el navegador de quien lo abra con su sesi\u00F3n de admin.
+  const nameSafe = escapeHtml(name || '');
+  const notesSafe = escapeHtml(notes || '');
+  const phoneSafe = escapeHtml(phone || '');
 
-  return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phone ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phone + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " \u20AC</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notes ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notes, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
+  const headerRow = slotTime
+    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
+    : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + nameSafe.toUpperCase() + '</div>';
+
+  return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phoneSafe ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phoneSafe + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " \u20AC</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notesSafe ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notesSafe, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
 }
 function openPrintModal(ticketData) {
   currentTicketData = ticketData;
@@ -433,20 +576,70 @@ function closePrintModal() {
 }
 function doPrint() {
   if (!currentTicketData) return;
+  const orderNum = currentTicketData.orderNum;
 
   // Mandar a impresora térmica via Firebase
   if (window.fb_saveTicket) {
     const reimprKey = 'R' + Date.now();
     const ticketParaImpresora = Object.assign({}, currentTicketData, { _reimprimir: true });
     window.fb_saveTicket(reimprKey, ticketParaImpresora)
-      .then(() => { closePrintModal(); })
-      .catch(() => { closePrintModal(); });
+      .then(() => { _registrarEnvioTicket(orderNum, true); closePrintModal(); })
+      .catch(() => { _registrarEnvioTicket(orderNum, false); _avisarFalloEnvioTicket(orderNum); closePrintModal(); });
   } else {
     closePrintModal();
   }
 }
 function printLastTicket() {
   if (_lastTicketData) openPrintModal(_lastTicketData);
+}
+// Envía un pedido nuevo directo a la impresora térmica sin pasar por el
+// modal de vista previa — lo dispara el listener de fb_listenStats cuando
+// getTicketConfig().autoImprimir está activo. Sin el flag _reimprimir de
+// doPrint(): este es el print "original" del sistema, no una reimpresión
+// manual desde el panel.
+function _autoImprimirPedido(order) {
+  if (!window.fb_saveTicket) return;
+  const ticketData = {
+    orderNum: order.num,
+    name: order.name,
+    phone: order.phone || '',
+    notes: order.notes || '',
+    slotTime: order.slot || null,
+    items: order.items || [],
+    total: order.total,
+    time: order.time
+  };
+  const key = 'A' + Date.now() + '_' + order.num;
+  window.fb_saveTicket(key, ticketData)
+    .then(() => _registrarEnvioTicket(order.num, true))
+    .catch(() => { _registrarEnvioTicket(order.num, false); _avisarFalloEnvioTicket(order.num); });
+}
+// Aviso real cuando el envío del ticket a Firebase falla (offline, permisos...).
+// No sabemos si la impresora física llegó a sacar el papel — de eso se encarga
+// el programa que la conecta, fuera de esta web — pero al menos esto ya no se
+// queda callado como antes.
+function _avisarFalloEnvioTicket(orderNum) {
+  logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión');
+}
+const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
+function _registrarEnvioTicket(orderNum, ok) {
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  log.unshift({ num: orderNum, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
+  localStorage.setItem(TICKET_SEND_LOG_KEY, JSON.stringify(log.slice(0, 15)));
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
+}
+function _renderTicketSendLog() {
+  const el = document.getElementById('tc-envios-log');
+  if (!el) return;
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  el.innerHTML = log.length ? log.map(e =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:12px">'
+    + '<span>Pedido #' + escapeHtml(String(e.num)) + '</span>'
+    + '<span style="color:' + (e.ok ? '#27855a' : '#c0392b') + ';font-weight:700">' + (e.ok ? '✅ Enviado · ' : '❌ Falló · ') + e.time + '</span>'
+    + '</div>'
+  ).join('') : '<div style="font-size:12px;color:var(--muted)">Todavía no se ha enviado ningún ticket en este dispositivo</div>';
 }
 let _lastTicketData = null;
 async function printOrderFromStats(num, name, time, total, slot) {
@@ -661,7 +854,15 @@ function initFirebaseListeners() {
           }
         }
         if (_adminLoggedIn) {
-          _alertPendingOrders = diff;
+          const _nuevosPedidos = (stats.orders || []).slice(-diff);
+          if (getTicketConfig().autoImprimir) {
+            _nuevosPedidos.forEach(_autoImprimirPedido);
+          }
+          // Se SUMA cada pedido nuevo al contador (por número, no se puede
+          // duplicar) en vez de sobreescribirlo — antes, si llegaban dos
+          // avisos de "pedido nuevo" seguidos antes de atender el primero,
+          // el segundo pisaba el contador entero en vez de sumarse.
+          _nuevosPedidos.forEach(o => _marcarPedidoPendienteAlerta(o.num));
           startAlertLoop();
           const toast = document.getElementById('new-order-toast');
           if (toast) {

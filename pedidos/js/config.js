@@ -123,6 +123,36 @@ function _initFirebase() {
   var jlisten = function(r,cb) { return db.ref(r).on("value",cb); };
   var jparse = function(v) { try{return JSON.parse(v);}catch(e){return null;} };
   var jstr = function(v) { return JSON.stringify(v); };
+  // Escritura ATÓMICA de un nodo que guarda un objeto/array como STRING JSON
+  // (el mismo formato que jset/jget en toda la web). mutatorFn recibe el
+  // valor YA PARSEADO actual (o null si no existía) y debe devolver el
+  // nuevo valor a guardar. Usa una transacción real de Firebase: si dos
+  // dispositivos escriben casi a la vez, Firebase reintenta automáticamente
+  // con el dato más reciente en vez de que uno pise el cambio del otro.
+  window.fb_transactJsonString = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      var parsed = null;
+      if (typeof current === 'string') {
+        parsed = jparse(current);
+      } else if (current !== null && current !== undefined) {
+        parsed = current;
+      }
+      var updated = mutatorFn(parsed);
+      return jstr(updated);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? jparse(result.snapshot.val()) : null;
+  };
+  // Igual que fb_transactJsonString pero para nodos que guardan el objeto/
+  // array nativo de Firebase directamente (sin pasar por JSON.stringify),
+  // como pp2/*.
+  window.fb_transactNative = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      return mutatorFn(current === undefined ? null : current);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? result.snapshot.val() : null;
+  };
   // SLOTS
   window.fb_incrementSlot = async function(s) { await db.ref("slots/"+tK()+"/"+s).transaction(function(v){return(v||0)+1;}); };
   window.fb_getSlotCount = async function(s) { var sn=await jget("slots/"+tK()+"/"+s); return sn.exists()?sn.val():0; };
@@ -251,6 +281,7 @@ function _initFirebase() {
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };
   window.fb_saveBimbaToken = async function(t) { await jset("config/bimbaToken",t); };
   window.fb_loadBimbaToken = async function() { var sn=await jget("config/bimbaToken"); return sn.exists()?sn.val():null; };
+  window.fb_saveBimbaTokenExpiry = async function(ts) { await jset("config/bimbaTokenExpiry",ts); };
   // STOCK PWD
   window.fb_saveStockPwd = async function(h) { await jset("config/stockPwd",h); };
   window.fb_loadStockPwd = async function() { var sn=await jget("config/stockPwd"); return sn.exists()?sn.val():null; };
@@ -276,6 +307,10 @@ function _initFirebase() {
     var sn = await jget("ruleta_giros/" + fecha);
     return sn.exists() ? sn.val() : {};
   };
+  window.fb_loadRascaGiros = async function(fecha) {
+    var sn = await jget("rasca_giros/" + fecha);
+    return sn.exists() ? sn.val() : {};
+  };
   window.fb_saveRuletaConfig = async function(config) {
     await jset("ruleta_config", config);
   };
@@ -283,6 +318,18 @@ function _initFirebase() {
     var sn = await jget("ruleta_config");
     return sn.exists() ? sn.val() : null;
   };
+  window.fb_listenRuletaConfig = function(cb) { return jlisten("ruleta_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // RASCA Y GANA — mismo formato que la ruleta (premios con peso)
+  window.fb_saveRascaConfig = async function(config) { await jset("rasca_config", config); };
+  window.fb_loadRascaConfig = async function() {
+    var sn = await jget("rasca_config");
+    return sn.exists() ? sn.val() : null;
+  };
+  window.fb_listenRascaConfig = function(cb) { return jlisten("rasca_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // JUEGO ACTIVO — qué juego (si alguno) ve el cliente en la carta
+  window.fb_saveJuegoActivo = async function(juego) { await jset("config/juegoActivo", juego); };
+  window.fb_loadJuegoActivo = async function() { var sn=await jget("config/juegoActivo"); return sn.exists()?sn.val():'ninguno'; };
+  window.fb_listenJuegoActivo = function(cb) { return jlisten("config/juegoActivo", function(sn){ cb(sn.exists()?sn.val():'ninguno'); }); };
   // LOGIN LOG (intentos de acceso al panel)
   window.fb_saveLoginLog = async function(entry) {
     var sid = entry.ts || Date.now();

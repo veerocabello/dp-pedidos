@@ -295,7 +295,10 @@ function _bimbaPintarConfigEquipo(empleados) {
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
   _equipoPagoConfig[empId].tipoPago = tipo;
-  _bimbaGuardarPagoConfig();
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = {};
+    cfg[empId].tipoPago = tipo;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarCalcEquipo(empleados);
@@ -303,12 +306,29 @@ function bimbaSetTipoPago(empId, tipo) {
 function bimbaActualizarPago(empId, campo, valor) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = { tipoPago: 'hora' };
   const val = parseFloat(valor);
-  _equipoPagoConfig[empId][campo] = isNaN(val) ? null : val;
-  _bimbaGuardarPagoConfig();
+  const valorGuardado = isNaN(val) ? null : val;
+  _equipoPagoConfig[empId][campo] = valorGuardado;
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = { tipoPago: 'hora' };
+    cfg[empId][campo] = valorGuardado;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarCalcEquipo(empleados);
 }
-function _bimbaGuardarPagoConfig() {
+// mutatorFn modifica in-place la config de pago de UN empleado. Se aplica
+// contra el valor más reciente de Firebase (transacción), no contra la
+// copia en memoria de _equipoPagoConfig, que solo se cargó una vez al abrir
+// el overlay — así dos personas editando el pago de dos empleados distintos
+// a la vez no se pisan la una a la otra.
+function _bimbaGuardarPagoConfig(mutatorFn) {
+  if (window.fb_transactNative) {
+    window.fb_transactNative('config/empleadosPago', function (current) {
+      const cfg = current || {};
+      mutatorFn(cfg);
+      return cfg;
+    }).catch(() => {});
+    return;
+  }
   firebase.database().ref('config/empleadosPago').set(_equipoPagoConfig).catch(() => {});
 }
 function _bimbaCosteEmpleado(emp) {
@@ -607,15 +627,27 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
-    });
-    await ref.set(actual);
+    // Transacción: ventasProductos/<fecha> también lo escribe cada pedido
+    // real de un cliente (recordProductSales, en antifraude.js) mientras se
+    // puede estar guardando una venta manual aquí — con un .set() plano
+    // (leer, sumar en memoria, sobreescribir todo el nodo) una venta real
+    // que llegara justo en medio se podía perder sin ningún aviso.
+    const mutator = function (current) {
+      const actual = current || {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
+    };
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();
@@ -659,6 +691,7 @@ function bimbaPintarTicketConfig() {
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
   bimbaPintarTicketConfig();
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
 function closeTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.remove('open');
