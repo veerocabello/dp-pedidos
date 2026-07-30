@@ -914,9 +914,32 @@ function initFirebaseListeners() {
 
   // 3. Order statuses — sync kitchen status across devices
   if (window.fb_listenOrderStatuses) {
+    let _prevOrderStatuses = null; // null hasta el primer snapshot: evita avisar de cancelaciones ya existentes al abrir
     window.fb_listenOrderStatuses(statuses => {
       var _document$getElementB15, _document$getElementB16;
-      window._orderStatusCache = statuses || {};
+      const nuevos = statuses || {};
+
+      // Aviso de cancelación/modificación: sonido distinto + ticket de anulación
+      // en esta tablet, para pedidos que ACABAN de pasar a "cancelado"
+      // (cancelarPedidoAdmin, y también cuando el cliente cancela o modifica
+      // su propio pedido — todo pasa por el mismo _borrarPedidoDeFirebase).
+      if (_prevOrderStatuses === null) {
+        _prevOrderStatuses = nuevos;
+      } else {
+        Object.keys(nuevos).forEach(num => {
+          if (nuevos[num] === 'cancelado' && _prevOrderStatuses[num] !== 'cancelado') {
+            if (_adminLoggedIn) {
+              playNotificationSound('urgente');
+              if (getTicketConfig().autoImprimir) {
+                imprimirAnulacion(num).catch(e => console.warn('[Impresora] fallo al imprimir anulación', e));
+              }
+            }
+          }
+        });
+        _prevOrderStatuses = nuevos;
+      }
+
+      window._orderStatusCache = nuevos;
       localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
       if ((_document$getElementB15 = document.getElementById('admin-pedidos')) !== null && _document$getElementB15 !== void 0 && _document$getElementB15.classList.contains('active')) {
         loadLiveOrders();

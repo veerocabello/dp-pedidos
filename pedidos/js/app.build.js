@@ -8827,10 +8827,7 @@ function _ptBuildTicketBytes(ticket) {
   const center = () => d.push(ESC, 0x61, 0x01);
   const left = () => d.push(ESC, 0x61, 0x00);
   const big = () => d.push(ESC, 0x21, 0x30);
-  // Altura doble (ancho normal) en vez de tamaño 1x1 — letra algo más grande y
-  // fácil de leer en cocina, sin romper el ajuste de columnas de los productos
-  // (el ancho del carácter no cambia, solo la altura).
-  const normal = () => d.push(ESC, 0x21, 0x10);
+  const normal = () => d.push(ESC, 0x21, 0x00);
   const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
 
   // Inicializar
@@ -9044,6 +9041,39 @@ async function imprimirTicketTermico(ticket) {
     await _ptEnviarBytes(bytes);
     if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
   }
+}
+
+// Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
+// y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede
+// borrar, así que se imprime este aviso para que en cocina sepan que ese
+// número de pedido ya NO es válido y hay que tirar el ticket anterior.
+function _ptBuildAnulacionBytes(orderNum) {
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('X X X X X\n');
+  push('ANULADO\n');
+  normal();
+  push('------------------------------------------------\n');
+  big();
+  push('PEDIDO ' + orderNum + '\n');
+  normal();
+  push('Tira el ticket anterior\n');
+  push('de este pedido\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  return new Uint8Array(d);
+}
+
+async function imprimirAnulacion(orderNum) {
+  await _ptEnviarBytes(_ptBuildAnulacionBytes(orderNum));
 }
 
 async function imprimirTicketPrueba() {
@@ -9986,9 +10016,32 @@ function initFirebaseListeners() {
 
   // 3. Order statuses — sync kitchen status across devices
   if (window.fb_listenOrderStatuses) {
+    let _prevOrderStatuses = null; // null hasta el primer snapshot: evita avisar de cancelaciones ya existentes al abrir
     window.fb_listenOrderStatuses(statuses => {
       var _document$getElementB15, _document$getElementB16;
-      window._orderStatusCache = statuses || {};
+      const nuevos = statuses || {};
+
+      // Aviso de cancelación/modificación: sonido distinto + ticket de anulación
+      // en esta tablet, para pedidos que ACABAN de pasar a "cancelado"
+      // (cancelarPedidoAdmin, y también cuando el cliente cancela o modifica
+      // su propio pedido — todo pasa por el mismo _borrarPedidoDeFirebase).
+      if (_prevOrderStatuses === null) {
+        _prevOrderStatuses = nuevos;
+      } else {
+        Object.keys(nuevos).forEach(num => {
+          if (nuevos[num] === 'cancelado' && _prevOrderStatuses[num] !== 'cancelado') {
+            if (_adminLoggedIn) {
+              playNotificationSound('urgente');
+              if (getTicketConfig().autoImprimir) {
+                imprimirAnulacion(num).catch(e => console.warn('[Impresora] fallo al imprimir anulación', e));
+              }
+            }
+          }
+        });
+        _prevOrderStatuses = nuevos;
+      }
+
+      window._orderStatusCache = nuevos;
       localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
       if ((_document$getElementB15 = document.getElementById('admin-pedidos')) !== null && _document$getElementB15 !== void 0 && _document$getElementB15.classList.contains('active')) {
         loadLiveOrders();
