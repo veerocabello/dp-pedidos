@@ -182,10 +182,14 @@ function getActivityLog() {
     return [];
   }
 }
-function logActivity(action) {
+function logActivity(action, extra) {
   const log = getActivityLog();
   const now = new Date();
-  const entry = {
+  // "extra" permite adjuntar datos estructurados (tipo, orderNum, fecha...)
+  // a una alerta, para que renderAlertas() pueda ofrecer un botón de
+  // "reintentar" en vez de solo "descartar" — igual que ya hacía
+  // fbAgregarActivityLog() en el servidor para "pedido_no_guardado".
+  const entry = Object.assign({}, extra, {
     ts: now.toISOString(),
     time: now.toLocaleString('es-ES', {
       day: '2-digit',
@@ -196,7 +200,7 @@ function logActivity(action) {
       second: '2-digit'
     }),
     action
-  };
+  });
   log.unshift(entry);
   const trimmed = log.slice(0, 200);
   localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(trimmed));
@@ -368,6 +372,64 @@ async function reintentarGuardadoPedido(ts, orderNum, fecha) {
     if (statusEl) { statusEl.textContent = '❌ Error de conexión, inténtalo de nuevo.'; statusEl.style.display = 'block'; }
   }
 }
+// Reimprime un ticket que falló al enviarse a la térmica — recupera los
+// datos del pedido de las estadísticas de hoy (ya en localStorage/Firebase,
+// no hace falta pedirlos otra vez) y vuelve a intentar el envío por USB.
+async function reintentarImpresionTicket(ts, orderNum, fecha) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    let stats;
+    try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) { stats = {}; }
+    const order = (stats && stats.date === fecha && Array.isArray(stats.orders)) ? stats.orders.find(o => o.num === orderNum) : null;
+    if (!order) throw new Error('No se encontró el pedido (¿es de otro día? solo se guarda el de hoy)');
+    const ticketData = {
+      orderNum: order.num,
+      name: order.name,
+      phone: order.phone || '',
+      notes: order.notes || '',
+      slotTime: order.slot || null,
+      items: order.items || [],
+      total: order.total,
+      time: order.time
+    };
+    await imprimirTicketTermico(ticketData);
+    if (typeof _markAsImpreso === 'function') _markAsImpreso(order.num);
+    if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(order.num, true);
+    resolverAlerta(ts);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🖨️ Reintentar impresión'; }
+    if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'No se pudo imprimir.'); statusEl.style.display = 'block'; }
+  }
+}
+// Reintenta sumar un sello de fidelización que falló (p.ej. por el límite
+// de intentos, que se resuelve solo pasados unos minutos). No se conserva
+// si el pedido original consumía un premio — eso es poco frecuente y, si
+// pasara, se ajusta a mano desde el panel de Fidelización.
+async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'registrarSello', telefono, orderNum, tienePatata: true, consumioPremio: false, nombre: nombre || '' })
+    });
+    const data = await res.json();
+    if (data.success || data.skipped) {
+      resolverAlerta(ts);
+    } else {
+      throw new Error(data.error || 'El servidor rechazó el sello');
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🎁 Reintentar sello'; }
+    if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
+  }
+}
 function renderAlertas() {
   const entries = getAlertEntries();
   const el = document.getElementById('alertas-list');
@@ -379,10 +441,14 @@ function renderAlertas() {
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';
       const border = critico ? '#F0CFC8' : '#EFD6A9';
-      const puedeReintentar = e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha;
-      const retryBtn = puedeReintentar
-        ? "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>")
-        : '';
+      let retryBtn = '';
+      if (e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>");
+      } else if (e.tipo === 'ticket_no_impreso' && e.orderNum && e.fecha) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarImpresionTicket('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🖨️ Reintentar impresión</button>");
+      } else if (e.tipo === 'sello_no_registrado' && e.orderNum && e.telefono) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
+      }
       return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
     }).join('');
   }
@@ -719,7 +785,11 @@ function _autoImprimirPedido(order) {
 // el programa que la conecta, fuera de esta web — pero al menos esto ya no se
 // queda callado como antes.
 function _avisarFalloEnvioTicket(orderNum) {
-  logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión');
+  logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión', {
+    tipo: 'ticket_no_impreso',
+    orderNum,
+    fecha: new Date().toISOString().slice(0, 10)
+  });
 }
 const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
 function _registrarEnvioTicket(orderNum, ok) {

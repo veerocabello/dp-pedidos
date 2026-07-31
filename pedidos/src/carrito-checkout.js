@@ -1216,7 +1216,12 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
     // en silencio, así que un cliente podía perder un sello legítimo sin
     // que nadie se enterara).
     if (!data.success && !data.skipped) {
-      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'));
+      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'), {
+        tipo: 'sello_no_registrado',
+        orderNum: (ticketData && ticketData.orderNum) || '',
+        telefono: phoneClean,
+        nombre: (ticketData && ticketData.name) || ''
+      });
     }
   } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
