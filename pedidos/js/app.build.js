@@ -10225,8 +10225,15 @@ function renderIncidencias() {
   }
   const el = document.getElementById('incidencias-list');
   if (!el) return;
+  // Las resueltas van al final, igual que los pedidos entregados en
+  // Pedidos en vivo — dentro de cada grupo, la más reciente primero.
   const entries = Object.entries(window._incidenciasCache)
-    .sort((a, b) => (b[1].fecha || '').localeCompare(a[1].fecha || ''));
+    .sort((a, b) => {
+      const nuevaA = (a[1].estado || 'nueva') === 'nueva' ? 0 : 1;
+      const nuevaB = (b[1].estado || 'nueva') === 'nueva' ? 0 : 1;
+      if (nuevaA !== nuevaB) return nuevaA - nuevaB;
+      return (b[1].fecha || '').localeCompare(a[1].fecha || '');
+    });
   if (!entries.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin incidencias</div>';
   } else {
