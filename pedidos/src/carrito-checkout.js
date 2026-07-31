@@ -956,6 +956,9 @@ async function _submitOrderInner() {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
       extras.push({ name: ing, price: precioIng });
     });
+    (c.salsasExtra || []).forEach(salsa => {
+      extras.push({ name: salsa, price: EXTRAS_SALSA_PRECIO });
+    });
     return {
       name: item.name,
       qty: c.qty,
