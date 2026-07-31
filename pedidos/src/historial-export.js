@@ -237,11 +237,67 @@ function updateAlertBadge() {
   if (!badge) return;
   const lastSeen = localStorage.getItem(ALERTAS_SEEN_KEY) || '';
   const unseen = getAlertEntries().filter(e => (e.ts || '') > lastSeen).length;
-  if (unseen > 0) {
-    badge.textContent = unseen > 99 ? '99+' : String(unseen);
+  const incidenciasNuevas = (typeof _incidenciasNuevasCount === 'function') ? _incidenciasNuevasCount() : 0;
+  const total = unseen + incidenciasNuevas;
+  if (total > 0) {
+    badge.textContent = total > 99 ? '99+' : String(total);
     badge.style.display = 'block';
   } else {
     badge.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════
+//  INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu
+//  pedido?", enlazado en el pie de la web — webhook-incidencia.php las
+//  guarda en Firebase en el nodo "incidencias")
+// ══════════════════════════════════════════════
+window._incidenciasCache = window._incidenciasCache || {};
+function _incidenciasNuevasCount() {
+  return Object.values(window._incidenciasCache).filter(i => (i.estado || 'nueva') === 'nueva').length;
+}
+function _formatearFechaIncidencia(fecha) {
+  if (!fecha) return '';
+  try {
+    const d = new Date(fecha);
+    if (isNaN(d.getTime())) return escapeHtml(String(fecha));
+    return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return escapeHtml(String(fecha)); }
+}
+function renderIncidencias() {
+  const el = document.getElementById('incidencias-list');
+  if (!el) return;
+  const entries = Object.entries(window._incidenciasCache)
+    .sort((a, b) => (b[1].fecha || '').localeCompare(a[1].fecha || ''));
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin incidencias</div>';
+  } else {
+    el.innerHTML = entries.map(([key, inc]) => {
+      const nueva = (inc.estado || 'nueva') === 'nueva';
+      const bg = nueva ? '#FBEAE7' : '#F7F3EC';
+      const border = nueva ? '#F0CFC8' : '#EEE3D0';
+      const fecha = _formatearFechaIncidencia(inc.fecha);
+      const camposHtml = Object.entries(inc.respuestas || {}).map(([label, valor]) =>
+        '<div style="margin-bottom:4px"><span style="font-size:11px;color:#8A6A4E;font-weight:700">' + escapeHtml(label) + ':</span> <span style="font-size:13px;color:#2A1506">' + escapeHtml(String(valor)) + '</span></div>'
+      ).join('');
+      return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;background:' + bg + ';border:1px solid ' + border + '">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center">'
+        + '<span style="font-size:11px;font-weight:700;color:' + (nueva ? '#c0392b' : '#8A6A4E') + '">' + (nueva ? '🚩 NUEVA' : '✅ Resuelta') + '</span>'
+        + '<span style="font-size:10.5px;color:#8A6A4E">' + fecha + '</span>'
+        + '</div>'
+        + (camposHtml || '<div style="font-size:12px;color:#8A6A4E">Sin detalle</div>')
+        + (nueva ? '<div style="display:flex;justify-content:flex-end"><button onclick="marcarIncidenciaResuelta(\'' + escapeAttr(key) + '\')" style="padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Marcar resuelta</button></div>' : '')
+        + '</div>';
+    }).join('');
+  }
+  updateAlertBadge();
+}
+async function marcarIncidenciaResuelta(key) {
+  if (window._incidenciasCache[key]) window._incidenciasCache[key].estado = 'resuelta';
+  renderIncidencias();
+  if (window.fb_setIncidenciaEstado) {
+    try { await window.fb_setIncidenciaEstado(key, 'resuelta'); }
+    catch (e) { console.warn('[incidencias] error al marcar resuelta', e); }
   }
 }
 // Persiste el log completo (local + Firebase si hay sesión) — usado tanto
@@ -816,6 +872,17 @@ function initFirebaseListeners() {
   // Pausa exprés (cuenta atrás) y aviso suave previo a la auto-pausa
   if (typeof loadPausaExpresFromFirebase === 'function') loadPausaExpresFromFirebase();
   if (typeof loadAvisoSaturacionFromFirebase === 'function') loadAvisoSaturacionFromFirebase();
+
+  // Incidencias de clientes (formulario Tally) — en tiempo real, para que
+  // el badge de la pestaña Alertas se actualice sin recargar.
+  if (window.fb_listenIncidencias) {
+    window.fb_listenIncidencias(incidencias => {
+      window._incidenciasCache = incidencias || {};
+      var _alertasSection = document.getElementById('admin-alertas');
+      if (_alertasSection && _alertasSection.classList.contains('active')) renderIncidencias();
+      updateAlertBadge();
+    });
+  }
 
   // Pedidos abiertos/cerrados y su mensaje, en tiempo real — antes solo se
   // cargaban una vez al abrir la página (init.js). Si la auto-pausa por

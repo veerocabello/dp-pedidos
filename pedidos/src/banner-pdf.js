@@ -712,7 +712,10 @@ function showAdminSection(id, btn) {
     loadCatBlockUI();
   }
   if (id === 'log') renderActivityLog();
-  if (id === 'alertas') renderAlertas();
+  if (id === 'alertas') {
+    renderAlertas();
+    if (typeof renderIncidencias === 'function') renderIncidencias();
+  }
   if (id === 'pwd') loadUrlTokenUI();
   if (id === 'stock-config') {
     loadStockAdminList();

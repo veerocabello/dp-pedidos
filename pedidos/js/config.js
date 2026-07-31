@@ -416,6 +416,10 @@ function _initFirebase() {
   // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
   window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
   window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
+  // INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu pedido?",
+  // recibidas y guardadas por webhook-incidencia.php en el nodo "incidencias")
+  window.fb_listenIncidencias = function(cb) { return jlisten("incidencias", function(sn){ cb(sn.exists()?sn.val():{}); }); };
+  window.fb_setIncidenciaEstado = async function(key, estado) { await jset("incidencias/"+key+"/estado", estado); };
   // ESTADO DE CONEXIÓN — ".info/connected" es la única señal fiable de que
   // el cliente tiene una conexión REAL con Firebase en cada momento;
   // _firebaseReady (más abajo) solo confirma que el SDK cargó al principio,
