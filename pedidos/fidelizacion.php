@@ -269,12 +269,12 @@ function _ticketPareceConDescuentoGrande($ticket) {
 // panel de admin (config/activityLog) — para que un fallo silencioso del
 // servidor aparezca donde el admin ya mira cada día, en vez de perderse
 // en el log de errores de PHP.
-function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = []) {
     for ($intento = 0; $intento < 5; $intento++) {
         $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
         $log = $leido['data'] ?: [];
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
-        array_unshift($log, [
+        array_unshift($log, $extra + [
             'ts'     => $ahora->format('c'),
             'time'   => $ahora->format('d/m/Y, H:i:s'),
             'action' => $mensaje,
@@ -366,6 +366,20 @@ try {
         }
         $ticket = ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono);
         if (!$ticket) {
+            // Antes esto solo se registraba en el navegador del propio
+            // cliente (con logActivity()), que no llega a Firebase para un
+            // cliente anónimo real — así que el admin nunca se enteraba de
+            // este fallo salvo que lo estuviera probando ella misma con el
+            // panel de admin abierto en el mismo navegador. Ahora se
+            // registra aquí, con la cuenta de servicio, para que sí llegue
+            // siempre — y con los mismos campos que usa el botón "Reintentar
+            // sello" en el panel de Alertas.
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo sumar el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') — pedido no encontrado', [
+                'tipo'     => 'sello_no_registrado',
+                'orderNum' => $orderNum,
+                'telefono' => $telefono,
+                'nombre'   => $nombre,
+            ]);
             echo json_encode(['success' => false, 'error' => 'Pedido no encontrado']);
             exit;
         }
@@ -440,7 +454,12 @@ try {
         }
 
         if (!$guardado) {
-            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo registrar el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') tras varios intentos');
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo registrar el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') tras varios intentos', [
+                'tipo'     => 'sello_no_registrado',
+                'orderNum' => $orderNum,
+                'telefono' => $telefono,
+                'nombre'   => $nombre,
+            ]);
             echo json_encode(['success' => false, 'error' => 'No se pudo registrar, inténtalo de nuevo.']);
             exit;
         }

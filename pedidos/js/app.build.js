@@ -3923,19 +3923,13 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
         nombre: (ticketData && ticketData.name) || ''
       })
     });
-    const data = await res.json();
-    // "skipped" es normal (pedido sin patata) — un success:false de verdad
-    // significa que el servidor rechazó el sello (antes esto se ignoraba
-    // en silencio, así que un cliente podía perder un sello legítimo sin
-    // que nadie se enterara).
-    if (!data.success && !data.skipped) {
-      logActivity('⚠️ No se pudo sumar el sello de fidelización del pedido ' + ((ticketData && ticketData.orderNum) || '?') + ' — ' + (data.error || 'error desconocido'), {
-        tipo: 'sello_no_registrado',
-        orderNum: (ticketData && ticketData.orderNum) || '',
-        telefono: phoneClean,
-        nombre: (ticketData && ticketData.name) || ''
-      });
-    }
+    // Si el servidor rechaza el sello (success:false, no "skipped"), ya lo
+    // registra fidelizacion.php por su cuenta con la cuenta de servicio
+    // (fbAgregarActivityLog) — hacerlo también aquí en el navegador del
+    // cliente no servía de nada en producción (un cliente anónimo real no
+    // tiene permiso para escribir en config/activityLog) y solo duplicaba
+    // el aviso cuando quien probaba era la propia admin con el panel
+    // abierto en el mismo navegador.
   } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
