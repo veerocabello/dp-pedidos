@@ -481,6 +481,82 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
     return null;
 }
 
+// ── Verificación de gastos de gestión / bolsa contra la config real (solo
+// aviso, no bloquea ni corrige el pedido) ── El navegador decide si cobrar
+// fee1/fee2 según su propia copia de la configuración (localStorage), que
+// puede no haber cargado a tiempo en una visita nueva/muy rápida — ya se
+// mitigó del lado del cliente (ver esperarConfigCriticaLista() en
+// admin-config.js), pero esto sirve de red de seguridad: si algún pedido
+// se cuela sin el gasto que le tocaba (o con el que no le tocaba, p.ej. por
+// el código de "pedido desde el local"), queda un aviso claro en Alertas
+// con el importe exacto que falta, para poder cobrarlo/ajustarlo a mano si
+// hiciera falta. No se corrige solo, porque el ticket que ya se imprimió o
+// se le mostró al cliente no se puede cambiar retroactivamente — mejor
+// avisar que desincronizar lo guardado de lo impreso.
+function _esEtiquetaDeGestionPHP($label) {
+    $l = mb_strtolower((string)$label);
+    return (mb_strpos($l, 'gestión') !== false) || (mb_strpos($l, 'gestion') !== false);
+}
+function comprobarFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal, $orderNum) {
+    $feeResp = fbGetConEtag($databaseURL, 'config/feeConfig', $accessToken);
+    $fee = is_array($feeResp['data']) ? $feeResp['data'] : null;
+    $fee2Resp = fbGetConEtag($databaseURL, 'config/fee2Config', $accessToken);
+    $fee2 = is_array($fee2Resp['data']) ? $fee2Resp['data'] : null;
+    if (!$fee && !$fee2) return [];
+
+    $fee1EsGestion = $fee && _esEtiquetaDeGestionPHP($fee['label'] ?? '');
+    $fee2EsGestion = $fee2 && _esEtiquetaDeGestionPHP($fee2['label'] ?? '');
+    $ningunaEsGestion = !$fee1EsGestion && !$fee2EsGestion;
+
+    $avisos = [];
+    $revisar = [];
+    if ($fee) $revisar[] = ['cfg' => $fee, 'esperado' => !empty($fee['enabled']) && !($esPedidoLocal && ($fee1EsGestion || $ningunaEsGestion))];
+    if ($fee2) $revisar[] = ['cfg' => $fee2, 'esperado' => !empty($fee2['enabled']) && !($esPedidoLocal && $fee2EsGestion)];
+
+    foreach ($revisar as $r) {
+        $label = trim((string)($r['cfg']['label'] ?? ''));
+        if ($label === '') continue;
+        $montoReal = round((float)($r['cfg']['amount'] ?? 0), 2);
+        $enItems = null;
+        foreach ($items as $it) {
+            if (!empty($it['isFee']) && trim((string)($it['name'] ?? '')) === $label) { $enItems = $it; break; }
+        }
+        if ($r['esperado']) {
+            if ($enItems === null) {
+                $avisos[] = 'falta "' . $label . '" (' . number_format($montoReal, 2) . '€)';
+            } elseif (abs((float)($enItems['subtotal'] ?? 0) - $montoReal) > 0.01) {
+                $avisos[] = '"' . $label . '" cobrado ' . number_format((float)$enItems['subtotal'], 2) . '€ en vez de ' . number_format($montoReal, 2) . '€';
+            }
+        } elseif ($enItems !== null) {
+            $avisos[] = '"' . $label . '" cobrado (' . number_format((float)$enItems['subtotal'], 2) . '€) cuando no debía aplicarse';
+        }
+    }
+    return $avisos;
+}
+
+// ── Aviso (no bloquea) de un posible pedido duplicado: mismo teléfono e
+// importe total guardados hace menos de 90 segundos — típico de un cliente
+// que reintenta tras ver un error de red aunque el pedido original sí
+// llegara a guardarse, o de un doble toque en "Confirmar". No se bloquea
+// porque un cliente puede legítimamente hacer dos pedidos iguales seguidos.
+function detectarPosibleDuplicado($databaseURL, $accessToken, $fecha, $phone, $total) {
+    $leido = fbGetConEtag($databaseURL, 'tickets/' . $fecha, $accessToken);
+    $tickets = is_array($leido['data']) ? $leido['data'] : [];
+    $ahora = time();
+    foreach ($tickets as $key => $t) {
+        if (!is_array($t)) continue;
+        if (($t['phone'] ?? null) !== $phone) continue;
+        if (abs((float)($t['total'] ?? -1) - $total) > 0.01) continue;
+        $ts = isset($t['time']) ? DateTime::createFromFormat('d/m/Y, H:i:s', (string)$t['time'], new DateTimeZone('Europe/Madrid')) : false;
+        if (!$ts) continue;
+        $diff = $ahora - $ts->getTimestamp();
+        if ($diff >= 0 && $diff < 90) {
+            return $t['orderNum'] ?? (string)$key;
+        }
+    }
+    return null;
+}
+
 try {
     $raw = file_get_contents('php://input');
     $payload = json_decode($raw, true);
@@ -693,6 +769,14 @@ try {
     if ($avisoTotal) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible total manipulado en pedido ' . $orderNum . ' — ' . $avisoTotal);
     }
+    $avisosFees = comprobarFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal, $orderNum);
+    if ($avisosFees) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Gastos de gestión/bolsa no coinciden en pedido ' . $orderNum . ' — ' . implode(' · ', $avisosFees));
+    }
+    $posibleDup = detectarPosibleDuplicado($databaseURL, $accessToken, $todayKey, $phone, $total);
+    if ($posibleDup) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '🔁 Posible pedido duplicado: mismo teléfono e importe en ' . $posibleDup . ' y ' . $orderNum . ' con menos de 90s de diferencia — comprueba si es el mismo pedido enviado dos veces');
+    }
 
     // ── 1. GUARDAR TICKET (para reimprimir) ──
     // tickets/<fecha>/<num> es un nodo por pedido: sin condición de carrera
@@ -709,6 +793,19 @@ try {
     $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
     $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
     if ($leidoTicket['data'] !== null) {
+        // Si es un reenvío del mismo pedido (mismo teléfono) que ya se había
+        // guardado con éxito antes — p.ej. el cliente cerró la pestaña justo
+        // después de confirmar y la web reintenta sola al reabrirla, o la
+        // respuesta se perdió por un corte de red aunque el servidor sí
+        // terminara de guardarlo — se responde como éxito en vez de error:
+        // reenviar el mismo pedido no debe tratarse como un fallo ni
+        // duplicarlo (las estadísticas ya son idempotentes por número de
+        // pedido, ver guardarPedidoEnStats más abajo).
+        $existente = $leidoTicket['data'];
+        if (is_array($existente) && ($existente['phone'] ?? null) === $phone) {
+            echo json_encode(['success' => true, 'yaGuardado' => true]);
+            exit;
+        }
         echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
         exit;
     }

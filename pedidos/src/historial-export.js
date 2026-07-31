@@ -719,6 +719,17 @@ function openPrintModal(ticketData) {
 function closePrintModal() {
   document.getElementById('print-modal').style.display = 'none';
 }
+// Reintenta imprimir varias veces con un pequeño margen entre intentos antes
+// de darse por vencido — un corte momentáneo de USB (la impresora a veces se
+// desconecta sola) ya no genera una alerta a la primera; solo si de verdad
+// fallan todos los intentos se avisa.
+function _imprimirConReintentos(ticketData, intentosRestantes, esperaMs) {
+  return imprimirTicketTermico(ticketData).catch(e => {
+    if (intentosRestantes <= 1) throw e;
+    return new Promise(resolve => setTimeout(resolve, esperaMs))
+      .then(() => _imprimirConReintentos(ticketData, intentosRestantes - 1, esperaMs));
+  });
+}
 function doPrint() {
   if (!currentTicketData) return;
   const orderNum = currentTicketData.orderNum;
@@ -726,11 +737,11 @@ function doPrint() {
 
   // Imprimir de verdad en la térmica (WebUSB) — el registro de abajo refleja
   // este resultado (si de verdad salió por la impresora), no el guardado en Firebase.
-  imprimirTicketTermico(ticketData).then(() => {
+  _imprimirConReintentos(ticketData, 3, 1500).then(() => {
     _markAsImpreso(orderNum);
     _registrarEnvioTicket(orderNum, true);
   }).catch(e => {
-    console.warn('[Impresora] error al imprimir', e);
+    console.warn('[Impresora] error al imprimir tras varios intentos', e);
     _registrarEnvioTicket(orderNum, false);
     _avisarFalloEnvioTicket(orderNum);
     alert('⚠️ No se pudo imprimir en la térmica (' + e.message + '). Se abrirá el diálogo de impresión del navegador como alternativa.');
@@ -765,11 +776,12 @@ function _autoImprimirPedido(order) {
     time: order.time
   };
 
-  // Imprimir de verdad en la térmica (WebUSB) en esta tablet
-  imprimirTicketTermico(ticketData)
+  // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
+  // reintentos automáticos antes de avisar (ver _imprimirConReintentos).
+  _imprimirConReintentos(ticketData, 3, 1500)
     .then(() => { _markAsImpreso(order.num); _registrarEnvioTicket(order.num, true); })
     .catch(e => {
-      console.warn('[Impresora] auto-imprimir falló para ' + order.num, e);
+      console.warn('[Impresora] auto-imprimir falló para ' + order.num + ' tras varios intentos', e);
       _registrarEnvioTicket(order.num, false);
       _avisarFalloEnvioTicket(order.num);
     });

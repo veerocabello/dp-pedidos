@@ -276,6 +276,48 @@ function removeItem(id) {
   renderCart();
 }
 
+// ── Recuperar un pedido que se quedó a medio enviar ──────────────────────
+// Si el cliente cierra la pestaña, pierde la conexión o el navegador se
+// bloquea justo después de confirmar (antes de que llegara la respuesta de
+// guardar-pedido.php), el pedido podía perderse sin más rastro que un
+// aviso interno. Ahora, al volver a abrir la web, se comprueba si quedó
+// un pedido a medias y se reenvía solo — es seguro reenviarlo aunque el
+// primer intento sí hubiera llegado a guardarse, porque el servidor
+// responde éxito (no error) si el ticket ya existe con el mismo teléfono.
+async function _recuperarPedidoEnCurso() {
+  let raw;
+  try { raw = localStorage.getItem('dpf_pedido_en_curso'); } catch (e) { return; }
+  if (!raw) return;
+  let marcador;
+  try { marcador = JSON.parse(raw); } catch (e) { try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e2) {} return; }
+  // Margen de seguridad: pasadas 2 horas ya no tiene sentido reintentar
+  // (el cliente hace tiempo que se fue) — se descarta para no reenviar
+  // pedidos viejísimos que ya nadie espera.
+  if (!marcador || !marcador.payload || !marcador.ts || (Date.now() - marcador.ts) > 2 * 60 * 60 * 1000) {
+    try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
+    return;
+  }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(marcador.payload)
+    });
+    const data = await res.json();
+    try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
+    if (data.success) {
+      console.log('[recuperación] Pedido ' + marcador.orderNum + ' recuperado tras un cierre inesperado');
+    } else {
+      console.warn('[recuperación] Pedido ' + marcador.orderNum + ' rechazado al reintentar:', data.error);
+    }
+  } catch (e) {
+    // Sigue sin red — se deja el marcador para reintentar la próxima vez
+    // que se abra la web.
+    console.warn('[recuperación] sin conexión, se reintentará más tarde', e);
+  }
+}
+document.addEventListener('DOMContentLoaded', () => { setTimeout(_recuperarPedidoEnCurso, 1500); });
+
 
 // ── Seguridad: escapar datos de usuario antes de insertar en innerHTML ──
 function escapeHtml(str) {
@@ -1162,30 +1204,44 @@ async function _finalizarPedido() {
   // "pedido no encontrado" en pedidos completamente legítimos.
   let _pedidoGuardadoPromise = Promise.resolve();
   if (window._pendingTicketData) {
+    const _pedidoPayload = {
+      orderNum,
+      name: window._pendingTicketData.name,
+      phone: window._pendingTicketData.phone,
+      notes: window._pendingTicketData.notes,
+      slotTime: window._pendingTicketData.slotTime,
+      items: window._pendingTicketData.items,
+      total: window._pendingTicketData.total,
+      discountCode: discountCode || null,
+      upsellMostrado: window._pendingTicketData.upsellMostrado || false,
+      upsellAnadido: window._pendingTicketData.upsellAnadido || false,
+      esPedidoLocal: window._pendingTicketData.esPedidoLocal || false
+    };
+    // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
+    // cierra o se pierde la conexión justo después de confirmar (antes de
+    // recibir la respuesta), _recuperarPedidoEnCurso() lo reenvía solo al
+    // volver a abrir la web. Reenviar el mismo pedido es seguro aunque el
+    // primer intento sí hubiera llegado a guardarse: guardar-pedido.php
+    // responde éxito (no error) si el ticket ya existe con el mismo
+    // teléfono, en vez de duplicarlo.
+    try { localStorage.setItem('dpf_pedido_en_curso', JSON.stringify({ orderNum, payload: _pedidoPayload, ts: Date.now() })); } catch (e) {}
     console.log('💾 Guardando pedido en el servidor:', orderNum);
     _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderNum,
-        name: window._pendingTicketData.name,
-        phone: window._pendingTicketData.phone,
-        notes: window._pendingTicketData.notes,
-        slotTime: window._pendingTicketData.slotTime,
-        items: window._pendingTicketData.items,
-        total: window._pendingTicketData.total,
-        discountCode: discountCode || null,
-        upsellMostrado: window._pendingTicketData.upsellMostrado || false,
-        upsellAnadido: window._pendingTicketData.upsellAnadido || false,
-        esPedidoLocal: window._pendingTicketData.esPedidoLocal || false
-      })
+      body: JSON.stringify(_pedidoPayload)
     })
       .then(res => res.json())
       .then(data => {
+        try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
         if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
         else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
       })
       .catch((e) => {
+        // No se borra el marcador aquí: no hubo respuesta del servidor (fallo
+        // de red/pestaña cerrada), así que no se sabe si el pedido llegó a
+        // guardarse — se deja para que _recuperarPedidoEnCurso() lo reintente
+        // en la próxima visita.
         console.error('❌ Error guardando pedido:', e);
         logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
         _avisarClienteFalloGuardado(orderNum);
