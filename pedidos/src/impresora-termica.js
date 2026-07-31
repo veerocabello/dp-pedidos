@@ -408,6 +408,8 @@ async function imprimirCartelQRLocal() {
   big();
   push(code + '\n');
   normal();
+  push('\n');
+  push(window.location.origin + '/\n');
   push('\n\n\n');
   d.push(GS, 0x56, 0x42, 0x00);
   try {

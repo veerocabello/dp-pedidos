@@ -280,35 +280,38 @@ function renderIncidencias() {
   }
   const el = document.getElementById('incidencias-list');
   if (!el) return;
-  // Las resueltas van al final, igual que los pedidos entregados en
-  // Pedidos en vivo — dentro de cada grupo, la más reciente primero.
+  function _tarjetaIncidencia([key, inc]) {
+    const nueva = (inc.estado || 'nueva') === 'nueva';
+    const bg = nueva ? '#FBEAE7' : '#F7F3EC';
+    const border = nueva ? '#F0CFC8' : '#EEE3D0';
+    const fecha = _formatearFechaIncidencia(inc.fecha);
+    const camposHtml = Object.entries(inc.respuestas || {}).map(([label, valor]) =>
+      '<div style="margin-bottom:4px"><span style="font-size:11px;color:#8A6A4E;font-weight:700">' + escapeHtml(label) + ':</span> <span style="font-size:13px;color:#2A1506">' + escapeHtml(String(valor)) + '</span></div>'
+    ).join('');
+    return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;background:' + bg + ';border:1px solid ' + border + '">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center">'
+      + '<span style="font-size:11px;font-weight:700;color:' + (nueva ? '#c0392b' : '#8A6A4E') + '">' + (nueva ? '🚩 NUEVA' : '✅ Resuelta') + '</span>'
+      + '<span style="font-size:10.5px;color:#8A6A4E">' + fecha + '</span>'
+      + '</div>'
+      + (camposHtml || '<div style="font-size:12px;color:#8A6A4E">Sin detalle</div>')
+      + (nueva ? '<div style="display:flex;justify-content:flex-end"><button onclick="marcarIncidenciaResuelta(\'' + escapeAttr(key) + '\')" style="padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Marcar resuelta</button></div>' : '')
+      + '</div>';
+  }
   const entries = Object.entries(window._incidenciasCache)
-    .sort((a, b) => {
-      const nuevaA = (a[1].estado || 'nueva') === 'nueva' ? 0 : 1;
-      const nuevaB = (b[1].estado || 'nueva') === 'nueva' ? 0 : 1;
-      if (nuevaA !== nuevaB) return nuevaA - nuevaB;
-      return (b[1].fecha || '').localeCompare(a[1].fecha || '');
-    });
+    .sort((a, b) => (b[1].fecha || '').localeCompare(a[1].fecha || ''));
+  const nuevas = entries.filter(([, inc]) => (inc.estado || 'nueva') === 'nueva');
+  const resueltas = entries.filter(([, inc]) => (inc.estado || 'nueva') !== 'nueva');
   if (!entries.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin incidencias</div>';
   } else {
-    el.innerHTML = entries.map(([key, inc]) => {
-      const nueva = (inc.estado || 'nueva') === 'nueva';
-      const bg = nueva ? '#FBEAE7' : '#F7F3EC';
-      const border = nueva ? '#F0CFC8' : '#EEE3D0';
-      const fecha = _formatearFechaIncidencia(inc.fecha);
-      const camposHtml = Object.entries(inc.respuestas || {}).map(([label, valor]) =>
-        '<div style="margin-bottom:4px"><span style="font-size:11px;color:#8A6A4E;font-weight:700">' + escapeHtml(label) + ':</span> <span style="font-size:13px;color:#2A1506">' + escapeHtml(String(valor)) + '</span></div>'
-      ).join('');
-      return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;background:' + bg + ';border:1px solid ' + border + '">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center">'
-        + '<span style="font-size:11px;font-weight:700;color:' + (nueva ? '#c0392b' : '#8A6A4E') + '">' + (nueva ? '🚩 NUEVA' : '✅ Resuelta') + '</span>'
-        + '<span style="font-size:10.5px;color:#8A6A4E">' + fecha + '</span>'
-        + '</div>'
-        + (camposHtml || '<div style="font-size:12px;color:#8A6A4E">Sin detalle</div>')
-        + (nueva ? '<div style="display:flex;justify-content:flex-end"><button onclick="marcarIncidenciaResuelta(\'' + escapeAttr(key) + '\')" style="padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Marcar resuelta</button></div>' : '')
-        + '</div>';
-    }).join('');
+    // Las resueltas van plegadas detrás de un botón, igual que "Ver
+    // pedidos entregados" en Pedidos en vivo — solo las nuevas se ven de
+    // primeras.
+    const nuevasHtml = nuevas.map(_tarjetaIncidencia).join('');
+    const resueltasHtml = resueltas.length
+      ? '<button onclick="var d=this.nextElementSibling;d.style.display=d.style.display===\'none\'?\'flex\':\'none\';this.textContent=d.style.display===\'none\'?\'Ver incidencias resueltas (' + resueltas.length + ')\':\'Ocultar resueltas\'" style="width:100%;background:none;border:0.5px solid #e0e0e0;border-radius:8px;padding:8px 16px;font-size:13px;color:#8A6A4E;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:6px">Ver incidencias resueltas (' + resueltas.length + ')</button><div style="display:none;flex-direction:column;gap:10px;margin-top:10px">' + resueltas.map(_tarjetaIncidencia).join('') + '</div>'
+      : '';
+    el.innerHTML = (nuevasHtml || (resueltas.length ? '' : '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin incidencias nuevas</div>')) + resueltasHtml;
   }
   updateAlertBadge();
 }

@@ -1237,8 +1237,8 @@ function _mostrarAvisoFidelizacionCompletada() {
 // ── Tiempo de modificación de pedido ──
 function saveModifyWindow() {
   var _document$getElementB2;
-  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '5');
-  const valid = isNaN(v) || v < 1 || v > 60 ? 5 : v;
+  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '10');
+  const valid = isNaN(v) || v < 1 || v > 60 ? 10 : v;
   localStorage.setItem('dpf_modify_window_mins', valid);
   if (window.fb_saveConfig) {
     try {
@@ -1257,7 +1257,7 @@ function saveModifyWindow() {
   showToast('modify-window-toast');
 }
 function loadModifyWindowInput() {
-  const v = localStorage.getItem('dpf_modify_window_mins') || '5';
+  const v = localStorage.getItem('dpf_modify_window_mins') || '10';
   const el = document.getElementById('modify-window-input');
   if (el) el.value = v;
 }

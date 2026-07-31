@@ -445,11 +445,11 @@ function resetOrder() {
 }
 
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
-const MODIFY_WINDOW_DEFAULT_MS = 5 * 60 * 1000;
+const MODIFY_WINDOW_DEFAULT_MS = 10 * 60 * 1000;
 function getModifyWindowMs() {
   try {
-    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '5');
-    return (isNaN(v) || v < 1 || v > 60 ? 5 : v) * 60 * 1000;
+    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '10');
+    return (isNaN(v) || v < 1 || v > 60 ? 10 : v) * 60 * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
