@@ -10209,7 +10209,20 @@ function _formatearFechaIncidencia(fecha) {
     return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   } catch (e) { return escapeHtml(String(fecha)); }
 }
+function toggleIncidenciasPanel() {
+  const body = document.getElementById('incidencias-panel-body');
+  const chevron = document.getElementById('incidencias-chevron');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
 function renderIncidencias() {
+  const countEl = document.getElementById('incidencias-count-header');
+  if (countEl) {
+    const n = _incidenciasNuevasCount();
+    countEl.textContent = n > 0 ? ' (' + n + ')' : '';
+  }
   const el = document.getElementById('incidencias-list');
   if (!el) return;
   const entries = Object.entries(window._incidenciasCache)

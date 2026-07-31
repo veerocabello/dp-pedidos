@@ -711,9 +711,14 @@
 
         <div style="height:1.5px;background:var(--warm);margin:20px 0"></div>
 
-        <div class="stat-panel-head" style="border-radius:12px;margin-bottom:6px">🚩 Incidencias de clientes</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Formulario "¿Algún problema con tu pedido?" que rellenan los clientes desde el pie de la web.</div>
-        <div id="incidencias-list" style="display:flex;flex-direction:column;gap:10px"></div>
+        <div onclick="toggleIncidenciasPanel()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px">
+          <span style="font-size:13px;font-weight:700;color:var(--brown)">🚩 Incidencias de clientes<span id="incidencias-count-header"></span></span>
+          <span id="incidencias-chevron" style="color:var(--amber-dark);font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+        </div>
+        <div id="incidencias-panel-body" style="display:none;background:var(--white);border:1.5px solid var(--warm);border-top:none;border-radius:0 0 10px 10px;padding:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Formulario "¿Algún problema con tu pedido?" que rellenan los clientes desde el pie de la web.</div>
+          <div id="incidencias-list" style="display:flex;flex-direction:column;gap:10px"></div>
+        </div>
       </div>
 
       <div class="admin-section" id="admin-pedidos-config">
