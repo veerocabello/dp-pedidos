@@ -3652,12 +3652,22 @@ async function _submitOrderInner() {
       extras
     };
   }).filter(Boolean);
-  const extItems = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
-    return {
-      name: getExtrasItemLabel(c),
-      qty: c.qty,
-      subtotal: getExtrasItemPrice(c) * c.qty
-    };
+  // Cada patata con extras (queso/gratinado/ingredientes) se desglosa en
+  // el ticket como una línea por cada concepto con su propio precio —
+  // antes salía todo junto en una sola línea con el precio ya sumado
+  // ("Patata Carbonara + Gratinado" a 6,30€), sin que se viera cuánto era
+  // la patata y cuánto el extra.
+  const extItems = [];
+  Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
+    const item = MENU.find(m => m.id == c.menuId);
+    if (!item) return;
+    extItems.push({ name: item.name, qty: c.qty, subtotal: c.basePrice * c.qty });
+    if (c.queso) extItems.push({ name: 'Queso', qty: c.qty, subtotal: 1.00 * c.qty });
+    if (c.gratinado) extItems.push({ name: 'Gratinado', qty: c.qty, subtotal: 0.50 * c.qty });
+    (c.ingredientesExtra || []).forEach(ing => {
+      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
+      extItems.push({ name: ing, qty: c.qty, subtotal: precioIng * c.qty });
+    });
   });
   const feeItems = feeEnabled ? [{
     name: feeLabel,
