@@ -710,6 +710,18 @@ async function submitOrder() {
   }
 }
 async function _submitOrderInner() {
+  // Gate de config crítica (gastos de gestión, bolsa, código local) — ver
+  // comentario junto a esperarConfigCriticaLista() en admin-config.js. En
+  // el caso normal esta espera ya está resuelta y esto no tarda nada; solo
+  // se nota (y se avisa en el botón) en una visita nueva/muy rápida.
+  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo)) {
+    const btnGate = document.getElementById('submit-btn');
+    const prevGateText = btnGate ? btnGate.textContent : null;
+    const prevGateDisabled = btnGate ? btnGate.disabled : false;
+    if (btnGate) { btnGate.disabled = true; btnGate.textContent = 'Comprobando datos…'; }
+    await esperarConfigCriticaLista(4000);
+    if (btnGate && prevGateText !== null) { btnGate.disabled = prevGateDisabled; btnGate.textContent = prevGateText; }
+  }
   // Igual que ya hace changeQty() al añadir al carrito — antes esta función
   // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
   // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se

@@ -3424,6 +3424,18 @@ async function submitOrder() {
   }
 }
 async function _submitOrderInner() {
+  // Gate de config crítica (gastos de gestión, bolsa, código local) — ver
+  // comentario junto a esperarConfigCriticaLista() en admin-config.js. En
+  // el caso normal esta espera ya está resuelta y esto no tarda nada; solo
+  // se nota (y se avisa en el botón) en una visita nueva/muy rápida.
+  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo)) {
+    const btnGate = document.getElementById('submit-btn');
+    const prevGateText = btnGate ? btnGate.textContent : null;
+    const prevGateDisabled = btnGate ? btnGate.disabled : false;
+    if (btnGate) { btnGate.disabled = true; btnGate.textContent = 'Comprobando datos…'; }
+    await esperarConfigCriticaLista(4000);
+    if (btnGate && prevGateText !== null) { btnGate.disabled = prevGateDisabled; btnGate.textContent = prevGateText; }
+  }
   // Igual que ya hace changeQty() al añadir al carrito — antes esta función
   // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
   // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se
@@ -8668,7 +8680,9 @@ function loadFeeFromFirebase() {
       if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
       if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
       renderCart();
-    }).catch(() => {});
+    }).catch(() => {}).then(() => { window._feeConfigListo = true; });
+  } else {
+    window._feeConfigListo = true;
   }
   if (!window.fb_listenFeeConfig) return;
   window.fb_listenFeeConfig(function (cfg) {
@@ -8711,7 +8725,9 @@ function loadFee2FromFirebase() {
       if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
       if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
       renderCart();
-    }).catch(() => {});
+    }).catch(() => {}).then(() => { window._fee2ConfigListo = true; });
+  } else {
+    window._fee2ConfigListo = true;
   }
   if (!window.fb_listenFee2Config) return;
   window.fb_listenFee2Config(function (cfg) {
@@ -8785,10 +8801,10 @@ function comprobarCodigoLocal() {
 // lleva a un enlace así), se rellena y se comprueba solo, sin que el
 // cliente tenga que escribir nada — para eso sirve el QR.
 async function _aplicarCodigoLocalDesdeURL() {
+  const params = new URLSearchParams(window.location.search);
+  const codigo = params.get('local');
+  if (!codigo) { window._localCodeListo = true; return; }
   try {
-    const params = new URLSearchParams(window.location.search);
-    const codigo = params.get('local');
-    if (!codigo) return;
     // Esta función se puede volver a llamar sola (cuando el código real
     // llega de Firebase con retraso) — si para entonces el cliente ya está
     // escribiendo su nombre/teléfono, no le repintamos el carrito debajo
@@ -8797,7 +8813,7 @@ async function _aplicarCodigoLocalDesdeURL() {
     const activo = document.activeElement;
     if (activo && (activo.tagName === 'INPUT' || activo.tagName === 'TEXTAREA') && activo.id !== 'local-fee-code-input' && activo.id !== 'drawer-local-fee-code-input') {
       setTimeout(_aplicarCodigoLocalDesdeURL, 2000);
-      return;
+      return; // window._localCodeListo sigue en false: se reintenta en 2s
     }
     const upper = codigo.trim().toUpperCase();
     const input = document.getElementById('local-fee-code-input');
@@ -8821,13 +8837,41 @@ async function _aplicarCodigoLocalDesdeURL() {
   } catch (e) {
     console.warn('[local] error aplicando código desde URL', e);
   }
+  window._localCodeListo = true;
 }
 document.addEventListener('DOMContentLoaded', () => {
+  if (new URLSearchParams(window.location.search).get('local')) window._localCodeListo = false;
   // Con margen, para dar tiempo a que renderCart() haya pintado ya el
   // carrito al menos una vez (si no, el interruptor de gastos de gestión
   // podría no estar listo todavía y no se mostraría el aviso de aplicado).
   setTimeout(_aplicarCodigoLocalDesdeURL, 600);
 });
+
+// ── Gate de config crítica antes de confirmar un pedido ──
+// Antes, cada ajuste que dependía de Firebase (gastos de gestión, bolsa,
+// código local...) se iba parcheando por separado cada vez que aparecía un
+// caso de "a veces no se aplica a tiempo" (ver comentarios de arriba). En
+// vez de seguir cazando estos casos uno a uno, submitOrder() espera a este
+// punto de control único antes de calcular fees/total definitivos. En el
+// caso normal (config ya cargada mucho antes de que el cliente termine de
+// rellenar el formulario) esto no añade ninguna espera perceptible — solo
+// entra en juego en una visita nueva/muy rápida, y como mucho espera
+// maxMs antes de continuar igualmente con los valores que haya, para no
+// dejar al cliente colgado si Firebase estuviera caído de verdad (para eso
+// ya existe el aviso de "Firebase no disponible").
+window._feeConfigListo = window._feeConfigListo || false;
+window._fee2ConfigListo = window._fee2ConfigListo || false;
+window._localCodeListo = window._localCodeListo === undefined ? true : window._localCodeListo;
+function esperarConfigCriticaLista(maxMs) {
+  return new Promise(resolve => {
+    const start = Date.now();
+    (function chk() {
+      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo;
+      if (listo || Date.now() - start > maxMs) { resolve(); return; }
+      setTimeout(chk, 80);
+    })();
+  });
+}
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
@@ -9920,8 +9964,19 @@ async function conectarImpresoraTermica() {
 // se llama sola al cargar la página, y también sola cada pocos segundos si se
 // pierde la conexión (cable desenchufado, tablet que se durmió...), para no
 // tener que ir a pulsar "Conectar impresora" a mano cada vez.
+// Hay hasta 4 disparadores distintos que pueden llamar a esta función casi a
+// la vez (al cargar la página, el evento "connect" de WebUSB, el intervalo
+// de 8s, y el aviso al volver a la pestaña/pantalla) — sin este candado,
+// dos llamadas simultáneas podían pasar ambas la comprobación de "no
+// conectada" antes de que ninguna terminara, e intentar reclamar la
+// interfaz USB a la vez: la segunda fallaba con "Unable to claim interface"
+// aunque la primera sí lo hubiera conseguido bien.
+let _ptReconectando = false;
 async function _ptReconectar() {
   if (!navigator.usb) return false;
+  if (_ptIsConnected()) return true;
+  if (_ptReconectando) return false;
+  _ptReconectando = true;
   try {
     const devices = await navigator.usb.getDevices();
     if (!devices.length) { _ptStatusUI(false); return false; }
@@ -9936,6 +9991,8 @@ async function _ptReconectar() {
     console.warn('[Impresora] reconexión fallida', e);
     _ptStatusUI(false);
     return false;
+  } finally {
+    _ptReconectando = false;
   }
 }
 

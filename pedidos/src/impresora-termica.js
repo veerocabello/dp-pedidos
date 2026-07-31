@@ -262,8 +262,19 @@ async function conectarImpresoraTermica() {
 // se llama sola al cargar la página, y también sola cada pocos segundos si se
 // pierde la conexión (cable desenchufado, tablet que se durmió...), para no
 // tener que ir a pulsar "Conectar impresora" a mano cada vez.
+// Hay hasta 4 disparadores distintos que pueden llamar a esta función casi a
+// la vez (al cargar la página, el evento "connect" de WebUSB, el intervalo
+// de 8s, y el aviso al volver a la pestaña/pantalla) — sin este candado,
+// dos llamadas simultáneas podían pasar ambas la comprobación de "no
+// conectada" antes de que ninguna terminara, e intentar reclamar la
+// interfaz USB a la vez: la segunda fallaba con "Unable to claim interface"
+// aunque la primera sí lo hubiera conseguido bien.
+let _ptReconectando = false;
 async function _ptReconectar() {
   if (!navigator.usb) return false;
+  if (_ptIsConnected()) return true;
+  if (_ptReconectando) return false;
+  _ptReconectando = true;
   try {
     const devices = await navigator.usb.getDevices();
     if (!devices.length) { _ptStatusUI(false); return false; }
@@ -278,6 +289,8 @@ async function _ptReconectar() {
     console.warn('[Impresora] reconexión fallida', e);
     _ptStatusUI(false);
     return false;
+  } finally {
+    _ptReconectando = false;
   }
 }
 
