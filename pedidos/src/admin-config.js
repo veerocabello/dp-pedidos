@@ -1197,8 +1197,11 @@ function _aplicarCodigoLocalDesdeURL() {
     const upper = codigo.trim().toUpperCase();
     const input = document.getElementById('local-fee-code-input');
     if (input) input.value = upper;
+    console.log('[local] código desde URL:', upper, '| código guardado:', getLocalFeeCode(), '| ¿coinciden?', upper === getLocalFeeCode());
     comprobarCodigoLocal();
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[local] error aplicando código desde URL', e);
+  }
 }
 document.addEventListener('DOMContentLoaded', () => {
   // Con margen, para dar tiempo a que renderCart() haya pintado ya el

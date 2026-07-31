@@ -98,7 +98,29 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
   }
+  // El campo de código local (drawer-local-fee-code-input) llama a
+  // comprobarCodigoLocal() en cada tecla para actualizar el desglose de
+  // gastos al momento — pero como innerHTML sustituye TODO el cuerpo del
+  // drawer de golpe, el input con el foco se destruye y se crea uno nuevo
+  // en su lugar, así que el teclado del móvil se cerraba a cada dígito.
+  // Se guarda qué campo tenía el foco (y la posición del cursor) para
+  // devolvérselo al nuevo input justo después de repintar.
+  const _focoPrevioEl = document.activeElement;
+  const _focoPrevioId = (_focoPrevioEl && drawerBody.contains(_focoPrevioEl)) ? _focoPrevioEl.id : null;
+  const _focoPrevioSelStart = (_focoPrevioId && typeof _focoPrevioEl.selectionStart === 'number') ? _focoPrevioEl.selectionStart : null;
+  const _focoPrevioSelEnd = (_focoPrevioId && typeof _focoPrevioEl.selectionEnd === 'number') ? _focoPrevioEl.selectionEnd : null;
+
   drawerBody.innerHTML = html;
+
+  if (_focoPrevioId) {
+    const _nuevoFoco = document.getElementById(_focoPrevioId);
+    if (_nuevoFoco) {
+      _nuevoFoco.focus();
+      if (_focoPrevioSelStart !== null && typeof _nuevoFoco.setSelectionRange === 'function') {
+        try { _nuevoFoco.setSelectionRange(_focoPrevioSelStart, _focoPrevioSelEnd); } catch (e) {}
+      }
+    }
+  }
 
   // Sincronizar slot picker en el drawer
   if (ordersOpen) _syncDrawerSlotPicker();
