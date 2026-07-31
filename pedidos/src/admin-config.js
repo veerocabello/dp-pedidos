@@ -1179,7 +1179,7 @@ function comprobarCodigoLocal() {
 // Si se llega con ?local=CODIGO en la URL (el cartel con QR del mostrador
 // lleva a un enlace así), se rellena y se comprueba solo, sin que el
 // cliente tenga que escribir nada — para eso sirve el QR.
-function _aplicarCodigoLocalDesdeURL() {
+async function _aplicarCodigoLocalDesdeURL() {
   try {
     const params = new URLSearchParams(window.location.search);
     const codigo = params.get('local');
@@ -1197,6 +1197,20 @@ function _aplicarCodigoLocalDesdeURL() {
     const upper = codigo.trim().toUpperCase();
     const input = document.getElementById('local-fee-code-input');
     if (input) input.value = upper;
+    // Lectura directa a Firebase (no fiarse solo de localStorage/del
+    // listener en tiempo real) — en una visita nueva o en incógnito,
+    // localStorage está vacío y el listener puede tardar más en recibir su
+    // primer valor de lo que tarda el cliente en rellenar el formulario y
+    // pulsar "Confirmar". Con esta lectura directa el dato real está listo
+    // antes de seguir, en vez de esperar a que llegue por su cuenta.
+    if (window.fb_loadLocalFeeCode) {
+      try {
+        const real = await window.fb_loadLocalFeeCode();
+        localStorage.setItem(LOCAL_FEE_CODE_KEY, (real || '').toUpperCase());
+      } catch (e) {
+        console.warn('[local] no se pudo leer el código real de Firebase', e);
+      }
+    }
     console.log('[local] código desde URL:', upper, '| código guardado:', getLocalFeeCode(), '| ¿coinciden?', upper === getLocalFeeCode());
     comprobarCodigoLocal();
   } catch (e) {

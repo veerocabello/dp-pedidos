@@ -416,6 +416,11 @@ function _initFirebase() {
   // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
   window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
   window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
+  // Lectura directa de una sola vez — para cuando hace falta el valor YA
+  // (comprobar el ?local= del QR) y no se puede esperar a que el listener
+  // en tiempo real reciba su primer dato, que en una visita nueva/incógnito
+  // puede tardar más de lo que tarda el cliente en rellenar el formulario.
+  window.fb_loadLocalFeeCode = async function() { var sn = await jget("config/localFeeCode"); return sn.exists() ? sn.val() : ""; };
   // INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu pedido?",
   // recibidas y guardadas por webhook-incidencia.php en el nodo "incidencias")
   window.fb_listenIncidencias = function(cb) { return jlisten("incidencias", function(sn){ cb(sn.exists()?sn.val():{}); }); };
