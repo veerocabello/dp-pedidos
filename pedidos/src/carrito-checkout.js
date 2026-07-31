@@ -26,12 +26,19 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocal;
-  const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
-  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  // El código local exime al gasto fijo etiquetado como "de gestión", sea
+  // el 1º o el 2º — ver el comentario largo en carta.js/renderCart() para
+  // el porqué (identificarlo por posición se rompía si se configuraban al
+  // revés de lo esperado).
+  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
+  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
+  const feeAmount = getFeeAmount();
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
@@ -852,12 +859,17 @@ async function _submitOrderInner() {
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
   const subTotal = regularTotal + custTotal + extTotal;
   const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocalSubmit;
-  const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
-  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  // Ver comentario largo en carta.js/renderCart(): el código local exime
+  // al gasto etiquetado como "de gestión", sea el 1º o el 2º.
+  const _fee1EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
+  const _ningunaEsGestionSubmit = !_fee1EsGestionSubmit && !_fee2EsGestionSubmit;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocalSubmit && (_fee1EsGestionSubmit || _ningunaEsGestionSubmit));
+  const feeAmount = feeEnabled ? getFeeAmount() : 0;
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
+  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
   const _discountAmt = getDiscountAmount(subTotal);
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento);

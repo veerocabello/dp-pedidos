@@ -750,9 +750,18 @@ function renderCart() {
   // cliente haya metido el código de "pedido desde el local" (para cuando
   // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocal;
-  const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
+  // El código local exime SIEMPRE al gasto fijo que sea "de gestión" —
+  // puede ser el 1º o el 2º según cómo estén configurados ahora mismo, así
+  // que se identifica por su etiqueta, no por su posición. Si ninguno de
+  // los dos menciona "gestión" (p.ej. se renombraron del todo), se exime
+  // el primero por defecto para no perder la exención.
+  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2LabelParaExencion = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(_fee2LabelParaExencion);
+  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
+  const feeAmount = getFeeAmount();
   const feeEl = document.getElementById('cart-fee-row');
   if (feeEl) {
     if (feeEnabled) {
@@ -764,11 +773,15 @@ function renderCart() {
     }
   }
   // El enlace de "código del local" solo tiene sentido si hay algún gasto
-  // de gestión activo que quitar (con el código puesto o sin él)
+  // de gestión activo que quitar (con el código puesto o sin él) — puede
+  // ser el 1º o el 2º gasto fijo, según cuál esté etiquetado como gestión.
   const localCodeRowEl = document.getElementById('local-fee-code-row');
-  if (localCodeRowEl) localCodeRowEl.style.display = (getFeeEnabled() && getLocalFeeCode()) ? 'block' : 'none';
-  // Segundo gasto fijo, independiente del anterior (su propio interruptor)
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
+  const _hayGestionQueQuitar = getFeeEnabled() || ((typeof getFee2Enabled === 'function') && getFee2Enabled());
+  if (localCodeRowEl) localCodeRowEl.style.display = (_hayGestionQueQuitar && getLocalFeeCode()) ? 'block' : 'none';
+  // Segundo gasto fijo, independiente del anterior (su propio interruptor) —
+  // también se exime con el código local si es este el que está etiquetado
+  // como "de gestión" (ver arriba).
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
   const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
   const fee2El = document.getElementById('cart-fee2-row');

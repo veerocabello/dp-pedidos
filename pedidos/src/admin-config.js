@@ -1053,6 +1053,16 @@ function getFeeAmount() {
 function getFeeLabel() {
   return localStorage.getItem(FEE_LABEL_KEY) || 'Gastos de gestión online';
 }
+// El código de "pedido desde el local" debe librar SIEMPRE del gasto que
+// sea de gestión — pero cuál de los dos gastos fijos (el primero o el
+// segundo) es "el de gestión" depende de cómo los haya nombrado el admin
+// desde el panel, no de en qué orden se crearon. Por eso se identifica por
+// el texto de su etiqueta ("gestión"/"gestion"), no por ser fee1 o fee2 —
+// así funciona bien aunque se hayan configurado al revés de lo esperado.
+function _esEtiquetaDeGestion(label) {
+  const l = (label || '').toLowerCase();
+  return l.includes('gestión') || l.includes('gestion');
+}
 function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE_AMOUNT_KEY, String(amount));
