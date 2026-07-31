@@ -1169,7 +1169,9 @@ const TICKET_CONFIG_DEFAULTS = {
   anchoPapel: 80,
   copias: 1,
   autoImprimir: true,
-  letraGrande: false
+  letraGrande: false,
+  qrHabilitado: false,
+  qrContenido: ''
 };
 function getTicketConfig() {
   try {

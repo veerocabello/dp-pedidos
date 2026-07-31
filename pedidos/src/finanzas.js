@@ -689,6 +689,10 @@ function bimbaPintarTicketConfig() {
   document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
   const letraEl = document.getElementById('tc-letra-grande');
   if (letraEl) letraEl.checked = !!tc.letraGrande;
+  const qrEl = document.getElementById('tc-qr-habilitado');
+  if (qrEl) qrEl.checked = !!tc.qrHabilitado;
+  const qrContenidoEl = document.getElementById('tc-qr-contenido');
+  if (qrContenidoEl) qrContenidoEl.value = tc.qrContenido || '';
 
   // Gastos fijos (se guardan aparte, no dentro de TICKET_CONFIG_KEY)
   const tcFeeEnabled = document.getElementById('tc-fee-enabled');
@@ -725,7 +729,9 @@ function bimbaGuardarTicketConfig() {
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
     autoImprimir: document.getElementById('tc-auto-imprimir').checked,
-    letraGrande: document.getElementById('tc-letra-grande') ? document.getElementById('tc-letra-grande').checked : false
+    letraGrande: document.getElementById('tc-letra-grande') ? document.getElementById('tc-letra-grande').checked : false,
+    qrHabilitado: document.getElementById('tc-qr-habilitado') ? document.getElementById('tc-qr-habilitado').checked : false,
+    qrContenido: document.getElementById('tc-qr-contenido') ? document.getElementById('tc-qr-contenido').value.trim() : ''
   };
   saveTicketConfig(cfg);
 

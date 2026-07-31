@@ -124,12 +124,41 @@ function _ptBuildTicketBytes(ticket) {
   center();
   push('------------------------------------------------\n');
   push(tc.despedida + '\n');
+
+  // Código QR opcional (configurable en Configuración del ticket) — lo genera
+  // la propia impresora a partir del texto/URL, no hace falta ninguna imagen.
+  if (tc.qrHabilitado && tc.qrContenido) {
+    push('\n');
+    _ptPushQR(d, GS, tc.qrContenido, 6);
+  }
+
   push('\n\n\n');
 
   // Cortar papel
   d.push(GS, 0x56, 0x42, 0x00);
 
   return new Uint8Array(d);
+}
+
+// Manda a la impresora el comando ESC/POS estándar de código QR (GS ( k,
+// "Modelo 2") — la impresora lo dibuja ella sola a partir del texto, sin
+// necesidad de generar ninguna imagen desde el navegador.
+function _ptPushQR(d, GS, contenido, tamañoModulo) {
+  const tam = tamañoModulo || 6; // 1-16; 6-8 suele leerse bien en 80mm
+  const bytes = Array.from(new TextEncoder().encode(contenido));
+  const storeLen = bytes.length + 3;
+  const pL = storeLen & 0xFF, pH = (storeLen >> 8) & 0xFF;
+  // Seleccionar modelo 2
+  d.push(GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+  // Tamaño del módulo
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, tam);
+  // Nivel de corrección de errores (48=L 49=M 50=Q 51=H)
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 48);
+  // Guardar los datos del QR
+  d.push(GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30);
+  bytes.forEach(b => d.push(b));
+  // Imprimir el QR guardado
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
 }
 
 // ── CONEXIÓN USB ──
