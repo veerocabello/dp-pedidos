@@ -445,11 +445,14 @@ function resetOrder() {
 }
 
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
-const MODIFY_WINDOW_DEFAULT_MS = 10 * 60 * 1000;
+// dpf_modify_window_mins (el nombre de la clave se mantiene por
+// compatibilidad con lo ya guardado) ahora se cuenta en SEGUNDOS, no
+// minutos — a petición expresa: 10 segundos, no 10 minutos.
+const MODIFY_WINDOW_DEFAULT_MS = 10 * 1000;
 function getModifyWindowMs() {
   try {
     const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '10');
-    return (isNaN(v) || v < 1 || v > 60 ? 10 : v) * 60 * 1000;
+    return (isNaN(v) || v < 1 || v > 300 ? 10 : v) * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
@@ -478,9 +481,11 @@ function _startModifyTimer() {
       zone.style.display = 'none';
       return;
     }
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor(remaining % 60000 / 1000);
-    timerEl.textContent = "\u23F1\uFE0F Puedes modificar o cancelar tu pedido durante ".concat(mins, ":").concat(String(secs).padStart(2, '0'), " min");
+    const totalSecs = Math.ceil(remaining / 1000);
+    const tiempoTxt = totalSecs < 60
+      ? totalSecs + ' s'
+      : Math.floor(totalSecs / 60) + ':' + String(totalSecs % 60).padStart(2, '0') + ' min';
+    timerEl.textContent = "\u23F1\uFE0F Puedes modificar o cancelar tu pedido durante ".concat(tiempoTxt);
     if (btnMod) btnMod.style.display = '';
     if (btnCan) btnCan.style.display = '';
     zone.style.display = 'block';

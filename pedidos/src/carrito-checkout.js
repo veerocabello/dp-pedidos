@@ -1238,7 +1238,7 @@ function _mostrarAvisoFidelizacionCompletada() {
 function saveModifyWindow() {
   var _document$getElementB2;
   const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '10');
-  const valid = isNaN(v) || v < 1 || v > 60 ? 10 : v;
+  const valid = isNaN(v) || v < 1 || v > 300 ? 10 : v;
   localStorage.setItem('dpf_modify_window_mins', valid);
   if (window.fb_saveConfig) {
     try {
