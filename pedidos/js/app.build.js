@@ -10045,6 +10045,15 @@ if (navigator.usb) {
     if (!_ptIsConnected()) _ptReconectar();
     else _ptComprobarPapel();
   }, 8000);
+  // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
+  // segundo plano — si la tablet se queda con la pantalla apagada un rato
+  // (algo habitual entre pedido y pedido) el reintento de arriba puede no
+  // llegar a ejecutarse a tiempo. En cuanto la pantalla se enciende o se
+  // vuelve a esta pestaña, se reintenta al momento en vez de esperar al
+  // siguiente tick de los 8s.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !_ptIsConnected()) _ptReconectar();
+  });
 }
 
 // ── HISTORIAL (últimos 30 días) ──
