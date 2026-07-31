@@ -9041,6 +9041,8 @@ function _ptBuildTicketBytes(ticket) {
 // ── CONEXIÓN USB ──
 let _ptDevice = null;
 let _ptEndpointOut = null;
+let _ptEndpointIn = null;
+let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir último")
 
 // Puede haber varias copias del indicador de estado en distintas pantallas
 // (Configuración del ticket, Pedidos en vivo, Panel bimba) — se actualizan todas
@@ -9072,20 +9074,27 @@ function _ptUpdateDebugStatus() {
   if (elKitchen) elKitchen.textContent = texto;
 }
 
-// Busca en el dispositivo USB la interfaz que tenga un endpoint de salida (bulk OUT)
-// y la reclama. Es genérico: no depende de conocer de antemano el vendor/product ID.
+// Busca en el dispositivo USB la interfaz que tenga endpoints de salida (bulk OUT,
+// para imprimir) y de entrada (bulk IN, para leer el estado de papel) y la reclama.
+// Es genérico: no depende de conocer de antemano el vendor/product ID.
 async function _ptClaimInterface(device) {
   await device.open();
   if (device.configuration === null) await device.selectConfiguration(1);
-  let ifaceNumber = null, epOut = null;
+  let ifaceNumber = null, epOut = null, epIn = null;
   for (const iface of device.configuration.interfaces) {
     const alt = iface.alternates[0];
     const out = alt.endpoints.find(e => e.direction === 'out');
-    if (out) { ifaceNumber = iface.interfaceNumber; epOut = out.endpointNumber; break; }
+    if (out) {
+      ifaceNumber = iface.interfaceNumber;
+      epOut = out.endpointNumber;
+      const inEp = alt.endpoints.find(e => e.direction === 'in');
+      epIn = inEp ? inEp.endpointNumber : null;
+      break;
+    }
   }
   if (ifaceNumber === null) throw new Error('No se encontró un endpoint de salida USB en este dispositivo');
   await device.claimInterface(ifaceNumber);
-  return epOut;
+  return { epOut, epIn };
 }
 
 // Pide permiso al navegador para acceder a la impresora — debe llamarse desde
@@ -9100,9 +9109,10 @@ async function conectarImpresoraTermica() {
     // así que mostramos todos los dispositivos USB conectados y que el usuario
     // elija el suyo de la lista (evita listas vacías por un filtro equivocado).
     const device = await navigator.usb.requestDevice({ filters: [] });
-    const epOut = await _ptClaimInterface(device);
+    const { epOut, epIn } = await _ptClaimInterface(device);
     _ptDevice = device;
     _ptEndpointOut = epOut;
+    _ptEndpointIn = epIn;
     _ptStatusUI(true);
     return true;
   } catch (e) {
@@ -9113,16 +9123,19 @@ async function conectarImpresoraTermica() {
 }
 
 // Reconecta en silencio (sin pedir permiso) a un dispositivo ya autorizado antes —
-// se llama sola al cargar la página para no tener que volver a emparejar cada vez.
+// se llama sola al cargar la página, y también sola cada pocos segundos si se
+// pierde la conexión (cable desenchufado, tablet que se durmió...), para no
+// tener que ir a pulsar "Conectar impresora" a mano cada vez.
 async function _ptReconectar() {
   if (!navigator.usb) return false;
   try {
     const devices = await navigator.usb.getDevices();
     if (!devices.length) { _ptStatusUI(false); return false; }
     const device = devices[0];
-    const epOut = await _ptClaimInterface(device);
+    const { epOut, epIn } = await _ptClaimInterface(device);
     _ptDevice = device;
     _ptEndpointOut = epOut;
+    _ptEndpointIn = epIn;
     _ptStatusUI(true);
     return true;
   } catch (e) {
@@ -9132,7 +9145,7 @@ async function _ptReconectar() {
   }
 }
 
-async function _ptEnviarBytes(bytes) {
+async function _ptEnviarBytesUnaVez(bytes) {
   if (!_ptDevice || !_ptEndpointOut) {
     const ok = await _ptReconectar();
     if (!ok) throw new Error('Impresora no conectada — pulsa "Conectar impresora" en Configuración del ticket');
@@ -9140,10 +9153,33 @@ async function _ptEnviarBytes(bytes) {
   await _ptDevice.transferOut(_ptEndpointOut, bytes);
 }
 
+// Reintenta un par de veces (con reconexión de por medio) antes de rendirse —
+// un fallo puntual (impresora ocupada, un instante de corte USB) ya no se
+// queda directamente como "Falló" sin que nadie lo intente de nuevo.
+async function _ptEnviarBytes(bytes, intentos) {
+  intentos = intentos || 3;
+  let ultimoError = null;
+  for (let i = 0; i < intentos; i++) {
+    try {
+      await _ptEnviarBytesUnaVez(bytes);
+      return;
+    } catch (e) {
+      ultimoError = e;
+      console.warn('[Impresora] intento ' + (i + 1) + '/' + intentos + ' falló', e);
+      if (i < intentos - 1) {
+        _ptDevice = null; _ptEndpointOut = null; // forzar reconexión limpia en el siguiente intento
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+  }
+  throw ultimoError;
+}
+
 // Imprime un ticket, repitiendo tantas copias como esté configurado.
 async function imprimirTicketTermico(ticket) {
   const tc = getTicketConfig();
   const bytes = _ptBuildTicketBytes(ticket);
+  _ptUltimoTicket = ticket;
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
   for (let i = 0; i < copias; i++) {
     await _ptEnviarBytes(bytes);
@@ -9201,11 +9237,65 @@ async function imprimirTicketPrueba() {
   }
 }
 
+// Reimprime el último ticket normal enviado (no el de prueba, ni una
+// anulación) — para el caso de que se atasque el papel a mitad de
+// impresión, sin tener que ir a buscar el pedido en la lista.
+async function reimprimirUltimoTicketTermico() {
+  if (!_ptUltimoTicket) {
+    alert('Todavía no se ha impreso ningún ticket en este dispositivo.');
+    return;
+  }
+  try {
+    await imprimirTicketTermico(_ptUltimoTicket);
+  } catch (e) {
+    alert('⚠️ No se pudo reimprimir: ' + e.message);
+  }
+}
+
+// ── AVISO DE PAPEL ──
+// Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
+// de papel). La interpretación exacta de los bits varía algo según el
+// fabricante — esta es la más habitual en clones compatibles con Epson.
+// Si en esta impresora en concreto no coincidiera al probarlo con el rollo
+// realmente vacío, hay que ajustar las máscaras (0x0C / 0x60) de aquí abajo.
+async function _ptComprobarPapel() {
+  if (!_ptIsConnected() || _ptEndpointIn === null) return;
+  try {
+    await _ptDevice.transferOut(_ptEndpointOut, new Uint8Array([0x10, 0x04, 0x04]));
+    const res = await _ptDevice.transferIn(_ptEndpointIn, 8);
+    if (!res.data || res.data.byteLength === 0) return;
+    const status = res.data.getUint8(0);
+    const sinPapel = (status & 0x60) !== 0;
+    _ptPapelUI(sinPapel);
+  } catch (e) {
+    // No pasa nada si esta impresora no responde a este comando — simplemente
+    // no se muestra el aviso de papel, el resto sigue funcionando igual.
+  }
+}
+function _ptPapelUI(sinPapel) {
+  document.querySelectorAll('.pt-papel-aviso').forEach(el => {
+    el.style.display = sinPapel ? 'block' : 'none';
+  });
+}
+
 if (navigator.usb) {
   document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
   navigator.usb.addEventListener('disconnect', (e) => {
-    if (_ptDevice && e.device === _ptDevice) { _ptDevice = null; _ptEndpointOut = null; _ptStatusUI(false); }
+    if (_ptDevice && e.device === _ptDevice) { _ptDevice = null; _ptEndpointOut = null; _ptEndpointIn = null; _ptStatusUI(false); }
   });
+  // Si Chrome detecta que se ha enchufado algún dispositivo USB, probamos a
+  // reconectar por si es la impresora (p.ej. se desenchufó el cable y se
+  // volvió a meter) — sin esto había que pulsar "Conectar impresora" a mano.
+  navigator.usb.addEventListener('connect', () => {
+    if (!_ptIsConnected()) _ptReconectar();
+  });
+  // Reintento periódico de reconexión mientras no esté conectada — cubre el
+  // caso de que la tablet se haya quedado en reposo o Chrome no dispare el
+  // evento "connect" a tiempo.
+  setInterval(() => {
+    if (!_ptIsConnected()) _ptReconectar();
+    else _ptComprobarPapel();
+  }, 8000);
 }
 
 // ── HISTORIAL (últimos 30 días) ──

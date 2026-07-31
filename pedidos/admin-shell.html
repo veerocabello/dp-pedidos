@@ -9,6 +9,7 @@
   <div class="kitchen-header">
     <div class="kitchen-title">🍳 Dulce Patata — Cocina <span id="kitchen-active-count" style="font-size:14px;background:var(--gold);color:var(--brown);border-radius:99px;padding:2px 12px;margin-left:8px;vertical-align:middle;font-family:'DM Sans',sans-serif;font-weight:700"></span>
       <div id="pt-debug-status-kitchen" style="font-size:11px;color:#8A8580;font-weight:400"></div>
+      <div class="pt-papel-aviso" style="display:none;background:#3d1414;border:1.5px solid #e74c3c;border-radius:8px;padding:4px 10px;margin-top:4px;font-size:12px;font-weight:700;color:#ff6b5f">⚠️ Sin papel — cambia el rollo</div>
     </div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div id="kitchen-clock" style="font-size:18px;font-weight:700;color:var(--white)"></div>
@@ -363,6 +364,7 @@
             <span style="font-size:13px;font-weight:700;color:var(--brown)">Pedidos en tiempo real</span>
           </div>
           <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
+          <div class="pt-papel-aviso" style="display:none;width:100%;order:98;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
             <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
             <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 Conectar impresora</button>
@@ -1632,14 +1634,16 @@
 
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:6px 0 10px">Impresora térmica</div>
 
+      <div class="pt-papel-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
         <span class="pt-conn-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
           <button onclick="conectarImpresoraTermica()" style="background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔌 Conectar impresora</button>
           <button onclick="imprimirTicketPrueba()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🧾 Probar</button>
+          <button onclick="reimprimirUltimoTicketTermico()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔁 Reimprimir último</button>
         </div>
       </div>
-      <p style="font-size:11px;color:var(--muted);margin:-6px 0 14px">Solo funciona en Chrome/Edge. Conecta la impresora por USB (con adaptador OTG en la tablet) y pulsa "Conectar impresora" una vez — luego imprimirá sola.</p>
+      <p style="font-size:11px;color:var(--muted);margin:-6px 0 14px">Solo funciona en Chrome/Edge. Conecta la impresora por USB (con adaptador OTG en la tablet) y pulsa "Conectar impresora" una vez — luego imprimirá sola y se reconecta sola si se desenchufa.</p>
 
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Ancho del papel</label>
       <select id="tc-ancho-papel" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
