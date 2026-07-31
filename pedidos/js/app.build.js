@@ -8579,6 +8579,15 @@ function loadLocalFeeCodeFromFirebase() {
   if (!window.fb_listenLocalFeeCode) return;
   window.fb_listenLocalFeeCode(function (code) {
     localStorage.setItem(LOCAL_FEE_CODE_KEY, (code || '').toUpperCase());
+    // El código real puede tardar en llegar de Firebase más de lo que
+    // tarda en dispararse _aplicarCodigoLocalDesdeURL() (600ms fijos tras
+    // cargar la página) — con conexión lenta en el local al escanear el
+    // QR, la comprobación llegaba a hacerse ANTES de tener el código real
+    // guardado, así que _modoLocalActivo() la daba por incorrecta y
+    // cobraba de más el resto del pedido sin que el cliente lo notara.
+    // Repetir la comprobación aquí, ahora que ya hay valor real, lo arregla
+    // aunque haya llegado tarde.
+    if (typeof _aplicarCodigoLocalDesdeURL === 'function') _aplicarCodigoLocalDesdeURL();
   });
 }
 function generarCodigoLocalNuevo() {
@@ -8619,6 +8628,16 @@ function _aplicarCodigoLocalDesdeURL() {
     const params = new URLSearchParams(window.location.search);
     const codigo = params.get('local');
     if (!codigo) return;
+    // Esta función se puede volver a llamar sola (cuando el código real
+    // llega de Firebase con retraso) — si para entonces el cliente ya está
+    // escribiendo su nombre/teléfono, no le repintamos el carrito debajo
+    // de los dedos; se reintenta en un momento en vez de perder el aviso
+    // para siempre.
+    const activo = document.activeElement;
+    if (activo && (activo.tagName === 'INPUT' || activo.tagName === 'TEXTAREA') && activo.id !== 'local-fee-code-input' && activo.id !== 'drawer-local-fee-code-input') {
+      setTimeout(_aplicarCodigoLocalDesdeURL, 2000);
+      return;
+    }
     const upper = codigo.trim().toUpperCase();
     const input = document.getElementById('local-fee-code-input');
     if (input) input.value = upper;
@@ -9865,6 +9884,10 @@ async function imprimirCartelQRLocal() {
   _ptPushQR(d, GS, url, 8);
   push('\n');
   push('Escanea el codigo\n');
+  push('o escribe el codigo:\n');
+  big();
+  push(code + '\n');
+  normal();
   push('\n\n\n');
   d.push(GS, 0x56, 0x42, 0x00);
   try {

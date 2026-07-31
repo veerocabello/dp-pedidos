@@ -404,6 +404,10 @@ async function imprimirCartelQRLocal() {
   _ptPushQR(d, GS, url, 8);
   push('\n');
   push('Escanea el codigo\n');
+  push('o escribe el codigo:\n');
+  big();
+  push(code + '\n');
+  normal();
   push('\n\n\n');
   d.push(GS, 0x56, 0x42, 0x00);
   try {
