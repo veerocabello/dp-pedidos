@@ -725,6 +725,8 @@ function showAdminSection(id, btn) {
     loadFeeUI();
     loadModifyWindowInput();
     if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+    if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
   }
   if (id === 'accesos') {
     renderAccesosLog();

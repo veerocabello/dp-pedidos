@@ -813,6 +813,9 @@ function initFirebaseListeners() {
   // estado compartido entre dispositivos (¿está pausado por el sistema?)
   if (typeof loadAutoPausaConfigFromFirebase === 'function') loadAutoPausaConfigFromFirebase();
   if (typeof loadAutoPausaEstadoFromFirebase === 'function') loadAutoPausaEstadoFromFirebase();
+  // Pausa exprés (cuenta atrás) y aviso suave previo a la auto-pausa
+  if (typeof loadPausaExpresFromFirebase === 'function') loadPausaExpresFromFirebase();
+  if (typeof loadAvisoSaturacionFromFirebase === 'function') loadAvisoSaturacionFromFirebase();
 
   // Pedidos abiertos/cerrados y su mensaje, en tiempo real — antes solo se
   // cargaban una vez al abrir la página (init.js). Si la auto-pausa por
@@ -900,12 +903,16 @@ function initFirebaseListeners() {
       // esté conectado como admin, sin depender de que la pestaña "Pedidos
       // en vivo" esté abierta en pantalla — en "Modo cocina" también debe
       // poder pausar/reactivar sola.
-      if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function' && typeof getOrderStatus === 'function') {
+      if (typeof getOrderStatus === 'function') {
         const _pendientes = (stats.orders || []).filter(o => {
           const s = getOrderStatus(o.num);
           return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
         }).length;
-        _comprobarAutoPausaSaturacion(_pendientes);
+        if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(_pendientes);
+        // El aviso suave (banner + sonido previo) se calcula en cualquier
+        // dispositivo — incluidos los clientes pidiendo, que necesitan ver
+        // el aviso aunque no estén logueados como admin.
+        if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientes);
       }
 
       // First call — set baseline, don't alert, but refresh UI
@@ -998,6 +1005,20 @@ function initFirebaseListeners() {
 
       window._orderStatusCache = nuevos;
       localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
+      // Un cambio de estado (p.ej. marcar "listo") también puede bajar el
+      // nº de pendientes sin que cambie el nº total de pedidos — recalcular
+      // la auto-pausa/aviso aquí también, no solo cuando llega un pedido nuevo.
+      try {
+        const _statsAhora = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+        if (_statsAhora && Array.isArray(_statsAhora.orders)) {
+          const _pendientesAhora = _statsAhora.orders.filter(o => {
+            const s = getOrderStatus(o.num);
+            return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+          }).length;
+          if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(_pendientesAhora);
+          if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientesAhora);
+        }
+      } catch (e) {}
       if ((_document$getElementB15 = document.getElementById('admin-pedidos')) !== null && _document$getElementB15 !== void 0 && _document$getElementB15.classList.contains('active')) {
         loadLiveOrders();
       }

@@ -362,6 +362,31 @@ async function showSuccess(orderNum, slotTime) {
     slotInfo.style.display = 'none';
   }
 
+  // Estimación de espera según la cola actual — solo si hay bastante
+  // ambiente (mismo umbral que el aviso previo de saturación), para no
+  // asustar al cliente en un día tranquilo con un aviso que no aplica.
+  const tiempoEstEl = document.getElementById('success-tiempo-estimado');
+  if (tiempoEstEl) {
+    let _pendientesAhora = 0;
+    try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+      if (stats && stats.date === todayKey && Array.isArray(stats.orders)) {
+        _pendientesAhora = stats.orders.filter(o => {
+          const s = (typeof getOrderStatus === 'function') ? getOrderStatus(o.num) : 'nuevo';
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+      }
+    } catch (e) {}
+    const minutosExtra = (typeof _estimarMinutosEspera === 'function') ? _estimarMinutosEspera(_pendientesAhora) : 0;
+    if (minutosExtra > 0) {
+      tiempoEstEl.textContent = '⏳ Ahora mismo hay ' + _pendientesAhora + ' pedidos en cola — puede tardar unos ' + minutosExtra + ' min más de lo habitual.';
+      tiempoEstEl.style.display = 'block';
+    } else {
+      tiempoEstEl.style.display = 'none';
+    }
+  }
+
   // Resumen de ítems
   const itemsContainer = document.getElementById('success-items-list');
   if (itemsContainer && _lastTicketData && _lastTicketData.items.length) {

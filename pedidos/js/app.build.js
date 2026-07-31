@@ -3266,6 +3266,23 @@ function renderSlotPicker() {
       if (sobrantes > 0) extraPlazas[slot] = sobrantes;
     }
   });
+  // Aviso de saturación moderada activo: empuja la selección hacia turnos
+  // más tarde (en vez de amontonar todo en el más próximo) tratando como
+  // "saturados" los que caen dentro de los próximos X minutos — pero solo
+  // si queda al menos un turno libre más allá de ese margen, para no dejar
+  // a nadie sin ningún turno donde poder elegir.
+  const _nowMinsGlobal = (() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); })();
+  const _avisoCfg = (typeof getAvisoSaturacionConfig === 'function') ? getAvisoSaturacionConfig() : null;
+  let _saturacionSlotsActiva = !!(window._saturacionAvisoActiva && _avisoCfg && _avisoCfg.minutosSalto > 0);
+  if (_saturacionSlotsActiva) {
+    const hayTurnoLibreTrasSalto = slots.some(slot => {
+      const m = slot.split(':').map(Number);
+      const slotMins = m[0] * 60 + m[1];
+      if (slotMins - _nowMinsGlobal < _avisoCfg.minutosSalto) return false;
+      return !slotIsPast(slot) && (slotsData.slots[slot] || 0) < slotMax;
+    });
+    if (!hayTurnoLibreTrasSalto) _saturacionSlotsActiva = false;
+  }
   slots.forEach(slot => {
     const count = slotsData.slots[slot] || 0;
     const extra = extraPlazas[slot] || 0;
@@ -3273,11 +3290,6 @@ function renderSlotPicker() {
     const full = count >= effectiveMax;
     const almostFull = !full && count === effectiveMax - 1;
     const past = slotIsPast(slot);
-    const disabled = full || past;
-    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
-    const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
-    const libres = effectiveMax - count;
-    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
     const nowMs = new Date();
     const nowMinsSlot = nowMs.getHours() * 60 + nowMs.getMinutes();
     const _slot$split$map = slot.split(':').map(Number),
@@ -3285,9 +3297,15 @@ function renderSlotPicker() {
       slotH = _slot$split$map2[0],
       slotM = _slot$split$map2[1];
     const slotTotalMins = slotH * 60 + slotM;
+    const saturado = !full && !past && _saturacionSlotsActiva && (slotTotalMins - nowMinsSlot) < _avisoCfg.minutosSalto;
+    const disabled = full || past || saturado;
+    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
+    const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
+    const libres = effectiveMax - count;
+    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
     const isLateSlot = !disabled && slotTotalMins - nowMinsSlot <= 5;
     const btnBg = disabled ? 'background:#f5f5f5;border-color:#ccc;' : isLateSlot ? 'background:#fffbe6;border-color:#f0c040;' : full ? 'background:#fff0f0;border-color:#e74c3c;' : pct >= 75 ? 'background:rgba(244,196,48,0.08);border-color:#3D1F0D;' : 'background:#FFF8EE;border-color:#E8D5B0;';
-    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
+    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : saturado ? 'Hay bastante ambiente ahora mismo, elige un turno más tarde' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
   });
   document.getElementById('slot-grid').innerHTML = html;
 }
@@ -3634,7 +3652,11 @@ async function _submitOrderInner() {
     total: orderTotal,
     time: now,
     upsellMostrado,
-    upsellAnadido
+    upsellAnadido,
+    // Pedido "desde el local" (código de cola aplicado): para que en cocina
+    // pueda mostrarse primero, ya que ese cliente está esperando físicamente
+    // en el mostrador y no se puede ir a pedir a otro sitio.
+    esPedidoLocal: _sinGastosPorCodigoLocalSubmit
   };
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
@@ -3781,7 +3803,8 @@ async function _finalizarPedido() {
         total: window._pendingTicketData.total,
         discountCode: discountCode || null,
         upsellMostrado: window._pendingTicketData.upsellMostrado || false,
-        upsellAnadido: window._pendingTicketData.upsellAnadido || false
+        upsellAnadido: window._pendingTicketData.upsellAnadido || false,
+        esPedidoLocal: window._pendingTicketData.esPedidoLocal || false
       })
     })
       .then(res => res.json())
@@ -4261,6 +4284,31 @@ async function showSuccess(orderNum, slotTime) {
     slotInfo.style.display = 'flex';
   } else if (slotInfo) {
     slotInfo.style.display = 'none';
+  }
+
+  // Estimación de espera según la cola actual — solo si hay bastante
+  // ambiente (mismo umbral que el aviso previo de saturación), para no
+  // asustar al cliente en un día tranquilo con un aviso que no aplica.
+  const tiempoEstEl = document.getElementById('success-tiempo-estimado');
+  if (tiempoEstEl) {
+    let _pendientesAhora = 0;
+    try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+      if (stats && stats.date === todayKey && Array.isArray(stats.orders)) {
+        _pendientesAhora = stats.orders.filter(o => {
+          const s = (typeof getOrderStatus === 'function') ? getOrderStatus(o.num) : 'nuevo';
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+      }
+    } catch (e) {}
+    const minutosExtra = (typeof _estimarMinutosEspera === 'function') ? _estimarMinutosEspera(_pendientesAhora) : 0;
+    if (minutosExtra > 0) {
+      tiempoEstEl.textContent = '⏳ Ahora mismo hay ' + _pendientesAhora + ' pedidos en cola — puede tardar unos ' + minutosExtra + ' min más de lo habitual.';
+      tiempoEstEl.style.display = 'block';
+    } else {
+      tiempoEstEl.style.display = 'none';
+    }
   }
 
   // Resumen de ítems
@@ -8636,6 +8684,14 @@ function toggleOrdersAccepting() {
   // no, un reabrir manual con la cola todav\u00EDa alta se auto-pausar\u00EDa de
   // nuevo en cuanto entrara el siguiente pedido.
   _setAutoPausaEstado(false, Date.now() + AUTO_PAUSA_COOLDOWN_MS);
+  // Un toggle manual tambi\u00E9n cancela cualquier pausa expr\u00E9s pendiente \u2014
+  // si no, esta podr\u00EDa reabrir sola pasado su tiempo aunque el admin ya
+  // haya decidido otra cosa en medio.
+  if (_getPausaExpresHasta()) {
+    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
+    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+  }
   updateOrdersUI(next);
   logActivity("\uD83D\uDEA6 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
@@ -8781,6 +8837,184 @@ function _renderAutoPausaUI(pendientesActuales) {
         ? '\uD83D\uDD25 Pausado autom\u00E1ticamente ahora mismo (' + pendientes + ' pedidos pendientes)'
         : 'Ahora mismo: ' + pendientes + ' / ' + cfg.umbral + ' pedidos pendientes';
     }
+  }
+}
+
+// \u2500\u2500 PAUSA EXPR\u00C9S (pausa temporal con cuenta atr\u00E1s) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Para cuando sabes que el pico va a durar poco y no quieres tener que
+// acordarte de reactivar los pedidos t\u00FA misma \u2014 se reabre sola pasado el
+// tiempo, sin depender de que baje la cola (a diferencia de la auto-pausa
+// por saturaci\u00F3n, que solo mira el n\u00BA de pedidos pendientes).
+const PAUSA_EXPRES_HASTA_KEY = 'dpf_pausa_expres_hasta';
+function _getPausaExpresHasta() {
+  return parseInt(localStorage.getItem(PAUSA_EXPRES_HASTA_KEY) || '', 10) || 0;
+}
+function pausarExpres(minutos) {
+  const hasta = Date.now() + minutos * 60 * 1000;
+  localStorage.setItem(ORDERS_KEY, 'false');
+  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta));
+  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(() => {});
+  // No debe considerarse una auto-pausa (para que la auto-pausa por
+  // saturaci\u00F3n no la reabra antes de tiempo ni la vuelva a tocar).
+  _setAutoPausaEstado(false, hasta);
+  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const msg = '\u23F1\uFE0F Pausado temporalmente. Volvemos sobre las ' + horaReapertura + '.';
+  localStorage.setItem(ORDERS_MSG_KEY, msg);
+  if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(() => {});
+  updateOrdersUI(false, msg);
+  logActivity('\u23F1\uFE0F Pausa expr\u00E9s activada: ' + minutos + ' min (reabre a las ' + horaReapertura + ')');
+  _renderPausaExpresUI();
+}
+function _comprobarPausaExpres() {
+  const hasta = _getPausaExpresHasta();
+  if (!hasta) return;
+  if (Date.now() >= hasta) {
+    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
+    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+    // Solo reabre si nadie ha vuelto a tocar el toggle manual mientras tanto
+    // (toggleOrdersAccepting ya limpia esta clave al pulsarlo).
+    if (localStorage.getItem(ORDERS_KEY) === 'false') {
+      localStorage.setItem(ORDERS_KEY, 'true');
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      updateOrdersUI(true);
+      logActivity('\u2705 Pausa expr\u00E9s terminada \u2014 pedidos reactivados');
+    }
+    _renderPausaExpresUI();
+  }
+}
+function loadPausaExpresFromFirebase() {
+  if (!window.fb_listenPausaExpresHasta) return;
+  window.fb_listenPausaExpresHasta(function (hasta) {
+    localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta || 0));
+    _renderPausaExpresUI();
+  });
+}
+function _renderPausaExpresUI() {
+  const el = document.getElementById('pausa-expres-estado-texto');
+  if (!el) return;
+  const hasta = _getPausaExpresHasta();
+  if (!hasta || Date.now() >= hasta) {
+    el.textContent = '';
+    return;
+  }
+  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const minutosRestantes = Math.max(1, Math.round((hasta - Date.now()) / 60000));
+  el.textContent = '\u23F1\uFE0F Pausa expr\u00E9s activa \u2014 reabre a las ' + horaReapertura + ' (~' + minutosRestantes + ' min)';
+}
+// Comprobaci\u00F3n peri\u00F3dica: nada m\u00E1s dispara esto si no llega ning\u00FAn pedido
+// nuevo mientras dura la pausa.
+setInterval(() => {
+  if (typeof _comprobarPausaExpres === 'function') _comprobarPausaExpres();
+}, 15000);
+
+// \u2500\u2500 AVISO SUAVE DE SATURACI\u00D3N (previo a la auto-pausa) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Antes de llegar al punto de cerrar los pedidos del todo, avisa (sin
+// bloquear) tanto al cliente ("va a tardar m\u00E1s de lo normal") como a cocina
+// (sonido distinto) y empuja el selector de turno hacia horas m\u00E1s tarde \u2014
+// para repartir mejor la carga en vez de amontonarla toda en el turno m\u00E1s
+// pr\u00F3ximo.
+const AVISO_SAT_ENABLED_KEY = 'dpf_aviso_sat_enabled';
+const AVISO_SAT_UMBRAL_KEY = 'dpf_aviso_sat_umbral';
+const AVISO_SAT_MSG_KEY = 'dpf_aviso_sat_msg';
+const AVISO_SAT_SALTO_KEY = 'dpf_aviso_sat_salto_min';
+const AVISO_SAT_MINPP_KEY = 'dpf_aviso_sat_minpp';
+const AVISO_SAT_DEFAULT_MSG = '\u23F3 Hay bastante ambiente ahora mismo, tu pedido tardar\u00E1 m\u00E1s de lo habitual.';
+const AVISO_SAT_DEFAULT_UMBRAL = 8;
+const AVISO_SAT_DEFAULT_SALTO_MIN = 30;
+const AVISO_SAT_DEFAULT_MINPP = 3;
+function getAvisoSaturacionConfig() {
+  return {
+    enabled: localStorage.getItem(AVISO_SAT_ENABLED_KEY) === 'true',
+    umbral: parseInt(localStorage.getItem(AVISO_SAT_UMBRAL_KEY) || '', 10) || AVISO_SAT_DEFAULT_UMBRAL,
+    msg: localStorage.getItem(AVISO_SAT_MSG_KEY) || AVISO_SAT_DEFAULT_MSG,
+    minutosSalto: parseInt(localStorage.getItem(AVISO_SAT_SALTO_KEY) || '', 10) || AVISO_SAT_DEFAULT_SALTO_MIN,
+    minPorPedido: parseInt(localStorage.getItem(AVISO_SAT_MINPP_KEY) || '', 10) || AVISO_SAT_DEFAULT_MINPP
+  };
+}
+function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido) {
+  localStorage.setItem(AVISO_SAT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(umbral));
+  localStorage.setItem(AVISO_SAT_MSG_KEY, msg);
+  localStorage.setItem(AVISO_SAT_SALTO_KEY, String(minutosSalto));
+  localStorage.setItem(AVISO_SAT_MINPP_KEY, String(minPorPedido));
+  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido).catch(() => {});
+  logActivity((enabled ? '\u2705' : '\u26D4') + ' Aviso previo de saturaci\u00F3n ' + (enabled ? 'activado \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivado'));
+  _renderAvisoSaturacionUI();
+}
+function loadAvisoSaturacionFromFirebase() {
+  if (!window.fb_listenAvisoSaturacionConfig) return;
+  window.fb_listenAvisoSaturacionConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(AVISO_SAT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.umbral !== undefined) localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(cfg.umbral));
+    if (cfg.msg !== undefined) localStorage.setItem(AVISO_SAT_MSG_KEY, cfg.msg);
+    if (cfg.minutosSalto !== undefined) localStorage.setItem(AVISO_SAT_SALTO_KEY, String(cfg.minutosSalto));
+    if (cfg.minPorPedido !== undefined) localStorage.setItem(AVISO_SAT_MINPP_KEY, String(cfg.minPorPedido));
+    _renderAvisoSaturacionUI();
+  });
+}
+function toggleAvisoSaturacionEnabled() {
+  const cfg = getAvisoSaturacionConfig();
+  saveAvisoSaturacionConfig(!cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido);
+}
+function guardarAvisoSaturacionConfig() {
+  const umbralInput = document.getElementById('aviso-sat-umbral');
+  const msgInput = document.getElementById('aviso-sat-msg');
+  const saltoInput = document.getElementById('aviso-sat-salto');
+  const minppInput = document.getElementById('aviso-sat-minpp');
+  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
+  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AVISO_SAT_DEFAULT_UMBRAL : parsedUmbral;
+  const parsedSalto = parseInt(saltoInput && saltoInput.value, 10);
+  const minutosSalto = (isNaN(parsedSalto) || parsedSalto < 0) ? AVISO_SAT_DEFAULT_SALTO_MIN : parsedSalto;
+  const parsedMinpp = parseInt(minppInput && minppInput.value, 10);
+  const minPorPedido = (isNaN(parsedMinpp) || parsedMinpp < 0) ? AVISO_SAT_DEFAULT_MINPP : parsedMinpp;
+  const msg = (msgInput && msgInput.value.trim()) || AVISO_SAT_DEFAULT_MSG;
+  saveAvisoSaturacionConfig(getAvisoSaturacionConfig().enabled, umbral, msg, minutosSalto, minPorPedido);
+  showToast('local-toast');
+}
+// Estimaci\u00F3n de espera para la pantalla de \u00E9xito: pendientes \u00D7 minutos/pedido
+function _estimarMinutosEspera(pendientes) {
+  const cfg = getAvisoSaturacionConfig();
+  if (!cfg.enabled || pendientes < cfg.umbral) return 0;
+  return pendientes * cfg.minPorPedido;
+}
+function _renderAvisoSaturacionUI() {
+  const cfg = getAvisoSaturacionConfig();
+  const btn = document.getElementById('aviso-sat-toggle-btn');
+  if (btn) {
+    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
+    btn.textContent = cfg.enabled ? '\u2705 Activado' : '\u26D4 Desactivado';
+  }
+  const umbralInput = document.getElementById('aviso-sat-umbral');
+  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
+  const msgInput = document.getElementById('aviso-sat-msg');
+  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
+  const saltoInput = document.getElementById('aviso-sat-salto');
+  if (saltoInput && document.activeElement !== saltoInput) saltoInput.value = cfg.minutosSalto;
+  const minppInput = document.getElementById('aviso-sat-minpp');
+  if (minppInput && document.activeElement !== minppInput) minppInput.value = cfg.minPorPedido;
+}
+// \u00BFEst\u00E1 el nivel de "aviso" activo ahora mismo? (por debajo del umbral de
+// auto-pausa \u2014si ya est\u00E1 pausado del todo, el banner de cerrado manda\u2014)
+window._saturacionAvisoActiva = false;
+function _actualizarAvisoSaturacion(pendientes) {
+  const cfg = getAvisoSaturacionConfig();
+  const banner = document.getElementById('aviso-saturacion-banner');
+  const pausaCfg = getAutoPausaConfig();
+  const yaPausado = pausaCfg.enabled && !getOrdersOpen();
+  const activa = cfg.enabled && !yaPausado && pendientes >= cfg.umbral;
+  const eraActiva = window._saturacionAvisoActiva;
+  window._saturacionAvisoActiva = activa;
+  if (banner) {
+    banner.style.display = activa ? 'block' : 'none';
+    banner.textContent = activa ? cfg.msg : '';
+  }
+  if (activa && !eraActiva && _adminLoggedIn && typeof playNotificationSound === 'function') {
+    playNotificationSound('bip');
+  }
+  if (typeof renderSlotPicker === 'function') {
+    const group = document.getElementById('slot-picker-group');
+    if (group && group.style.display !== 'none') renderSlotPicker();
   }
 }
 function loadFeeUI() {
@@ -10501,6 +10735,9 @@ function initFirebaseListeners() {
   // estado compartido entre dispositivos (¿está pausado por el sistema?)
   if (typeof loadAutoPausaConfigFromFirebase === 'function') loadAutoPausaConfigFromFirebase();
   if (typeof loadAutoPausaEstadoFromFirebase === 'function') loadAutoPausaEstadoFromFirebase();
+  // Pausa exprés (cuenta atrás) y aviso suave previo a la auto-pausa
+  if (typeof loadPausaExpresFromFirebase === 'function') loadPausaExpresFromFirebase();
+  if (typeof loadAvisoSaturacionFromFirebase === 'function') loadAvisoSaturacionFromFirebase();
 
   // Pedidos abiertos/cerrados y su mensaje, en tiempo real — antes solo se
   // cargaban una vez al abrir la página (init.js). Si la auto-pausa por
@@ -10588,12 +10825,16 @@ function initFirebaseListeners() {
       // esté conectado como admin, sin depender de que la pestaña "Pedidos
       // en vivo" esté abierta en pantalla — en "Modo cocina" también debe
       // poder pausar/reactivar sola.
-      if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function' && typeof getOrderStatus === 'function') {
+      if (typeof getOrderStatus === 'function') {
         const _pendientes = (stats.orders || []).filter(o => {
           const s = getOrderStatus(o.num);
           return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
         }).length;
-        _comprobarAutoPausaSaturacion(_pendientes);
+        if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(_pendientes);
+        // El aviso suave (banner + sonido previo) se calcula en cualquier
+        // dispositivo — incluidos los clientes pidiendo, que necesitan ver
+        // el aviso aunque no estén logueados como admin.
+        if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientes);
       }
 
       // First call — set baseline, don't alert, but refresh UI
@@ -10686,6 +10927,20 @@ function initFirebaseListeners() {
 
       window._orderStatusCache = nuevos;
       localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
+      // Un cambio de estado (p.ej. marcar "listo") también puede bajar el
+      // nº de pendientes sin que cambie el nº total de pedidos — recalcular
+      // la auto-pausa/aviso aquí también, no solo cuando llega un pedido nuevo.
+      try {
+        const _statsAhora = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+        if (_statsAhora && Array.isArray(_statsAhora.orders)) {
+          const _pendientesAhora = _statsAhora.orders.filter(o => {
+            const s = getOrderStatus(o.num);
+            return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+          }).length;
+          if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(_pendientesAhora);
+          if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientesAhora);
+        }
+      } catch (e) {}
       if ((_document$getElementB15 = document.getElementById('admin-pedidos')) !== null && _document$getElementB15 !== void 0 && _document$getElementB15.classList.contains('active')) {
         loadLiveOrders();
       }
@@ -10977,8 +11232,14 @@ async function loadLiveOrders() {
 }
 function _renderLiveOrders(stats, todayKey) {
   if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
-  // Sort by slot time, then by order time for orders without slot
+  // Los pedidos "desde el local" (código de cola aplicado) van primero,
+  // porque ese cliente ya está esperando físicamente en el mostrador y no
+  // se puede ir a pedir a otro sitio — luego por turno, y por hora dentro
+  // del mismo turno.
   const orders = (stats.orders || []).slice().sort((a, b) => {
+    const localA = a.esPedidoLocal ? 0 : 1;
+    const localB = b.esPedidoLocal ? 0 : 1;
+    if (localA !== localB) return localA - localB;
     const slotA = a.slot || '99:99';
     const slotB = b.slot || '99:99';
     if (slotA !== slotB) return slotA.localeCompare(slotB);
@@ -11033,10 +11294,12 @@ function _renderLiveOrders(stats, todayKey) {
   const entregados = orders.filter(o => ['entregado','listo','cancelado'].includes(getOrderStatus(o.num)));
   window._activosCache = [...nuevos, ...enPrep];
   if (typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(activos.length);
+  if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(activos.length);
 
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';
-    const border = isNuevo ? '#3D1F0D' : '#3B82F6';
+    const localBadge = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🏪 En el local</span>' : '';
+    const border = o.esPedidoLocal ? '#166534' : isNuevo ? '#3D1F0D' : '#3B82F6';
     const btns = isNuevo
       ? '<button class="kbtn kbtn-delete" data-print-num="' + escapeAttr(o.num) + '" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}">' + (_printedOrders.has(o.num) ? '🖨️ Impreso' : '🖨️ Imprimir') + '</button>'
         + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'recibido\')" style="background:#EFF6FF;color:#1D4ED8;border:0.5px solid #93C5FD">🔵 Recibido</button>'
@@ -11048,7 +11311,7 @@ function _renderLiveOrders(stats, todayKey) {
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
         + '<div><span style="font-size:22px;font-weight:700;font-family:Georgia,serif;color:#3D1F0D">' + escapeHtml(o.num) + '</span>'
         + '<span style="font-size:13px;color:#2A1506;margin-left:6px">' + escapeHtml(o.name) + '</span></div>'
-        + slotBadge
+        + '<div style="display:flex;gap:4px;align-items:center">' + localBadge + slotBadge + '</div>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-top:4px">' + escapeHtml(o.time) + ' · <span id="total-display-' + escapeAttr(o.num.replace('#','')) + '" data-num="' + escapeAttr(o.num) + '" onclick="startEditOrderTotal(this.dataset.num)" style="cursor:pointer;text-decoration:underline dotted">' + o.total.toFixed(2).replace('.',',') + ' €</span></div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + btns + '</div>'
@@ -11204,6 +11467,11 @@ function refreshKitchenGrid() {
     orders: []
   };
   const orders = (stats.orders || []).filter(o => getOrderStatus(o.num) !== 'listo' && getOrderStatus(o.num) !== 'cancelado' && getOrderStatus(o.num) !== 'entregado').slice().sort((a, b) => {
+    // Pedidos "desde el local" primero (ese cliente ya está esperando en el
+    // mostrador), luego por cercanía al turno de recogida.
+    const localA = a.esPedidoLocal ? 0 : 1;
+    const localB = b.esPedidoLocal ? 0 : 1;
+    if (localA !== localB) return localA - localB;
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
     const toMins = s => {
@@ -11291,8 +11559,10 @@ function refreshKitchenGrid() {
     }).join('') : '<div style="font-size:13px;color:#999">Sin detalle</div>';
     const isJustArrived = o.ts && Date.now() - o.ts < 30000;
     const newClass = status === 'nuevo' && isJustArrived ? ' is-new' : '';
+    const localBadgeK = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🏪 EN EL LOCAL</span>' : '';
+    const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : cardStyle;
     const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
-    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyle + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
+    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
   }).join('');
 }
 
@@ -12460,6 +12730,8 @@ function showAdminSection(id, btn) {
     loadFeeUI();
     loadModifyWindowInput();
     if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+    if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
   }
   if (id === 'accesos') {
     renderAccesosLog();

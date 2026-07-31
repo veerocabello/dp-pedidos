@@ -1230,6 +1230,14 @@ function toggleOrdersAccepting() {
   // no, un reabrir manual con la cola todav\u00EDa alta se auto-pausar\u00EDa de
   // nuevo en cuanto entrara el siguiente pedido.
   _setAutoPausaEstado(false, Date.now() + AUTO_PAUSA_COOLDOWN_MS);
+  // Un toggle manual tambi\u00E9n cancela cualquier pausa expr\u00E9s pendiente \u2014
+  // si no, esta podr\u00EDa reabrir sola pasado su tiempo aunque el admin ya
+  // haya decidido otra cosa en medio.
+  if (_getPausaExpresHasta()) {
+    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
+    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+  }
   updateOrdersUI(next);
   logActivity("\uD83D\uDEA6 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
@@ -1375,6 +1383,184 @@ function _renderAutoPausaUI(pendientesActuales) {
         ? '\uD83D\uDD25 Pausado autom\u00E1ticamente ahora mismo (' + pendientes + ' pedidos pendientes)'
         : 'Ahora mismo: ' + pendientes + ' / ' + cfg.umbral + ' pedidos pendientes';
     }
+  }
+}
+
+// \u2500\u2500 PAUSA EXPR\u00C9S (pausa temporal con cuenta atr\u00E1s) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Para cuando sabes que el pico va a durar poco y no quieres tener que
+// acordarte de reactivar los pedidos t\u00FA misma \u2014 se reabre sola pasado el
+// tiempo, sin depender de que baje la cola (a diferencia de la auto-pausa
+// por saturaci\u00F3n, que solo mira el n\u00BA de pedidos pendientes).
+const PAUSA_EXPRES_HASTA_KEY = 'dpf_pausa_expres_hasta';
+function _getPausaExpresHasta() {
+  return parseInt(localStorage.getItem(PAUSA_EXPRES_HASTA_KEY) || '', 10) || 0;
+}
+function pausarExpres(minutos) {
+  const hasta = Date.now() + minutos * 60 * 1000;
+  localStorage.setItem(ORDERS_KEY, 'false');
+  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta));
+  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(() => {});
+  // No debe considerarse una auto-pausa (para que la auto-pausa por
+  // saturaci\u00F3n no la reabra antes de tiempo ni la vuelva a tocar).
+  _setAutoPausaEstado(false, hasta);
+  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const msg = '\u23F1\uFE0F Pausado temporalmente. Volvemos sobre las ' + horaReapertura + '.';
+  localStorage.setItem(ORDERS_MSG_KEY, msg);
+  if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(() => {});
+  updateOrdersUI(false, msg);
+  logActivity('\u23F1\uFE0F Pausa expr\u00E9s activada: ' + minutos + ' min (reabre a las ' + horaReapertura + ')');
+  _renderPausaExpresUI();
+}
+function _comprobarPausaExpres() {
+  const hasta = _getPausaExpresHasta();
+  if (!hasta) return;
+  if (Date.now() >= hasta) {
+    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
+    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+    // Solo reabre si nadie ha vuelto a tocar el toggle manual mientras tanto
+    // (toggleOrdersAccepting ya limpia esta clave al pulsarlo).
+    if (localStorage.getItem(ORDERS_KEY) === 'false') {
+      localStorage.setItem(ORDERS_KEY, 'true');
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      updateOrdersUI(true);
+      logActivity('\u2705 Pausa expr\u00E9s terminada \u2014 pedidos reactivados');
+    }
+    _renderPausaExpresUI();
+  }
+}
+function loadPausaExpresFromFirebase() {
+  if (!window.fb_listenPausaExpresHasta) return;
+  window.fb_listenPausaExpresHasta(function (hasta) {
+    localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta || 0));
+    _renderPausaExpresUI();
+  });
+}
+function _renderPausaExpresUI() {
+  const el = document.getElementById('pausa-expres-estado-texto');
+  if (!el) return;
+  const hasta = _getPausaExpresHasta();
+  if (!hasta || Date.now() >= hasta) {
+    el.textContent = '';
+    return;
+  }
+  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const minutosRestantes = Math.max(1, Math.round((hasta - Date.now()) / 60000));
+  el.textContent = '\u23F1\uFE0F Pausa expr\u00E9s activa \u2014 reabre a las ' + horaReapertura + ' (~' + minutosRestantes + ' min)';
+}
+// Comprobaci\u00F3n peri\u00F3dica: nada m\u00E1s dispara esto si no llega ning\u00FAn pedido
+// nuevo mientras dura la pausa.
+setInterval(() => {
+  if (typeof _comprobarPausaExpres === 'function') _comprobarPausaExpres();
+}, 15000);
+
+// \u2500\u2500 AVISO SUAVE DE SATURACI\u00D3N (previo a la auto-pausa) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Antes de llegar al punto de cerrar los pedidos del todo, avisa (sin
+// bloquear) tanto al cliente ("va a tardar m\u00E1s de lo normal") como a cocina
+// (sonido distinto) y empuja el selector de turno hacia horas m\u00E1s tarde \u2014
+// para repartir mejor la carga en vez de amontonarla toda en el turno m\u00E1s
+// pr\u00F3ximo.
+const AVISO_SAT_ENABLED_KEY = 'dpf_aviso_sat_enabled';
+const AVISO_SAT_UMBRAL_KEY = 'dpf_aviso_sat_umbral';
+const AVISO_SAT_MSG_KEY = 'dpf_aviso_sat_msg';
+const AVISO_SAT_SALTO_KEY = 'dpf_aviso_sat_salto_min';
+const AVISO_SAT_MINPP_KEY = 'dpf_aviso_sat_minpp';
+const AVISO_SAT_DEFAULT_MSG = '\u23F3 Hay bastante ambiente ahora mismo, tu pedido tardar\u00E1 m\u00E1s de lo habitual.';
+const AVISO_SAT_DEFAULT_UMBRAL = 8;
+const AVISO_SAT_DEFAULT_SALTO_MIN = 30;
+const AVISO_SAT_DEFAULT_MINPP = 3;
+function getAvisoSaturacionConfig() {
+  return {
+    enabled: localStorage.getItem(AVISO_SAT_ENABLED_KEY) === 'true',
+    umbral: parseInt(localStorage.getItem(AVISO_SAT_UMBRAL_KEY) || '', 10) || AVISO_SAT_DEFAULT_UMBRAL,
+    msg: localStorage.getItem(AVISO_SAT_MSG_KEY) || AVISO_SAT_DEFAULT_MSG,
+    minutosSalto: parseInt(localStorage.getItem(AVISO_SAT_SALTO_KEY) || '', 10) || AVISO_SAT_DEFAULT_SALTO_MIN,
+    minPorPedido: parseInt(localStorage.getItem(AVISO_SAT_MINPP_KEY) || '', 10) || AVISO_SAT_DEFAULT_MINPP
+  };
+}
+function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido) {
+  localStorage.setItem(AVISO_SAT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(umbral));
+  localStorage.setItem(AVISO_SAT_MSG_KEY, msg);
+  localStorage.setItem(AVISO_SAT_SALTO_KEY, String(minutosSalto));
+  localStorage.setItem(AVISO_SAT_MINPP_KEY, String(minPorPedido));
+  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido).catch(() => {});
+  logActivity((enabled ? '\u2705' : '\u26D4') + ' Aviso previo de saturaci\u00F3n ' + (enabled ? 'activado \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivado'));
+  _renderAvisoSaturacionUI();
+}
+function loadAvisoSaturacionFromFirebase() {
+  if (!window.fb_listenAvisoSaturacionConfig) return;
+  window.fb_listenAvisoSaturacionConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(AVISO_SAT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.umbral !== undefined) localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(cfg.umbral));
+    if (cfg.msg !== undefined) localStorage.setItem(AVISO_SAT_MSG_KEY, cfg.msg);
+    if (cfg.minutosSalto !== undefined) localStorage.setItem(AVISO_SAT_SALTO_KEY, String(cfg.minutosSalto));
+    if (cfg.minPorPedido !== undefined) localStorage.setItem(AVISO_SAT_MINPP_KEY, String(cfg.minPorPedido));
+    _renderAvisoSaturacionUI();
+  });
+}
+function toggleAvisoSaturacionEnabled() {
+  const cfg = getAvisoSaturacionConfig();
+  saveAvisoSaturacionConfig(!cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido);
+}
+function guardarAvisoSaturacionConfig() {
+  const umbralInput = document.getElementById('aviso-sat-umbral');
+  const msgInput = document.getElementById('aviso-sat-msg');
+  const saltoInput = document.getElementById('aviso-sat-salto');
+  const minppInput = document.getElementById('aviso-sat-minpp');
+  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
+  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AVISO_SAT_DEFAULT_UMBRAL : parsedUmbral;
+  const parsedSalto = parseInt(saltoInput && saltoInput.value, 10);
+  const minutosSalto = (isNaN(parsedSalto) || parsedSalto < 0) ? AVISO_SAT_DEFAULT_SALTO_MIN : parsedSalto;
+  const parsedMinpp = parseInt(minppInput && minppInput.value, 10);
+  const minPorPedido = (isNaN(parsedMinpp) || parsedMinpp < 0) ? AVISO_SAT_DEFAULT_MINPP : parsedMinpp;
+  const msg = (msgInput && msgInput.value.trim()) || AVISO_SAT_DEFAULT_MSG;
+  saveAvisoSaturacionConfig(getAvisoSaturacionConfig().enabled, umbral, msg, minutosSalto, minPorPedido);
+  showToast('local-toast');
+}
+// Estimaci\u00F3n de espera para la pantalla de \u00E9xito: pendientes \u00D7 minutos/pedido
+function _estimarMinutosEspera(pendientes) {
+  const cfg = getAvisoSaturacionConfig();
+  if (!cfg.enabled || pendientes < cfg.umbral) return 0;
+  return pendientes * cfg.minPorPedido;
+}
+function _renderAvisoSaturacionUI() {
+  const cfg = getAvisoSaturacionConfig();
+  const btn = document.getElementById('aviso-sat-toggle-btn');
+  if (btn) {
+    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
+    btn.textContent = cfg.enabled ? '\u2705 Activado' : '\u26D4 Desactivado';
+  }
+  const umbralInput = document.getElementById('aviso-sat-umbral');
+  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
+  const msgInput = document.getElementById('aviso-sat-msg');
+  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
+  const saltoInput = document.getElementById('aviso-sat-salto');
+  if (saltoInput && document.activeElement !== saltoInput) saltoInput.value = cfg.minutosSalto;
+  const minppInput = document.getElementById('aviso-sat-minpp');
+  if (minppInput && document.activeElement !== minppInput) minppInput.value = cfg.minPorPedido;
+}
+// \u00BFEst\u00E1 el nivel de "aviso" activo ahora mismo? (por debajo del umbral de
+// auto-pausa \u2014si ya est\u00E1 pausado del todo, el banner de cerrado manda\u2014)
+window._saturacionAvisoActiva = false;
+function _actualizarAvisoSaturacion(pendientes) {
+  const cfg = getAvisoSaturacionConfig();
+  const banner = document.getElementById('aviso-saturacion-banner');
+  const pausaCfg = getAutoPausaConfig();
+  const yaPausado = pausaCfg.enabled && !getOrdersOpen();
+  const activa = cfg.enabled && !yaPausado && pendientes >= cfg.umbral;
+  const eraActiva = window._saturacionAvisoActiva;
+  window._saturacionAvisoActiva = activa;
+  if (banner) {
+    banner.style.display = activa ? 'block' : 'none';
+    banner.textContent = activa ? cfg.msg : '';
+  }
+  if (activa && !eraActiva && _adminLoggedIn && typeof playNotificationSound === 'function') {
+    playNotificationSound('bip');
+  }
+  if (typeof renderSlotPicker === 'function') {
+    const group = document.getElementById('slot-picker-group');
+    if (group && group.style.display !== 'none') renderSlotPicker();
   }
 }
 function loadFeeUI() {

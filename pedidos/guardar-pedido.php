@@ -648,6 +648,10 @@ try {
     $total = is_numeric($payload['total'] ?? null) ? round((float)$payload['total'], 2) : 0;
     if ($total < 0) $total = 0;
     $discountCode = isset($payload['discountCode']) && $payload['discountCode'] !== '' ? strtoupper((string)$payload['discountCode']) : null;
+    // Pedido hecho desde el mostrador con el código de "pedido desde el
+    // local" (sin gastos de gestión) — se guarda para poder priorizarlo en
+    // cocina, ya que ese cliente está esperando físicamente en el local.
+    $esPedidoLocal = !empty($payload['esPedidoLocal']);
 
     $phoneClean = preg_replace('/[^0-9]/', '', (string)$phone);
     // La web ya exige 9 dígitos (carrito-checkout.js) — comprobarlo también
@@ -717,6 +721,7 @@ try {
         'items'    => $items,
         'total'    => $total,
         'time'     => date('d/m/Y, H:i:s'),
+        'esPedidoLocal' => $esPedidoLocal,
     ];
     $ticketGuardado = fbPutSiCoincide($databaseURL, $ticketPath, $accessToken, $ticketData, $leidoTicket['etag']);
     if (!$ticketGuardado) {
@@ -743,6 +748,7 @@ try {
         'items' => $items,
         'time'  => $horaLabel,
         'slot'  => $slotTime,
+        'esPedidoLocal' => $esPedidoLocal,
         'ts'    => (int)(microtime(true) * 1000),
     ];
     $statsGuardado = guardarPedidoEnStats($databaseURL, $accessToken, $todayKey, $newOrder, $total);

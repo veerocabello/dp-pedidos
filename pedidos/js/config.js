@@ -289,6 +289,12 @@ function _initFirebase() {
   // debe tocar nada tras un toggle manual del admin.
   window.fb_saveAutoPausaEstado = async function(activa, cooldownUntil) { await jset("config/autoPausaEstado", {activa:activa, cooldownUntil:cooldownUntil||0}); };
   window.fb_listenAutoPausaEstado = function(cb) { return jlisten("config/autoPausaEstado", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // AVISO SUAVE DE SATURACIÓN (previo a la auto-pausa)
+  window.fb_saveAvisoSaturacionConfig = async function(enabled, umbral, msg, minutosSalto, minPorPedido) { await jset("config/avisoSaturacionConfig", {enabled:enabled, umbral:umbral, msg:msg, minutosSalto:minutosSalto, minPorPedido:minPorPedido}); };
+  window.fb_listenAvisoSaturacionConfig = function(cb) { return jlisten("config/avisoSaturacionConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // PAUSA EXPRÉS (pausa temporal con cuenta atrás, independiente de la auto-pausa)
+  window.fb_savePausaExpresHasta = async function(ts) { await jset("config/pausaExpresHasta", ts||0); };
+  window.fb_listenPausaExpresHasta = function(cb) { return jlisten("config/pausaExpresHasta", function(sn){ cb(sn.exists()?sn.val():0); }); };
   // TOKENS
   window.fb_saveUrlToken = async function(t) { await jset("config/urlToken",t); };
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };

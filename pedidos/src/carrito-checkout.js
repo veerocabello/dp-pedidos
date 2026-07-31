@@ -566,6 +566,23 @@ function renderSlotPicker() {
       if (sobrantes > 0) extraPlazas[slot] = sobrantes;
     }
   });
+  // Aviso de saturación moderada activo: empuja la selección hacia turnos
+  // más tarde (en vez de amontonar todo en el más próximo) tratando como
+  // "saturados" los que caen dentro de los próximos X minutos — pero solo
+  // si queda al menos un turno libre más allá de ese margen, para no dejar
+  // a nadie sin ningún turno donde poder elegir.
+  const _nowMinsGlobal = (() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); })();
+  const _avisoCfg = (typeof getAvisoSaturacionConfig === 'function') ? getAvisoSaturacionConfig() : null;
+  let _saturacionSlotsActiva = !!(window._saturacionAvisoActiva && _avisoCfg && _avisoCfg.minutosSalto > 0);
+  if (_saturacionSlotsActiva) {
+    const hayTurnoLibreTrasSalto = slots.some(slot => {
+      const m = slot.split(':').map(Number);
+      const slotMins = m[0] * 60 + m[1];
+      if (slotMins - _nowMinsGlobal < _avisoCfg.minutosSalto) return false;
+      return !slotIsPast(slot) && (slotsData.slots[slot] || 0) < slotMax;
+    });
+    if (!hayTurnoLibreTrasSalto) _saturacionSlotsActiva = false;
+  }
   slots.forEach(slot => {
     const count = slotsData.slots[slot] || 0;
     const extra = extraPlazas[slot] || 0;
@@ -573,11 +590,6 @@ function renderSlotPicker() {
     const full = count >= effectiveMax;
     const almostFull = !full && count === effectiveMax - 1;
     const past = slotIsPast(slot);
-    const disabled = full || past;
-    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
-    const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
-    const libres = effectiveMax - count;
-    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
     const nowMs = new Date();
     const nowMinsSlot = nowMs.getHours() * 60 + nowMs.getMinutes();
     const _slot$split$map = slot.split(':').map(Number),
@@ -585,9 +597,15 @@ function renderSlotPicker() {
       slotH = _slot$split$map2[0],
       slotM = _slot$split$map2[1];
     const slotTotalMins = slotH * 60 + slotM;
+    const saturado = !full && !past && _saturacionSlotsActiva && (slotTotalMins - nowMinsSlot) < _avisoCfg.minutosSalto;
+    const disabled = full || past || saturado;
+    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
+    const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
+    const libres = effectiveMax - count;
+    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
     const isLateSlot = !disabled && slotTotalMins - nowMinsSlot <= 5;
     const btnBg = disabled ? 'background:#f5f5f5;border-color:#ccc;' : isLateSlot ? 'background:#fffbe6;border-color:#f0c040;' : full ? 'background:#fff0f0;border-color:#e74c3c;' : pct >= 75 ? 'background:rgba(244,196,48,0.08);border-color:#3D1F0D;' : 'background:#FFF8EE;border-color:#E8D5B0;';
-    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
+    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : saturado ? 'Hay bastante ambiente ahora mismo, elige un turno más tarde' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
   });
   document.getElementById('slot-grid').innerHTML = html;
 }
@@ -934,7 +952,11 @@ async function _submitOrderInner() {
     total: orderTotal,
     time: now,
     upsellMostrado,
-    upsellAnadido
+    upsellAnadido,
+    // Pedido "desde el local" (código de cola aplicado): para que en cocina
+    // pueda mostrarse primero, ya que ese cliente está esperando físicamente
+    // en el mostrador y no se puede ir a pedir a otro sitio.
+    esPedidoLocal: _sinGastosPorCodigoLocalSubmit
   };
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
@@ -1081,7 +1103,8 @@ async function _finalizarPedido() {
         total: window._pendingTicketData.total,
         discountCode: discountCode || null,
         upsellMostrado: window._pendingTicketData.upsellMostrado || false,
-        upsellAnadido: window._pendingTicketData.upsellAnadido || false
+        upsellAnadido: window._pendingTicketData.upsellAnadido || false,
+        esPedidoLocal: window._pendingTicketData.esPedidoLocal || false
       })
     })
       .then(res => res.json())
