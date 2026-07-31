@@ -1224,6 +1224,12 @@ function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(() => {});
+  // Un toggle manual gana siempre sobre la auto-pausa: se marca que este
+  // estado ya NO lo puso el sistema (para que no lo "corrija" solo) y se le
+  // da un margen antes de que la auto-pausa pueda volver a tocar nada \u2014 si
+  // no, un reabrir manual con la cola todav\u00EDa alta se auto-pausar\u00EDa de
+  // nuevo en cuanto entrara el siguiente pedido.
+  _setAutoPausaEstado(false, Date.now() + AUTO_PAUSA_COOLDOWN_MS);
   updateOrdersUI(next);
   logActivity("\uD83D\uDEA6 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
@@ -1238,6 +1244,138 @@ function savePauseMsg() {
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');
+}
+
+// \u2500\u2500 AUTO-PAUSA POR SATURACI\u00D3N \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Si se acumulan demasiados pedidos pendientes (sin marcar "listo"), la web
+// se pausa sola \u2014reutilizando el mismo mecanismo de "Pedidos pausados" de
+// arriba, banner y candado en el carrito incluidos\u2014 y se reactiva sola en
+// cuanto la cola baja, para que en hora punta no haga falta estar pendiente
+// de pausar/reabrir a mano.
+const AUTO_PAUSA_ENABLED_KEY = 'dpf_auto_pausa_enabled';
+const AUTO_PAUSA_UMBRAL_KEY = 'dpf_auto_pausa_umbral';
+const AUTO_PAUSA_MSG_KEY = 'dpf_auto_pausa_msg';
+const AUTO_PAUSA_DEFAULT_MSG = '\uD83D\uDD25 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.';
+const AUTO_PAUSA_DEFAULT_UMBRAL = 15;
+// Para reabrir hace falta bajar del umbral con margen (no solo tocarlo
+// justo) \u2014 si no, con la cola oscilando alrededor del umbral se abrir\u00EDa y
+// cerrar\u00EDa sola una y otra vez.
+const AUTO_PAUSA_HISTERESIS = 3;
+const AUTO_PAUSA_ACTIVA_KEY = 'dpf_auto_pausa_activa'; // \u00BFla pausa actual la puso el sistema (no el admin)?
+const AUTO_PAUSA_COOLDOWN_KEY = 'dpf_auto_pausa_cooldown';
+const AUTO_PAUSA_COOLDOWN_MS = 3 * 60 * 1000;
+
+function getAutoPausaConfig() {
+  return {
+    enabled: localStorage.getItem(AUTO_PAUSA_ENABLED_KEY) === 'true',
+    umbral: parseInt(localStorage.getItem(AUTO_PAUSA_UMBRAL_KEY) || '', 10) || AUTO_PAUSA_DEFAULT_UMBRAL,
+    msg: localStorage.getItem(AUTO_PAUSA_MSG_KEY) || AUTO_PAUSA_DEFAULT_MSG
+  };
+}
+function saveAutoPausaConfig(enabled, umbral, msg) {
+  localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(umbral));
+  localStorage.setItem(AUTO_PAUSA_MSG_KEY, msg);
+  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(enabled, umbral, msg).catch(() => {});
+  logActivity((enabled ? '\u2705' : '\u26D4') + ' Auto-pausa por saturaci\u00F3n ' + (enabled ? 'activada \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivada'));
+  if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+}
+function loadAutoPausaConfigFromFirebase() {
+  if (!window.fb_listenAutoPausaConfig) return;
+  window.fb_listenAutoPausaConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.umbral !== undefined) localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(cfg.umbral));
+    if (cfg.msg !== undefined) localStorage.setItem(AUTO_PAUSA_MSG_KEY, cfg.msg);
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  });
+}
+function _getAutoPausaEstado() {
+  return {
+    activa: localStorage.getItem(AUTO_PAUSA_ACTIVA_KEY) === 'true',
+    cooldownUntil: parseInt(localStorage.getItem(AUTO_PAUSA_COOLDOWN_KEY) || '', 10) || 0
+  };
+}
+function _setAutoPausaEstado(activa, cooldownUntil) {
+  localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, activa ? 'true' : 'false');
+  localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(cooldownUntil || 0));
+  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(activa, cooldownUntil || 0).catch(() => {});
+}
+function loadAutoPausaEstadoFromFirebase() {
+  if (!window.fb_listenAutoPausaEstado) return;
+  window.fb_listenAutoPausaEstado(function (estado) {
+    if (estado.activa !== undefined) localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, estado.activa ? 'true' : 'false');
+    if (estado.cooldownUntil !== undefined) localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(estado.cooldownUntil || 0));
+  });
+}
+// Se llama cada vez que se repinta "Pedidos en vivo" con el n\u00BA de pedidos
+// pendientes (sin marcar "listo"/"entregado"/"cancelado"). Solo pausa o
+// reactiva pedidos \u2014 nunca toca el horario ni el estado "Local abierto".
+function _comprobarAutoPausaSaturacion(pendientes) {
+  const cfg = getAutoPausaConfig();
+  if (!cfg.enabled) return;
+  // Fuera de horario/d\u00EDa cerrado: eso ya cierra los pedidos por su cuenta
+  // (getOrdersOpen), no hay saturaci\u00F3n que gestionar.
+  if (isOutsideHours() || !isTodayOpen()) return;
+  const estado = _getAutoPausaEstado();
+  if (Date.now() < estado.cooldownUntil) return; // toggle manual reciente, no lo pisamos todav\u00EDa
+
+  const open = getOrdersOpen();
+  if (open && pendientes >= cfg.umbral) {
+    localStorage.setItem(ORDERS_KEY, 'false');
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+    localStorage.setItem(ORDERS_MSG_KEY, cfg.msg);
+    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg).catch(() => {});
+    _setAutoPausaEstado(true, 0);
+    updateOrdersUI(false, cfg.msg);
+    logActivity('\uD83D\uDD25 Pedidos pausados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes (umbral: ' + cfg.umbral + ')');
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  } else if (!open && estado.activa && pendientes <= Math.max(0, cfg.umbral - AUTO_PAUSA_HISTERESIS)) {
+    localStorage.setItem(ORDERS_KEY, 'true');
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    _setAutoPausaEstado(false, 0);
+    updateOrdersUI(true);
+    logActivity('\u2705 Pedidos reactivados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes');
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  } else if (typeof _renderAutoPausaUI === 'function') {
+    _renderAutoPausaUI(pendientes);
+  }
+}
+function toggleAutoPausaEnabled() {
+  const cfg = getAutoPausaConfig();
+  saveAutoPausaConfig(!cfg.enabled, cfg.umbral, cfg.msg);
+}
+function guardarAutoPausaConfig() {
+  const umbralInput = document.getElementById('auto-pausa-umbral');
+  const msgInput = document.getElementById('auto-pausa-msg');
+  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
+  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AUTO_PAUSA_DEFAULT_UMBRAL : parsedUmbral;
+  const msg = (msgInput && msgInput.value.trim()) || AUTO_PAUSA_DEFAULT_MSG;
+  saveAutoPausaConfig(getAutoPausaConfig().enabled, umbral, msg);
+  showToast('local-toast');
+}
+function _renderAutoPausaUI(pendientesActuales) {
+  const cfg = getAutoPausaConfig();
+  const btn = document.getElementById('auto-pausa-toggle-btn');
+  if (btn) {
+    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
+    btn.textContent = cfg.enabled ? '\u2705 Activada' : '\u26D4 Desactivada';
+  }
+  const umbralInput = document.getElementById('auto-pausa-umbral');
+  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
+  const msgInput = document.getElementById('auto-pausa-msg');
+  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
+  const estadoEl = document.getElementById('auto-pausa-estado-texto');
+  if (estadoEl) {
+    if (!cfg.enabled) {
+      estadoEl.textContent = '';
+    } else {
+      const estado = _getAutoPausaEstado();
+      const pendientes = pendientesActuales !== undefined ? pendientesActuales : (window._activosCache || []).length;
+      estadoEl.textContent = estado.activa
+        ? '\uD83D\uDD25 Pausado autom\u00E1ticamente ahora mismo (' + pendientes + ' pedidos pendientes)'
+        : 'Ahora mismo: ' + pendientes + ' / ' + cfg.umbral + ' pedidos pendientes';
+    }
+  }
 }
 function loadFeeUI() {
   const btn = document.getElementById('fee-toggle-btn');

@@ -5240,6 +5240,9 @@ async function activarFinDeNoche() {
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
+  // no la "reabra sola" pensando que fue ella quien la puso.
+  if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día
@@ -8627,6 +8630,12 @@ function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(() => {});
+  // Un toggle manual gana siempre sobre la auto-pausa: se marca que este
+  // estado ya NO lo puso el sistema (para que no lo "corrija" solo) y se le
+  // da un margen antes de que la auto-pausa pueda volver a tocar nada \u2014 si
+  // no, un reabrir manual con la cola todav\u00EDa alta se auto-pausar\u00EDa de
+  // nuevo en cuanto entrara el siguiente pedido.
+  _setAutoPausaEstado(false, Date.now() + AUTO_PAUSA_COOLDOWN_MS);
   updateOrdersUI(next);
   logActivity("\uD83D\uDEA6 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
@@ -8641,6 +8650,138 @@ function savePauseMsg() {
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');
+}
+
+// \u2500\u2500 AUTO-PAUSA POR SATURACI\u00D3N \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Si se acumulan demasiados pedidos pendientes (sin marcar "listo"), la web
+// se pausa sola \u2014reutilizando el mismo mecanismo de "Pedidos pausados" de
+// arriba, banner y candado en el carrito incluidos\u2014 y se reactiva sola en
+// cuanto la cola baja, para que en hora punta no haga falta estar pendiente
+// de pausar/reabrir a mano.
+const AUTO_PAUSA_ENABLED_KEY = 'dpf_auto_pausa_enabled';
+const AUTO_PAUSA_UMBRAL_KEY = 'dpf_auto_pausa_umbral';
+const AUTO_PAUSA_MSG_KEY = 'dpf_auto_pausa_msg';
+const AUTO_PAUSA_DEFAULT_MSG = '\uD83D\uDD25 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.';
+const AUTO_PAUSA_DEFAULT_UMBRAL = 15;
+// Para reabrir hace falta bajar del umbral con margen (no solo tocarlo
+// justo) \u2014 si no, con la cola oscilando alrededor del umbral se abrir\u00EDa y
+// cerrar\u00EDa sola una y otra vez.
+const AUTO_PAUSA_HISTERESIS = 3;
+const AUTO_PAUSA_ACTIVA_KEY = 'dpf_auto_pausa_activa'; // \u00BFla pausa actual la puso el sistema (no el admin)?
+const AUTO_PAUSA_COOLDOWN_KEY = 'dpf_auto_pausa_cooldown';
+const AUTO_PAUSA_COOLDOWN_MS = 3 * 60 * 1000;
+
+function getAutoPausaConfig() {
+  return {
+    enabled: localStorage.getItem(AUTO_PAUSA_ENABLED_KEY) === 'true',
+    umbral: parseInt(localStorage.getItem(AUTO_PAUSA_UMBRAL_KEY) || '', 10) || AUTO_PAUSA_DEFAULT_UMBRAL,
+    msg: localStorage.getItem(AUTO_PAUSA_MSG_KEY) || AUTO_PAUSA_DEFAULT_MSG
+  };
+}
+function saveAutoPausaConfig(enabled, umbral, msg) {
+  localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(umbral));
+  localStorage.setItem(AUTO_PAUSA_MSG_KEY, msg);
+  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(enabled, umbral, msg).catch(() => {});
+  logActivity((enabled ? '\u2705' : '\u26D4') + ' Auto-pausa por saturaci\u00F3n ' + (enabled ? 'activada \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivada'));
+  if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+}
+function loadAutoPausaConfigFromFirebase() {
+  if (!window.fb_listenAutoPausaConfig) return;
+  window.fb_listenAutoPausaConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.umbral !== undefined) localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(cfg.umbral));
+    if (cfg.msg !== undefined) localStorage.setItem(AUTO_PAUSA_MSG_KEY, cfg.msg);
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  });
+}
+function _getAutoPausaEstado() {
+  return {
+    activa: localStorage.getItem(AUTO_PAUSA_ACTIVA_KEY) === 'true',
+    cooldownUntil: parseInt(localStorage.getItem(AUTO_PAUSA_COOLDOWN_KEY) || '', 10) || 0
+  };
+}
+function _setAutoPausaEstado(activa, cooldownUntil) {
+  localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, activa ? 'true' : 'false');
+  localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(cooldownUntil || 0));
+  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(activa, cooldownUntil || 0).catch(() => {});
+}
+function loadAutoPausaEstadoFromFirebase() {
+  if (!window.fb_listenAutoPausaEstado) return;
+  window.fb_listenAutoPausaEstado(function (estado) {
+    if (estado.activa !== undefined) localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, estado.activa ? 'true' : 'false');
+    if (estado.cooldownUntil !== undefined) localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(estado.cooldownUntil || 0));
+  });
+}
+// Se llama cada vez que se repinta "Pedidos en vivo" con el n\u00BA de pedidos
+// pendientes (sin marcar "listo"/"entregado"/"cancelado"). Solo pausa o
+// reactiva pedidos \u2014 nunca toca el horario ni el estado "Local abierto".
+function _comprobarAutoPausaSaturacion(pendientes) {
+  const cfg = getAutoPausaConfig();
+  if (!cfg.enabled) return;
+  // Fuera de horario/d\u00EDa cerrado: eso ya cierra los pedidos por su cuenta
+  // (getOrdersOpen), no hay saturaci\u00F3n que gestionar.
+  if (isOutsideHours() || !isTodayOpen()) return;
+  const estado = _getAutoPausaEstado();
+  if (Date.now() < estado.cooldownUntil) return; // toggle manual reciente, no lo pisamos todav\u00EDa
+
+  const open = getOrdersOpen();
+  if (open && pendientes >= cfg.umbral) {
+    localStorage.setItem(ORDERS_KEY, 'false');
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+    localStorage.setItem(ORDERS_MSG_KEY, cfg.msg);
+    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg).catch(() => {});
+    _setAutoPausaEstado(true, 0);
+    updateOrdersUI(false, cfg.msg);
+    logActivity('\uD83D\uDD25 Pedidos pausados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes (umbral: ' + cfg.umbral + ')');
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  } else if (!open && estado.activa && pendientes <= Math.max(0, cfg.umbral - AUTO_PAUSA_HISTERESIS)) {
+    localStorage.setItem(ORDERS_KEY, 'true');
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    _setAutoPausaEstado(false, 0);
+    updateOrdersUI(true);
+    logActivity('\u2705 Pedidos reactivados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes');
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  } else if (typeof _renderAutoPausaUI === 'function') {
+    _renderAutoPausaUI(pendientes);
+  }
+}
+function toggleAutoPausaEnabled() {
+  const cfg = getAutoPausaConfig();
+  saveAutoPausaConfig(!cfg.enabled, cfg.umbral, cfg.msg);
+}
+function guardarAutoPausaConfig() {
+  const umbralInput = document.getElementById('auto-pausa-umbral');
+  const msgInput = document.getElementById('auto-pausa-msg');
+  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
+  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AUTO_PAUSA_DEFAULT_UMBRAL : parsedUmbral;
+  const msg = (msgInput && msgInput.value.trim()) || AUTO_PAUSA_DEFAULT_MSG;
+  saveAutoPausaConfig(getAutoPausaConfig().enabled, umbral, msg);
+  showToast('local-toast');
+}
+function _renderAutoPausaUI(pendientesActuales) {
+  const cfg = getAutoPausaConfig();
+  const btn = document.getElementById('auto-pausa-toggle-btn');
+  if (btn) {
+    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
+    btn.textContent = cfg.enabled ? '\u2705 Activada' : '\u26D4 Desactivada';
+  }
+  const umbralInput = document.getElementById('auto-pausa-umbral');
+  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
+  const msgInput = document.getElementById('auto-pausa-msg');
+  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
+  const estadoEl = document.getElementById('auto-pausa-estado-texto');
+  if (estadoEl) {
+    if (!cfg.enabled) {
+      estadoEl.textContent = '';
+    } else {
+      const estado = _getAutoPausaEstado();
+      const pendientes = pendientesActuales !== undefined ? pendientesActuales : (window._activosCache || []).length;
+      estadoEl.textContent = estado.activa
+        ? '\uD83D\uDD25 Pausado autom\u00E1ticamente ahora mismo (' + pendientes + ' pedidos pendientes)'
+        : 'Ahora mismo: ' + pendientes + ' / ' + cfg.umbral + ' pedidos pendientes';
+    }
+  }
 }
 function loadFeeUI() {
   const btn = document.getElementById('fee-toggle-btn');
@@ -10356,6 +10497,30 @@ function initFirebaseListeners() {
   if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
+  // Auto-pausa por saturación: configuración (umbral/mensaje/on-off) y
+  // estado compartido entre dispositivos (¿está pausado por el sistema?)
+  if (typeof loadAutoPausaConfigFromFirebase === 'function') loadAutoPausaConfigFromFirebase();
+  if (typeof loadAutoPausaEstadoFromFirebase === 'function') loadAutoPausaEstadoFromFirebase();
+
+  // Pedidos abiertos/cerrados y su mensaje, en tiempo real — antes solo se
+  // cargaban una vez al abrir la página (init.js). Si la auto-pausa por
+  // saturación cierra o reabre los pedidos mientras un cliente ya tiene la
+  // web abierta, esto hace que vea el cambio al momento sin recargar.
+  if (window.fb_listenOrdersOpen) {
+    window.fb_listenOrdersOpen(val => {
+      localStorage.setItem(ORDERS_KEY, val);
+      updateOrdersUI(getOrdersOpen());
+      if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    });
+  }
+  if (window.fb_listenOrdersMsg) {
+    window.fb_listenOrdersMsg(msg => {
+      localStorage.setItem(ORDERS_MSG_KEY, msg);
+      const inp = document.getElementById('orders-pause-msg');
+      if (inp) inp.value = msg;
+      updateOrdersUI(getOrdersOpen());
+    });
+  }
 
   // 1. Slots — sync counter across all devices in real time
   if (window.fb_listenSlots) {
@@ -10417,6 +10582,19 @@ function initFirebaseListeners() {
       const newCount = stats.count || 0;
       // Update localStorage cache
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+
+      // Auto-pausa por saturación: se comprueba aquí (no solo dentro de
+      // _renderLiveOrders) para que funcione siempre que este dispositivo
+      // esté conectado como admin, sin depender de que la pestaña "Pedidos
+      // en vivo" esté abierta en pantalla — en "Modo cocina" también debe
+      // poder pausar/reactivar sola.
+      if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function' && typeof getOrderStatus === 'function') {
+        const _pendientes = (stats.orders || []).filter(o => {
+          const s = getOrderStatus(o.num);
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+        _comprobarAutoPausaSaturacion(_pendientes);
+      }
 
       // First call — set baseline, don't alert, but refresh UI
       if (_fbLastCount === null) {
@@ -10854,6 +11032,7 @@ function _renderLiveOrders(stats, todayKey) {
   const enPrep = orders.filter(o => getOrderStatus(o.num) === 'recibido');
   const entregados = orders.filter(o => ['entregado','listo','cancelado'].includes(getOrderStatus(o.num)));
   window._activosCache = [...nuevos, ...enPrep];
+  if (typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(activos.length);
 
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';
@@ -12280,6 +12459,7 @@ function showAdminSection(id, btn) {
     loadSlotTurnosUI();
     loadFeeUI();
     loadModifyWindowInput();
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
   }
   if (id === 'accesos') {
     renderAccesosLog();

@@ -230,6 +230,32 @@
         </div>
 
         <div class="stat-panel">
+          <div class="stat-panel-head">🔥 Auto-pausa por saturación</div>
+          <div style="padding:14px 16px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Si se acumulan demasiados pedidos sin marcar como "listo", la web se pausa sola (con aviso al cliente) y se reactiva sola en cuanto baje la cola — para no tener que estar pendiente en hora punta.</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:12px;font-weight:700;color:var(--brown)">Activar auto-pausa</span>
+              <button class="open-toggle" id="auto-pausa-toggle-btn" onclick="toggleAutoPausaEnabled()">Cargando…</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Pausar a partir de</label>
+                <input type="number" min="1" step="1" id="auto-pausa-umbral" placeholder="15" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+              </div>
+              <div style="display:flex;align-items:end">
+                <span style="font-size:11px;color:var(--muted);padding-bottom:8px">pedidos pendientes</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Mensaje para el cliente</label>
+              <input type="text" id="auto-pausa-msg" placeholder="🔥 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos." style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            </div>
+            <button class="admin-save-btn" onclick="guardarAutoPausaConfig()" style="width:100%">Guardar</button>
+            <div id="auto-pausa-estado-texto" style="font-size:11.5px;color:var(--muted);margin-top:10px"></div>
+          </div>
+        </div>
+
+        <div class="stat-panel">
           <div class="stat-panel-head">📢 Banner del día</div>
           <div style="padding:14px 16px">
             <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Aviso visible en la web para anunciar algo especial</div>

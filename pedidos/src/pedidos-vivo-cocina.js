@@ -150,6 +150,7 @@ function _renderLiveOrders(stats, todayKey) {
   const enPrep = orders.filter(o => getOrderStatus(o.num) === 'recibido');
   const entregados = orders.filter(o => ['entregado','listo','cancelado'].includes(getOrderStatus(o.num)));
   window._activosCache = [...nuevos, ...enPrep];
+  if (typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(activos.length);
 
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';

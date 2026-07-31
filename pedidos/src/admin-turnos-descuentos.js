@@ -431,6 +431,9 @@ async function activarFinDeNoche() {
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
+  // no la "reabra sola" pensando que fue ella quien la puso.
+  if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día

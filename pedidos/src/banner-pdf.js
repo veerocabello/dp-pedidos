@@ -724,6 +724,7 @@ function showAdminSection(id, btn) {
     loadSlotTurnosUI();
     loadFeeUI();
     loadModifyWindowInput();
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
   }
   if (id === 'accesos') {
     renderAccesosLog();

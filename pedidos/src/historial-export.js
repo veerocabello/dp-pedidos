@@ -809,6 +809,30 @@ function initFirebaseListeners() {
   if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
+  // Auto-pausa por saturación: configuración (umbral/mensaje/on-off) y
+  // estado compartido entre dispositivos (¿está pausado por el sistema?)
+  if (typeof loadAutoPausaConfigFromFirebase === 'function') loadAutoPausaConfigFromFirebase();
+  if (typeof loadAutoPausaEstadoFromFirebase === 'function') loadAutoPausaEstadoFromFirebase();
+
+  // Pedidos abiertos/cerrados y su mensaje, en tiempo real — antes solo se
+  // cargaban una vez al abrir la página (init.js). Si la auto-pausa por
+  // saturación cierra o reabre los pedidos mientras un cliente ya tiene la
+  // web abierta, esto hace que vea el cambio al momento sin recargar.
+  if (window.fb_listenOrdersOpen) {
+    window.fb_listenOrdersOpen(val => {
+      localStorage.setItem(ORDERS_KEY, val);
+      updateOrdersUI(getOrdersOpen());
+      if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    });
+  }
+  if (window.fb_listenOrdersMsg) {
+    window.fb_listenOrdersMsg(msg => {
+      localStorage.setItem(ORDERS_MSG_KEY, msg);
+      const inp = document.getElementById('orders-pause-msg');
+      if (inp) inp.value = msg;
+      updateOrdersUI(getOrdersOpen());
+    });
+  }
 
   // 1. Slots — sync counter across all devices in real time
   if (window.fb_listenSlots) {
@@ -870,6 +894,19 @@ function initFirebaseListeners() {
       const newCount = stats.count || 0;
       // Update localStorage cache
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+
+      // Auto-pausa por saturación: se comprueba aquí (no solo dentro de
+      // _renderLiveOrders) para que funcione siempre que este dispositivo
+      // esté conectado como admin, sin depender de que la pestaña "Pedidos
+      // en vivo" esté abierta en pantalla — en "Modo cocina" también debe
+      // poder pausar/reactivar sola.
+      if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function' && typeof getOrderStatus === 'function') {
+        const _pendientes = (stats.orders || []).filter(o => {
+          const s = getOrderStatus(o.num);
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+        _comprobarAutoPausaSaturacion(_pendientes);
+      }
 
       // First call — set baseline, don't alert, but refresh UI
       if (_fbLastCount === null) {

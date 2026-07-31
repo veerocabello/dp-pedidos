@@ -274,8 +274,21 @@ function _initFirebase() {
   // ORDERS
   window.fb_saveOrdersOpen = async function(o) { await jset("config/ordersOpen",o); };
   window.fb_loadOrdersOpen = async function() { var sn=await jget("config/ordersOpen"); return sn.exists()?sn.val():null; };
+  // En tiempo real (no solo al cargar la página) — para que si la
+  // auto-pausa por saturación cierra/reabre los pedidos, un cliente que ya
+  // tenga la web abierta lo vea al momento sin tener que recargar.
+  window.fb_listenOrdersOpen = function(cb) { return jlisten("config/ordersOpen", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   window.fb_saveOrdersMsg = async function(m) { await jset("config/ordersMsg",m); };
   window.fb_loadOrdersMsg = async function() { var sn=await jget("config/ordersMsg"); return sn.exists()?sn.val():null; };
+  window.fb_listenOrdersMsg = function(cb) { return jlisten("config/ordersMsg", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // AUTO-PAUSA POR SATURACIÓN
+  window.fb_saveAutoPausaConfig = async function(enabled, umbral, msg) { await jset("config/autoPausaConfig", {enabled:enabled, umbral:umbral, msg:msg}); };
+  window.fb_listenAutoPausaConfig = function(cb) { return jlisten("config/autoPausaConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Estado compartido entre dispositivos: si la pausa actual la activó el
+  // propio sistema (para saber si puede reabrirla sola) y hasta cuándo no
+  // debe tocar nada tras un toggle manual del admin.
+  window.fb_saveAutoPausaEstado = async function(activa, cooldownUntil) { await jset("config/autoPausaEstado", {activa:activa, cooldownUntil:cooldownUntil||0}); };
+  window.fb_listenAutoPausaEstado = function(cb) { return jlisten("config/autoPausaEstado", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   // TOKENS
   window.fb_saveUrlToken = async function(t) { await jset("config/urlToken",t); };
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };
