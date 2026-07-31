@@ -315,8 +315,11 @@ Ven a recogerlo y paga en caja`,window.open("https://wa.me/?text="+encodeURIComp
 `):(i(E+g.substring(0,v-E.length)+`
 `),i(" ".repeat(Math.max(0,v-y.length))+y+`
 `)),p.forEach(_=>{const x=_.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/," (+$1 EUR)").trim();i("     - "+_ptEncodeStr(x).toUpperCase()+`
-`)}),Array.isArray(b)&&b.forEach(_=>{const x=_&&_.name?_.name:_,h=_&&_.price?" (+"+parseFloat(_.price).toFixed(2)+" EUR)":"";i("     - "+_ptEncodeStr(x+h).toUpperCase()+`
-`)})}),i(`------------------------------------------------
+`)}),Array.isArray(b)&&b.forEach(_=>{const x=_ptEncodeStr((_&&_.name?_.name:_)+"").toUpperCase(),h=_&&_.price?"+"+parseFloat(_.price).toFixed(2)+" EUR":"",w="  - ";if(!h){i(w+x+`
+`);return}const C=v-w.length-x.length-h.length;C>=1?i(w+x+" ".repeat(C)+h+`
+`):(i(w+x+`
+`),i(" ".repeat(Math.max(0,v-h.length))+h+`
+`))})}),i(`------------------------------------------------
 `),s(),c(),i((e.total||0).toFixed(2)+` EUR
 `),l(),i(t.textoPago+`
 `),e.notes&&(r(),i(`------------------------------------------------

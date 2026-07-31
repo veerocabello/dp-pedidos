@@ -98,9 +98,22 @@ function _ptBuildTicketBytes(ticket) {
     });
     if (Array.isArray(extrasArr)) {
       extrasArr.forEach(extra => {
-        const nombreExtra = (extra && extra.name) ? extra.name : extra;
-        const precioExtra = (extra && extra.price) ? ' (+' + parseFloat(extra.price).toFixed(2) + ' EUR)' : '';
-        push('     - ' + _ptEncodeStr(nombreExtra + precioExtra).toUpperCase() + '\n');
+        const nombreExtra = _ptEncodeStr(((extra && extra.name) ? extra.name : extra) + '').toUpperCase();
+        const precioExtraTxt = (extra && extra.price) ? '+' + parseFloat(extra.price).toFixed(2) + ' EUR' : '';
+        const prefixExtra = '  - ';
+        if (!precioExtraTxt) {
+          push(prefixExtra + nombreExtra + '\n');
+          return;
+        }
+        // Precio del extra alineado a la misma columna derecha que el
+        // precio de la línea principal (misma W), no pegado al nombre.
+        const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
+        if (spacesExtra >= 1) {
+          push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
+        } else {
+          push(prefixExtra + nombreExtra + '\n');
+          push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
+        }
       });
     }
   });
