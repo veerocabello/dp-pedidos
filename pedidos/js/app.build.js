@@ -2728,8 +2728,11 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
   // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
   if (getFeeEnabled() && (typeof getLocalFeeCode === 'function') && getLocalFeeCode()) {
-    const _codigoLocalActual = (document.getElementById('drawer-local-fee-code-input') || {}).value || '';
-    const _cajaAbierta = document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none';
+    // Se lee del campo de escritorio (fuente de verdad para _modoLocalActivo,
+    // incluso cuando el código llega por la URL del QR, no solo al escribirlo
+    // aquí en el drawer) para que el móvil siempre refleje el valor real.
+    const _codigoLocalActual = (document.getElementById('local-fee-code-input') || {}).value || '';
+    const _cajaAbierta = !!_codigoLocalActual || (document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none');
     html += "<div style=\"padding:4px 0 8px\">"
       + "<a href=\"#\" onclick=\"event.preventDefault();var b=document.getElementById('drawer-local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';\" style=\"font-size:11.5px;color:#8A6A4E;text-decoration:underline\">\u00BFEst\u00E1s pidiendo desde el local?</a>"
       + "<div id=\"drawer-local-fee-code-box\" style=\"display:".concat(_cajaAbierta ? 'flex' : 'none', ";gap:6px;margin-top:6px;align-items:center\">")
@@ -8484,6 +8487,26 @@ function comprobarCodigoLocal() {
   });
   renderCart();
 }
+// Si se llega con ?local=CODIGO en la URL (el cartel con QR del mostrador
+// lleva a un enlace así), se rellena y se comprueba solo, sin que el
+// cliente tenga que escribir nada — para eso sirve el QR.
+function _aplicarCodigoLocalDesdeURL() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const codigo = params.get('local');
+    if (!codigo) return;
+    const upper = codigo.trim().toUpperCase();
+    const input = document.getElementById('local-fee-code-input');
+    if (input) input.value = upper;
+    comprobarCodigoLocal();
+  } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', () => {
+  // Con margen, para dar tiempo a que renderCart() haya pintado ya el
+  // carrito al menos una vez (si no, el interruptor de gastos de gestión
+  // podría no estar listo todavía y no se mostraría el aviso de aplicado).
+  setTimeout(_aplicarCodigoLocalDesdeURL, 600);
+});
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
@@ -9362,6 +9385,44 @@ async function reimprimirUltimoTicketTermico() {
     await imprimirTicketTermico(_ptUltimoTicket);
   } catch (e) {
     alert('⚠️ No se pudo reimprimir: ' + e.message);
+  }
+}
+
+// Cartel con QR para el mostrador: al escanearlo se abre la web ya con el
+// código de "pedido desde el local" puesto (sin gastos de gestión), sin que
+// el cliente tenga que escribir nada — para pegar en el mostrador cuando
+// hay cola. Se imprime tal cual, en un ticket corto aparte.
+async function imprimirCartelQRLocal() {
+  const code = (typeof getLocalFeeCode === 'function') ? getLocalFeeCode() : '';
+  if (!code) {
+    alert('Primero pon y guarda un código en "Código pedido desde el local".');
+    return;
+  }
+  const url = window.location.origin + '/?local=' + encodeURIComponent(code);
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('PIDE DESDE\n');
+  push('EL MOVIL\n');
+  normal();
+  push('sin gastos de gestion\n');
+  push('\n');
+  _ptPushQR(d, GS, url, 8);
+  push('\n');
+  push('Escanea el codigo\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  try {
+    await _ptEnviarBytes(new Uint8Array(d));
+  } catch (e) {
+    alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
   }
 }
 

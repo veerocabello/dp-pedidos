@@ -375,6 +375,44 @@ async function reimprimirUltimoTicketTermico() {
   }
 }
 
+// Cartel con QR para el mostrador: al escanearlo se abre la web ya con el
+// código de "pedido desde el local" puesto (sin gastos de gestión), sin que
+// el cliente tenga que escribir nada — para pegar en el mostrador cuando
+// hay cola. Se imprime tal cual, en un ticket corto aparte.
+async function imprimirCartelQRLocal() {
+  const code = (typeof getLocalFeeCode === 'function') ? getLocalFeeCode() : '';
+  if (!code) {
+    alert('Primero pon y guarda un código en "Código pedido desde el local".');
+    return;
+  }
+  const url = window.location.origin + '/?local=' + encodeURIComponent(code);
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('PIDE DESDE\n');
+  push('EL MOVIL\n');
+  normal();
+  push('sin gastos de gestion\n');
+  push('\n');
+  _ptPushQR(d, GS, url, 8);
+  push('\n');
+  push('Escanea el codigo\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  try {
+    await _ptEnviarBytes(new Uint8Array(d));
+  } catch (e) {
+    alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
+  }
+}
+
 // ── AVISO DE PAPEL ──
 // Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
 // de papel). La interpretación exacta de los bits varía algo según el

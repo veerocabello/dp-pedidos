@@ -44,8 +44,11 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
   // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
   if (getFeeEnabled() && (typeof getLocalFeeCode === 'function') && getLocalFeeCode()) {
-    const _codigoLocalActual = (document.getElementById('drawer-local-fee-code-input') || {}).value || '';
-    const _cajaAbierta = document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none';
+    // Se lee del campo de escritorio (fuente de verdad para _modoLocalActivo,
+    // incluso cuando el código llega por la URL del QR, no solo al escribirlo
+    // aquí en el drawer) para que el móvil siempre refleje el valor real.
+    const _codigoLocalActual = (document.getElementById('local-fee-code-input') || {}).value || '';
+    const _cajaAbierta = !!_codigoLocalActual || (document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none');
     html += "<div style=\"padding:4px 0 8px\">"
       + "<a href=\"#\" onclick=\"event.preventDefault();var b=document.getElementById('drawer-local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';\" style=\"font-size:11.5px;color:#8A6A4E;text-decoration:underline\">\u00BFEst\u00E1s pidiendo desde el local?</a>"
       + "<div id=\"drawer-local-fee-code-box\" style=\"display:".concat(_cajaAbierta ? 'flex' : 'none', ";gap:6px;margin-top:6px;align-items:center\">")

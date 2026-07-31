@@ -1157,6 +1157,26 @@ function comprobarCodigoLocal() {
   });
   renderCart();
 }
+// Si se llega con ?local=CODIGO en la URL (el cartel con QR del mostrador
+// lleva a un enlace así), se rellena y se comprueba solo, sin que el
+// cliente tenga que escribir nada — para eso sirve el QR.
+function _aplicarCodigoLocalDesdeURL() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const codigo = params.get('local');
+    if (!codigo) return;
+    const upper = codigo.trim().toUpperCase();
+    const input = document.getElementById('local-fee-code-input');
+    if (input) input.value = upper;
+    comprobarCodigoLocal();
+  } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', () => {
+  // Con margen, para dar tiempo a que renderCart() haya pintado ya el
+  // carrito al menos una vez (si no, el interruptor de gastos de gestión
+  // podría no estar listo todavía y no se mostraría el aviso de aplicado).
+  setTimeout(_aplicarCodigoLocalDesdeURL, 600);
+});
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
