@@ -416,6 +416,11 @@ function _initFirebase() {
   // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
   window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
   window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
+  // ESTADO DE CONEXIÓN — ".info/connected" es la única señal fiable de que
+  // el cliente tiene una conexión REAL con Firebase en cada momento;
+  // _firebaseReady (más abajo) solo confirma que el SDK cargó al principio,
+  // no que los datos en tiempo real sigan llegando después.
+  window.fb_listenConnectionState = function(cb) { return db.ref(".info/connected").on("value", function(sn){ cb(sn.val() === true); }); };
   // READY
   window._firebaseReady = true;
   document.dispatchEvent(new Event("firebaseReady"));

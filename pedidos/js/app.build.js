@@ -15408,6 +15408,47 @@ applyAutoDelete(); // auto-borrado del historial al cargar
   }
 })();
 
+// ── AVISO DE PROBLEMA DE CONEXIÓN ────────────────────────────────────────────
+// _firebaseReady solo confirma que el SDK cargó al principio — si después
+// se cae la conexión real (wifi del local, Firebase caído, etc.), la web
+// seguía pareciendo normal pero con datos parados (turnos, config de
+// gastos, pedidos abiertos/cerrados...) sin ningún aviso. ".info/connected"
+// es la señal fiable de la conexión real en cada momento.
+(function _iniciarAvisoConexionFirebase() {
+  let _conexionPerdidaTimeout = null;
+  let _bannerConexionMostrado = false;
+  function _mostrarBannerConexion(mostrar) {
+    const banner = document.getElementById('firebase-conexion-banner');
+    if (!banner) return;
+    banner.style.display = mostrar ? 'block' : 'none';
+    _bannerConexionMostrado = mostrar;
+  }
+  function _iniciar() {
+    if (!window.fb_listenConnectionState) return;
+    window.fb_listenConnectionState(connected => {
+      if (connected) {
+        if (_conexionPerdidaTimeout) {
+          clearTimeout(_conexionPerdidaTimeout);
+          _conexionPerdidaTimeout = null;
+        }
+        if (_bannerConexionMostrado) _mostrarBannerConexion(false);
+      } else if (!_conexionPerdidaTimeout) {
+        // Margen de unos segundos antes de avisar — un corte breve al
+        // cambiar de wifi a datos móviles es normal y no debe alarmar.
+        _conexionPerdidaTimeout = setTimeout(() => {
+          _conexionPerdidaTimeout = null;
+          _mostrarBannerConexion(true);
+        }, 6000);
+      }
+    });
+  }
+  if (window._firebaseReady) {
+    _iniciar();
+  } else {
+    document.addEventListener('firebaseReady', _iniciar);
+  }
+})();
+
 // ── BANNER PEDIDO ACTIVO ──────────────────────────────────────────────────────
 const ACTIVE_ORDER_KEY = 'dpf_active_order';
 function _checkActivePedido() {
