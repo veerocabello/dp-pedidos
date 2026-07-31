@@ -403,6 +403,11 @@ function resetOrder() {
   document.querySelector('.order-panel').style.display = "block";
   document.getElementById("success-screen").style.display = "none";
   window._lastOrderData = null;
+  // Para que la sugerencia "¿algo dulce de postre?" se pueda volver a
+  // mostrar (con opciones nuevas) en el pedido siguiente, en vez de
+  // arrastrar el "ya se mostró"/las mismas opciones del pedido anterior.
+  window._upsellFueMostrado = false;
+  window._upsellOpcionesElegidas = null;
   try {
     localStorage.removeItem('dpf_active_order');
   } catch (e) {}

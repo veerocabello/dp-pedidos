@@ -581,7 +581,7 @@ function dismissUpsellDulce() {
   renderCart();
 }
 
-// Devuelve { id, name, price, copy } o null si no toca mostrar sugerencia
+// Devuelve { pregunta, opciones: [{id, name, price, emoji}, ...] } o null si no toca mostrar sugerencia
 function getUpsellDulce() {
   if (_upsellDismissedThisSession()) return null;
 
@@ -620,48 +620,64 @@ function getUpsellDulce() {
   const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
   const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
   const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
-  let sugerido = null;
+  let tartaSaborId = null;
   for (const sabor in UPSELL_SABOR_TARTA) {
     if (nombresEnCarrito.includes(sabor)) {
-      const tartaId = UPSELL_SABOR_TARTA[sabor];
-      sugerido = MENU.find(m => m.id === tartaId);
+      tartaSaborId = UPSELL_SABOR_TARTA[sabor];
       break;
     }
   }
 
-  // Sin sabor a juego: galleta si es 1 unidad, tarta clásica si son 2+
-  if (!sugerido) {
-    if (esPlural) {
-      sugerido = MENU.find(m => m.id === 34); // Tarta de Queso La Viña, clásica
-    } else {
-      // Elegir una sola vez por sesión y reutilizar la misma — si se recalculara
-      // al azar en cada repintado del carrito (p.ej. tras comprobar fidelización
-      // mientras el cliente sigue escribiendo), la galleta sugerida cambiaba sola
-      // dando la sensación de que la tarjeta "parpadeaba".
-      if (!window._upsellGalletaElegidaId) {
-        window._upsellGalletaElegidaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
-      }
-      sugerido = MENU.find(m => m.id === window._upsellGalletaElegidaId);
+  // Se eligen 2-3 opciones (tarta con sabor a juego primero, si aplica) y se
+  // guardan en caché por sesión para no volver a sortear otras al repintar
+  // el carrito (p.ej. tras comprobar fidelización mientras el cliente sigue
+  // escribiendo) — eso daba la sensación de que las tarjetas "parpadeaban".
+  // Si cambia de singular a plural (añade una segunda patata) sí se
+  // recalcula, porque el fondo de opciones a elegir es distinto.
+  if (!window._upsellOpcionesElegidas || window._upsellOpcionesElegidas.esPlural !== esPlural) {
+    const elegidos = [];
+    if (tartaSaborId) elegidos.push(tartaSaborId);
+    const pool = (esPlural ? Object.keys(UPSELL_TARTA_IDS).map(Number) : UPSELL_GALLETA_IDS)
+      .filter(id => !elegidos.includes(id));
+    // Barajar el resto del fondo y completar hasta 3 opciones en total
+    const barajado = pool.slice().sort(() => Math.random() - 0.5);
+    for (const id of barajado) {
+      if (elegidos.length >= 3) break;
+      elegidos.push(id);
     }
+    window._upsellOpcionesElegidas = { esPlural, ids: elegidos.slice(0, 3) };
   }
-  if (!sugerido) return null;
 
-  const esTarta = sugerido.cat === 'Tartas';
-  const emoji = esTarta ? '🎂' : '🍪';
-  return { id: sugerido.id, name: sugerido.name, price: sugerido.price, pregunta, emoji };
+  const opciones = window._upsellOpcionesElegidas.ids
+    .map(id => MENU.find(m => m.id === id))
+    .filter(Boolean)
+    .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: it.cat === 'Tartas' ? '🎂' : '🍪' }));
+  if (!opciones.length) return null;
+
+  // Se usa en submitOrder() para saber si el aviso llegó a mostrarse de
+  // verdad (para las estadísticas de "mostrado vs añadido").
+  window._upsellFueMostrado = true;
+
+  return { pregunta, opciones };
 }
 
 function renderUpsellDulce() {
   const sug = getUpsellDulce();
   if (!sug) return '';
+  const opcionesHtml = sug.opciones.map(op =>
+    '<div class="upsell-dulce-opcion">'
+    + '<span class="upsell-dulce-opcion-name">' + escapeHtml(op.name) + '</span>'
+    + '<span class="upsell-dulce-opcion-price">' + op.price.toFixed(2).replace('.', ',') + ' €</span>'
+    + '<button class="upsell-dulce-opcion-add" onclick="changeQty(' + op.id + ',1)">+ Añadir</button>'
+    + '</div>'
+  ).join('');
   return '<div class="upsell-dulce">'
     + '<div class="upsell-dulce-row1">'
-    + '<div class="upsell-dulce-icon">' + sug.emoji + '</div>'
+    + '<div class="upsell-dulce-icon">' + sug.opciones[0].emoji + '</div>'
     + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'
     + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce()" title="No, gracias">&#10005;</button>'
     + '</div>'
-    + '<div class="upsell-dulce-product">' + escapeHtml(sug.name) + ' · ' + sug.price.toFixed(2).replace('.', ',') + ' €</div>'
-    + '<button class="upsell-dulce-add" onclick="changeQty(' + sug.id + ',1)">+ Añadir</button>'
+    + '<div class="upsell-dulce-opciones">' + opcionesHtml + '</div>'
     + '</div>';
 }
 

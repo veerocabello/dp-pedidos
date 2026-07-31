@@ -481,6 +481,45 @@ async function _estrellasObtenerVentas(inicio, fin) {
   }
   return totales;
 }
+async function _estrellasObtenerUpsellPostre(inicio, fin) {
+  let mostrado = 0, anadido = 0;
+  try {
+    const snap = await firebase.database().ref('upsellPostre').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snap.exists()) {
+      snap.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        mostrado += Number(dia.mostrado) || 0;
+        anadido += Number(dia.anadido) || 0;
+      });
+    }
+  } catch (e) {
+    console.warn('[estrellas] error leyendo upsellPostre', e);
+  }
+  return { mostrado, anadido };
+}
+function _renderUpsellPostreStats(mostrado, anadido) {
+  const el = document.getElementById('upsell-postre-contenido');
+  if (!el) return;
+  if (mostrado === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:#8A6A4E">Todavía no se ha mostrado la sugerencia "¿algo dulce de postre?" en este periodo.</div>';
+    return;
+  }
+  const tasa = mostrado > 0 ? (anadido / mostrado) * 100 : 0;
+  el.innerHTML = '<div style="display:flex;gap:8px">'
+    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:800;color:#3D1F0D">' + mostrado + '</div>'
+    + '<div style="font-size:11px;color:#8A6A4E">veces mostrada</div>'
+    + '</div>'
+    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:800;color:#166534">' + anadido + '</div>'
+    + '<div style="font-size:11px;color:#8A6A4E">veces añadida</div>'
+    + '</div>'
+    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:800;color:#B5862C">' + tasa.toFixed(0) + '%</div>'
+    + '<div style="font-size:11px;color:#8A6A4E">tasa de éxito</div>'
+    + '</div>'
+    + '</div>';
+}
 async function bimbaRenderEstrellas() {
   const el = document.getElementById('estrellas-contenido');
   const rangoEl = document.getElementById('estrellas-rango-texto');
@@ -488,6 +527,8 @@ async function bimbaRenderEstrellas() {
   el.innerHTML = '<div style="color:#8A6A4E;font-size:13px">Cargando...</div>';
   const { inicio, fin } = _estrellasRangoPeriodo();
   if (rangoEl) rangoEl.textContent = 'Periodo: ' + _fechaCorta(inicio) + ' — ' + _fechaCorta(fin);
+
+  _estrellasObtenerUpsellPostre(inicio, fin).then(({ mostrado, anadido }) => _renderUpsellPostreStats(mostrado, anadido));
 
   const ventas = await _estrellasObtenerVentas(inicio, fin);
   const totalVentas = Object.values(ventas).reduce((s, v) => s + v, 0);

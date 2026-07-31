@@ -789,6 +789,27 @@ try {
     // ── 4. REGISTRAR EN phoneLog (para el cooldown/límite diario de próximos pedidos) ──
     registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey);
 
+    // ── 5. ESTADÍSTICA DE LA SUGERENCIA "¿ALGO DULCE DE POSTRE?" ──
+    // Solo cuenta, nunca bloquea el pedido si falla. Se guarda un nodo por
+    // día (upsellPostre/<fecha>) con cuántas veces se mostró la sugerencia y
+    // cuántas de esas veces el cliente acabó añadiendo algo — para ver en el
+    // panel "Estrellas y perdedores" si de verdad funciona.
+    $upsellMostrado = !empty($payload['upsellMostrado']);
+    $upsellAnadido = !empty($payload['upsellAnadido']);
+    if ($upsellMostrado) {
+        $upsellPath = 'upsellPostre/' . $todayKey;
+        for ($intento = 0; $intento < 5; $intento++) {
+            $leido = fbGetConEtag($databaseURL, $upsellPath, $accessToken);
+            $stats = is_array($leido['data']) ? $leido['data'] : [];
+            $stats['mostrado'] = (is_numeric($stats['mostrado'] ?? null) ? (int)$stats['mostrado'] : 0) + 1;
+            if ($upsellAnadido) {
+                $stats['anadido'] = (is_numeric($stats['anadido'] ?? null) ? (int)$stats['anadido'] : 0) + 1;
+            }
+            if (fbPutSiCoincide($databaseURL, $upsellPath, $accessToken, $stats, $leido['etag'])) break;
+            usleep(rand(20000, 80000));
+        }
+    }
+
     echo json_encode(['success' => true]);
 } catch (Exception $e) {
     error_log('[guardar-pedido] Error: ' . $e->getMessage());
