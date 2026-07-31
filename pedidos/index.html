@@ -286,6 +286,13 @@
         <span id="cart-fee-label">Gastos de gestión online</span>
         <span id="cart-fee-amount">0,50 €</span>
       </div>
+      <div id="local-fee-code-row" style="display:none;padding:4px 0 8px">
+        <a href="#" onclick="event.preventDefault();var b=document.getElementById('local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';" style="font-size:11.5px;color:var(--muted);text-decoration:underline">¿Estás pidiendo desde el local?</a>
+        <div id="local-fee-code-box" style="display:none;gap:6px;margin-top:6px;align-items:center">
+          <input id="local-fee-code-input" type="text" maxlength="8" placeholder="Código" oninput="this.value=this.value.toUpperCase();comprobarCodigoLocal()" style="flex:1;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none">
+        </div>
+        <div id="local-fee-code-feedback" style="font-size:11.5px;margin-top:4px"></div>
+      </div>
       <div id="cart-fee2-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:var(--muted);">
         <span id="cart-fee2-label">Otro gasto fijo</span>
         <span id="cart-fee2-amount">0,50 €</span>
@@ -875,8 +882,8 @@
      archivo. -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1785530000000" defer></script>
-<script src="js/app.js?v=1785550000000" defer></script>
+<script src="js/config.js?v=1785560000000" defer></script>
+<script src="js/app.js?v=1785560000000" defer></script>
 <script src="js/auth.js?v=1785401656310" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita

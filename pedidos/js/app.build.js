@@ -2528,8 +2528,11 @@ function renderCart() {
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
 
-  // Mostrar línea de gastos de gestión si está activa
-  const feeEnabled = getFeeEnabled();
+  // Mostrar línea de gastos de gestión si está activa — salvo que el
+  // cliente haya metido el código de "pedido desde el local" (para cuando
+  // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocal;
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
   const feeEl = document.getElementById('cart-fee-row');
@@ -2542,6 +2545,10 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
+  // El enlace de "código del local" solo tiene sentido si hay algún gasto
+  // de gestión activo que quitar (con el código puesto o sin él)
+  const localCodeRowEl = document.getElementById('local-fee-code-row');
+  if (localCodeRowEl) localCodeRowEl.style.display = (getFeeEnabled() && getLocalFeeCode()) ? 'block' : 'none';
   // Segundo gasto fijo, independiente del anterior (su propio interruptor)
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
   const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
@@ -2702,7 +2709,8 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
-  const feeEnabled = getFeeEnabled();
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocal;
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
@@ -2716,6 +2724,18 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   }
   if (fee2Enabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
+  // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
+  if (getFeeEnabled() && (typeof getLocalFeeCode === 'function') && getLocalFeeCode()) {
+    const _codigoLocalActual = (document.getElementById('drawer-local-fee-code-input') || {}).value || '';
+    const _cajaAbierta = document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none';
+    html += "<div style=\"padding:4px 0 8px\">"
+      + "<a href=\"#\" onclick=\"event.preventDefault();var b=document.getElementById('drawer-local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';\" style=\"font-size:11.5px;color:#8A6A4E;text-decoration:underline\">\u00BFEst\u00E1s pidiendo desde el local?</a>"
+      + "<div id=\"drawer-local-fee-code-box\" style=\"display:".concat(_cajaAbierta ? 'flex' : 'none', ";gap:6px;margin-top:6px;align-items:center\">")
+      + "<input id=\"drawer-local-fee-code-input\" type=\"text\" maxlength=\"8\" placeholder=\"C\u00F3digo\" value=\"".concat(escapeHtml(_codigoLocalActual), "\" oninput=\"this.value=this.value.toUpperCase();document.getElementById('local-fee-code-input').value=this.value;comprobarCodigoLocal()\" style=\"flex:1;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none\">")
+      + "</div><div id=\"drawer-local-fee-code-feedback\" style=\"font-size:11.5px;margin-top:4px\"></div>"
+      + "</div>";
   }
   // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
   // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
@@ -3494,7 +3514,8 @@ async function _submitOrderInner() {
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
   const subTotal = regularTotal + custTotal + extTotal;
-  const feeEnabled = getFeeEnabled();
+  const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocalSubmit;
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
@@ -6176,6 +6197,8 @@ function bimbaPintarTicketConfig() {
     document.getElementById('tc-fee2-amount').value = getFee2Amount();
     document.getElementById('tc-fee2-label').value = getFee2Label();
   }
+  const tcLocalCode = document.getElementById('tc-local-fee-code');
+  if (tcLocalCode && typeof getLocalFeeCode === 'function') tcLocalCode.value = getLocalFeeCode();
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
@@ -6213,6 +6236,8 @@ function bimbaGuardarTicketConfig() {
     const lbl2 = document.getElementById('tc-fee2-label').value.trim() || 'Otro gasto fijo';
     saveFee2Config(tcFee2Enabled.checked, amt2, lbl2);
   }
+  const tcLocalCode = document.getElementById('tc-local-fee-code');
+  if (tcLocalCode && typeof saveLocalFeeCode === 'function') saveLocalFeeCode(tcLocalCode.value);
 
   if (msgEl) {
     msgEl.style.color = '#27855a';
@@ -8402,6 +8427,57 @@ function loadFee2FromFirebase() {
     renderCart();
   });
 }
+
+// ── CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión, no el otro gasto fijo) ──
+// Para cuando hay cola y quieres que la gente pida desde el móvil sin que
+// les cobre los gastos de gestión online — cambiable desde el panel en
+// cualquier momento, para que no valga para siempre si alguien lo comparte.
+const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
+function getLocalFeeCode() {
+  return (localStorage.getItem(LOCAL_FEE_CODE_KEY) || '').toUpperCase();
+}
+function saveLocalFeeCode(code) {
+  const c = (code || '').trim().toUpperCase();
+  localStorage.setItem(LOCAL_FEE_CODE_KEY, c);
+  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(c).catch(function () {});
+  logActivity('🏪 Código "pedido desde el local" actualizado: ' + (c || '(vacío)'));
+}
+function loadLocalFeeCodeFromFirebase() {
+  if (!window.fb_listenLocalFeeCode) return;
+  window.fb_listenLocalFeeCode(function (code) {
+    localStorage.setItem(LOCAL_FEE_CODE_KEY, (code || '').toUpperCase());
+  });
+}
+function generarCodigoLocalNuevo() {
+  const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I, para no confundir al leerlo en voz alta
+  let c = '';
+  for (let i = 0; i < 4; i++) c += letras[Math.floor(Math.random() * letras.length)];
+  const el = document.getElementById('tc-local-fee-code');
+  if (el) el.value = c;
+}
+// Comprueba el código que escribió el cliente — sin distinguir mayúsculas/minúsculas
+function _modoLocalActivo() {
+  const input = document.getElementById('local-fee-code-input');
+  const escrito = input ? input.value.trim().toUpperCase() : '';
+  const real = getLocalFeeCode();
+  return !!(real && escrito && escrito === real);
+}
+function comprobarCodigoLocal() {
+  const activo = _modoLocalActivo();
+  const input = document.getElementById('local-fee-code-input');
+  const escrito = input ? input.value.trim() : '';
+  ['local-fee-code-feedback', 'drawer-local-fee-code-feedback'].forEach(id => {
+    const feedback = document.getElementById(id);
+    if (!feedback) return;
+    if (!escrito) {
+      feedback.textContent = '';
+    } else {
+      feedback.textContent = activo ? '✅ Sin gastos de gestión aplicado' : '❌ Código incorrecto';
+      feedback.style.color = activo ? '#27855a' : '#c0392b';
+    }
+  });
+  renderCart();
+}
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
@@ -10106,6 +10182,7 @@ function initFirebaseListeners() {
   // Cargar config de gastos de gestión desde Firebase
   loadFeeFromFirebase();
   if (typeof loadFee2FromFirebase === 'function') loadFee2FromFirebase();
+  if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
 

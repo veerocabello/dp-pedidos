@@ -394,6 +394,9 @@ function _initFirebase() {
   // FEE2 CONFIG (segundo gasto fijo, independiente del anterior)
   window.fb_saveFee2Config = async function(enabled, amount, label) { await jset("config/fee2Config", {enabled:enabled, amount:amount, label:label}); };
   window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
+  window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
+  window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
   // READY
   window._firebaseReady = true;
   document.dispatchEvent(new Event("firebaseReady"));

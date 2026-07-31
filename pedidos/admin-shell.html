@@ -1701,6 +1701,15 @@
         <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Independiente del anterior — se enciende y se apaga por su cuenta.</p>
       </div>
 
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">🏪 Código "pedido desde el local"</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Cuando hay cola, dile este código a la gente para que pida desde el móvil sin que le cobre los Gastos de gestión (el "Otro gasto fijo" se sigue cobrando igual). Cámbialo cuando quieras para que deje de valer.</p>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="tc-local-fee-code" maxlength="8" placeholder="Sin código = desactivado" style="flex:1;padding:9px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-transform:uppercase">
+          <button onclick="generarCodigoLocalNuevo()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🎲 Nuevo</button>
+        </div>
+      </div>
+
       <button onclick="bimbaGuardarTicketConfig()" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Guardar</button>
       <div id="tc-msg" style="font-size:12px;margin-top:8px;text-align:center"></div>
 

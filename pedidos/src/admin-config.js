@@ -1106,6 +1106,57 @@ function loadFee2FromFirebase() {
     renderCart();
   });
 }
+
+// ── CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión, no el otro gasto fijo) ──
+// Para cuando hay cola y quieres que la gente pida desde el móvil sin que
+// les cobre los gastos de gestión online — cambiable desde el panel en
+// cualquier momento, para que no valga para siempre si alguien lo comparte.
+const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
+function getLocalFeeCode() {
+  return (localStorage.getItem(LOCAL_FEE_CODE_KEY) || '').toUpperCase();
+}
+function saveLocalFeeCode(code) {
+  const c = (code || '').trim().toUpperCase();
+  localStorage.setItem(LOCAL_FEE_CODE_KEY, c);
+  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(c).catch(function () {});
+  logActivity('🏪 Código "pedido desde el local" actualizado: ' + (c || '(vacío)'));
+}
+function loadLocalFeeCodeFromFirebase() {
+  if (!window.fb_listenLocalFeeCode) return;
+  window.fb_listenLocalFeeCode(function (code) {
+    localStorage.setItem(LOCAL_FEE_CODE_KEY, (code || '').toUpperCase());
+  });
+}
+function generarCodigoLocalNuevo() {
+  const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I, para no confundir al leerlo en voz alta
+  let c = '';
+  for (let i = 0; i < 4; i++) c += letras[Math.floor(Math.random() * letras.length)];
+  const el = document.getElementById('tc-local-fee-code');
+  if (el) el.value = c;
+}
+// Comprueba el código que escribió el cliente — sin distinguir mayúsculas/minúsculas
+function _modoLocalActivo() {
+  const input = document.getElementById('local-fee-code-input');
+  const escrito = input ? input.value.trim().toUpperCase() : '';
+  const real = getLocalFeeCode();
+  return !!(real && escrito && escrito === real);
+}
+function comprobarCodigoLocal() {
+  const activo = _modoLocalActivo();
+  const input = document.getElementById('local-fee-code-input');
+  const escrito = input ? input.value.trim() : '';
+  ['local-fee-code-feedback', 'drawer-local-fee-code-feedback'].forEach(id => {
+    const feedback = document.getElementById(id);
+    if (!feedback) return;
+    if (!escrito) {
+      feedback.textContent = '';
+    } else {
+      feedback.textContent = activo ? '✅ Sin gastos de gestión aplicado' : '❌ Código incorrecto';
+      feedback.style.color = activo ? '#27855a' : '#c0392b';
+    }
+  });
+  renderCart();
+}
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';

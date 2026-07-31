@@ -806,6 +806,7 @@ function initFirebaseListeners() {
   // Cargar config de gastos de gestión desde Firebase
   loadFeeFromFirebase();
   if (typeof loadFee2FromFirebase === 'function') loadFee2FromFirebase();
+  if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
 

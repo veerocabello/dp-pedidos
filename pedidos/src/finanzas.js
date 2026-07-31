@@ -703,6 +703,8 @@ function bimbaPintarTicketConfig() {
     document.getElementById('tc-fee2-amount').value = getFee2Amount();
     document.getElementById('tc-fee2-label').value = getFee2Label();
   }
+  const tcLocalCode = document.getElementById('tc-local-fee-code');
+  if (tcLocalCode && typeof getLocalFeeCode === 'function') tcLocalCode.value = getLocalFeeCode();
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
@@ -740,6 +742,8 @@ function bimbaGuardarTicketConfig() {
     const lbl2 = document.getElementById('tc-fee2-label').value.trim() || 'Otro gasto fijo';
     saveFee2Config(tcFee2Enabled.checked, amt2, lbl2);
   }
+  const tcLocalCode = document.getElementById('tc-local-fee-code');
+  if (tcLocalCode && typeof saveLocalFeeCode === 'function') saveLocalFeeCode(tcLocalCode.value);
 
   if (msgEl) {
     msgEl.style.color = '#27855a';

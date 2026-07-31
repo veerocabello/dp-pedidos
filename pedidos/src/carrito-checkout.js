@@ -25,7 +25,8 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
-  const feeEnabled = getFeeEnabled();
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocal;
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
@@ -39,6 +40,18 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   }
   if (fee2Enabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
+  // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
+  if (getFeeEnabled() && (typeof getLocalFeeCode === 'function') && getLocalFeeCode()) {
+    const _codigoLocalActual = (document.getElementById('drawer-local-fee-code-input') || {}).value || '';
+    const _cajaAbierta = document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none';
+    html += "<div style=\"padding:4px 0 8px\">"
+      + "<a href=\"#\" onclick=\"event.preventDefault();var b=document.getElementById('drawer-local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';\" style=\"font-size:11.5px;color:#8A6A4E;text-decoration:underline\">\u00BFEst\u00E1s pidiendo desde el local?</a>"
+      + "<div id=\"drawer-local-fee-code-box\" style=\"display:".concat(_cajaAbierta ? 'flex' : 'none', ";gap:6px;margin-top:6px;align-items:center\">")
+      + "<input id=\"drawer-local-fee-code-input\" type=\"text\" maxlength=\"8\" placeholder=\"C\u00F3digo\" value=\"".concat(escapeHtml(_codigoLocalActual), "\" oninput=\"this.value=this.value.toUpperCase();document.getElementById('local-fee-code-input').value=this.value;comprobarCodigoLocal()\" style=\"flex:1;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none\">")
+      + "</div><div id=\"drawer-local-fee-code-feedback\" style=\"font-size:11.5px;margin-top:4px\"></div>"
+      + "</div>";
   }
   // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
   // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
@@ -817,7 +830,8 @@ async function _submitOrderInner() {
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
   const subTotal = regularTotal + custTotal + extTotal;
-  const feeEnabled = getFeeEnabled();
+  const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocalSubmit;
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const feeLabel = getFeeLabel();
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();

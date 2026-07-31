@@ -730,8 +730,11 @@ function renderCart() {
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
 
-  // Mostrar línea de gastos de gestión si está activa
-  const feeEnabled = getFeeEnabled();
+  // Mostrar línea de gastos de gestión si está activa — salvo que el
+  // cliente haya metido el código de "pedido desde el local" (para cuando
+  // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const feeEnabled = getFeeEnabled() && !_sinGastosPorCodigoLocal;
   const feeAmount = getFeeAmount();
   const feeLabel = getFeeLabel();
   const feeEl = document.getElementById('cart-fee-row');
@@ -744,6 +747,10 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
+  // El enlace de "código del local" solo tiene sentido si hay algún gasto
+  // de gestión activo que quitar (con el código puesto o sin él)
+  const localCodeRowEl = document.getElementById('local-fee-code-row');
+  if (localCodeRowEl) localCodeRowEl.style.display = (getFeeEnabled() && getLocalFeeCode()) ? 'block' : 'none';
   // Segundo gasto fijo, independiente del anterior (su propio interruptor)
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled();
   const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
