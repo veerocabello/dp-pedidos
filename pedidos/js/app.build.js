@@ -3653,22 +3653,29 @@ async function _submitOrderInner() {
     };
   }).filter(Boolean);
   // Cada patata con extras (queso/gratinado/ingredientes) se desglosa en
-  // el ticket como una línea por cada concepto con su propio precio —
-  // antes salía todo junto en una sola línea con el precio ya sumado
-  // ("Patata Carbonara + Gratinado" a 6,30€), sin que se viera cuánto era
-  // la patata y cuánto el extra.
-  const extItems = [];
-  Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
+  // el ticket: la línea principal muestra solo el precio de la patata
+  // sola, y cada extra sale debajo con un guión y su propio precio — igual
+  // que ya hacían las Patatas Al Gusto/Bomba (ver "extras" en custItems
+  // más arriba). Antes salía todo junto en una sola línea con el precio ya
+  // sumado ("Patata Carbonara + Gratinado" a 6,30€), sin ver cuánto era la
+  // patata y cuánto el extra.
+  const extItems = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
     const item = MENU.find(m => m.id == c.menuId);
-    if (!item) return;
-    extItems.push({ name: item.name, qty: c.qty, subtotal: c.basePrice * c.qty });
-    if (c.queso) extItems.push({ name: 'Queso', qty: c.qty, subtotal: 1.00 * c.qty });
-    if (c.gratinado) extItems.push({ name: 'Gratinado', qty: c.qty, subtotal: 0.50 * c.qty });
+    if (!item) return null;
+    const extras = [];
+    if (c.queso) extras.push({ name: 'Queso', price: 1.00 });
+    if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
-      extItems.push({ name: ing, qty: c.qty, subtotal: precioIng * c.qty });
+      extras.push({ name: ing, price: precioIng });
     });
-  });
+    return {
+      name: item.name,
+      qty: c.qty,
+      subtotal: c.basePrice * c.qty,
+      extras: extras.length ? extras : undefined
+    };
+  }).filter(Boolean);
   const feeItems = feeEnabled ? [{
     name: feeLabel,
     qty: 1,
