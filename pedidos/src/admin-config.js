@@ -1072,17 +1072,26 @@ function saveFeeConfig(enabled, amount, label) {
   logActivity((enabled ? '\u2705' : '\u26d4') + ' Gastos de gesti\u00f3n ' + (enabled ? 'activados' : 'desactivados') + ' \u2014 ' + amount.toFixed(2) + '\u20ac');
 }
 function loadFeeFromFirebase() {
-  console.log('[fee] loadFeeFromFirebase called, fb_listenFeeConfig=', typeof window.fb_listenFeeConfig);
-  if (!window.fb_listenFeeConfig) {
-    console.warn('[fee] fb_listenFeeConfig no disponible');
-    return;
+  // Lectura directa de una sola vez, además del listener en tiempo real de
+  // abajo — si no, en una visita nueva getFeeEnabled() podía devolver
+  // "desactivado" (el valor por defecto) durante los primeros segundos,
+  // hasta que el listener recibiera su primer valor real; si el cliente
+  // confirmaba el pedido en ese hueco, se quedaba sin cobrar el gasto fijo
+  // aunque estuviera activado de verdad.
+  if (window.fb_loadFeeConfig) {
+    window.fb_loadFeeConfig().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
+      if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
+      renderCart();
+    }).catch(() => {});
   }
+  if (!window.fb_listenFeeConfig) return;
   window.fb_listenFeeConfig(function (cfg) {
-    console.log('[fee] listener fired, cfg=', JSON.stringify(cfg));
     if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
     if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
     if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
-    console.log('[fee] after update: enabled=', localStorage.getItem(FEE_ENABLED_KEY));
     renderCart();
   });
 }
@@ -1108,6 +1117,19 @@ function saveFee2Config(enabled, amount, label) {
   logActivity((enabled ? '✅' : '⛔') + ' ' + label + ' ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
 }
 function loadFee2FromFirebase() {
+  // Lectura directa de una sola vez — mismo motivo que loadFeeFromFirebase():
+  // sin esto, un cliente que confirmara el pedido muy rápido en una visita
+  // nueva podía quedarse sin cobrar la bolsa (getFee2Enabled() devolvía
+  // "desactivado" por defecto hasta que el listener recibiera el valor real).
+  if (window.fb_loadFee2Config) {
+    window.fb_loadFee2Config().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+      if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+      renderCart();
+    }).catch(() => {});
+  }
   if (!window.fb_listenFee2Config) return;
   window.fb_listenFee2Config(function (cfg) {
     if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');

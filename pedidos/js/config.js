@@ -410,9 +410,16 @@ function _initFirebase() {
   // FEE CONFIG
   window.fb_saveFeeConfig = async function(enabled, amount, label) { await jset("config/feeConfig", {enabled:enabled, amount:amount, label:label}); };
   window.fb_listenFeeConfig = function(cb) { return jlisten("config/feeConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Lectura directa de una sola vez — igual que fb_loadLocalFeeCode: el
+  // listener en tiempo real puede tardar en entregar su primer valor más
+  // de lo que tarda un cliente en rellenar el formulario y confirmar, y
+  // hasta entonces getFeeEnabled()/getFee2Enabled() devuelven el valor por
+  // defecto (desactivado) aunque estén activados de verdad.
+  window.fb_loadFeeConfig = async function() { var sn = await jget("config/feeConfig"); return sn.exists() ? sn.val() : null; };
   // FEE2 CONFIG (segundo gasto fijo, independiente del anterior)
   window.fb_saveFee2Config = async function(enabled, amount, label) { await jset("config/fee2Config", {enabled:enabled, amount:amount, label:label}); };
   window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  window.fb_loadFee2Config = async function() { var sn = await jget("config/fee2Config"); return sn.exists() ? sn.val() : null; };
   // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
   window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
   window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
