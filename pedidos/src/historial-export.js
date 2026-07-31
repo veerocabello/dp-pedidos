@@ -646,21 +646,39 @@ const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
 function _registrarEnvioTicket(orderNum, ok) {
   let log = [];
   try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
-  log.unshift({ num: orderNum, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
-  localStorage.setItem(TICKET_SEND_LOG_KEY, JSON.stringify(log.slice(0, 15)));
+  const todayKey = new Date().toISOString().slice(0, 10);
+  log.unshift({ num: orderNum, date: todayKey, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
+  // Guarda hasta 300 entradas (varios días de margen) — el panel solo
+  // enseña las de hoy, esto es solo para no dejar crecer localStorage sin límite.
+  localStorage.setItem(TICKET_SEND_LOG_KEY, JSON.stringify(log.slice(0, 300)));
   if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
+// Panel de "trabajos de impresión de hoy": antes solo se veían los últimos
+// 15 tickets enviados (de cualquier día mezclados) — ahora se ven TODOS los
+// de hoy en este dispositivo, con un resumen de cuántos salieron bien/mal.
 function _renderTicketSendLog() {
   const el = document.getElementById('tc-envios-log');
   if (!el) return;
   let log = [];
   try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
-  el.innerHTML = log.length ? log.map(e =>
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const logHoy = log.filter(e => (e.date || todayKey) === todayKey);
+  const resumenEl = document.getElementById('tc-envios-resumen');
+  if (resumenEl) {
+    if (logHoy.length) {
+      const ok = logHoy.filter(e => e.ok).length;
+      const fallos = logHoy.length - ok;
+      resumenEl.textContent = logHoy.length + ' hoy · ✅ ' + ok + (fallos ? ' · ❌ ' + fallos : '');
+    } else {
+      resumenEl.textContent = '';
+    }
+  }
+  el.innerHTML = logHoy.length ? logHoy.map(e =>
     '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:12px">'
     + '<span>Pedido #' + escapeHtml(String(e.num)) + '</span>'
     + '<span style="color:' + (e.ok ? '#27855a' : '#c0392b') + ';font-weight:700">' + (e.ok ? '✅ Enviado · ' : '❌ Falló · ') + e.time + '</span>'
     + '</div>'
-  ).join('') : '<div style="font-size:12px;color:var(--muted)">Todavía no se ha enviado ningún ticket en este dispositivo</div>';
+  ).join('') : '<div style="font-size:12px;color:var(--muted)">Todavía no se ha enviado ningún ticket hoy en este dispositivo</div>';
 }
 let _lastTicketData = null;
 async function printOrderFromStats(num, name, time, total, slot) {

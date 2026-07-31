@@ -1704,9 +1704,12 @@
       <button onclick="bimbaGuardarTicketConfig()" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Guardar</button>
       <div id="tc-msg" style="font-size:12px;margin-top:8px;text-align:center"></div>
 
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 4px">Últimos tickets enviados</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Esto refleja si el ticket se envió de verdad a la impresora conectada a esta tablet/dispositivo. Si ves "Falló", comprueba que la impresora esté conectada (botón "Conectar impresora" más arriba).</div>
-      <div id="tc-envios-log" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin:20px 0 4px">
+        <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Trabajos de impresión de hoy</span>
+        <span id="tc-envios-resumen" style="font-size:11px;font-weight:700;color:var(--brown)"></span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Esto refleja si el ticket se envió de verdad a la impresora conectada a esta tablet/dispositivo (solo los de hoy, en este aparato). Si ves "Falló", comprueba que la impresora esté conectada (botón "Conectar impresora" más arriba).</div>
+      <div id="tc-envios-log" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
     </div>
   </div>
 </div><!-- /ticket-config-overlay -->
