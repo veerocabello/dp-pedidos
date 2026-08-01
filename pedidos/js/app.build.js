@@ -10399,24 +10399,24 @@ async function _ptBleReconectar() {
 }
 
 // Trocea el envío en paquetes muy pequeños (20 bytes — el límite clásico de
-// BLE sin negociar un MTU mayor) y, siempre que se pueda, con "respuesta"
-// (writeValue en vez de writeValueWithoutResponse): así cada trozo espera
-// la confirmación del propio módulo Bluetooth antes de mandar el siguiente,
-// en vez de dispararlos todos seguidos sin esperar a que le dé tiempo a
-// procesarlos. Por dentro, estos módulos BLE baratos suelen ser solo un
-// puente USB-Bluetooth con muy poca memoria intermedia: mandarles trozos
-// grandes o demasiado rápido hace que pierdan o desordenen bytes, y como
-// ESC/POS interpreta el ticket byte a byte, perder uno solo desincroniza
-// todo lo que viene después (síntoma típico: el logo, que va en un bloque
-// grande de una vez, se libra más o menos, pero el texto sale ilegible).
+// BLE sin negociar un MTU mayor), en modo "sin respuesta" (writeValueWithoutResponse)
+// siempre que la impresora lo soporte. Se probó primero "con respuesta"
+// (esperando la confirmación de cada trozo antes de mandar el siguiente),
+// pero en esta impresora eso desestabilizaba la conexión Bluetooth entera
+// (se desconectaba a media impresión) — probablemente porque su firmware
+// no lleva bien tantas idas y vueltas de confirmación seguidas. "Sin
+// respuesta" + trozos pequeños + una pequeña espera entre cada uno es el
+// equilibrio habitual para estas impresoras BLE genéricas: suficientemente
+// espaciado para no perder bytes (el fallo anterior, texto ilegible), pero
+// sin forzar tanto la conexión como para que se caiga.
 async function _ptBleEnviarBytes(bytes) {
   const TAMANO_TROZO = 20;
-  const ESPERA_MS = 30;
-  const conRespuesta = !!_ptBleCharacteristic.properties.write;
+  const ESPERA_MS = 25;
+  const sinRespuesta = !!_ptBleCharacteristic.properties.writeWithoutResponse;
   for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
     const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
-    if (conRespuesta) await _ptBleCharacteristic.writeValue(trozo);
-    else await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
+    if (sinRespuesta) await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
+    else await _ptBleCharacteristic.writeValue(trozo);
     await new Promise(r => setTimeout(r, ESPERA_MS));
   }
 }
