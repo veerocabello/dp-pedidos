@@ -16770,6 +16770,18 @@ function _mostrarAlertaTablet(data) {
   }, { passive: true });
 })();
 
+// ── Service Worker (PWA) ──────────────────────────────────────────
+// Habilita "Añadir a pantalla de inicio" y sirve css/js/img desde caché
+// para que cargue más rápido con conexión floja. Ver sw.js para el
+// detalle de qué se cachea (nunca HTML, PHP ni Firebase).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('[SW] No se pudo registrar:', err);
+    });
+  });
+}
+
 // ── BUSCADOR del panel admin y del panel bimba ──
 // Busca en secciones (navegación estática) y en contenido real: productos
 // de la carta, ingredientes de stock, empleados, códigos de descuento y
