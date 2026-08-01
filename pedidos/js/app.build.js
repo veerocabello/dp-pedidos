@@ -2895,8 +2895,12 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     // cliente estaba escribiendo su nombre lo dejaba vacío sin que se
     // notara, y al confirmar el pedido se borraba y saltaba "escribe tu
     // nombre" aunque ya lo hubiera escrito).
-    const _nombreActualDrawer = (document.getElementById('drawer-customer-name') || {}).value || '';
-    const _telActualDrawer = (document.getElementById('drawer-customer-phone') || {}).value || '';
+    // Si el campo del cajón todavía no existe/está vacío (primer pintado),
+    // se cae al valor del formulario de escritorio — así, si se rellenó
+    // solo con el nombre/teléfono guardados de una visita anterior (ver
+    // init.js), el cajón móvil también sale ya relleno en vez de vacío.
+    const _nombreActualDrawer = (document.getElementById('drawer-customer-name') || {}).value || (document.getElementById('customer-name') || {}).value || '';
+    const _telActualDrawer = (document.getElementById('drawer-customer-phone') || {}).value || (document.getElementById('customer-phone') || {}).value || '';
     const _digitsActualDrawer = _telActualDrawer.replace(/\D/g, '').slice(0, 9);
     const _premioHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div id=\"fidelizacion-premio-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF81 \xA1Tienes una patata gratis disponible! A\xF1ade cualquier patata del men\xFA y se aplicar\xE1 el descuento autom\xE1ticamente al confirmar.</div>"
@@ -4582,6 +4586,14 @@ async function showSuccess(orderNum, slotTime) {
     }
   } catch (e) {}
 
+  // Recordar nombre y teléfono para prellenarlos en la próxima visita (ver
+  // _rellenarDatosClienteGuardados en init.js) — se guarda sin caducar,
+  // igual que "dpf_ultimo_pedido"; el cliente puede editarlos igualmente.
+  try {
+    if (name) localStorage.setItem('dpf_cliente_nombre', name);
+    if (phone) localStorage.setItem('dpf_cliente_telefono', phone);
+  } catch (e) {}
+
   // Registrar el slot
   if (slotTime) incrementSlot(slotTime);
 
@@ -4641,6 +4653,9 @@ async function showSuccess(orderNum, slotTime) {
   const saveWarning = document.getElementById('success-save-warning');
   if (saveWarning) saveWarning.style.display = 'none';
   if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
+  // Pequeño golpe táctil al confirmar, en móviles que lo soporten — refuerza
+  // la sensación de "hecho" sin tener que mirar la pantalla.
+  if (navigator.vibrate) { try { navigator.vibrate([80, 40, 80]); } catch (e) {} }
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');
@@ -8249,6 +8264,17 @@ function promoAddToCart(p, opts) {
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
 
+// Algunas descripciones llevan pegado "· NO se pueden quitar ingredientes"
+// (p.ej. Carbonara, Boloñesa) — se separa en su propia línea y en rojo
+// para que se note de un vistazo, en vez de perderse dentro del texto.
+function _formatDescConAvisoIngredientes(desc) {
+  if (!desc) return '';
+  const marcador = 'NO se pueden quitar ingredientes';
+  const idx = desc.indexOf(marcador);
+  if (idx === -1) return desc;
+  const antes = desc.slice(0, idx).replace(/[\s·]+$/, '');
+  return antes + '<br><span style="color:#c0392b;font-weight:700">⚠️ ' + marcador + '</span>';
+}
 function renderMenu() {
   window._tartaLastSub = null;
   var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
@@ -8346,7 +8372,7 @@ function renderMenu() {
       + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
       + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</div>'
-      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
+      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : _formatDescConAvisoIngredientes(item.desc)) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
       + '<div class="item-controls">' + controls + '</div>'
@@ -10179,7 +10205,10 @@ function _ptStatusUI(connected, msg) {
 // que para Bluetooth, ya que _ptStatusUI es la única función de estado
 // que comparten ambos transportes.
 function _ptAvisoDesconexionImpresora() {
-  if (typeof playNotificationSound === 'function') playNotificationSound('urgente');
+  if (typeof playNotificationSound === 'function') {
+    const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
+    playNotificationSound(tipo);
+  }
   document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
     el.style.display = el.dataset.showDisplay || 'block';
   });
@@ -12685,6 +12714,31 @@ function saveSoundConfig() {
   showToast('local-toast');
   logActivity("\uD83D\uDD14 Sonido configurado: ".concat(type, ", volumen ").concat(volume, "%"));
 }
+// Sonido de "impresora desconectada" — aparte del de nuevo pedido, para
+// que se puedan distinguir a oído. Solo el tipo (mismo volumen que el de
+// nuevo pedido, no hace falta duplicar ese control).
+const SOUND_DESCONEXION_KEY = 'dpf_sound_desconexion_config';
+function getSoundDesconexionType() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SOUND_DESCONEXION_KEY) || '{}');
+    return cfg.type || 'urgente';
+  } catch { return 'urgente'; }
+}
+function saveSoundDesconexionConfig() {
+  const sel = document.getElementById('sound-desconexion-type');
+  const type = (sel && sel.value) || 'urgente';
+  localStorage.setItem(SOUND_DESCONEXION_KEY, JSON.stringify({ type }));
+  showToast('local-toast');
+  logActivity('🔌 Sonido de desconexión configurado: ' + type);
+}
+function loadSoundDesconexionConfigUI() {
+  const sel = document.getElementById('sound-desconexion-type');
+  if (sel) sel.value = getSoundDesconexionType();
+}
+function testSoundDesconexion() {
+  const sel = document.getElementById('sound-desconexion-type');
+  playNotificationSound((sel && sel.value) || 'urgente');
+}
 function loadSoundConfigUI() {
   const cfg = getSoundConfig();
   const sel = document.getElementById('sound-type');
@@ -13825,6 +13879,7 @@ function showAdminSection(id, btn) {
   }
   if (id === 'local') {
     loadSoundConfigUI();
+    loadSoundDesconexionConfigUI();
     updateForceSlotsBtn();
     loadSlotTurnosUI();
     loadFeeUI();
@@ -17064,6 +17119,28 @@ function _mostrarAlertaTablet(data) {
     requestAnimationFrame(actualizar);
   }, { passive: true });
 })();
+
+// ── Recordar nombre y teléfono entre visitas ──────────────────────
+// Se guardan (antifraude.js, justo tras confirmar un pedido) sin caducar,
+// y se rellenan solos aquí en la próxima visita — el cliente puede
+// editarlos igual si ha cambiado de número o quiere pedir para otra
+// persona. Solo se prellena el campo de escritorio: el del cajón móvil
+// lo recoge él solo la primera vez que se pinta (ver _syncCartDrawer en
+// carrito-checkout.js, que cae al valor de escritorio si el suyo propio
+// está vacío).
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    const nombreGuardado = localStorage.getItem('dpf_cliente_nombre');
+    const telGuardado = localStorage.getItem('dpf_cliente_telefono');
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    if (nombreGuardado && nameEl && !nameEl.value) nameEl.value = nombreGuardado;
+    if (telGuardado && phoneEl && !phoneEl.value) {
+      phoneEl.value = telGuardado;
+      if (typeof formatPhone === 'function') formatPhone(phoneEl);
+    }
+  } catch (e) {}
+});
 
 // ── Service Worker (PWA) ──────────────────────────────────────────
 // Habilita "Añadir a pantalla de inicio" y sirve css/js/img desde caché

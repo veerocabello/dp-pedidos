@@ -452,6 +452,17 @@ function promoAddToCart(p, opts) {
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
 
+// Algunas descripciones llevan pegado "· NO se pueden quitar ingredientes"
+// (p.ej. Carbonara, Boloñesa) — se separa en su propia línea y en rojo
+// para que se note de un vistazo, en vez de perderse dentro del texto.
+function _formatDescConAvisoIngredientes(desc) {
+  if (!desc) return '';
+  const marcador = 'NO se pueden quitar ingredientes';
+  const idx = desc.indexOf(marcador);
+  if (idx === -1) return desc;
+  const antes = desc.slice(0, idx).replace(/[\s·]+$/, '');
+  return antes + '<br><span style="color:#c0392b;font-weight:700">⚠️ ' + marcador + '</span>';
+}
 function renderMenu() {
   window._tartaLastSub = null;
   var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
@@ -549,7 +560,7 @@ function renderMenu() {
       + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
       + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</div>'
-      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
+      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : _formatDescConAvisoIngredientes(item.desc)) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
       + '<div class="item-controls">' + controls + '</div>'

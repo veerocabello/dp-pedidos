@@ -113,8 +113,12 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     // cliente estaba escribiendo su nombre lo dejaba vacío sin que se
     // notara, y al confirmar el pedido se borraba y saltaba "escribe tu
     // nombre" aunque ya lo hubiera escrito).
-    const _nombreActualDrawer = (document.getElementById('drawer-customer-name') || {}).value || '';
-    const _telActualDrawer = (document.getElementById('drawer-customer-phone') || {}).value || '';
+    // Si el campo del cajón todavía no existe/está vacío (primer pintado),
+    // se cae al valor del formulario de escritorio — así, si se rellenó
+    // solo con el nombre/teléfono guardados de una visita anterior (ver
+    // init.js), el cajón móvil también sale ya relleno en vez de vacío.
+    const _nombreActualDrawer = (document.getElementById('drawer-customer-name') || {}).value || (document.getElementById('customer-name') || {}).value || '';
+    const _telActualDrawer = (document.getElementById('drawer-customer-phone') || {}).value || (document.getElementById('customer-phone') || {}).value || '';
     const _digitsActualDrawer = _telActualDrawer.replace(/\D/g, '').slice(0, 9);
     const _premioHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div id=\"fidelizacion-premio-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF81 \xA1Tienes una patata gratis disponible! A\xF1ade cualquier patata del men\xFA y se aplicar\xE1 el descuento autom\xE1ticamente al confirmar.</div>"

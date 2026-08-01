@@ -225,7 +225,10 @@ function _ptStatusUI(connected, msg) {
 // que para Bluetooth, ya que _ptStatusUI es la única función de estado
 // que comparten ambos transportes.
 function _ptAvisoDesconexionImpresora() {
-  if (typeof playNotificationSound === 'function') playNotificationSound('urgente');
+  if (typeof playNotificationSound === 'function') {
+    const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
+    playNotificationSound(tipo);
+  }
   document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
     el.style.display = el.dataset.showDisplay || 'block';
   });

@@ -344,6 +344,14 @@ async function showSuccess(orderNum, slotTime) {
     }
   } catch (e) {}
 
+  // Recordar nombre y teléfono para prellenarlos en la próxima visita (ver
+  // _rellenarDatosClienteGuardados en init.js) — se guarda sin caducar,
+  // igual que "dpf_ultimo_pedido"; el cliente puede editarlos igualmente.
+  try {
+    if (name) localStorage.setItem('dpf_cliente_nombre', name);
+    if (phone) localStorage.setItem('dpf_cliente_telefono', phone);
+  } catch (e) {}
+
   // Registrar el slot
   if (slotTime) incrementSlot(slotTime);
 
@@ -403,6 +411,9 @@ async function showSuccess(orderNum, slotTime) {
   const saveWarning = document.getElementById('success-save-warning');
   if (saveWarning) saveWarning.style.display = 'none';
   if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
+  // Pequeño golpe táctil al confirmar, en móviles que lo soporten — refuerza
+  // la sensación de "hecho" sin tener que mirar la pantalla.
+  if (navigator.vibrate) { try { navigator.vibrate([80, 40, 80]); } catch (e) {} }
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');

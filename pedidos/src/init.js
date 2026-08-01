@@ -849,6 +849,28 @@ function _mostrarAlertaTablet(data) {
   }, { passive: true });
 })();
 
+// ── Recordar nombre y teléfono entre visitas ──────────────────────
+// Se guardan (antifraude.js, justo tras confirmar un pedido) sin caducar,
+// y se rellenan solos aquí en la próxima visita — el cliente puede
+// editarlos igual si ha cambiado de número o quiere pedir para otra
+// persona. Solo se prellena el campo de escritorio: el del cajón móvil
+// lo recoge él solo la primera vez que se pinta (ver _syncCartDrawer en
+// carrito-checkout.js, que cae al valor de escritorio si el suyo propio
+// está vacío).
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    const nombreGuardado = localStorage.getItem('dpf_cliente_nombre');
+    const telGuardado = localStorage.getItem('dpf_cliente_telefono');
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    if (nombreGuardado && nameEl && !nameEl.value) nameEl.value = nombreGuardado;
+    if (telGuardado && phoneEl && !phoneEl.value) {
+      phoneEl.value = telGuardado;
+      if (typeof formatPhone === 'function') formatPhone(phoneEl);
+    }
+  } catch (e) {}
+});
+
 // ── Service Worker (PWA) ──────────────────────────────────────────
 // Habilita "Añadir a pantalla de inicio" y sirve css/js/img desde caché
 // para que cargue más rápido con conexión floja. Ver sw.js para el

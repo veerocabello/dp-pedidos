@@ -427,6 +427,26 @@
           </div>
         </div>
 
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:14px;padding:14px 16px;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:3px">🔌 Sonido de impresora desconectada</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Distinto al de nuevo pedido, para no confundirlos</div>
+          <select id="sound-desconexion-type" style="width:100%;padding:7px 10px;margin-bottom:10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            <option value="ding">🔔 Ding suave</option>
+            <option value="campana">🎵 Campana triple</option>
+            <option value="caja">🛎️ Campana de caja</option>
+            <option value="chime">✨ Chime suave</option>
+            <option value="bip">📟 Bip electrónico</option>
+            <option value="doble">🔔🔔 Doble pitido</option>
+            <option value="coffeeshop">☕ Coffee shop</option>
+            <option value="urgente">🚨 Urgente</option>
+            <option value="none">🔇 Sin sonido</option>
+          </select>
+          <div style="display:flex;gap:8px">
+            <button class="admin-save-btn" onclick="testSoundDesconexion()" style="background:var(--brown);color:var(--cream)">▶️ Probar</button>
+            <button class="admin-save-btn" onclick="saveSoundDesconexionConfig()">💾 Guardar</button>
+          </div>
+        </div>
+
       </div>
 
       <!-- PEDIDOS EN VIVO -->

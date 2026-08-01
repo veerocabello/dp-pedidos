@@ -723,6 +723,7 @@ function showAdminSection(id, btn) {
   }
   if (id === 'local') {
     loadSoundConfigUI();
+    loadSoundDesconexionConfigUI();
     updateForceSlotsBtn();
     loadSlotTurnosUI();
     loadFeeUI();

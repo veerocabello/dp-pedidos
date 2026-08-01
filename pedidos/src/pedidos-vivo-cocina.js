@@ -461,6 +461,31 @@ function saveSoundConfig() {
   showToast('local-toast');
   logActivity("\uD83D\uDD14 Sonido configurado: ".concat(type, ", volumen ").concat(volume, "%"));
 }
+// Sonido de "impresora desconectada" — aparte del de nuevo pedido, para
+// que se puedan distinguir a oído. Solo el tipo (mismo volumen que el de
+// nuevo pedido, no hace falta duplicar ese control).
+const SOUND_DESCONEXION_KEY = 'dpf_sound_desconexion_config';
+function getSoundDesconexionType() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SOUND_DESCONEXION_KEY) || '{}');
+    return cfg.type || 'urgente';
+  } catch { return 'urgente'; }
+}
+function saveSoundDesconexionConfig() {
+  const sel = document.getElementById('sound-desconexion-type');
+  const type = (sel && sel.value) || 'urgente';
+  localStorage.setItem(SOUND_DESCONEXION_KEY, JSON.stringify({ type }));
+  showToast('local-toast');
+  logActivity('🔌 Sonido de desconexión configurado: ' + type);
+}
+function loadSoundDesconexionConfigUI() {
+  const sel = document.getElementById('sound-desconexion-type');
+  if (sel) sel.value = getSoundDesconexionType();
+}
+function testSoundDesconexion() {
+  const sel = document.getElementById('sound-desconexion-type');
+  playNotificationSound((sel && sel.value) || 'urgente');
+}
 function loadSoundConfigUI() {
   const cfg = getSoundConfig();
   const sel = document.getElementById('sound-type');
