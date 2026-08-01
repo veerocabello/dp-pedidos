@@ -113,7 +113,8 @@ Escribe el nombre exacto del que quieres eliminar:`);if(!n||!n.trim())return;con
         <div style="background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
           <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8">\u{1F4F1}</div>
           <p style="font-size:12px;font-weight:700;color:#3D1F0D;margin:0">Se verificar\xE1 tu n\xFAmero por SMS</p>
-          <p style="font-size:11.5px;color:#8A6A4E;margin:2px 0 0">Solo para confirmar el pedido \xB7 \u{1F512} No lo compartimos con nadie</p>
+          <p style="font-size:11.5px;color:#8A6A4E;margin:2px 0 0">Solo para confirmar el pedido</p>
+          <p style="font-size:11.5px;color:#8A6A4E;margin:1px 0 0">\u{1F512} No lo compartimos con nadie</p>
         </div>
       </div>
       <div class="form-group">
