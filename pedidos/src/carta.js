@@ -836,6 +836,13 @@ function renderCart() {
   const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
   if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
   const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  // El aviso de "se comprobará el carné" solo se despliega dentro de la
+  // misma caja al marcar la casilla — compacto (una sola línea) mientras
+  // nadie la usa, en vez de mostrarlo siempre para todo el mundo.
+  const studentDiscountBoxEl = document.getElementById('student-discount-box');
+  const studentDiscountWarnEl = document.getElementById('student-discount-warn');
+  if (studentDiscountBoxEl) studentDiscountBoxEl.style.borderColor = studentDiscountChecked ? 'var(--amber)' : 'var(--warm)';
+  if (studentDiscountWarnEl) studentDiscountWarnEl.style.display = studentDiscountChecked ? 'block' : 'none';
   const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
   const studentDiscountAmt = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
   const studentDiscountEl = document.getElementById('cart-student-discount-row');

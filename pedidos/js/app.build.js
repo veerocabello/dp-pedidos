@@ -2634,6 +2634,13 @@ function renderCart() {
   const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
   if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
   const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  // El aviso de "se comprobará el carné" solo se despliega dentro de la
+  // misma caja al marcar la casilla — compacto (una sola línea) mientras
+  // nadie la usa, en vez de mostrarlo siempre para todo el mundo.
+  const studentDiscountBoxEl = document.getElementById('student-discount-box');
+  const studentDiscountWarnEl = document.getElementById('student-discount-warn');
+  if (studentDiscountBoxEl) studentDiscountBoxEl.style.borderColor = studentDiscountChecked ? 'var(--amber)' : 'var(--warm)';
+  if (studentDiscountWarnEl) studentDiscountWarnEl.style.display = studentDiscountChecked ? 'block' : 'none';
   const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
   const studentDiscountAmt = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
   const studentDiscountEl = document.getElementById('cart-student-discount-row');
@@ -2853,7 +2860,7 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
         ? "<div id=\"fidelizacion-proximo-sello-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF89 \xA1Este es tu pedido n\xFAmero 10! Al confirmarlo, tu patata gratis estar\xE1 disponible en tu pr\xF3ximo pedido.</div>"
         : '');
     const _studentDiscountHtmlDrawer = studentDiscountEnabledCfg
-      ? "<div style=\"margin-top:14px\"><label style=\"display:flex;align-items:center;gap:10px;background:#FFF8EE;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ".concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado</span></label><div style=\"display:flex;gap:8px;align-items:flex-start;background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-top:8px\"><span style=\"font-size:16px;line-height:1.3\">\u26A0\uFE0F</span><span style=\"font-size:12.5px;color:#5a3e1b;font-weight:600;line-height:1.4\">Se te pedir\xE1 el carn\xE9 de estudiante o jubilado en el mostrador. <u>Si no lo presentas, el descuento no se aplicar\xE1</u> y se cobrar\xE1 el precio normal.</span></div></div>")
+      ? "<div style=\"margin-top:14px\"><div id=\"drawer-student-discount-box\" style=\"background:#fff;border:1.5px solid ".concat(_estudianteCheckedDrawer ? '#E8943A' : '#F5E6C8', ";border-radius:12px;padding:11px 14px\"><label style=\"display:flex;align-items:center;gap:10px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ").concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado</span></label><div style=\"display:").concat(_estudianteCheckedDrawer ? 'block' : 'none', ";font-size:12px;color:#8A6A4E;line-height:1.45;margin-top:8px;padding-left:28px\">\u26A0\uFE0F Se pedir\xE1 el carn\xE9 en el mostrador. <b style=\"color:#C2711A\">Si no se presenta, el descuento no se aplicar\xE1</b> y se cobrar\xE1 el precio normal.</div></div></div>")
       : '';
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
