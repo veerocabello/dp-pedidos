@@ -13,7 +13,8 @@
     </div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div id="kitchen-clock" style="font-size:18px;font-weight:700;color:var(--white)"></div>
-      <button onclick="conectarImpresoraTermica()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">🔌 Impresora</button>
+      <button onclick="conectarImpresoraTermica()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">🔌 USB</button>
+      <button onclick="conectarImpresoraBluetooth()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">📶 Bluetooth</button>
       <button onclick="confirmarTodosListos()" style="background:#27ae60;border:none;color:var(--white);padding:8px 16px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✅ Todos listos</button>
       <button onclick="toggleKitchenTheme()" id="kitchen-theme-btn" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:16px;cursor:pointer">🌙</button>
       <button onclick="closeKitchenMode()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--white);padding:8px 18px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✕ Salir</button>
@@ -435,7 +436,8 @@
           <div class="pt-papel-aviso" style="display:none;width:100%;order:98;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
             <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
-            <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 Conectar impresora</button>
+            <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 USB</button>
+            <button class="admin-save-btn" onclick="conectarImpresoraBluetooth()" style="background:var(--brown);padding:8px 14px;font-size:13px">📶 Bluetooth</button>
             <button class="admin-save-btn" onclick="openKitchenMode()" style="background:var(--brown);padding:8px 18px;font-size:13px">🍳 Pantalla cocina</button>
             <button class="admin-save-btn" onclick="loadLiveOrders()" style="background:var(--brown);padding:8px 18px;font-size:13px">🔄 Actualizar</button>
             <button class="admin-save-btn" onclick="imprimirTodosLosActivos()" style="background:var(--brown);padding:8px 18px;font-size:13px">🖨️ Imprimir todos</button>
