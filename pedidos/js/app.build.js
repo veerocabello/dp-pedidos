@@ -10459,6 +10459,27 @@ if (navigator.usb) {
   });
 }
 
+// ── Diagnóstico: ¿la impresora es compatible con Bluetooth del navegador? ──
+// Solo comprueba, no imprime nada por Bluetooth (esta web imprime por USB).
+// El navegador solo puede ver impresoras Bluetooth de bajo consumo (BLE) —
+// la mayoría de impresoras térmicas baratas usan Bluetooth "clásico" (SPP),
+// que ningún navegador puede usar. Este botón le dice a la usuaria cuál de
+// los dos casos tiene, sin que tengamos que adivinarlo.
+async function probarBluetoothImpresora() {
+  const msgEl = document.getElementById('pt-bluetooth-msg');
+  const setMsg = (texto, color) => { if (msgEl) { msgEl.textContent = texto; msgEl.style.color = color; } };
+  if (!navigator.bluetooth) {
+    setMsg('❌ Este navegador no soporta Bluetooth web. Pruébalo en Chrome o Edge de escritorio o Android — no funciona en iPhone/iPad ni en Safari.', '#c0392b');
+    return;
+  }
+  try {
+    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
+    setMsg('✅ Apareció "' + (device.name || 'sin nombre') + '" — el navegador SÍ puede verla. Es compatible con Bluetooth de bajo consumo (BLE).', '#27ae60');
+  } catch (e) {
+    setMsg('⚠️ No apareció ninguna impresora en la ventana (o la cerraste). Si tu impresora no salía ahí aunque tuviera el Bluetooth encendido, probablemente usa Bluetooth "clásico" y no es compatible con ningún navegador.', '#c0392b');
+  }
+}
+
 // ── HISTORIAL (últimos 30 días) ──
 const HISTORIAL_KEY = 'dpf_historial';
 function getHistorial() {
