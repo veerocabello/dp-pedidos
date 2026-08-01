@@ -7308,32 +7308,6 @@ function toggleAdminPwdVisibility(btn) {
 }
 
 
-// ── Alerta de slot casi lleno ─────────────────────────────
-const _slotAlertSent = {};
-async function _checkSlotAlmostFull(slotTime, count, max) {
-  if (!slotTime || !max) return;
-  const pct = Math.round((count / max) * 100);
-  if (pct < 80) return;
-  // La fecha va incluida en la clave para que la alerta pueda volver a
-  // dispararse cada día — antes, si la pantalla de cocina se quedaba
-  // abierta pasada la medianoche (uso normal en una pantalla siempre
-  // encendida), un slot que llegara otra vez a ese mismo recuento al día
-  // siguiente no volvía a avisar hasta recargar la página.
-  const key = new Date().toISOString().slice(0, 10) + '_' + slotTime + '_' + count;
-  if (_slotAlertSent[key]) return;
-  _slotAlertSent[key] = true;
-  try {
-    if (typeof emailjs === 'undefined') return;
-    emailjs.init('Euum_k_XJdrejjnKj');
-    await emailjs.send('service_bil4ri5', 'template_ee4f7sp', {
-      slot:  slotTime,
-      count: count,
-      max:   max,
-      pct:   pct
-    });
-  } catch(e) {}
-}
-
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}
@@ -11590,11 +11564,6 @@ function initFirebaseListeners() {
           }
         }
       }
-      // Comprobar si algún slot está casi lleno
-      const slotMax = getSlotMax();
-      Object.entries(slots || {}).forEach(([slot, count]) => {
-        _checkSlotAlmostFull(slot, count, slotMax);
-      });
       var _document$getElementB0;
       _slotsCache = slots || {};
       // Forzar que getSlotsData use _slotsCache en vez de stats locales

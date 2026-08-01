@@ -1103,11 +1103,6 @@ function initFirebaseListeners() {
           }
         }
       }
-      // Comprobar si algún slot está casi lleno
-      const slotMax = getSlotMax();
-      Object.entries(slots || {}).forEach(([slot, count]) => {
-        _checkSlotAlmostFull(slot, count, slotMax);
-      });
       var _document$getElementB0;
       _slotsCache = slots || {};
       // Forzar que getSlotsData use _slotsCache en vez de stats locales
