@@ -329,9 +329,13 @@ window._adminLoggedIn = false;
 let _adminLoggedIn = false; // true solo cuando hay sesión de admin activa
 let activeCategory = "Todos";
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
+const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
 function initTabs() {
   const tabsEl = document.getElementById("tabs");
-  tabsEl.innerHTML = categories.map(c => "<button class=\"tab ".concat(c === activeCategory ? 'active' : '', "\" onclick=\"setCategory('").concat(c, "')\">").concat(c, "</button>")).join('');
+  tabsEl.innerHTML = categories.map(c => {
+    const icon = CATEGORY_ICONS[c] || '🍽️';
+    return "<button class=\"tab ".concat(c === activeCategory ? 'active' : '', "\" onclick=\"setCategory('").concat(c, "')\"><span class=\"tab-icon\">").concat(icon, "</span><span>").concat(c, "</span></button>");
+  }).join('');
 }
 function setCategory(cat) {
   activeCategory = cat;
