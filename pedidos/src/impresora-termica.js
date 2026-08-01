@@ -202,12 +202,36 @@ let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir �
 // Puede haber varias copias del indicador de estado en distintas pantallas
 // (Configuración del ticket, Pedidos en vivo, Panel bimba) — se actualizan todas
 // a la vez porque comparten la misma conexión USB (misma pestaña del navegador).
+// Recuerda si estaba conectada la última vez que se llamó a _ptStatusUI,
+// para poder distinguir "se acaba de desconectar ahora mismo" (dispara
+// sonido + banner) de "sigue sin estar conectada" (cada reintento fallido
+// vuelve a llamar con connected=false, y no queremos repetir la alerta
+// cada 8 segundos mientras tanto).
+let _ptEstabaConectada = false;
 function _ptStatusUI(connected, msg) {
+  if (_ptEstabaConectada && !connected) _ptAvisoDesconexionImpresora();
+  if (connected) _ptOcultarAvisoDesconexion();
+  _ptEstabaConectada = connected;
   const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
   document.querySelectorAll('.pt-conn-status').forEach(el => {
     el.textContent = texto;
     el.style.color = connected ? '#166534' : '#991B1B';
   });
+}
+
+// Aviso de que la impresora se acaba de desconectar — sonido distinto al
+// de "nuevo pedido" (para no confundirlos) y un banner visible tanto en
+// la pantalla de cocina como en el panel de admin. Vale igual para USB
+// que para Bluetooth, ya que _ptStatusUI es la única función de estado
+// que comparten ambos transportes.
+function _ptAvisoDesconexionImpresora() {
+  if (typeof playNotificationSound === 'function') playNotificationSound('urgente');
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
+    el.style.display = el.dataset.showDisplay || 'block';
+  });
+}
+function _ptOcultarAvisoDesconexion() {
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => { el.style.display = 'none'; });
 }
 
 // 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide

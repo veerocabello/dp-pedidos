@@ -29,6 +29,10 @@
   <div class="pt-papel-aviso" data-show-display="flex" style="display:none;background:#e74c3c;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap">
     <span style="font-size:15px;font-weight:700;color:var(--white)">📄 ¡Queda poco papel! Cambia el rollo antes de que se corte un ticket</span>
   </div>
+  <!-- IMPRESORA DESCONECTADA — cocina (banner grande, con sonido de aviso distinto al de "sin papel") -->
+  <div class="pt-desconexion-aviso" data-show-display="flex" style="display:none;background:#7a1a0e;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+    <span style="font-size:15px;font-weight:700;color:var(--white)">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</span>
+  </div>
   <!-- AUDIO UNLOCK — cocina -->
   <div id="kitchen-audio-banner" style="background:var(--amber);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
     <span style="font-size:15px;font-weight:700;color:var(--white)">🔇 Activa el audio para recibir alertas de nuevos pedidos</span>
@@ -434,6 +438,7 @@
           </div>
           <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
           <div class="pt-papel-aviso" style="display:none;width:100%;order:98;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
+          <div class="pt-desconexion-aviso" style="display:none;width:100%;order:97;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
             <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
             <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 USB</button>
@@ -1753,6 +1758,7 @@
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:6px 0 10px">Impresora térmica</div>
 
       <div class="pt-papel-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
+      <div class="pt-desconexion-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
         <span class="pt-conn-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
