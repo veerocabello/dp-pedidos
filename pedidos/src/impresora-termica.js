@@ -494,10 +494,30 @@ async function _ptBleEnviarBytes(bytes) {
   }
 }
 
+// "Pulso" de mantenimiento — un comando de estado en tiempo real (no
+// imprime nada en el papel) para generar tráfico en la conexión Bluetooth
+// mientras no hay ningún pedido que imprimir. Si falla, no pasa nada
+// grave: el intervalo que lo llama ya comprueba _ptIsConnected() cada
+// pocos segundos y dispara la reconexión si de verdad se ha caído.
+async function _ptBlePulso() {
+  if (_ptTransporte !== 'ble' || !_ptBleCharacteristic) return;
+  try {
+    const bytes = new Uint8Array([0x10, 0x04, 0x01]);
+    if (_ptBleCharacteristic.properties.writeWithoutResponse) {
+      await _ptBleCharacteristic.writeValueWithoutResponse(bytes);
+    } else if (_ptBleCharacteristic.properties.write) {
+      await _ptBleCharacteristic.writeValue(bytes);
+    }
+  } catch (e) {
+    // Se ignora — si de verdad se cayó la conexión, el siguiente chequeo
+    // de _ptIsConnected() lo detectará y disparará la reconexión.
+  }
+}
+
 // Imprime un ticket, repitiendo tantas copias como esté configurado.
 async function imprimirTicketTermico(ticket) {
   const tc = getTicketConfig();
-  const bytes = _ptBuildTicketBytes(ticket, _ptTransporte === 'ble');
+  const bytes = _ptBuildTicketBytes(ticket);
   _ptUltimoTicket = ticket;
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
   for (let i = 0; i < copias; i++) {
@@ -660,11 +680,21 @@ if (navigator.usb) {
   navigator.usb.addEventListener('connect', () => {
     if (!_ptIsConnected()) _ptReconectar();
   });
+}
+
+if (navigator.usb || navigator.bluetooth) {
+  if (!navigator.usb) document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
   // Reintento periódico de reconexión mientras no esté conectada — cubre el
-  // caso de que la tablet se haya quedado en reposo o Chrome no dispare el
-  // evento "connect" a tiempo.
+  // caso de que la tablet se haya quedado en reposo o no se dispare ningún
+  // evento de conexión a tiempo. Si SÍ está conectada por Bluetooth, se
+  // manda además un "pulso" (comando de estado en tiempo real, no imprime
+  // nada) para generar tráfico en la conexión — muchos módulos BLE baratos
+  // se desconectan solos tras un rato sin ningún dato, aunque estén dentro
+  // de alcance y con batería; este pulso evita que se les considere
+  // "inactivos" entre pedido y pedido.
   setInterval(() => {
-    if (!_ptIsConnected()) _ptReconectar();
+    if (!_ptIsConnected()) { _ptReconectar(); return; }
+    if (_ptTransporte === 'ble') _ptBlePulso();
     else _ptComprobarPapel();
   }, 8000);
   // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
