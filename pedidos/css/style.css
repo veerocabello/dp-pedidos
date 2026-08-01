@@ -204,6 +204,13 @@
     gap: 24px;
     align-items: start;
   }
+  /* Por defecto, una columna de grid nunca se encoge por debajo del ancho
+     mínimo de su contenido (min-width: auto). Las pestañas de categoría
+     (fila con scroll horizontal propio) tienen ahora un ancho de contenido
+     mayor que antes, y sin esto obligaban a TODA la columna —y por tanto
+     a la página entera— a ensancharse más que la pantalla, en vez de
+     quedarse contenidas dentro de su propio scroll interno. */
+  main > div { min-width: 0; }
   /* Admin sections visibility */
 .admin-section { display: none !important; }
 .admin-section.active { display: block !important; }
