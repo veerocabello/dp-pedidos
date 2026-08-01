@@ -8291,7 +8291,7 @@ function renderMenu() {
     sep = sep + tartaSep;
     let controls;
     if (soldout) {
-      controls = '<span style="font-size:12px;color:#c0392b;font-weight:700">AGOTADO</span>';
+      controls = '<span style="background:#c0392b;color:#fff;font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:99px;letter-spacing:.02em;white-space:nowrap">AGOTADO</span>';
     } else if (qty > 0) {
       controls = '<button class="qty-btn" onclick="changeQty(' + item.id + ',-1)">−</button>'
                + '<span class="qty-num">' + qty + '</span>'

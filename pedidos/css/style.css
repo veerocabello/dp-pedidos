@@ -572,7 +572,7 @@
   .qty-num { font-size: 15px; font-weight: 700; min-width: 20px; text-align: center; color: var(--brown); }
   .add-btn {
     width: 44px; height: 44px;
-    border-radius: 9px;
+    border-radius: 50%;
     border: none;
     background: #3D1F0D;
     color: var(--gold);
@@ -588,7 +588,7 @@
   .add-btn:hover { background: #2a1506; color: var(--gold); transform: scale(1.08); }
 
   @media (max-width: 500px) {
-    .add-btn { width: 44px; height: 44px; border-radius: 9px; font-size: 22px; }
+    .add-btn { width: 44px; height: 44px; border-radius: 50%; font-size: 22px; }
     .add-btn-text { width: auto; height: 44px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
   }
 
