@@ -10398,20 +10398,20 @@ async function _ptBleReconectar() {
   }
 }
 
-// Trocea el envío en paquetes muy pequeños (20 bytes — el límite clásico de
-// BLE sin negociar un MTU mayor), en modo "sin respuesta" (writeValueWithoutResponse)
-// siempre que la impresora lo soporte. Se probó primero "con respuesta"
-// (esperando la confirmación de cada trozo antes de mandar el siguiente),
-// pero en esta impresora eso desestabilizaba la conexión Bluetooth entera
-// (se desconectaba a media impresión) — probablemente porque su firmware
-// no lleva bien tantas idas y vueltas de confirmación seguidas. "Sin
-// respuesta" + trozos pequeños + una pequeña espera entre cada uno es el
-// equilibrio habitual para estas impresoras BLE genéricas: suficientemente
-// espaciado para no perder bytes (el fallo anterior, texto ilegible), pero
-// sin forzar tanto la conexión como para que se caiga.
+// Con esta impresora en concreto se han probado dos extremos:
+//  - Trozos de 180 bytes: la conexión aguanta todo el ticket sin caerse,
+//    pero el texto sale ilegible (demasiados bytes seguidos sin dar
+//    tiempo a procesarlos).
+//  - Trozos de 20 bytes: para un ticket normal son 200+ escrituras
+//    Bluetooth seguidas, y eso desestabiliza la conexión de esta
+//    impresora (se desconecta a media impresión, con o sin respuesta).
+// Se prueba un punto intermedio: trozos moderados (100 bytes, menos
+// escrituras totales que a 20) con más espera entre cada uno (más tiempo
+// de proceso que a 180) — sin respuesta, que es lo que mejor aguantó la
+// conexión en las pruebas anteriores.
 async function _ptBleEnviarBytes(bytes) {
-  const TAMANO_TROZO = 20;
-  const ESPERA_MS = 25;
+  const TAMANO_TROZO = 100;
+  const ESPERA_MS = 45;
   const sinRespuesta = !!_ptBleCharacteristic.properties.writeWithoutResponse;
   for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
     const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
