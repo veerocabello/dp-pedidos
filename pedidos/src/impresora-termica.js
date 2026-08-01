@@ -289,13 +289,25 @@ async function _ptReconectar() {
   if (_ptReconectando) return false;
   _ptReconectando = true;
   try {
-    const devices = await navigator.usb.getDevices();
-    if (!devices.length) { _ptStatusUI(false); return false; }
-    const device = devices[0];
-    const { epOut, epIn } = await _ptClaimInterface(device);
-    _ptDevice = device;
-    _ptEndpointOut = epOut;
-    _ptEndpointIn = epIn;
+    // Límite de tiempo de seguridad — si getDevices()/claimInterface() se
+    // quedaran colgados sin resolver ni rechazar nunca (un fallo raro del
+    // driver USB del sistema), sin esto el candado de arriba se quedaría
+    // en true para siempre y ningún disparador podría volver a intentar
+    // reconectar hasta recargar la página entera.
+    const resultado = await Promise.race([
+      (async () => {
+        const devices = await navigator.usb.getDevices();
+        if (!devices.length) return null;
+        const device = devices[0];
+        const { epOut, epIn } = await _ptClaimInterface(device);
+        return { device, epOut, epIn };
+      })(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando con la impresora')), 6000))
+    ]);
+    if (!resultado) { _ptStatusUI(false); return false; }
+    _ptDevice = resultado.device;
+    _ptEndpointOut = resultado.epOut;
+    _ptEndpointIn = resultado.epIn;
     _ptStatusUI(true);
     return true;
   } catch (e) {

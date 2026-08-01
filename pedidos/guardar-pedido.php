@@ -94,6 +94,30 @@ function dpf_check_limit($file, $max, $window) {
     return true;
 }
 
+// php://input solo se puede leer una vez — se captura aquí (para la
+// comprobación de "ping" de abajo) y se reutiliza más adelante en vez de
+// volver a leerlo, que devolvería una cadena vacía la segunda vez.
+$rawInput = file_get_contents('php://input');
+
+// ── Comprobación de estado del sistema (panel Alertas → "Estado del
+// sistema") ── Se resuelve ANTES del límite de intentos de pedidos y con su
+// propio límite, mucho más permisivo — si compartiera el mismo contador que
+// los pedidos reales (20/10min), comprobar el estado varias veces seguidas
+// desde el panel (típicamente durante una hora punta, justo cuando más lo
+// necesitas) podría dejar sin cupo a clientes de verdad que compartan la
+// misma IP del wifi del local. No toca Firebase ni credenciales, así que se
+// puede responder incluso antes de cargarlas.
+$payloadPing = json_decode($rawInput, true);
+if (is_array($payloadPing) && ($payloadPing['action'] ?? '') === 'ping') {
+    if (!dpf_check_limit($tmp_dir . '/dpf_ping_ip_' . md5($ip) . '.json', 120, $window)) {
+        http_response_code(429);
+        echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+        exit;
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 if (!dpf_check_limit($ip_file, $max_ip, $window)) {
     http_response_code(429);
     echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
@@ -572,20 +596,13 @@ function detectarPosibleDuplicado($databaseURL, $accessToken, $fecha, $phone, $t
 }
 
 try {
-    $raw = file_get_contents('php://input');
-    $payload = json_decode($raw, true);
+    // $rawInput ya se leyó arriba (antes de la comprobación de "ping") —
+    // php://input no se puede leer dos veces, así que se reutiliza en vez
+    // de volver a llamar a file_get_contents().
+    $payload = json_decode($rawInput, true);
     if (!$payload) {
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'Petición inválida']);
-        exit;
-    }
-
-    // ── Comprobación de estado del sistema (panel Alertas → "Estado del
-    // sistema") ── Responde de inmediato, sin tocar Firebase ni consumir
-    // ningún número/turno real, solo para confirmar que este script sigue
-    // vivo y respondiendo.
-    if (($payload['action'] ?? '') === 'ping') {
-        echo json_encode(['success' => true]);
         exit;
     }
 
