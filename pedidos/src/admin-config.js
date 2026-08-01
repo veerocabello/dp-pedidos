@@ -461,7 +461,7 @@ function _formatDescConAvisoIngredientes(desc) {
   const idx = desc.indexOf(marcador);
   if (idx === -1) return desc;
   const antes = desc.slice(0, idx).replace(/[\s·]+$/, '');
-  return antes + '<br><span style="color:#c0392b;font-weight:700">⚠️ ' + marcador + '</span>';
+  return antes + '<br><span style="color:#c0392b;font-weight:700;font-size:11px">⚠️ ' + marcador + '</span>';
 }
 function renderMenu() {
   window._tartaLastSub = null;
