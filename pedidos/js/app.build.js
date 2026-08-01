@@ -10398,16 +10398,26 @@ async function _ptBleReconectar() {
   }
 }
 
-// Trocea el envío — muchas impresoras BLE baratas pierden datos si se les
-// manda todo de golpe en una sola escritura grande.
+// Trocea el envío en paquetes muy pequeños (20 bytes — el límite clásico de
+// BLE sin negociar un MTU mayor) y, siempre que se pueda, con "respuesta"
+// (writeValue en vez de writeValueWithoutResponse): así cada trozo espera
+// la confirmación del propio módulo Bluetooth antes de mandar el siguiente,
+// en vez de dispararlos todos seguidos sin esperar a que le dé tiempo a
+// procesarlos. Por dentro, estos módulos BLE baratos suelen ser solo un
+// puente USB-Bluetooth con muy poca memoria intermedia: mandarles trozos
+// grandes o demasiado rápido hace que pierdan o desordenen bytes, y como
+// ESC/POS interpreta el ticket byte a byte, perder uno solo desincroniza
+// todo lo que viene después (síntoma típico: el logo, que va en un bloque
+// grande de una vez, se libra más o menos, pero el texto sale ilegible).
 async function _ptBleEnviarBytes(bytes) {
-  const TAMANO_TROZO = 180;
-  const usarSinRespuesta = !!_ptBleCharacteristic.properties.writeWithoutResponse;
+  const TAMANO_TROZO = 20;
+  const ESPERA_MS = 30;
+  const conRespuesta = !!_ptBleCharacteristic.properties.write;
   for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
     const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
-    if (usarSinRespuesta) await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
-    else await _ptBleCharacteristic.writeValue(trozo);
-    await new Promise(r => setTimeout(r, 20));
+    if (conRespuesta) await _ptBleCharacteristic.writeValue(trozo);
+    else await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
+    await new Promise(r => setTimeout(r, ESPERA_MS));
   }
 }
 
