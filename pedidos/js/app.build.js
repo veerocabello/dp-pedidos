@@ -10395,11 +10395,34 @@ async function conectarImpresoraBluetooth() {
     return false;
   }
   try {
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: PT_BLE_SERVICIOS_CANDIDATOS
-    });
+    // Si ya sabemos el nombre de la impresora de una conexión anterior, se
+    // filtra la ventana de selección para que solo aparezca ella (en vez
+    // de la lista completa de aparatos Bluetooth cercanos) — más rápido
+    // de encontrar cada vez que haga falta reconectar a mano. Si por lo
+    // que sea no aparece con ese filtro (nombre cambiado, etc.), se
+    // reintenta mostrando la lista completa antes de rendirse.
+    let nombreGuardado = null;
+    try { nombreGuardado = localStorage.getItem('dpf_bt_printer_name') || null; } catch (e) {}
+    let device;
+    if (nombreGuardado) {
+      try {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ name: nombreGuardado }], optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+      } catch (e) {
+        device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+      }
+    } else {
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+    }
     await _ptBleConectarDispositivo(device);
+    try { localStorage.setItem('dpf_bt_printer_name', device.name || ''); } catch (e) {}
+    // Diagnóstico: si este navegador no soporta navigator.bluetooth.getDevices()
+    // (API de permisos Bluetooth persistentes), no hay forma de reconectar sola
+    // tras recargar la página — habrá que pulsar este botón cada vez que se
+    // recargue o se abra de nuevo. No es un fallo del código: es un límite de
+    // seguridad del propio navegador/plataforma, sin alternativa posible.
+    if (!navigator.bluetooth.getDevices) {
+      console.warn('[Impresora BLE] Este navegador no soporta navigator.bluetooth.getDevices() — no podrá reconectar sola tras recargar la página, solo mientras esta pestaña siga abierta.');
+    }
     return true;
   } catch (e) {
     console.warn('[Impresora BLE] conexión cancelada o fallida', e);
