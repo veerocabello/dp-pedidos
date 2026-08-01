@@ -204,8 +204,20 @@ function _ptStatusUI(connected, msg) {
   });
 }
 
+// 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
+// solo con cuál de los dos consigue conectar primero (ver _ptReconectar).
+let _ptTransporte = null;
+
 function _ptIsConnected() {
-  return !!(_ptDevice && _ptEndpointOut !== null);
+  if (_ptTransporte === 'ble') return !!(_ptBleDevice && _ptBleDevice.gatt && _ptBleDevice.gatt.connected && _ptBleCharacteristic);
+  if (_ptTransporte === 'usb') return !!(_ptDevice && _ptEndpointOut !== null);
+  return false;
+}
+
+function _ptResetConexion() {
+  _ptDevice = null; _ptEndpointOut = null; _ptEndpointIn = null;
+  _ptBleDevice = null; _ptBleCharacteristic = null;
+  _ptTransporte = null;
 }
 
 // Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
@@ -217,8 +229,8 @@ function _ptUpdateDebugStatus() {
   if (!el && !elKitchen) return;
   const admin = window._adminLoggedIn ? '🟢 Admin activo' : '🔴 Admin NO activo';
   const auto = (typeof getTicketConfig === 'function' && getTicketConfig().autoImprimir) ? '🟢 Auto-imprimir ON' : '🔴 Auto-imprimir OFF';
-  const usb = _ptIsConnected() ? '🟢 USB conectada' : '🔴 USB no conectada';
-  const texto = admin + ' · ' + auto + ' · ' + usb;
+  const conexion = _ptIsConnected() ? '🟢 ' + (_ptTransporte === 'ble' ? 'Bluetooth' : 'USB') + ' conectada' : '🔴 Impresora no conectada';
+  const texto = admin + ' · ' + auto + ' · ' + conexion;
   if (el) el.textContent = texto;
   if (elKitchen) elKitchen.textContent = texto;
 }
@@ -262,6 +274,7 @@ async function conectarImpresoraTermica() {
     _ptDevice = device;
     _ptEndpointOut = epOut;
     _ptEndpointIn = epIn;
+    _ptTransporte = 'usb';
     _ptStatusUI(true);
     return true;
   } catch (e) {
@@ -283,35 +296,44 @@ async function conectarImpresoraTermica() {
 // interfaz USB a la vez: la segunda fallaba con "Unable to claim interface"
 // aunque la primera sí lo hubiera conseguido bien.
 let _ptReconectando = false;
+// Prueba USB primero (dispositivo ya autorizado antes) y, si no hay nada
+// por ahí, prueba Bluetooth (también ya autorizado antes) — cualquiera de
+// los 4 disparadores de siempre (carga de página, evento "connect" USB,
+// intervalo de 8s, volver a la pestaña) sirve igual para las dos vías,
+// así que basta con ampliar esta única función en vez de duplicar toda
+// la maquinaria de candado/timeout para Bluetooth aparte.
 async function _ptReconectar() {
-  if (!navigator.usb) return false;
   if (_ptIsConnected()) return true;
   if (_ptReconectando) return false;
   _ptReconectando = true;
   try {
-    // Límite de tiempo de seguridad — si getDevices()/claimInterface() se
-    // quedaran colgados sin resolver ni rechazar nunca (un fallo raro del
-    // driver USB del sistema), sin esto el candado de arriba se quedaría
-    // en true para siempre y ningún disparador podría volver a intentar
-    // reconectar hasta recargar la página entera.
-    const resultado = await Promise.race([
-      (async () => {
-        const devices = await navigator.usb.getDevices();
-        if (!devices.length) return null;
-        const device = devices[0];
-        const { epOut, epIn } = await _ptClaimInterface(device);
-        return { device, epOut, epIn };
-      })(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando con la impresora')), 6000))
-    ]);
-    if (!resultado) { _ptStatusUI(false); return false; }
-    _ptDevice = resultado.device;
-    _ptEndpointOut = resultado.epOut;
-    _ptEndpointIn = resultado.epIn;
-    _ptStatusUI(true);
-    return true;
-  } catch (e) {
-    console.warn('[Impresora] reconexión fallida', e);
+    if (navigator.usb) {
+      // Límite de tiempo de seguridad — si getDevices()/claimInterface() se
+      // quedaran colgados sin resolver ni rechazar nunca (un fallo raro del
+      // driver USB del sistema), sin esto el candado de arriba se quedaría
+      // en true para siempre y ningún disparador podría volver a intentar
+      // reconectar hasta recargar la página entera.
+      const resultado = await Promise.race([
+        (async () => {
+          const devices = await navigator.usb.getDevices();
+          if (!devices.length) return null;
+          const device = devices[0];
+          const { epOut, epIn } = await _ptClaimInterface(device);
+          return { device, epOut, epIn };
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando con la impresora')), 6000))
+      ]).catch((e) => { console.warn('[Impresora] reconexión USB fallida', e); return null; });
+      if (resultado) {
+        _ptDevice = resultado.device;
+        _ptEndpointOut = resultado.epOut;
+        _ptEndpointIn = resultado.epIn;
+        _ptTransporte = 'usb';
+        _ptStatusUI(true);
+        return true;
+      }
+    }
+    const okBle = await _ptBleReconectar();
+    if (okBle) return true;
     _ptStatusUI(false);
     return false;
   } finally {
@@ -320,10 +342,11 @@ async function _ptReconectar() {
 }
 
 async function _ptEnviarBytesUnaVez(bytes) {
-  if (!_ptDevice || !_ptEndpointOut) {
+  if (!_ptIsConnected()) {
     const ok = await _ptReconectar();
     if (!ok) throw new Error('Impresora no conectada — pulsa "Conectar impresora" en Configuración del ticket');
   }
+  if (_ptTransporte === 'ble') { await _ptBleEnviarBytes(bytes); return; }
   await _ptDevice.transferOut(_ptEndpointOut, bytes);
 }
 
@@ -341,12 +364,121 @@ async function _ptEnviarBytes(bytes, intentos) {
       ultimoError = e;
       console.warn('[Impresora] intento ' + (i + 1) + '/' + intentos + ' falló', e);
       if (i < intentos - 1) {
-        _ptDevice = null; _ptEndpointOut = null; // forzar reconexión limpia en el siguiente intento
+        _ptResetConexion(); // forzar reconexión limpia en el siguiente intento
         await new Promise(r => setTimeout(r, 1200));
       }
     }
   }
   throw ultimoError;
+}
+
+// ── IMPRESORA TÉRMICA — BLUETOOTH (BLE) ──────────────────────────────
+// Vía alternativa a USB. Solo vale para impresoras Bluetooth de BAJO
+// CONSUMO (BLE) — compruébalo antes con "Probar Bluetooth" en
+// Configuración del ticket. La mayoría de impresoras térmicas baratas
+// llevan Bluetooth "clásico" (SPP), que ningún navegador puede usar; eso
+// no tiene arreglo por código.
+//
+// A diferencia de USB (donde pedimos la lista completa de dispositivos
+// y el vendor ID no importa), en Bluetooth hay que declarar de antemano
+// qué "servicios" GATT se van a usar. No hay un ID de fabricante fijo
+// que buscar, así que se prueban los UUID de servicio más habituales
+// entre impresoras térmicas ESC/POS BLE genéricas (muchas comparten el
+// mismo firmware de fábrica aunque se vendan con marcas distintas), y se
+// usa la primera característica que permita escribir que se encuentre.
+const PT_BLE_SERVICIOS_CANDIDATOS = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // el más habitual en clones ESC/POS BLE
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'  // Nordic UART Service (otro habitual)
+];
+
+let _ptBleDevice = null;
+let _ptBleCharacteristic = null;
+
+async function _ptBleBuscarCaracteristicaEscritura(server) {
+  for (const uuidServicio of PT_BLE_SERVICIOS_CANDIDATOS) {
+    try {
+      const servicio = await server.getPrimaryService(uuidServicio);
+      const caracteristicas = await servicio.getCharacteristics();
+      const escribible = caracteristicas.find(c => c.properties.write || c.properties.writeWithoutResponse);
+      if (escribible) return escribible;
+    } catch (e) {
+      // Este servicio candidato no existe en el dispositivo — se prueba el siguiente.
+    }
+  }
+  return null;
+}
+
+async function _ptBleConectarDispositivo(device) {
+  const server = await device.gatt.connect();
+  const characteristic = await _ptBleBuscarCaracteristicaEscritura(server);
+  if (!characteristic) {
+    server.disconnect();
+    throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
+  }
+  _ptBleDevice = device;
+  _ptBleCharacteristic = characteristic;
+  _ptTransporte = 'ble';
+  device.addEventListener('gattserverdisconnected', () => {
+    if (_ptTransporte === 'ble') _ptResetConexion();
+    _ptStatusUI(false);
+    _ptReconectar();
+  });
+  _ptStatusUI(true, '🟢 Impresora conectada (Bluetooth)');
+}
+
+// Pide permiso al navegador — debe llamarse desde un click (gesto del
+// usuario), el navegador no deja hacerlo en segundo plano.
+async function conectarImpresoraBluetooth() {
+  if (!navigator.bluetooth) {
+    alert('Este navegador no soporta impresión por Bluetooth. Usa Chrome o Edge (no funciona en Safari ni en iPhone/iPad).');
+    return false;
+  }
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: PT_BLE_SERVICIOS_CANDIDATOS
+    });
+    await _ptBleConectarDispositivo(device);
+    return true;
+  } catch (e) {
+    console.warn('[Impresora BLE] conexión cancelada o fallida', e);
+    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora por Bluetooth: ' + e.message);
+    return false;
+  }
+}
+
+// Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
+// espejo de la reconexión USB, usando navigator.bluetooth.getDevices()
+// (API de permisos persistentes; no está en todas las versiones de Chrome,
+// de ahí la comprobación).
+async function _ptBleReconectar() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
+  try {
+    const dispositivos = await navigator.bluetooth.getDevices();
+    if (!dispositivos.length) return false;
+    await Promise.race([
+      _ptBleConectarDispositivo(dispositivos[0]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando Bluetooth')), 6000))
+    ]);
+    return true;
+  } catch (e) {
+    console.warn('[Impresora BLE] reconexión fallida', e);
+    return false;
+  }
+}
+
+// Trocea el envío — muchas impresoras BLE baratas pierden datos si se les
+// manda todo de golpe en una sola escritura grande.
+async function _ptBleEnviarBytes(bytes) {
+  const TAMANO_TROZO = 180;
+  const usarSinRespuesta = !!_ptBleCharacteristic.properties.writeWithoutResponse;
+  for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
+    const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
+    if (usarSinRespuesta) await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
+    else await _ptBleCharacteristic.writeValue(trozo);
+    await new Promise(r => setTimeout(r, 20));
+  }
 }
 
 // Imprime un ticket, repitiendo tantas copias como esté configurado.
@@ -477,7 +609,11 @@ async function imprimirCartelQRLocal() {
 // Si en esta impresora en concreto no coincidiera al probarlo con el rollo
 // realmente vacío, hay que ajustar las máscaras (0x0C / 0x60) de aquí abajo.
 async function _ptComprobarPapel() {
-  if (!_ptIsConnected() || _ptEndpointIn === null) return;
+  // Solo USB expone este comando de estado de papel de forma fiable — para
+  // Bluetooth dependería de que cada modelo tenga su propia característica
+  // de notificación, algo que varía demasiado entre clones como para
+  // adivinarlo sin poder probarlo en la impresora real.
+  if (_ptTransporte !== 'usb' || !_ptIsConnected() || _ptEndpointIn === null) return;
   try {
     await _ptDevice.transferOut(_ptEndpointOut, new Uint8Array([0x10, 0x04, 0x04]));
     const res = await _ptDevice.transferIn(_ptEndpointIn, 8);
@@ -503,7 +639,7 @@ function _ptPapelUI(sinPapel) {
 if (navigator.usb) {
   document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
   navigator.usb.addEventListener('disconnect', (e) => {
-    if (_ptDevice && e.device === _ptDevice) { _ptDevice = null; _ptEndpointOut = null; _ptEndpointIn = null; _ptStatusUI(false); }
+    if (_ptDevice && e.device === _ptDevice) { _ptResetConexion(); _ptStatusUI(false); }
   });
   // Si Chrome detecta que se ha enchufado algún dispositivo USB, probamos a
   // reconectar por si es la impresora (p.ej. se desenchufó el cable y se
@@ -527,25 +663,4 @@ if (navigator.usb) {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && !_ptIsConnected()) _ptReconectar();
   });
-}
-
-// ── Diagnóstico: ¿la impresora es compatible con Bluetooth del navegador? ──
-// Solo comprueba, no imprime nada por Bluetooth (esta web imprime por USB).
-// El navegador solo puede ver impresoras Bluetooth de bajo consumo (BLE) —
-// la mayoría de impresoras térmicas baratas usan Bluetooth "clásico" (SPP),
-// que ningún navegador puede usar. Este botón le dice a la usuaria cuál de
-// los dos casos tiene, sin que tengamos que adivinarlo.
-async function probarBluetoothImpresora() {
-  const msgEl = document.getElementById('pt-bluetooth-msg');
-  const setMsg = (texto, color) => { if (msgEl) { msgEl.textContent = texto; msgEl.style.color = color; } };
-  if (!navigator.bluetooth) {
-    setMsg('❌ Este navegador no soporta Bluetooth web. Pruébalo en Chrome o Edge de escritorio o Android — no funciona en iPhone/iPad ni en Safari.', '#c0392b');
-    return;
-  }
-  try {
-    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
-    setMsg('✅ Apareció "' + (device.name || 'sin nombre') + '" — el navegador SÍ puede verla. Es compatible con Bluetooth de bajo consumo (BLE).', '#27ae60');
-  } catch (e) {
-    setMsg('⚠️ No apareció ninguna impresora en la ventana (o la cerraste). Si tu impresora no salía ahí aunque tuviera el Bluetooth encendido, probablemente usa Bluetooth "clásico" y no es compatible con ningún navegador.', '#c0392b');
-  }
 }
