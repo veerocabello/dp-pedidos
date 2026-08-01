@@ -9948,7 +9948,7 @@ function _ptEncodeStr(str) {
 
 // Construye los bytes ESC/POS de un ticket (mismo formato que usaba el bridge Node.js
 // en pedidos/js/index.js, incluyendo el logo). Devuelve un Uint8Array listo para USB.
-function _ptBuildTicketBytes(ticket) {
+function _ptBuildTicketBytes(ticket, omitirLogo) {
   const tc = getTicketConfig();
   const ESC = 0x1B, GS = 0x1D;
   const d = [];
@@ -9965,11 +9965,17 @@ function _ptBuildTicketBytes(ticket) {
   // Inicializar
   d.push(ESC, 0x40);
 
-  // Logo centrado
-  center();
-  const bpr = (PRINTER_LOGO_W + 7) >> 3;
-  d.push(GS, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, PRINTER_LOGO_H & 0xFF, (PRINTER_LOGO_H >> 8) & 0xFF);
-  PRINTER_LOGO_DATA.forEach(b => d.push(b));
+  // Logo centrado — son ~18 KB de datos, sin problema por USB pero
+  // demasiado para Bluetooth (varios segundos de más, y más trozos con
+  // los que se puede perder algo por el camino), así que se omite en esa
+  // vía (ver imprimirTicketTermico, que decide omitirLogo según el
+  // transporte activo).
+  if (!omitirLogo) {
+    center();
+    const bpr = (PRINTER_LOGO_W + 7) >> 3;
+    d.push(GS, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, PRINTER_LOGO_H & 0xFF, (PRINTER_LOGO_H >> 8) & 0xFF);
+    PRINTER_LOGO_DATA.forEach(b => d.push(b));
+  }
 
   // Nombre del negocio
   center();
@@ -10398,33 +10404,30 @@ async function _ptBleReconectar() {
   }
 }
 
-// Con esta impresora en concreto se han probado dos extremos:
-//  - Trozos de 180 bytes: la conexión aguanta todo el ticket sin caerse,
-//    pero el texto sale ilegible (demasiados bytes seguidos sin dar
-//    tiempo a procesarlos).
-//  - Trozos de 20 bytes: para un ticket normal son 200+ escrituras
-//    Bluetooth seguidas, y eso desestabiliza la conexión de esta
-//    impresora (se desconecta a media impresión, con o sin respuesta).
-// Se prueba un punto intermedio: trozos moderados (100 bytes, menos
-// escrituras totales que a 20) con más espera entre cada uno (más tiempo
-// de proceso que a 180) — sin respuesta, que es lo que mejor aguantó la
-// conexión en las pruebas anteriores.
+// Se prefiere "con respuesta" (writeValue): cada trozo espera la
+// confirmación real de la impresora antes de mandar el siguiente, así que
+// el ritmo lo marca la propia impresora en vez de un tiempo de espera fijo
+// adivinado — no hace falta añadir ningún retraso extra encima. Solo si
+// la característica no soporta escritura con respuesta se usa
+// writeValueWithoutResponse con una pequeña espera manual de por medio.
 async function _ptBleEnviarBytes(bytes) {
   const TAMANO_TROZO = 100;
-  const ESPERA_MS = 45;
-  const sinRespuesta = !!_ptBleCharacteristic.properties.writeWithoutResponse;
+  const conRespuesta = !!_ptBleCharacteristic.properties.write;
   for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
     const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
-    if (sinRespuesta) await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
-    else await _ptBleCharacteristic.writeValue(trozo);
-    await new Promise(r => setTimeout(r, ESPERA_MS));
+    if (conRespuesta) {
+      await _ptBleCharacteristic.writeValue(trozo);
+    } else {
+      await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
+      await new Promise(r => setTimeout(r, 45));
+    }
   }
 }
 
 // Imprime un ticket, repitiendo tantas copias como esté configurado.
 async function imprimirTicketTermico(ticket) {
   const tc = getTicketConfig();
-  const bytes = _ptBuildTicketBytes(ticket);
+  const bytes = _ptBuildTicketBytes(ticket, _ptTransporte === 'ble');
   _ptUltimoTicket = ticket;
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
   for (let i = 0; i < copias; i++) {
