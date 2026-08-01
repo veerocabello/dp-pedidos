@@ -2593,13 +2593,41 @@ function renderCart() {
       fee2El.style.display = 'none';
     }
   }
-  // Mostrar línea de descuento si hay un código aplicado (manual o ganado
-  // en la ruleta/rasca) — antes el total mostrado en el carrito nunca
+  // Descuentos que pueden aplicar a la vez: código de descuento (manual o
+  // ganado en la ruleta/rasca) y estudiante/jubilado. A petición expresa,
+  // estos dos NO se combinan entre sí — si ambos aplicarían, se queda solo
+  // el mayor de los dos, nunca la suma. La fidelización (patata gratis) es
+  // aparte y SÍ se sigue sumando siempre, sin entrar en este conflicto.
+  const discountAmtRaw = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
+  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
+  const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
+  const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const studentDiscountAmtRaw = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
+
+  let discountAmt = discountAmtRaw;
+  let studentDiscountAmt = studentDiscountAmtRaw;
+  let conflictoDescuentosNota = '';
+  if (discountAmtRaw > 0 && studentDiscountAmtRaw > 0) {
+    if (discountAmtRaw >= studentDiscountAmtRaw) {
+      studentDiscountAmt = 0;
+      conflictoDescuentosNota = 'ℹ️ El descuento de estudiante/jubilado no se combina con el código de descuento — se aplica el código "' + discountCode + '" por ser mayor.';
+    } else {
+      discountAmt = 0;
+      conflictoDescuentosNota = 'ℹ️ El código de descuento no se combina con el de estudiante/jubilado — se aplica este último por ser mayor.';
+    }
+  }
+  const conflictoEl = document.getElementById('discount-conflict-notice');
+  if (conflictoEl) {
+    conflictoEl.textContent = conflictoDescuentosNota;
+    conflictoEl.style.display = conflictoDescuentosNota ? 'block' : 'none';
+  }
+
+  // Mostrar línea de descuento si hay un código aplicado (y no ha perdido
+  // el conflicto de arriba) — antes el total mostrado en el carrito nunca
   // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
   // que aunque el código sí se aplicaba de verdad, la clienta no veía
   // ningún cambio en el número y parecía que no había pasado nada.
-  const discountAmt = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
-  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
   const discountEl = document.getElementById('cart-discount-row');
   if (discountEl) {
     if (discountAmt > 0 && discountCode) {
@@ -2628,12 +2656,9 @@ function renderCart() {
   }
   // Descuento estudiante/jubilado — el cliente lo marca él mismo (se
   // comprueba el carné al cobrar en caja, ver comentario junto a la
-  // casilla en index.html) y se suma al resto de descuentos, igual que ya
-  // se suman el código promocional y el premio de fidelización.
+  // casilla en index.html).
   const studentDiscountRowEl = document.getElementById('student-discount-row');
-  const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
   if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
-  const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
   // El aviso de "se comprobará el carné" solo se despliega dentro de la
   // misma caja al marcar la casilla — compacto (una sola línea) mientras
   // nadie la usa, en vez de mostrarlo siempre para todo el mundo.
@@ -2641,8 +2666,6 @@ function renderCart() {
   const studentDiscountWarnEl = document.getElementById('student-discount-warn');
   if (studentDiscountBoxEl) studentDiscountBoxEl.style.borderColor = studentDiscountChecked ? 'var(--amber)' : 'var(--warm)';
   if (studentDiscountWarnEl) studentDiscountWarnEl.style.display = studentDiscountChecked ? 'block' : 'none';
-  const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
-  const studentDiscountAmt = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
   const studentDiscountEl = document.getElementById('cart-student-discount-row');
   if (studentDiscountEl) {
     if (studentDiscountAmt > 0) {
@@ -2687,7 +2710,7 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota);
 }
 
 // ── REPETIR ÚLTIMO PEDIDO ──
@@ -2775,7 +2798,7 @@ function _updateCartFab(count, total) {
     repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
   }
 }
-function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
@@ -2827,6 +2850,9 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   // ganado en la ruleta/rasca).
   if (discountAmt > 0 && discountCode) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (conflictoDescuentosNota) {
+    html += "<div style=\"font-size:11px;color:#8A6A4E;font-style:italic;padding:2px 0 4px\">".concat(escapeHtml(conflictoDescuentosNota), "</div>");
   }
   if (fidelizacionAmt > 0) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
@@ -3755,15 +3781,29 @@ async function _submitOrderInner() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
   const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
-  const _discountAmt = getDiscountAmount(subTotal);
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
-  // Descuento estudiante/jubilado — autodeclarado por el cliente, se suma
-  // al resto de descuentos (código + fidelización); la verificación real
-  // del carné se hace en caja al cobrar, avisado en el ticket/cocina.
-  const _esEstudianteJubiladoSubmit = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled()
+  // Descuento estudiante/jubilado — autodeclarado por el cliente; la
+  // verificación real del carné se hace en caja al cobrar, avisado en el
+  // ticket/cocina.
+  const _esEstudianteJubiladoRaw = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled()
     && !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const _studentDiscountPctSubmit = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
-  const _studentDiscountAmt = _esEstudianteJubiladoSubmit ? Math.round(subTotal * _studentDiscountPctSubmit) / 100 : 0;
+  // No se combinan estudiante/jubilado con el código de descuento (ni
+  // manual ni de ruleta/rasca) — se aplica solo el mayor de los dos,
+  // nunca la suma, igual que ya decide el carrito en renderCart()
+  // (carta.js). La fidelización no entra en este conflicto: se sigue
+  // sumando siempre, sin condición.
+  let _discountAmt = getDiscountAmount(subTotal);
+  let _studentDiscountAmt = _esEstudianteJubiladoRaw ? Math.round(subTotal * _studentDiscountPctSubmit) / 100 : 0;
+  let _esEstudianteJubiladoSubmit = _esEstudianteJubiladoRaw;
+  if (_discountAmt > 0 && _studentDiscountAmt > 0) {
+    if (_discountAmt >= _studentDiscountAmt) {
+      _studentDiscountAmt = 0;
+      _esEstudianteJubiladoSubmit = false; // no se aplicó de verdad: no se marca el pedido ni se avisa de verificar carné
+    } else {
+      _discountAmt = 0;
+    }
+  }
   const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento - _studentDiscountAmt);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
@@ -3923,8 +3963,11 @@ async function _submitOrderInner() {
   // El uso del código de descuento se registra en el servidor al
   // finalizar el pedido (ver guardar-pedido.php) — incrementar
   // discounts/<code>/uses exige el UID de admin en las reglas, así que
-  // el navegador ya no puede hacerlo directamente.
-  const _discountCodeUsado = _activeDiscount ? _activeDiscount.code : null;
+  // el navegador ya no puede hacerlo directamente. Si el código perdió el
+  // conflicto con el descuento de estudiante/jubilado (_discountAmt quedó
+  // en 0 más arriba), no se envía — no se ha llegado a usar de verdad, así
+  // que no debe consumir ningún uso del cupón.
+  const _discountCodeUsado = (_activeDiscount && _discountAmt > 0) ? _activeDiscount.code : null;
   _activeDiscount = null;
   const dcInput = document.getElementById('discount-input');
   const dcFeedback = document.getElementById('discount-feedback');
