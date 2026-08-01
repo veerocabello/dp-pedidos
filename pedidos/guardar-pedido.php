@@ -750,7 +750,12 @@ try {
         $limpio = [
             'name'     => isset($it['name']) ? dpf_limpiar_texto(mb_substr(trim((string)$it['name']), 0, 120)) : '',
             'qty'      => isset($it['qty']) ? max(0, min(999, (float)$it['qty'])) : 0,
-            'subtotal' => isset($it['subtotal']) ? max(0, min(9999, (float)$it['subtotal'])) : 0,
+            // Rango con mínimo negativo: los descuentos (fidelización, código,
+            // estudiante/jubilado) se envían como líneas de "producto" con
+            // subtotal NEGATIVO — con el mínimo en 0 de antes, esas líneas se
+            // guardaban (y se imprimían) siempre como 0,00€ aunque el
+            // descuento sí se hubiera aplicado de verdad al total.
+            'subtotal' => isset($it['subtotal']) ? max(-9999, min(9999, (float)$it['subtotal'])) : 0,
         ];
         if (!empty($it['isFee'])) $limpio['isFee'] = true;
         if (is_array($it['extras'] ?? null)) {

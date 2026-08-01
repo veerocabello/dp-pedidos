@@ -917,6 +917,20 @@ function renderCart() {
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
   _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota);
+
+  // Repintar la tarjeta de sellos DESPUÉS de sincronizar el cajón móvil —
+  // _syncCartDrawer() reconstruye todo el HTML del carrito (incluido el
+  // campo de teléfono), lo que borra la tarjeta si se hubiera pintado antes
+  // (se insertó con appendChild, fuera de esa plantilla). Repintarla aquí,
+  // en cada renderCart(), hace que sobreviva a todos los repintados en vez
+  // de desaparecer en el primero que llega después de mostrarse.
+  if (typeof _pintarTarjetaSellos === 'function') {
+    if (window._fidelizacionClienteCache && window._fidelizacionClienteCache.phone === _fidPhoneClean) {
+      _pintarTarjetaSellos(_fidPhoneClean, window._fidelizacionClienteCache.cliente);
+    } else {
+      document.querySelectorAll('.tarjeta-sellos-cliente').forEach(e => e.remove());
+    }
+  }
 }
 
 // ── REPETIR ÚLTIMO PEDIDO ──

@@ -2715,6 +2715,20 @@ function renderCart() {
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
   _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota);
+
+  // Repintar la tarjeta de sellos DESPUÉS de sincronizar el cajón móvil —
+  // _syncCartDrawer() reconstruye todo el HTML del carrito (incluido el
+  // campo de teléfono), lo que borra la tarjeta si se hubiera pintado antes
+  // (se insertó con appendChild, fuera de esa plantilla). Repintarla aquí,
+  // en cada renderCart(), hace que sobreviva a todos los repintados en vez
+  // de desaparecer en el primero que llega después de mostrarse.
+  if (typeof _pintarTarjetaSellos === 'function') {
+    if (window._fidelizacionClienteCache && window._fidelizacionClienteCache.phone === _fidPhoneClean) {
+      _pintarTarjetaSellos(_fidPhoneClean, window._fidelizacionClienteCache.cliente);
+    } else {
+      document.querySelectorAll('.tarjeta-sellos-cliente').forEach(e => e.remove());
+    }
+  }
 }
 
 // ── REPETIR ÚLTIMO PEDIDO ──
@@ -3891,7 +3905,10 @@ async function _submitOrderInner() {
     subtotal: -_fidelizacionDescuento
   }] : [];
   const studentDiscountItems = _studentDiscountAmt > 0 ? [{
-    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '%)',
+    // Aclaración breve de que el % es solo sobre productos (no sobre bolsa
+    // ni gastos de gestión) — así se ve en el propio ticket sin tener que
+    // explicarlo aparte si alguien pregunta por qué no baja más el total.
+    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '% en productos)',
     qty: 1,
     subtotal: -_studentDiscountAmt
   }] : [];
@@ -9765,6 +9782,13 @@ async function _comprobarPremioFidelizacion(phoneClean) {
     if (!data.success) return;
     const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
     const premiosPendientes = cliente.premiosPendientes;
+    // Se guarda para que renderCart() pueda volver a pintar la tarjeta cada
+    // vez que reconstruye el carrito — en el cajón móvil, _syncCartDrawer()
+    // sustituye TODO el HTML del carrito (incluido el campo de teléfono al
+    // que se había enganchado esta tarjeta con appendChild), así que sin
+    // esto la tarjeta se borraba en el primer repintado después de aparecer
+    // y nunca se volvía a ver.
+    window._fidelizacionClienteCache = { phone: phoneClean, cliente };
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
@@ -10499,9 +10523,54 @@ async function imprimirTicketTermico(ticket) {
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
   for (let i = 0; i < copias; i++) {
     await _ptEnviarBytes(bytes);
+    _ptPapelRegistrarTicketImpreso();
     if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
   }
 }
+
+// ── Contador de papel restante estimado ──────────────────────────────
+// Por Bluetooth no se puede leer el sensor de papel de la impresora (y por
+// USB tampoco todos los modelos lo soportan), así que en vez de depender
+// de eso se lleva la cuenta de cuántos tickets se han impreso desde el
+// último cambio de rollo, y se compara contra una capacidad aproximada
+// (cuántos tickets suele dar un rollo nuevo) que la usuaria calibra a ojo
+// la primera vez y ajusta si hace falta — no es una medida exacta en
+// milímetros, pero avisa con margen suficiente antes de quedarse sin papel.
+const PT_PAPEL_TICKETS_KEY = 'dpf_papel_tickets_desde_rollo';
+const PT_PAPEL_CAPACIDAD_KEY = 'dpf_papel_rollo_capacidad';
+function _ptPapelTicketsUsados() {
+  return parseInt(localStorage.getItem(PT_PAPEL_TICKETS_KEY) || '0', 10);
+}
+function _ptPapelCapacidad() {
+  return parseInt(localStorage.getItem(PT_PAPEL_CAPACIDAD_KEY) || '150', 10);
+}
+function _ptPapelRegistrarTicketImpreso() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, String(_ptPapelTicketsUsados() + 1));
+  _ptPapelActualizarUI();
+}
+function _ptPapelNuevoRollo() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, '0');
+  _ptPapelActualizarUI();
+  if (typeof logActivity === 'function') logActivity('🧻 Rollo de papel reiniciado (contador a 0)');
+}
+function guardarCapacidadRollo(valor) {
+  const n = Math.max(1, parseInt(valor, 10) || 150);
+  localStorage.setItem(PT_PAPEL_CAPACIDAD_KEY, String(n));
+  _ptPapelActualizarUI();
+}
+function _ptPapelActualizarUI() {
+  const usados = _ptPapelTicketsUsados();
+  const capacidad = _ptPapelCapacidad();
+  const restantes = Math.max(0, capacidad - usados);
+  const pct = capacidad > 0 ? Math.max(0, Math.min(100, Math.round((restantes / capacidad) * 100))) : 100;
+  document.querySelectorAll('.pt-papel-contador').forEach(el => {
+    el.textContent = '🧻 ~' + pct + '% de papel restante (' + restantes + ' de ' + capacidad + ' tickets aprox.)';
+    el.style.color = pct <= 15 ? '#c0392b' : '';
+  });
+  const inputCap = document.getElementById('tc-papel-capacidad');
+  if (inputCap && document.activeElement !== inputCap) inputCap.value = capacidad;
+}
+document.addEventListener('DOMContentLoaded', () => { _ptPapelActualizarUI(); });
 
 // Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
 // y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede

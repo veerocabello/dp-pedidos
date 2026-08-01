@@ -569,9 +569,54 @@ async function imprimirTicketTermico(ticket) {
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
   for (let i = 0; i < copias; i++) {
     await _ptEnviarBytes(bytes);
+    _ptPapelRegistrarTicketImpreso();
     if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
   }
 }
+
+// ── Contador de papel restante estimado ──────────────────────────────
+// Por Bluetooth no se puede leer el sensor de papel de la impresora (y por
+// USB tampoco todos los modelos lo soportan), así que en vez de depender
+// de eso se lleva la cuenta de cuántos tickets se han impreso desde el
+// último cambio de rollo, y se compara contra una capacidad aproximada
+// (cuántos tickets suele dar un rollo nuevo) que la usuaria calibra a ojo
+// la primera vez y ajusta si hace falta — no es una medida exacta en
+// milímetros, pero avisa con margen suficiente antes de quedarse sin papel.
+const PT_PAPEL_TICKETS_KEY = 'dpf_papel_tickets_desde_rollo';
+const PT_PAPEL_CAPACIDAD_KEY = 'dpf_papel_rollo_capacidad';
+function _ptPapelTicketsUsados() {
+  return parseInt(localStorage.getItem(PT_PAPEL_TICKETS_KEY) || '0', 10);
+}
+function _ptPapelCapacidad() {
+  return parseInt(localStorage.getItem(PT_PAPEL_CAPACIDAD_KEY) || '150', 10);
+}
+function _ptPapelRegistrarTicketImpreso() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, String(_ptPapelTicketsUsados() + 1));
+  _ptPapelActualizarUI();
+}
+function _ptPapelNuevoRollo() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, '0');
+  _ptPapelActualizarUI();
+  if (typeof logActivity === 'function') logActivity('🧻 Rollo de papel reiniciado (contador a 0)');
+}
+function guardarCapacidadRollo(valor) {
+  const n = Math.max(1, parseInt(valor, 10) || 150);
+  localStorage.setItem(PT_PAPEL_CAPACIDAD_KEY, String(n));
+  _ptPapelActualizarUI();
+}
+function _ptPapelActualizarUI() {
+  const usados = _ptPapelTicketsUsados();
+  const capacidad = _ptPapelCapacidad();
+  const restantes = Math.max(0, capacidad - usados);
+  const pct = capacidad > 0 ? Math.max(0, Math.min(100, Math.round((restantes / capacidad) * 100))) : 100;
+  document.querySelectorAll('.pt-papel-contador').forEach(el => {
+    el.textContent = '🧻 ~' + pct + '% de papel restante (' + restantes + ' de ' + capacidad + ' tickets aprox.)';
+    el.style.color = pct <= 15 ? '#c0392b' : '';
+  });
+  const inputCap = document.getElementById('tc-papel-capacidad');
+  if (inputCap && document.activeElement !== inputCap) inputCap.value = capacidad;
+}
+document.addEventListener('DOMContentLoaded', () => { _ptPapelActualizarUI(); });
 
 // Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
 // y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede

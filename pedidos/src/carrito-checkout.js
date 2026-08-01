@@ -1123,7 +1123,10 @@ async function _submitOrderInner() {
     subtotal: -_fidelizacionDescuento
   }] : [];
   const studentDiscountItems = _studentDiscountAmt > 0 ? [{
-    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '%)',
+    // Aclaración breve de que el % es solo sobre productos (no sobre bolsa
+    // ni gastos de gestión) — así se ve en el propio ticket sin tener que
+    // explicarlo aparte si alguien pregunta por qué no baja más el total.
+    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '% en productos)',
     qty: 1,
     subtotal: -_studentDiscountAmt
   }] : [];

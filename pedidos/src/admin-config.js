@@ -1985,6 +1985,13 @@ async function _comprobarPremioFidelizacion(phoneClean) {
     if (!data.success) return;
     const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
     const premiosPendientes = cliente.premiosPendientes;
+    // Se guarda para que renderCart() pueda volver a pintar la tarjeta cada
+    // vez que reconstruye el carrito — en el cajón móvil, _syncCartDrawer()
+    // sustituye TODO el HTML del carrito (incluido el campo de teléfono al
+    // que se había enganchado esta tarjeta con appendChild), así que sin
+    // esto la tarjeta se borraba en el primer repintado después de aparecer
+    // y nunca se volvía a ver.
+    window._fidelizacionClienteCache = { phone: phoneClean, cliente };
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
