@@ -1047,6 +1047,23 @@
     text-align: center;
   }
   .success-icon { font-size: 52px; margin-bottom: 6px; }
+  /* Check verde animado — sustituye al emoji estático de la patata */
+  .success-check {
+    width: 60px; height: 60px; border-radius: 50%;
+    background: var(--success);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 10px;
+    animation: successCheckIn .45s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  .success-check svg { width: 30px; height: 30px; }
+  .success-check path {
+    stroke: white; stroke-width: 3; fill: none;
+    stroke-linecap: round; stroke-linejoin: round;
+    stroke-dasharray: 24; stroke-dashoffset: 24;
+    animation: successCheckDraw .35s .3s ease forwards;
+  }
+  @keyframes successCheckIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes successCheckDraw { to { stroke-dashoffset: 0; } }
   .success-title {
     font-family: 'Anton', sans-serif;
     font-size: 26px;
@@ -2168,6 +2185,32 @@
   .ruleta-resultado-titulo {
     font-family: 'Anton', sans-serif; font-size: 22px; letter-spacing: 0.02em;
     text-transform: uppercase; color: var(--brown); margin-bottom: 6px;
+  }
+  /* Momento de premio — anillos dorados detrás del emoji + título en píldora dorada */
+  .premio-emoji {
+    position: relative;
+    animation: premioEmojiIn .5s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  .premio-emoji::before, .premio-emoji::after {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 70px; height: 70px;
+    margin: -35px 0 0 -35px;
+    border-radius: 50%;
+    border: 3px solid var(--gold);
+    z-index: -1;
+    animation: premioPulse 1.4s ease-out infinite;
+  }
+  .premio-emoji::after { animation-delay: .5s; }
+  @keyframes premioEmojiIn { 0% { transform: scale(0) rotate(-180deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+  @keyframes premioPulse { 0% { transform: scale(.5); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+  .premio-titulo {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--brown);
+    padding: 4px 18px;
+    border-radius: 99px;
   }
   .ruleta-resultado-desc { font-size: 14px; color: var(--muted); margin-bottom: 18px; line-height: 1.4; }
 
