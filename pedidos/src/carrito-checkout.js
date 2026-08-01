@@ -34,10 +34,14 @@ function _updateCartFab(count, total) {
     repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
   }
 }
-function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
+  // Fuente de verdad de la casilla estudiante/jubilado: la del formulario
+  // de escritorio, igual que el código local — así el drawer siempre
+  // refleja el valor real aunque se marcara desde el otro formulario.
+  const _estudianteCheckedDrawer = !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
@@ -86,7 +90,11 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   if (fidelizacionAmt > 0) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
-  const _ahorroDrawer = discountAmt + fidelizacionAmt;
+  studentDiscountAmt = studentDiscountAmt || 0;
+  if (studentDiscountAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83E\uDEAA Estudiante/jubilado (-".concat(studentDiscountPctCfg, "%)</span><span>-").concat(studentDiscountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt + studentDiscountAmt;
   if (_ahorroDrawer > 0) {
     html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
@@ -110,10 +118,13 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
       : (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === _digitsActualDrawer
         ? "<div id=\"fidelizacion-proximo-sello-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF89 \xA1Este es tu pedido n\xFAmero 10! Al confirmarlo, tu patata gratis estar\xE1 disponible en tu pr\xF3ximo pedido.</div>"
         : '');
+    const _studentDiscountHtmlDrawer = studentDiscountEnabledCfg
+      ? "<div style=\"margin-top:14px\"><label style=\"display:flex;align-items:center;gap:10px;background:#FFF8EE;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ".concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado <span style=\"font-weight:400;color:#8A6A4E\">(se comprobar\xE1 el carn\xE9 al recoger)</span></span></label></div>")
+      : '';
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_studentDiscountHtmlDrawer, "\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
@@ -789,7 +800,7 @@ async function _submitOrderInner() {
   // comentario junto a esperarConfigCriticaLista() en admin-config.js. En
   // el caso normal esta espera ya está resuelta y esto no tarda nada; solo
   // se nota (y se avisa en el botón) en una visita nueva/muy rápida.
-  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo)) {
+  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo)) {
     const btnGate = document.getElementById('submit-btn');
     const prevGateText = btnGate ? btnGate.textContent : null;
     const prevGateDisabled = btnGate ? btnGate.disabled : false;
@@ -1005,7 +1016,14 @@ async function _submitOrderInner() {
   const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
   const _discountAmt = getDiscountAmount(subTotal);
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
-  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento);
+  // Descuento estudiante/jubilado — autodeclarado por el cliente, se suma
+  // al resto de descuentos (código + fidelización); la verificación real
+  // del carné se hace en caja al cobrar, avisado en el ticket/cocina.
+  const _esEstudianteJubiladoSubmit = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled()
+    && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const _studentDiscountPctSubmit = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const _studentDiscountAmt = _esEstudianteJubiladoSubmit ? Math.round(subTotal * _studentDiscountPctSubmit) / 100 : 0;
+  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento - _studentDiscountAmt);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
       id = _ref10[0],
@@ -1087,6 +1105,11 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: -_fidelizacionDescuento
   }] : [];
+  const studentDiscountItems = _studentDiscountAmt > 0 ? [{
+    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '%)',
+    qty: 1,
+    subtotal: -_studentDiscountAmt
+  }] : [];
   // Si este pedido es el que completa el ciclo de 10 sellos, añadimos una
   // línea informativa en el ticket (sin afectar al precio) para que se
   // imprima y se vea en cocina/caja que hay que avisar al cliente.
@@ -1096,7 +1119,7 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: 0
   }] : [];
-  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...fidelizacionAvisoItems];
+  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Estadística "¿le metes algo dulce?": si se llegó a mostrar la sugerencia
@@ -1121,7 +1144,10 @@ async function _submitOrderInner() {
     // Pedido "desde el local" (código de cola aplicado): para que en cocina
     // pueda mostrarse primero, ya que ese cliente está esperando físicamente
     // en el mostrador y no se puede ir a pedir a otro sitio.
-    esPedidoLocal: _sinGastosPorCodigoLocalSubmit
+    esPedidoLocal: _sinGastosPorCodigoLocalSubmit,
+    // Descuento estudiante/jubilado autodeclarado — se imprime destacado en
+    // el ticket y se marca en cocina para que se compruebe el carné al cobrar.
+    esEstudianteJubilado: _esEstudianteJubiladoSubmit
   };
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
@@ -1163,6 +1189,12 @@ async function _submitOrderInner() {
   const dcFeedback = document.getElementById('discount-feedback');
   if (dcInput) dcInput.value = '';
   if (dcFeedback) dcFeedback.textContent = '';
+  // Desmarcar la casilla estudiante/jubilado para el siguiente pedido — no
+  // debe quedar marcada por defecto sin que el cliente vuelva a elegirlo.
+  const _studentCb = document.getElementById('student-discount-checkbox');
+  if (_studentCb) _studentCb.checked = false;
+  const _studentCbDrawer = document.getElementById('drawer-student-discount-checkbox');
+  if (_studentCbDrawer) _studentCbDrawer.checked = false;
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
@@ -1265,7 +1297,8 @@ async function _finalizarPedido() {
       discountCode: discountCode || null,
       upsellMostrado: window._pendingTicketData.upsellMostrado || false,
       upsellAnadido: window._pendingTicketData.upsellAnadido || false,
-      esPedidoLocal: window._pendingTicketData.esPedidoLocal || false
+      esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,
+      esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false
     };
     // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
     // cierra o se pierde la conexión justo después de confirmar (antes de

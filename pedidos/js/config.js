@@ -418,6 +418,9 @@ function _initFirebase() {
   window.fb_loadFeeConfig = async function() { var sn = await jget("config/feeConfig"); return sn.exists() ? sn.val() : null; };
   // FEE2 CONFIG (segundo gasto fijo, independiente del anterior)
   window.fb_saveFee2Config = async function(enabled, amount, label) { await jset("config/fee2Config", {enabled:enabled, amount:amount, label:label}); };
+  window.fb_saveStudentDiscountConfig = async function(enabled, pct) { await jset("config/studentDiscountConfig", {enabled:enabled, pct:pct}); };
+  window.fb_listenStudentDiscountConfig = function(cb) { return jlisten("config/studentDiscountConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  window.fb_loadStudentDiscountConfig = async function() { var sn = await jget("config/studentDiscountConfig"); return sn.exists() ? sn.val() : null; };
   window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   window.fb_loadFee2Config = async function() { var sn = await jget("config/fee2Config"); return sn.exists() ? sn.val() : null; };
   // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)

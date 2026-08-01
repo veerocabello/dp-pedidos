@@ -790,6 +790,27 @@
           <div class="admin-toast" id="fee-config-toast" style="display:none">✅ Guardado</div>
         </div>
 
+        <!-- DESCUENTO ESTUDIANTE/JUBILADO -->
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:16px;padding:16px;margin-bottom:12px">
+          <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">🪪 Descuento estudiante/jubilado</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:14px">El cliente lo marca al pedir; se avisa en el ticket y en cocina para comprobar el carné al cobrar.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <label style="font-size:13px;font-weight:600;color:var(--brown)">Activado</label>
+            <div id="student-discount-toggle" onclick="(function(){var en=localStorage.getItem('dpf_student_discount_enabled')==='true';saveStudentDiscountConfig(!en,getStudentDiscountPct());document.getElementById('student-discount-toggle').style.background=!en?'#27855a':'#ccc';document.getElementById('student-discount-toggle-dot').style.transform=!en?'translateX(20px)':'translateX(0)'})()" style="width:44px;height:24px;border-radius:99px;background:#ccc;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0">
+              <div id="student-discount-toggle-dot" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--white);transition:transform .2s"></div>
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Porcentaje de descuento</label>
+            <div style="display:flex;align-items:center;gap:4px">
+              <input type="number" id="cfg-student-discount-pct" min="1" max="100" step="1" value="10" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+              <span style="font-size:12px;color:var(--muted)">%</span>
+            </div>
+          </div>
+          <button onclick="(function(){var en=localStorage.getItem('dpf_student_discount_enabled')==='true';var pct=parseFloat(document.getElementById('cfg-student-discount-pct').value)||10;saveStudentDiscountConfig(en,pct);showToast('student-discount-toast')})()" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+          <div class="admin-toast" id="student-discount-toast" style="display:none">✅ Guardado</div>
+        </div>
+
         <!-- MÁXIMO POR TURNO -->
         <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:16px;padding:16px;margin-bottom:12px">
           <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">🔢 Máximo pedidos por turno</p>

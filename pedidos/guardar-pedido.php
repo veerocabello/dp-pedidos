@@ -446,7 +446,7 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
 // No se puede saber desde aquí si el cliente REALMENTE tenía derecho a
 // ese premio, así que se admite siempre como margen: es mejor un falso
 // negativo ocasional que bloquear/avisar de pedidos legítimos.
-function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode) {
+function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado) {
     $itemsSum = 0;
     $maxPatataUnit = 0;
     foreach ($items as $it) {
@@ -474,7 +474,21 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
             $descuentoCodigo = $itemsSum * ($pctSeguro / 100);
         }
     }
-    $margen = $maxPatataUnit + $descuentoCodigo + 0.05;
+    // Descuento estudiante/jubilado — igual que el de fidelización, ya viene
+    // reflejado como línea negativa dentro de $items (así que $itemsSum ya lo
+    // recoge), pero se añade también aquí como margen explícito por si esa
+    // línea faltara alguna vez, para no generar un aviso de "total
+    // manipulado" en pedidos legítimos con este descuento.
+    $margenEstudiante = 0;
+    if ($esEstudianteJubilado) {
+        $sdResp = fbGetConEtag($databaseURL, 'config/studentDiscountConfig', $accessToken);
+        $sd = is_array($sdResp['data']) ? $sdResp['data'] : null;
+        if ($sd && !empty($sd['enabled']) && is_numeric($sd['pct'] ?? null)) {
+            $pctSeguro2 = max(0, min(100, (float)$sd['pct']));
+            $margenEstudiante = $itemsSum * ($pctSeguro2 / 100);
+        }
+    }
+    $margen = $maxPatataUnit + $descuentoCodigo + $margenEstudiante + 0.05;
     if ($total < ($itemsSum - $margen)) {
         return sprintf('total enviado %.2f€, suma de productos %.2f€ (margen de descuentos/premio admitido: %.2f€)', $total, $itemsSum, $margen);
     }
@@ -737,6 +751,9 @@ try {
     // local" (sin gastos de gestión) — se guarda para poder priorizarlo en
     // cocina, ya que ese cliente está esperando físicamente en el local.
     $esPedidoLocal = !empty($payload['esPedidoLocal']);
+    // Descuento estudiante/jubilado autodeclarado — se guarda para avisar en
+    // el ticket y en cocina que hay que comprobar el carné al cobrar.
+    $esEstudianteJubilado = !empty($payload['esEstudianteJubilado']);
 
     $phoneClean = preg_replace('/[^0-9]/', '', (string)$phone);
     // La web ya exige 9 dígitos (carrito-checkout.js) — comprobarlo también
@@ -774,7 +791,7 @@ try {
     if ($avisosPrecios) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible precio manipulado en pedido ' . $orderNum . ' — ' . implode(' · ', $avisosPrecios));
     }
-    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode);
+    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado);
     if ($avisoTotal) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible total manipulado en pedido ' . $orderNum . ' — ' . $avisoTotal);
     }
@@ -828,6 +845,7 @@ try {
         'total'    => $total,
         'time'     => date('d/m/Y, H:i:s'),
         'esPedidoLocal' => $esPedidoLocal,
+        'esEstudianteJubilado' => $esEstudianteJubilado,
     ];
     $ticketGuardado = fbPutSiCoincide($databaseURL, $ticketPath, $accessToken, $ticketData, $leidoTicket['etag']);
     if (!$ticketGuardado) {
@@ -855,6 +873,7 @@ try {
         'time'  => $horaLabel,
         'slot'  => $slotTime,
         'esPedidoLocal' => $esPedidoLocal,
+        'esEstudianteJubilado' => $esEstudianteJubilado,
         'ts'    => (int)(microtime(true) * 1000),
     ];
     $statsGuardado = guardarPedidoEnStats($databaseURL, $accessToken, $todayKey, $newOrder, $total);

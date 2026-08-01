@@ -120,6 +120,19 @@ function _ptBuildTicketBytes(ticket) {
 
   push('------------------------------------------------\n');
 
+  // Descuento estudiante/jubilado autodeclarado — aviso destacado justo
+  // antes del total, para que se compruebe el carné en el momento de cobrar.
+  if (ticket.esEstudianteJubilado) {
+    center();
+    bold(true);
+    big();
+    push('*** VERIFICAR CARNET ***\n');
+    normal();
+    push('ESTUDIANTE / JUBILADO\n');
+    bold(false);
+    push('------------------------------------------------\n');
+  }
+
   // Total
   center();
   big();

@@ -767,6 +767,17 @@ function showAdminSection(id, btn) {
     // Inicializar slot max
     var slotMaxEl = document.getElementById('slot-max-input-cfg') || document.getElementById('slot-max-input');
     if (slotMaxEl) slotMaxEl.value = getSlotMax();
+    // Inicializar descuento estudiante/jubilado
+    if (typeof getStudentDiscountEnabled === 'function') {
+      var sdEn = getStudentDiscountEnabled();
+      var sdPct = getStudentDiscountPct();
+      var sdPctEl = document.getElementById('cfg-student-discount-pct');
+      var sdToggle = document.getElementById('student-discount-toggle');
+      var sdToggleDot = document.getElementById('student-discount-toggle-dot');
+      if (sdPctEl) sdPctEl.value = sdPct;
+      if (sdToggle) sdToggle.style.background = sdEn ? '#27855a' : '#ccc';
+      if (sdToggleDot) sdToggleDot.style.transform = sdEn ? 'translateX(20px)' : 'translateX(0)';
+    }
   }
 }
 async function renderActiveSessionsList() {

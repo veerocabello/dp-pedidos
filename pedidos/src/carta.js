@@ -828,12 +828,32 @@ function renderCart() {
       fidelizacionEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt);
+  // Descuento estudiante/jubilado — el cliente lo marca él mismo (se
+  // comprueba el carné al cobrar en caja, ver comentario junto a la
+  // casilla en index.html) y se suma al resto de descuentos, igual que ya
+  // se suman el código promocional y el premio de fidelización.
+  const studentDiscountRowEl = document.getElementById('student-discount-row');
+  const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
+  if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
+  const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const studentDiscountAmt = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
+  const studentDiscountEl = document.getElementById('cart-student-discount-row');
+  if (studentDiscountEl) {
+    if (studentDiscountAmt > 0) {
+      studentDiscountEl.style.display = 'flex';
+      document.getElementById('cart-student-discount-label').textContent = '🪪 Estudiante/jubilado (-' + studentDiscountPctCfg + '%)';
+      document.getElementById('cart-student-discount-amount').textContent = '-' + studentDiscountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      studentDiscountEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt - studentDiscountAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
   // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
   // la línea verde de cada uno ya existía, pero un badge aparte resalta
   // más el ahorro real que solo ver un número distinto en el total.
-  const totalAhorro = discountAmt + fidelizacionAmt;
+  const totalAhorro = discountAmt + fidelizacionAmt + studentDiscountAmt;
   const savingsEl = document.getElementById('cart-savings-badge');
   if (savingsEl) {
     if (totalAhorro > 0) {
@@ -862,7 +882,7 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg);
 }
 
 // ── REPETIR ÚLTIMO PEDIDO ──

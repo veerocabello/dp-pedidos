@@ -2626,12 +2626,32 @@ function renderCart() {
       fidelizacionEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt);
+  // Descuento estudiante/jubilado — el cliente lo marca él mismo (se
+  // comprueba el carné al cobrar en caja, ver comentario junto a la
+  // casilla en index.html) y se suma al resto de descuentos, igual que ya
+  // se suman el código promocional y el premio de fidelización.
+  const studentDiscountRowEl = document.getElementById('student-discount-row');
+  const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
+  if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
+  const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const studentDiscountAmt = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
+  const studentDiscountEl = document.getElementById('cart-student-discount-row');
+  if (studentDiscountEl) {
+    if (studentDiscountAmt > 0) {
+      studentDiscountEl.style.display = 'flex';
+      document.getElementById('cart-student-discount-label').textContent = '🪪 Estudiante/jubilado (-' + studentDiscountPctCfg + '%)';
+      document.getElementById('cart-student-discount-amount').textContent = '-' + studentDiscountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      studentDiscountEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt - studentDiscountAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
   // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
   // la línea verde de cada uno ya existía, pero un badge aparte resalta
   // más el ahorro real que solo ver un número distinto en el total.
-  const totalAhorro = discountAmt + fidelizacionAmt;
+  const totalAhorro = discountAmt + fidelizacionAmt + studentDiscountAmt;
   const savingsEl = document.getElementById('cart-savings-badge');
   if (savingsEl) {
     if (totalAhorro > 0) {
@@ -2660,7 +2680,7 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg);
 }
 
 // ── REPETIR ÚLTIMO PEDIDO ──
@@ -2748,10 +2768,14 @@ function _updateCartFab(count, total) {
     repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
   }
 }
-function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
+  // Fuente de verdad de la casilla estudiante/jubilado: la del formulario
+  // de escritorio, igual que el código local — así el drawer siempre
+  // refleja el valor real aunque se marcara desde el otro formulario.
+  const _estudianteCheckedDrawer = !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
@@ -2800,7 +2824,11 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   if (fidelizacionAmt > 0) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
-  const _ahorroDrawer = discountAmt + fidelizacionAmt;
+  studentDiscountAmt = studentDiscountAmt || 0;
+  if (studentDiscountAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83E\uDEAA Estudiante/jubilado (-".concat(studentDiscountPctCfg, "%)</span><span>-").concat(studentDiscountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt + studentDiscountAmt;
   if (_ahorroDrawer > 0) {
     html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
@@ -2824,10 +2852,13 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
       : (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === _digitsActualDrawer
         ? "<div id=\"fidelizacion-proximo-sello-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF89 \xA1Este es tu pedido n\xFAmero 10! Al confirmarlo, tu patata gratis estar\xE1 disponible en tu pr\xF3ximo pedido.</div>"
         : '');
+    const _studentDiscountHtmlDrawer = studentDiscountEnabledCfg
+      ? "<div style=\"margin-top:14px\"><label style=\"display:flex;align-items:center;gap:10px;background:#FFF8EE;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ".concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado <span style=\"font-weight:400;color:#8A6A4E\">(se comprobar\xE1 el carn\xE9 al recoger)</span></span></label></div>")
+      : '';
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_studentDiscountHtmlDrawer, "\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
@@ -3503,7 +3534,7 @@ async function _submitOrderInner() {
   // comentario junto a esperarConfigCriticaLista() en admin-config.js. En
   // el caso normal esta espera ya está resuelta y esto no tarda nada; solo
   // se nota (y se avisa en el botón) en una visita nueva/muy rápida.
-  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo)) {
+  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo)) {
     const btnGate = document.getElementById('submit-btn');
     const prevGateText = btnGate ? btnGate.textContent : null;
     const prevGateDisabled = btnGate ? btnGate.disabled : false;
@@ -3719,7 +3750,14 @@ async function _submitOrderInner() {
   const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
   const _discountAmt = getDiscountAmount(subTotal);
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
-  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento);
+  // Descuento estudiante/jubilado — autodeclarado por el cliente, se suma
+  // al resto de descuentos (código + fidelización); la verificación real
+  // del carné se hace en caja al cobrar, avisado en el ticket/cocina.
+  const _esEstudianteJubiladoSubmit = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled()
+    && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const _studentDiscountPctSubmit = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const _studentDiscountAmt = _esEstudianteJubiladoSubmit ? Math.round(subTotal * _studentDiscountPctSubmit) / 100 : 0;
+  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento - _studentDiscountAmt);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
       id = _ref10[0],
@@ -3801,6 +3839,11 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: -_fidelizacionDescuento
   }] : [];
+  const studentDiscountItems = _studentDiscountAmt > 0 ? [{
+    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '%)',
+    qty: 1,
+    subtotal: -_studentDiscountAmt
+  }] : [];
   // Si este pedido es el que completa el ciclo de 10 sellos, añadimos una
   // línea informativa en el ticket (sin afectar al precio) para que se
   // imprima y se vea en cocina/caja que hay que avisar al cliente.
@@ -3810,7 +3853,7 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: 0
   }] : [];
-  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...fidelizacionAvisoItems];
+  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Estadística "¿le metes algo dulce?": si se llegó a mostrar la sugerencia
@@ -3835,7 +3878,10 @@ async function _submitOrderInner() {
     // Pedido "desde el local" (código de cola aplicado): para que en cocina
     // pueda mostrarse primero, ya que ese cliente está esperando físicamente
     // en el mostrador y no se puede ir a pedir a otro sitio.
-    esPedidoLocal: _sinGastosPorCodigoLocalSubmit
+    esPedidoLocal: _sinGastosPorCodigoLocalSubmit,
+    // Descuento estudiante/jubilado autodeclarado — se imprime destacado en
+    // el ticket y se marca en cocina para que se compruebe el carné al cobrar.
+    esEstudianteJubilado: _esEstudianteJubiladoSubmit
   };
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
@@ -3877,6 +3923,12 @@ async function _submitOrderInner() {
   const dcFeedback = document.getElementById('discount-feedback');
   if (dcInput) dcInput.value = '';
   if (dcFeedback) dcFeedback.textContent = '';
+  // Desmarcar la casilla estudiante/jubilado para el siguiente pedido — no
+  // debe quedar marcada por defecto sin que el cliente vuelva a elegirlo.
+  const _studentCb = document.getElementById('student-discount-checkbox');
+  if (_studentCb) _studentCb.checked = false;
+  const _studentCbDrawer = document.getElementById('drawer-student-discount-checkbox');
+  if (_studentCbDrawer) _studentCbDrawer.checked = false;
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
@@ -3979,7 +4031,8 @@ async function _finalizarPedido() {
       discountCode: discountCode || null,
       upsellMostrado: window._pendingTicketData.upsellMostrado || false,
       upsellAnadido: window._pendingTicketData.upsellAnadido || false,
-      esPedidoLocal: window._pendingTicketData.esPedidoLocal || false
+      esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,
+      esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false
     };
     // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
     // cierra o se pierde la conexión justo después de confirmar (antes de
@@ -8844,6 +8897,45 @@ function loadFee2FromFirebase() {
   });
 }
 
+// ── DESCUENTO ESTUDIANTE/JUBILADO (autodeclarado, se comprueba el carné al cobrar) ──
+const STUDENT_DISCOUNT_ENABLED_KEY = 'dpf_student_discount_enabled';
+const STUDENT_DISCOUNT_PCT_KEY = 'dpf_student_discount_pct';
+function getStudentDiscountEnabled() {
+  return localStorage.getItem(STUDENT_DISCOUNT_ENABLED_KEY) === 'true';
+}
+function getStudentDiscountPct() {
+  return parseFloat(localStorage.getItem(STUDENT_DISCOUNT_PCT_KEY) || '10');
+}
+function saveStudentDiscountConfig(enabled, pct) {
+  localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
+  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
+}
+function loadStudentDiscountFromFirebase() {
+  // Mismo motivo que loadFeeFromFirebase()/loadFee2FromFirebase(): lectura
+  // directa de una sola vez además del listener, para que en una visita
+  // nueva la casilla no aparezca oculta/desactivada solo porque el
+  // listener todavía no ha recibido su primer valor.
+  if (window.fb_loadStudentDiscountConfig) {
+    window.fb_loadStudentDiscountConfig().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+      renderCart();
+    }).catch(() => {}).then(() => { window._studentDiscountConfigListo = true; });
+  } else {
+    window._studentDiscountConfigListo = true;
+  }
+  if (!window.fb_listenStudentDiscountConfig) return;
+  window.fb_listenStudentDiscountConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+    renderCart();
+  });
+}
+
 // ── CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión, no el otro gasto fijo) ──
 // Para cuando hay cola y quieres que la gente pida desde el móvil sin que
 // les cobre los gastos de gestión online — cambiable desde el panel en
@@ -8968,11 +9060,12 @@ document.addEventListener('DOMContentLoaded', () => {
 window._feeConfigListo = window._feeConfigListo || false;
 window._fee2ConfigListo = window._fee2ConfigListo || false;
 window._localCodeListo = window._localCodeListo === undefined ? true : window._localCodeListo;
+window._studentDiscountConfigListo = window._studentDiscountConfigListo || false;
 function esperarConfigCriticaLista(maxMs) {
   return new Promise(resolve => {
     const start = Date.now();
     (function chk() {
-      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo;
+      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo;
       if (listo || Date.now() - start > maxMs) { resolve(); return; }
       setTimeout(chk, 80);
     })();
@@ -9927,6 +10020,19 @@ function _ptBuildTicketBytes(ticket) {
   });
 
   push('------------------------------------------------\n');
+
+  // Descuento estudiante/jubilado autodeclarado — aviso destacado justo
+  // antes del total, para que se compruebe el carné en el momento de cobrar.
+  if (ticket.esEstudianteJubilado) {
+    center();
+    bold(true);
+    big();
+    push('*** VERIFICAR CARNET ***\n');
+    normal();
+    push('ESTUDIANTE / JUBILADO\n');
+    bold(false);
+    push('------------------------------------------------\n');
+  }
 
   // Total
   center();
@@ -11133,7 +11239,8 @@ function _autoImprimirPedido(order) {
     slotTime: order.slot || null,
     items: order.items || [],
     total: order.total,
-    time: order.time
+    time: order.time,
+    esEstudianteJubilado: order.esEstudianteJubilado || false
   };
 
   // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
@@ -11328,6 +11435,7 @@ function initFirebaseListeners() {
   loadFeeFromFirebase();
   if (typeof loadFee2FromFirebase === 'function') loadFee2FromFirebase();
   if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
+  if (typeof loadStudentDiscountFromFirebase === 'function') loadStudentDiscountFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
   // Auto-pausa por saturación: configuración (umbral/mensaje/on-off) y
@@ -11955,7 +12063,8 @@ function _renderLiveOrders(stats, todayKey) {
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';
     const localBadge = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🏪 En el local</span>' : '';
-    const border = o.esPedidoLocal ? '#166534' : isNuevo ? '#3D1F0D' : '#3B82F6';
+    const estudianteBadge = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🪪 Verificar carné</span>' : '';
+    const border = o.esPedidoLocal ? '#166534' : o.esEstudianteJubilado ? '#c2711a' : isNuevo ? '#3D1F0D' : '#3B82F6';
     const btns = isNuevo
       ? '<button class="kbtn kbtn-delete" data-print-num="' + escapeAttr(o.num) + '" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}">' + (_printedOrders.has(o.num) ? '🖨️ Impreso' : '🖨️ Imprimir') + '</button>'
         + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'recibido\')" style="background:#EFF6FF;color:#1D4ED8;border:0.5px solid #93C5FD">🔵 Recibido</button>'
@@ -11967,7 +12076,7 @@ function _renderLiveOrders(stats, todayKey) {
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
         + '<div><span style="font-size:22px;font-weight:700;font-family:Georgia,serif;color:#3D1F0D">' + escapeHtml(o.num) + '</span>'
         + '<span style="font-size:13px;color:#2A1506;margin-left:6px">' + escapeHtml(o.name) + '</span></div>'
-        + '<div style="display:flex;gap:4px;align-items:center">' + localBadge + slotBadge + '</div>'
+        + '<div style="display:flex;gap:4px;align-items:center">' + localBadge + estudianteBadge + slotBadge + '</div>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-top:4px">' + escapeHtml(o.time) + ' · <span id="total-display-' + escapeAttr(o.num.replace('#','')) + '" data-num="' + escapeAttr(o.num) + '" onclick="startEditOrderTotal(this.dataset.num)" style="cursor:pointer;text-decoration:underline dotted">' + o.total.toFixed(2).replace('.',',') + ' €</span></div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + btns + '</div>'
@@ -12216,9 +12325,10 @@ function refreshKitchenGrid() {
     const isJustArrived = o.ts && Date.now() - o.ts < 30000;
     const newClass = status === 'nuevo' && isJustArrived ? ' is-new' : '';
     const localBadgeK = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🏪 EN EL LOCAL</span>' : '';
-    const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : cardStyle;
+    const estudianteBadgeK = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🪪 VERIFICAR CARNÉ</span>' : '';
+    const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : o.esEstudianteJubilado ? cardStyle + 'border-left:4px solid #c2711a;' : cardStyle;
     const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
-    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
+    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + estudianteBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
   }).join('');
 }
 
@@ -13428,6 +13538,17 @@ function showAdminSection(id, btn) {
     // Inicializar slot max
     var slotMaxEl = document.getElementById('slot-max-input-cfg') || document.getElementById('slot-max-input');
     if (slotMaxEl) slotMaxEl.value = getSlotMax();
+    // Inicializar descuento estudiante/jubilado
+    if (typeof getStudentDiscountEnabled === 'function') {
+      var sdEn = getStudentDiscountEnabled();
+      var sdPct = getStudentDiscountPct();
+      var sdPctEl = document.getElementById('cfg-student-discount-pct');
+      var sdToggle = document.getElementById('student-discount-toggle');
+      var sdToggleDot = document.getElementById('student-discount-toggle-dot');
+      if (sdPctEl) sdPctEl.value = sdPct;
+      if (sdToggle) sdToggle.style.background = sdEn ? '#27855a' : '#ccc';
+      if (sdToggleDot) sdToggleDot.style.transform = sdEn ? 'translateX(20px)' : 'translateX(0)';
+    }
   }
 }
 async function renderActiveSessionsList() {

@@ -1143,6 +1143,45 @@ function loadFee2FromFirebase() {
   });
 }
 
+// ── DESCUENTO ESTUDIANTE/JUBILADO (autodeclarado, se comprueba el carné al cobrar) ──
+const STUDENT_DISCOUNT_ENABLED_KEY = 'dpf_student_discount_enabled';
+const STUDENT_DISCOUNT_PCT_KEY = 'dpf_student_discount_pct';
+function getStudentDiscountEnabled() {
+  return localStorage.getItem(STUDENT_DISCOUNT_ENABLED_KEY) === 'true';
+}
+function getStudentDiscountPct() {
+  return parseFloat(localStorage.getItem(STUDENT_DISCOUNT_PCT_KEY) || '10');
+}
+function saveStudentDiscountConfig(enabled, pct) {
+  localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
+  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
+}
+function loadStudentDiscountFromFirebase() {
+  // Mismo motivo que loadFeeFromFirebase()/loadFee2FromFirebase(): lectura
+  // directa de una sola vez además del listener, para que en una visita
+  // nueva la casilla no aparezca oculta/desactivada solo porque el
+  // listener todavía no ha recibido su primer valor.
+  if (window.fb_loadStudentDiscountConfig) {
+    window.fb_loadStudentDiscountConfig().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+      renderCart();
+    }).catch(() => {}).then(() => { window._studentDiscountConfigListo = true; });
+  } else {
+    window._studentDiscountConfigListo = true;
+  }
+  if (!window.fb_listenStudentDiscountConfig) return;
+  window.fb_listenStudentDiscountConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+    renderCart();
+  });
+}
+
 // ── CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión, no el otro gasto fijo) ──
 // Para cuando hay cola y quieres que la gente pida desde el móvil sin que
 // les cobre los gastos de gestión online — cambiable desde el panel en
@@ -1267,11 +1306,12 @@ document.addEventListener('DOMContentLoaded', () => {
 window._feeConfigListo = window._feeConfigListo || false;
 window._fee2ConfigListo = window._fee2ConfigListo || false;
 window._localCodeListo = window._localCodeListo === undefined ? true : window._localCodeListo;
+window._studentDiscountConfigListo = window._studentDiscountConfigListo || false;
 function esperarConfigCriticaLista(maxMs) {
   return new Promise(resolve => {
     const start = Date.now();
     (function chk() {
-      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo;
+      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo;
       if (listo || Date.now() - start > maxMs) { resolve(); return; }
       setTimeout(chk, 80);
     })();

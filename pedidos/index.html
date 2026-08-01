@@ -309,6 +309,10 @@
         <span id="cart-discount-label">Descuento</span>
         <span id="cart-discount-amount">-0,00 €</span>
       </div>
+      <div id="cart-student-discount-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span id="cart-student-discount-label">🪪 Estudiante/jubilado</span>
+        <span id="cart-student-discount-amount">-0,00 €</span>
+      </div>
       <div id="cart-fidelizacion-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
         <span>🎁 Patata gratis (fidelización)</span>
         <span id="cart-fidelizacion-amount">-0,00 €</span>
@@ -369,6 +373,14 @@
             <button type="button" onclick="dcAplicar(document.getElementById('discount-input').value)" style="padding:10px 16px;background:var(--brown);color:var(--white);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aplicar</button>
           </div>
           <div id="discount-feedback" style="font-size:12px;margin-top:6px;min-height:18px"></div>
+        </div>
+
+        <!-- Descuento estudiante/jubilado -->
+        <div id="student-discount-row" style="display:none;margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:10px;background:var(--cream);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;cursor:pointer">
+            <input type="checkbox" id="student-discount-checkbox" onchange="renderCart()" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--brown)">
+            <span style="font-size:13px;color:var(--brown);font-weight:600">🪪 Soy estudiante o jubilado <span style="font-weight:400;color:var(--muted)">(se comprobará el carné al recoger)</span></span>
+          </label>
         </div>
 
         <div id="slot-picker-group" style="display:none; margin-top:14px">
@@ -893,8 +905,8 @@
      archivo. -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1785864000000" defer></script>
-<script src="js/app.js?v=1785864000000" defer></script>
+<script src="js/config.js?v=1785865000000" defer></script>
+<script src="js/app.js?v=1785865000000" defer></script>
 <script src="js/auth.js?v=1785401656310" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita
