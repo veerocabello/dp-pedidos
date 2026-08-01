@@ -258,18 +258,10 @@
         <div class="form-group">
           <label>Teléfono</label>
           <input type="tel" id="customer-phone" placeholder="" maxlength="11" oninput="formatPhone(this)">
-          <div style="border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <span style="font-size:16px">📱</span>
-              <p style="font-size:12px;font-weight:700;color:#3D1F0D;margin:0">Se verificará tu número por SMS</p>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <p style="font-size:12px;color:#8A6A4E;margin:0;padding-left:4px">Solo para confirmar el pedido</p>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:13px">🔒</span>
-              <p style="font-size:12px;color:#8A6A4E;margin:0">No lo compartimos con nadie</p>
-            </div>
+          <div style="background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
+            <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8">📱</div>
+            <p style="font-size:12px;font-weight:700;color:#3D1F0D;margin:0">Se verificará tu número por SMS</p>
+            <p style="font-size:11.5px;color:#8A6A4E;margin:2px 0 0">Solo para confirmar el pedido · 🔒 No lo compartimos con nadie</p>
           </div>
         </div>
         <div class="form-group">
@@ -279,11 +271,12 @@
 
         <!-- HORA DE RECOGIDA (solo visible si el pedido incluye patatas en horario 19:30-23:30) -->
         <!-- Campo código de descuento -->
-        <div style="margin-bottom:16px">
-          <label style="font-size:11px;font-weight:700;color:#3D1F0D;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px">🎁 Código de descuento (opcional)</label>
+        <div style="background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:16px">
+          <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8">🏷️</div>
+          <label style="font-size:11px;font-weight:700;color:#3D1F0D;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px">Código de descuento (opcional)</label>
           <div style="display:flex;gap:8px">
-            <input id="discount-input" type="text" placeholder="" style="flex:1;padding:10px 14px;border:1.5px solid #F5E6C8;border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none" oninput="this.value=this.value.toUpperCase()">
-            <button type="button" onclick="dcAplicar(document.getElementById('discount-input').value)" style="padding:10px 16px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aplicar</button>
+            <input id="discount-input" type="text" placeholder="" style="flex:1;padding:9px 12px;border:1px solid rgba(61,31,13,.10);border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none;background:#fff" oninput="this.value=this.value.toUpperCase()">
+            <button type="button" onclick="dcAplicar(document.getElementById('discount-input').value)" style="padding:9px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aplicar</button>
           </div>
           <div id="discount-feedback" style="font-size:12px;margin-top:6px;min-height:18px"></div>
         </div>
@@ -682,8 +675,8 @@
      archivo. -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1784581169495" defer></script>
-<script src="js/app.js?v=1785314285091" defer></script>
+<script src="js/config.js?v=1785870000000" defer></script>
+<script src="js/app.js?v=1785870000000" defer></script>
 <script src="js/auth.js?v=1785276235746" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita

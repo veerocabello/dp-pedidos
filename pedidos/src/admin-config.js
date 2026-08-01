@@ -2102,14 +2102,17 @@ function _pintarTarjetaSellos(phoneClean, cliente) {
 
   const card = document.createElement('div');
   card.className = 'tarjeta-sellos-cliente';
-  card.style.cssText = 'border-radius:12px;padding:12px 14px;margin-top:10px;font-family:\'DM Sans\',sans-serif;' +
-    (premios > 0 ? 'background:#3D1F0D;color:#FFF8EE' : 'background:#FBEFD6;border:1.5px solid #F4C430;color:#3D1F0D');
+  card.style.cssText = 'border-radius:12px;margin-top:10px;font-family:\'DM Sans\',sans-serif;' +
+    (premios > 0
+      ? 'padding:12px 14px;background:#3D1F0D;color:#FFF8EE'
+      : 'padding:11px 13px 11px 44px;position:relative;background:#fff;border:1px solid rgba(61,31,13,.10);box-shadow:0 1px 3px rgba(0,0,0,.06);color:#3D1F0D');
 
   if (premios > 0) {
     card.innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:2px">🎉 ¡Tienes ' + premios + ' patata' + (premios > 1 ? 's' : '') + ' gratis para canjear!</div>' +
       '<div style="font-size:12px;color:#F4C430">Añádela al carrito y se descontará sola al confirmar.</div>';
   } else {
-    card.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">🎁 Tus sellos: ' + sellos + '/10</div>' +
+    card.innerHTML = '<div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F4C430">🎁</div>' +
+      '<div style="font-size:12px;font-weight:700;margin-bottom:6px">Tus sellos: ' + sellos + '/10</div>' +
       '<div>' + dots + '</div>' +
       (veces > 0 ? '<div style="font-size:11px;color:#8A6A4E;margin-top:6px">🏅 Ya van ' + veces + ' patata' + (veces > 1 ? 's' : '') + ' gratis conseguidas</div>' : '');
   }
