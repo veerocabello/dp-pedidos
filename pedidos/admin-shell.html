@@ -710,6 +710,16 @@
       </div>
 
       <div class="admin-section" id="admin-alertas" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:10px 12px;margin-bottom:16px">
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:6px">🩺 Estado del sistema</div>
+            <div id="estado-sistema-list" style="display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12px;color:var(--muted)">Comprobando…</div>
+            </div>
+          </div>
+          <button onclick="comprobarEstadoSistema(true)" style="padding:7px 12px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;margin-left:10px">🔄 Comprobar</button>
+        </div>
+
         <div class="stat-panel-head" style="border-radius:12px;margin-bottom:6px">🔔 Alertas</div>
         <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Pedidos que no se guardaron y precios que no cuadran con la carta — filtrado del registro de actividad.</div>
         <div id="alertas-list" style="display:flex;flex-direction:column;gap:10px"></div>

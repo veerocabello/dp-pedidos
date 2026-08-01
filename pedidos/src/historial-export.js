@@ -430,6 +430,51 @@ async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre) {
     if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
   }
 }
+// ── ESTADO DEL SISTEMA ── Chequeo rápido de las 3 piezas de las que
+// depende un pedido: Firebase, el servidor (guardar-pedido.php) y la
+// impresora de este dispositivo — para enterarse de un problema mirando
+// el panel, en vez de solo cuando ya ha fallado un pedido real.
+let _estadoSistemaUltimoCheck = 0;
+async function comprobarEstadoSistema(forzar) {
+  const el = document.getElementById('estado-sistema-list');
+  if (!el) return;
+  // Throttle: si ya se comprobó hace menos de un minuto y no se ha pedido
+  // a la fuerza (botón "Comprobar ahora"), no repetir en cada re-render.
+  if (!forzar && Date.now() - _estadoSistemaUltimoCheck < 60000) return;
+  _estadoSistemaUltimoCheck = Date.now();
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Comprobando…</div>';
+
+  let fbOk = false;
+  try {
+    if (window.fb_checkConnection) fbOk = await window.fb_checkConnection();
+  } catch (e) {}
+
+  let servidorOk = false;
+  try {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'ping' })
+    }, 6000);
+    const data = await res.json();
+    servidorOk = !!data.success;
+  } catch (e) {}
+
+  // La impresora es "opcional" (ok:null) si esta pantalla nunca ha llegado
+  // a intentar conectar con ninguna — no es un fallo, solo no aplica aquí.
+  const impresoraConectada = typeof _ptIsConnected === 'function' ? _ptIsConnected() : null;
+
+  const resultados = [
+    { nombre: 'Firebase (base de datos)', ok: fbOk },
+    { nombre: 'Servidor de pedidos', ok: servidorOk },
+    { nombre: 'Impresora térmica (este dispositivo)', ok: impresoraConectada }
+  ];
+  el.innerHTML = resultados.map(r => {
+    const icono = r.ok === null ? '⚪' : r.ok ? '✅' : '❌';
+    const color = r.ok === null ? 'var(--muted)' : r.ok ? '#166534' : '#c0392b';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">' + r.nombre + '</span><span style="font-weight:700;color:' + color + '">' + icono + '</span></div>';
+  }).join('') + '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Última comprobación: ' + new Date().toLocaleTimeString('es-ES') + '</div>';
+}
 function renderAlertas() {
   const entries = getAlertEntries();
   const el = document.getElementById('alertas-list');
@@ -456,6 +501,7 @@ function renderAlertas() {
   // avisos ya no cuentan como nuevos.
   if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
   updateAlertBadge();
+  if (typeof comprobarEstadoSistema === 'function') comprobarEstadoSistema();
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
@@ -1346,57 +1392,73 @@ function initFirebaseListeners() {
 
   // Menu prices/names sync across devices
   if (window.fb_listenMenu) {
-    window.fb_listenMenu(data => {
-      // data can be {items, ts} or plain array (legacy)
-      const savedMenu = Array.isArray(data) ? data : data && data.items ? data.items : null;
-      const fbTs = data && data.ts ? data.ts : 0;
-      const localTs = parseInt(localStorage.getItem(MENU_KEY + '_ts') || '0', 10);
-      // Only apply Firebase version if it's newer than local
-      if (!savedMenu || !savedMenu.length) return;
-      if (fbTs > 0 && fbTs < localTs) return; // local is newer, skip
-      // Primero resetear hidden para no acumular flags de runs anteriores
-      MENU.forEach(item => {
-        item.hidden = false;
-      });
-      savedMenu.forEach(saved => {
-        const item = MENU.find(m => m.id == saved.id);
-        if (item) {
-          if (saved.price !== undefined) item.price = saved.price;
-          if (saved.name) item.name = saved.name;
-          if (saved.desc !== undefined) item.desc = saved.desc;
-          item.hidden = saved.hidden || false;
-          item.soldout = saved.soldout || false;
-        } else {
-          // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
-          // junto a los de su misma categoría, no suelto al final
-          const nuevo = Object.assign({}, saved);
-          let lastIdx = -1;
-          for (let i = 0; i < MENU.length; i++) {
-            if (MENU[i].cat === nuevo.cat) lastIdx = i;
-          }
-          if (lastIdx === -1) {
-            MENU.push(nuevo);
-          } else {
-            MENU.splice(lastIdx + 1, 0, nuevo);
-          }
-        }
-      });
-      // Reaplicar categorías bloqueadas encima de los datos de Firebase
-      initCatBlocks();
-      // Protección: si Firebase ocultaría más del 80% de la carta, ignorar hidden flags
-      const hiddenCount = MENU.filter(m => m.hidden).length;
-      if (hiddenCount > MENU.length * 0.8) {
-        console.warn('[DPF] Firebase menu: demasiados items ocultos, reseteando');
-        MENU.forEach(m => {
-          m.hidden = false;
-        });
-        localStorage.removeItem(CAT_BLOCK_KEY);
-      }
-      localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
-      if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
-      renderMenu();
+    window.fb_listenMenu(_aplicarMenuDesdeFirebase);
+  }
+  // Refresco periódico de la carta, además del listener en tiempo real de
+  // arriba — si un cliente deja la pestaña abierta mucho rato (o el
+  // navegador móvil suspende la conexión en segundo plano y no la
+  // restablece del todo al volver), el listener podría no haber recibido
+  // el último cambio de precio/producto. Cada 10 minutos, y también en
+  // cuanto se vuelve a esta pestaña tras tenerla en segundo plano, se
+  // vuelve a comprobar contra Firebase directamente para no dejar pedir
+  // nunca con una carta desactualizada.
+  if (window.fb_loadMenu) {
+    const _refrescarMenu = () => { window.fb_loadMenu().then(data => { if (data) _aplicarMenuDesdeFirebase(data); }).catch(() => {}); };
+    setInterval(_refrescarMenu, 10 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _refrescarMenu();
     });
   }
+}
+function _aplicarMenuDesdeFirebase(data) {
+  // data can be {items, ts} or plain array (legacy)
+  const savedMenu = Array.isArray(data) ? data : data && data.items ? data.items : null;
+  const fbTs = data && data.ts ? data.ts : 0;
+  const localTs = parseInt(localStorage.getItem(MENU_KEY + '_ts') || '0', 10);
+  // Only apply Firebase version if it's newer than local
+  if (!savedMenu || !savedMenu.length) return;
+  if (fbTs > 0 && fbTs < localTs) return; // local is newer, skip
+  // Primero resetear hidden para no acumular flags de runs anteriores
+  MENU.forEach(item => {
+    item.hidden = false;
+  });
+  savedMenu.forEach(saved => {
+    const item = MENU.find(m => m.id == saved.id);
+    if (item) {
+      if (saved.price !== undefined) item.price = saved.price;
+      if (saved.name) item.name = saved.name;
+      if (saved.desc !== undefined) item.desc = saved.desc;
+      item.hidden = saved.hidden || false;
+      item.soldout = saved.soldout || false;
+    } else {
+      // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
+      // junto a los de su misma categoría, no suelto al final
+      const nuevo = Object.assign({}, saved);
+      let lastIdx = -1;
+      for (let i = 0; i < MENU.length; i++) {
+        if (MENU[i].cat === nuevo.cat) lastIdx = i;
+      }
+      if (lastIdx === -1) {
+        MENU.push(nuevo);
+      } else {
+        MENU.splice(lastIdx + 1, 0, nuevo);
+      }
+    }
+  });
+  // Reaplicar categorías bloqueadas encima de los datos de Firebase
+  initCatBlocks();
+  // Protección: si Firebase ocultaría más del 80% de la carta, ignorar hidden flags
+  const hiddenCount = MENU.filter(m => m.hidden).length;
+  if (hiddenCount > MENU.length * 0.8) {
+    console.warn('[DPF] Firebase menu: demasiados items ocultos, reseteando');
+    MENU.forEach(m => {
+      m.hidden = false;
+    });
+    localStorage.removeItem(CAT_BLOCK_KEY);
+  }
+  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
+  if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
+  renderMenu();
 }
 
 // Wait for Firebase to be ready, then init listeners

@@ -2712,6 +2712,19 @@ function repetirUltimoPedido() {
 }
 
 
+// Fetch con límite de tiempo — sin esto, si el servidor va lento o la
+// petición se queda "colgada" (no falla, simplemente nunca responde), el
+// cliente podía quedarse esperando indefinidamente en pantallas como
+// "Enviando pedido…" o "Verificando…" sin ningún mensaje ni forma de saber
+// si va a llegar respuesta alguna vez. Se usa en las peticiones que el
+// cliente ve/espera directamente (guardar pedido, SMS, fidelización).
+function _fetchConTimeout(url, opciones, ms) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms || 12000);
+  return fetch(url, Object.assign({}, opciones, { signal: controller.signal }))
+    .finally(() => clearTimeout(timeoutId));
+}
+
 // ── FAB y DRAWER (solo móvil) ──────────────────────────────────────────────
 function _updateCartFab(count, total) {
   const fab = document.getElementById('cart-fab');
@@ -2990,6 +3003,26 @@ function removeItem(id) {
   renderCart();
 }
 
+// Quita del carrito cualquier producto que ya no exista en MENU (borrado o
+// con el id cambiado desde el panel de admin mientras el cliente lo tenía
+// añadido) — devuelve cuántos se han quitado, para que submitOrder() pueda
+// avisar en vez de enviarlos igualmente.
+function _limpiarItemsCarritoInvalidos() {
+  let quitados = 0;
+  Object.keys(cart).forEach(id => {
+    if (!MENU.find(m => m.id == id)) { delete cart[id]; quitados++; }
+  });
+  Object.keys(custCart).forEach(key => {
+    const c = custCart[key];
+    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete custCart[key]; quitados++; }
+  });
+  Object.keys(extrasCart).forEach(key => {
+    const c = extrasCart[key];
+    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete extrasCart[key]; quitados++; }
+  });
+  return quitados;
+}
+
 // ── Recuperar un pedido que se quedó a medio enviar ──────────────────────
 // Si el cliente cierra la pestaña, pierde la conexión o el navegador se
 // bloquea justo después de confirmar (antes de que llegara la respuesta de
@@ -3012,11 +3045,11 @@ async function _recuperarPedidoEnCurso() {
     return;
   }
   try {
-    const res = await fetch('guardar-pedido.php', {
+    const res = await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(marcador.payload)
-    });
+    }, 10000);
     const data = await res.json();
     try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
     if (data.success) {
@@ -3066,11 +3099,11 @@ function formatNombreConBadgeNuevo(nombre) {
 // Fallback a aleatorio solo si el servidor no responde.
 async function generateOrderNumber() {
   try {
-    const res = await fetch('guardar-pedido.php', {
+    const res = await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reservarNumeroPedido' })
-    });
+    }, 8000);
     const data = await res.json();
     if (data.success && data.orderNum) return data.orderNum;
     console.warn('[orderNum] reserva en servidor falló:', data.error);
@@ -3258,11 +3291,11 @@ async function incrementSlot(slotTime) {
   // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
   // slots/ abierto a escritura anónima en las reglas.
   try {
-    await fetch('guardar-pedido.php', {
+    await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reservarSlot', slotTime })
-    });
+    }, 8000);
   } catch (e) {
     console.warn('Slot reserve error', e);
     saveSlotsData(getSlotsData());
@@ -3477,6 +3510,23 @@ async function _submitOrderInner() {
     if (btnGate) { btnGate.disabled = true; btnGate.textContent = 'Comprobando datos…'; }
     await esperarConfigCriticaLista(4000);
     if (btnGate && prevGateText !== null) { btnGate.disabled = prevGateDisabled; btnGate.textContent = prevGateText; }
+  }
+  // Si el admin borra o renombra un producto justo mientras un cliente lo
+  // tiene en el carrito, antes se descartaba en silencio al enviar el
+  // pedido (solo quedaba un console.error) — el cliente no se enteraba de
+  // que su pedido había cambiado hasta recogerlo. Ahora se detecta antes
+  // de seguir, se quita del carrito y se avisa claramente, dejando el
+  // carrito abierto para que pueda revisar/completar el pedido en vez de
+  // confirmarlo tal cual con algo menos sin saberlo.
+  if (typeof _limpiarItemsCarritoInvalidos === 'function') {
+    const _quitados = _limpiarItemsCarritoInvalidos();
+    if (_quitados > 0) {
+      renderMenu();
+      renderCart();
+      showAlert('Uno de los productos de tu pedido ya no está disponible y se ha quitado del carrito. Revisa tu pedido antes de confirmar.');
+      if (typeof openCartDrawer === 'function') openCartDrawer();
+      return;
+    }
   }
   // Igual que ya hace changeQty() al añadir al carrito — antes esta función
   // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
@@ -3850,11 +3900,11 @@ async function _submitOrderInner() {
   // Intentar enviar SMS de verificación
   let smsOk = false;
   try {
-    const smsRes = await fetch('/send-code.php', {
+    const smsRes = await _fetchConTimeout('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: '+34' + phoneClean })
-    });
+    }, 8000);
     const smsData = await smsRes.json();
     if (smsData.success) {
       smsOk = true;
@@ -3940,11 +3990,11 @@ async function _finalizarPedido() {
     // teléfono, en vez de duplicarlo.
     try { localStorage.setItem('dpf_pedido_en_curso', JSON.stringify({ orderNum, payload: _pedidoPayload, ts: Date.now() })); } catch (e) {}
     console.log('💾 Guardando pedido en el servidor:', orderNum);
-    _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
+    _pedidoGuardadoPromise = _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(_pedidoPayload)
-    })
+    }, 12000)
       .then(res => res.json())
       .then(data => {
         try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
@@ -4000,7 +4050,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
   // pueda regalarse sellos/premios abriendo las devtools.
   try {
-    const res = await fetch('fidelizacion.php', {
+    const res = await _fetchConTimeout('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -4011,7 +4061,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
         consumioPremio: !!consumioPremio,
         nombre: (ticketData && ticketData.name) || ''
       })
-    });
+    }, 10000);
     // Si el servidor rechaza el sello (success:false, no "skipped"), ya lo
     // registra fidelizacion.php por su cuenta con la cuenta de servicio
     // (fbAgregarActivityLog) — hacerlo también aquí en el navegador del
@@ -10694,6 +10744,51 @@ async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre) {
     if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
   }
 }
+// ── ESTADO DEL SISTEMA ── Chequeo rápido de las 3 piezas de las que
+// depende un pedido: Firebase, el servidor (guardar-pedido.php) y la
+// impresora de este dispositivo — para enterarse de un problema mirando
+// el panel, en vez de solo cuando ya ha fallado un pedido real.
+let _estadoSistemaUltimoCheck = 0;
+async function comprobarEstadoSistema(forzar) {
+  const el = document.getElementById('estado-sistema-list');
+  if (!el) return;
+  // Throttle: si ya se comprobó hace menos de un minuto y no se ha pedido
+  // a la fuerza (botón "Comprobar ahora"), no repetir en cada re-render.
+  if (!forzar && Date.now() - _estadoSistemaUltimoCheck < 60000) return;
+  _estadoSistemaUltimoCheck = Date.now();
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Comprobando…</div>';
+
+  let fbOk = false;
+  try {
+    if (window.fb_checkConnection) fbOk = await window.fb_checkConnection();
+  } catch (e) {}
+
+  let servidorOk = false;
+  try {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'ping' })
+    }, 6000);
+    const data = await res.json();
+    servidorOk = !!data.success;
+  } catch (e) {}
+
+  // La impresora es "opcional" (ok:null) si esta pantalla nunca ha llegado
+  // a intentar conectar con ninguna — no es un fallo, solo no aplica aquí.
+  const impresoraConectada = typeof _ptIsConnected === 'function' ? _ptIsConnected() : null;
+
+  const resultados = [
+    { nombre: 'Firebase (base de datos)', ok: fbOk },
+    { nombre: 'Servidor de pedidos', ok: servidorOk },
+    { nombre: 'Impresora térmica (este dispositivo)', ok: impresoraConectada }
+  ];
+  el.innerHTML = resultados.map(r => {
+    const icono = r.ok === null ? '⚪' : r.ok ? '✅' : '❌';
+    const color = r.ok === null ? 'var(--muted)' : r.ok ? '#166534' : '#c0392b';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">' + r.nombre + '</span><span style="font-weight:700;color:' + color + '">' + icono + '</span></div>';
+  }).join('') + '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Última comprobación: ' + new Date().toLocaleTimeString('es-ES') + '</div>';
+}
 function renderAlertas() {
   const entries = getAlertEntries();
   const el = document.getElementById('alertas-list');
@@ -10720,6 +10815,7 @@ function renderAlertas() {
   // avisos ya no cuentan como nuevos.
   if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
   updateAlertBadge();
+  if (typeof comprobarEstadoSistema === 'function') comprobarEstadoSistema();
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
@@ -11610,57 +11706,73 @@ function initFirebaseListeners() {
 
   // Menu prices/names sync across devices
   if (window.fb_listenMenu) {
-    window.fb_listenMenu(data => {
-      // data can be {items, ts} or plain array (legacy)
-      const savedMenu = Array.isArray(data) ? data : data && data.items ? data.items : null;
-      const fbTs = data && data.ts ? data.ts : 0;
-      const localTs = parseInt(localStorage.getItem(MENU_KEY + '_ts') || '0', 10);
-      // Only apply Firebase version if it's newer than local
-      if (!savedMenu || !savedMenu.length) return;
-      if (fbTs > 0 && fbTs < localTs) return; // local is newer, skip
-      // Primero resetear hidden para no acumular flags de runs anteriores
-      MENU.forEach(item => {
-        item.hidden = false;
-      });
-      savedMenu.forEach(saved => {
-        const item = MENU.find(m => m.id == saved.id);
-        if (item) {
-          if (saved.price !== undefined) item.price = saved.price;
-          if (saved.name) item.name = saved.name;
-          if (saved.desc !== undefined) item.desc = saved.desc;
-          item.hidden = saved.hidden || false;
-          item.soldout = saved.soldout || false;
-        } else {
-          // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
-          // junto a los de su misma categoría, no suelto al final
-          const nuevo = Object.assign({}, saved);
-          let lastIdx = -1;
-          for (let i = 0; i < MENU.length; i++) {
-            if (MENU[i].cat === nuevo.cat) lastIdx = i;
-          }
-          if (lastIdx === -1) {
-            MENU.push(nuevo);
-          } else {
-            MENU.splice(lastIdx + 1, 0, nuevo);
-          }
-        }
-      });
-      // Reaplicar categorías bloqueadas encima de los datos de Firebase
-      initCatBlocks();
-      // Protección: si Firebase ocultaría más del 80% de la carta, ignorar hidden flags
-      const hiddenCount = MENU.filter(m => m.hidden).length;
-      if (hiddenCount > MENU.length * 0.8) {
-        console.warn('[DPF] Firebase menu: demasiados items ocultos, reseteando');
-        MENU.forEach(m => {
-          m.hidden = false;
-        });
-        localStorage.removeItem(CAT_BLOCK_KEY);
-      }
-      localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
-      if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
-      renderMenu();
+    window.fb_listenMenu(_aplicarMenuDesdeFirebase);
+  }
+  // Refresco periódico de la carta, además del listener en tiempo real de
+  // arriba — si un cliente deja la pestaña abierta mucho rato (o el
+  // navegador móvil suspende la conexión en segundo plano y no la
+  // restablece del todo al volver), el listener podría no haber recibido
+  // el último cambio de precio/producto. Cada 10 minutos, y también en
+  // cuanto se vuelve a esta pestaña tras tenerla en segundo plano, se
+  // vuelve a comprobar contra Firebase directamente para no dejar pedir
+  // nunca con una carta desactualizada.
+  if (window.fb_loadMenu) {
+    const _refrescarMenu = () => { window.fb_loadMenu().then(data => { if (data) _aplicarMenuDesdeFirebase(data); }).catch(() => {}); };
+    setInterval(_refrescarMenu, 10 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _refrescarMenu();
     });
   }
+}
+function _aplicarMenuDesdeFirebase(data) {
+  // data can be {items, ts} or plain array (legacy)
+  const savedMenu = Array.isArray(data) ? data : data && data.items ? data.items : null;
+  const fbTs = data && data.ts ? data.ts : 0;
+  const localTs = parseInt(localStorage.getItem(MENU_KEY + '_ts') || '0', 10);
+  // Only apply Firebase version if it's newer than local
+  if (!savedMenu || !savedMenu.length) return;
+  if (fbTs > 0 && fbTs < localTs) return; // local is newer, skip
+  // Primero resetear hidden para no acumular flags de runs anteriores
+  MENU.forEach(item => {
+    item.hidden = false;
+  });
+  savedMenu.forEach(saved => {
+    const item = MENU.find(m => m.id == saved.id);
+    if (item) {
+      if (saved.price !== undefined) item.price = saved.price;
+      if (saved.name) item.name = saved.name;
+      if (saved.desc !== undefined) item.desc = saved.desc;
+      item.hidden = saved.hidden || false;
+      item.soldout = saved.soldout || false;
+    } else {
+      // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
+      // junto a los de su misma categoría, no suelto al final
+      const nuevo = Object.assign({}, saved);
+      let lastIdx = -1;
+      for (let i = 0; i < MENU.length; i++) {
+        if (MENU[i].cat === nuevo.cat) lastIdx = i;
+      }
+      if (lastIdx === -1) {
+        MENU.push(nuevo);
+      } else {
+        MENU.splice(lastIdx + 1, 0, nuevo);
+      }
+    }
+  });
+  // Reaplicar categorías bloqueadas encima de los datos de Firebase
+  initCatBlocks();
+  // Protección: si Firebase ocultaría más del 80% de la carta, ignorar hidden flags
+  const hiddenCount = MENU.filter(m => m.hidden).length;
+  if (hiddenCount > MENU.length * 0.8) {
+    console.warn('[DPF] Firebase menu: demasiados items ocultos, reseteando');
+    MENU.forEach(m => {
+      m.hidden = false;
+    });
+    localStorage.removeItem(CAT_BLOCK_KEY);
+  }
+  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
+  if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
+  renderMenu();
 }
 
 // Wait for Firebase to be ready, then init listeners
@@ -16122,11 +16234,11 @@ async function smsVerifyCode() {
   }
 
   try {
-    const res = await fetch('/verify-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/verify-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: pendingPhone, code })
-    });
+    }, 8000);
     const data = await res.json();
     if (data.verified) {
       await _finalizarPedido();
@@ -16146,11 +16258,11 @@ async function smsResendCode() {
   if (!window._pendingOrderData) return;
   const phone = '+34' + window._pendingOrderData.phoneClean;
   try {
-    const res = await fetch('/send-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
-    });
+    }, 8000);
     const data = await res.json();
     const errEl = document.getElementById('sms-error-msg');
     if (data.success) {

@@ -1,3 +1,16 @@
+// Fetch con límite de tiempo — sin esto, si el servidor va lento o la
+// petición se queda "colgada" (no falla, simplemente nunca responde), el
+// cliente podía quedarse esperando indefinidamente en pantallas como
+// "Enviando pedido…" o "Verificando…" sin ningún mensaje ni forma de saber
+// si va a llegar respuesta alguna vez. Se usa en las peticiones que el
+// cliente ve/espera directamente (guardar pedido, SMS, fidelización).
+function _fetchConTimeout(url, opciones, ms) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms || 12000);
+  return fetch(url, Object.assign({}, opciones, { signal: controller.signal }))
+    .finally(() => clearTimeout(timeoutId));
+}
+
 // ── FAB y DRAWER (solo móvil) ──────────────────────────────────────────────
 function _updateCartFab(count, total) {
   const fab = document.getElementById('cart-fab');
@@ -276,6 +289,26 @@ function removeItem(id) {
   renderCart();
 }
 
+// Quita del carrito cualquier producto que ya no exista en MENU (borrado o
+// con el id cambiado desde el panel de admin mientras el cliente lo tenía
+// añadido) — devuelve cuántos se han quitado, para que submitOrder() pueda
+// avisar en vez de enviarlos igualmente.
+function _limpiarItemsCarritoInvalidos() {
+  let quitados = 0;
+  Object.keys(cart).forEach(id => {
+    if (!MENU.find(m => m.id == id)) { delete cart[id]; quitados++; }
+  });
+  Object.keys(custCart).forEach(key => {
+    const c = custCart[key];
+    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete custCart[key]; quitados++; }
+  });
+  Object.keys(extrasCart).forEach(key => {
+    const c = extrasCart[key];
+    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete extrasCart[key]; quitados++; }
+  });
+  return quitados;
+}
+
 // ── Recuperar un pedido que se quedó a medio enviar ──────────────────────
 // Si el cliente cierra la pestaña, pierde la conexión o el navegador se
 // bloquea justo después de confirmar (antes de que llegara la respuesta de
@@ -298,11 +331,11 @@ async function _recuperarPedidoEnCurso() {
     return;
   }
   try {
-    const res = await fetch('guardar-pedido.php', {
+    const res = await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(marcador.payload)
-    });
+    }, 10000);
     const data = await res.json();
     try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
     if (data.success) {
@@ -352,11 +385,11 @@ function formatNombreConBadgeNuevo(nombre) {
 // Fallback a aleatorio solo si el servidor no responde.
 async function generateOrderNumber() {
   try {
-    const res = await fetch('guardar-pedido.php', {
+    const res = await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reservarNumeroPedido' })
-    });
+    }, 8000);
     const data = await res.json();
     if (data.success && data.orderNum) return data.orderNum;
     console.warn('[orderNum] reserva en servidor falló:', data.error);
@@ -544,11 +577,11 @@ async function incrementSlot(slotTime) {
   // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
   // slots/ abierto a escritura anónima en las reglas.
   try {
-    await fetch('guardar-pedido.php', {
+    await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reservarSlot', slotTime })
-    });
+    }, 8000);
   } catch (e) {
     console.warn('Slot reserve error', e);
     saveSlotsData(getSlotsData());
@@ -763,6 +796,23 @@ async function _submitOrderInner() {
     if (btnGate) { btnGate.disabled = true; btnGate.textContent = 'Comprobando datos…'; }
     await esperarConfigCriticaLista(4000);
     if (btnGate && prevGateText !== null) { btnGate.disabled = prevGateDisabled; btnGate.textContent = prevGateText; }
+  }
+  // Si el admin borra o renombra un producto justo mientras un cliente lo
+  // tiene en el carrito, antes se descartaba en silencio al enviar el
+  // pedido (solo quedaba un console.error) — el cliente no se enteraba de
+  // que su pedido había cambiado hasta recogerlo. Ahora se detecta antes
+  // de seguir, se quita del carrito y se avisa claramente, dejando el
+  // carrito abierto para que pueda revisar/completar el pedido en vez de
+  // confirmarlo tal cual con algo menos sin saberlo.
+  if (typeof _limpiarItemsCarritoInvalidos === 'function') {
+    const _quitados = _limpiarItemsCarritoInvalidos();
+    if (_quitados > 0) {
+      renderMenu();
+      renderCart();
+      showAlert('Uno de los productos de tu pedido ya no está disponible y se ha quitado del carrito. Revisa tu pedido antes de confirmar.');
+      if (typeof openCartDrawer === 'function') openCartDrawer();
+      return;
+    }
   }
   // Igual que ya hace changeQty() al añadir al carrito — antes esta función
   // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
@@ -1136,11 +1186,11 @@ async function _submitOrderInner() {
   // Intentar enviar SMS de verificación
   let smsOk = false;
   try {
-    const smsRes = await fetch('/send-code.php', {
+    const smsRes = await _fetchConTimeout('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: '+34' + phoneClean })
-    });
+    }, 8000);
     const smsData = await smsRes.json();
     if (smsData.success) {
       smsOk = true;
@@ -1226,11 +1276,11 @@ async function _finalizarPedido() {
     // teléfono, en vez de duplicarlo.
     try { localStorage.setItem('dpf_pedido_en_curso', JSON.stringify({ orderNum, payload: _pedidoPayload, ts: Date.now() })); } catch (e) {}
     console.log('💾 Guardando pedido en el servidor:', orderNum);
-    _pedidoGuardadoPromise = fetch('guardar-pedido.php', {
+    _pedidoGuardadoPromise = _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(_pedidoPayload)
-    })
+    }, 12000)
       .then(res => res.json())
       .then(data => {
         try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
@@ -1286,7 +1336,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
   // pueda regalarse sellos/premios abriendo las devtools.
   try {
-    const res = await fetch('fidelizacion.php', {
+    const res = await _fetchConTimeout('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1297,7 +1347,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
         consumioPremio: !!consumioPremio,
         nombre: (ticketData && ticketData.name) || ''
       })
-    });
+    }, 10000);
     // Si el servidor rechaza el sello (success:false, no "skipped"), ya lo
     // registra fidelizacion.php por su cuenta con la cuenta de servicio
     // (fbAgregarActivityLog) — hacerlo también aquí en el navegador del

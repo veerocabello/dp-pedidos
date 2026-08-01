@@ -470,11 +470,11 @@ async function smsVerifyCode() {
   }
 
   try {
-    const res = await fetch('/verify-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/verify-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: pendingPhone, code })
-    });
+    }, 8000);
     const data = await res.json();
     if (data.verified) {
       await _finalizarPedido();
@@ -494,11 +494,11 @@ async function smsResendCode() {
   if (!window._pendingOrderData) return;
   const phone = '+34' + window._pendingOrderData.phoneClean;
   try {
-    const res = await fetch('/send-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
-    });
+    }, 8000);
     const data = await res.json();
     const errEl = document.getElementById('sms-error-msg');
     if (data.success) {

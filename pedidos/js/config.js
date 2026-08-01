@@ -437,6 +437,7 @@ function _initFirebase() {
   // _firebaseReady (más abajo) solo confirma que el SDK cargó al principio,
   // no que los datos en tiempo real sigan llegando después.
   window.fb_listenConnectionState = function(cb) { return db.ref(".info/connected").on("value", function(sn){ cb(sn.val() === true); }); };
+  window.fb_checkConnection = async function() { var sn = await db.ref(".info/connected").once("value"); return sn.val() === true; };
   // READY
   window._firebaseReady = true;
   document.dispatchEvent(new Event("firebaseReady"));

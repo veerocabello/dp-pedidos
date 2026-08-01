@@ -566,6 +566,15 @@ try {
         exit;
     }
 
+    // ── Comprobación de estado del sistema (panel Alertas → "Estado del
+    // sistema") ── Responde de inmediato, sin tocar Firebase ni consumir
+    // ningún número/turno real, solo para confirmar que este script sigue
+    // vivo y respondiendo.
+    if (($payload['action'] ?? '') === 'ping') {
+        echo json_encode(['success' => true]);
+        exit;
+    }
+
     // ── Botón "🔧 Reintentar guardado" de la pestaña Alertas del panel ──
     // Recupera el ticket YA guardado (tickets/<fecha>/<num> casi siempre se
     // guarda bien — lo que falla es el resumen agregado en stats/<fecha>) y
