@@ -1226,9 +1226,7 @@ async function _submitOrderInner() {
     discountCode: _discountCodeUsado
   };
 
-  // Teléfonos de prueba que saltan la verificación SMS
-  const TEST_PHONES = ['635353724'];
-  if (window._skipSmsVerification || TEST_PHONES.includes(phoneClean)) {
+  if (window._skipSmsVerification) {
     btn.disabled = false;
     btn.textContent = 'Confirmar pedido →';
     await _finalizarPedido();
