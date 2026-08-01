@@ -9,7 +9,7 @@
   <div class="kitchen-header">
     <div class="kitchen-title">🍳 Dulce Patata — Cocina <span id="kitchen-active-count" style="font-size:14px;background:var(--gold);color:var(--brown);border-radius:99px;padding:2px 12px;margin-left:8px;vertical-align:middle;font-family:'DM Sans',sans-serif;font-weight:700"></span>
       <div id="pt-debug-status-kitchen" style="font-size:11px;color:#8A8580;font-weight:400"></div>
-      <div class="pt-papel-aviso" style="display:none;background:#3d1414;border:1.5px solid #e74c3c;border-radius:8px;padding:4px 10px;margin-top:4px;font-size:12px;font-weight:700;color:#ff6b5f">⚠️ Sin papel — cambia el rollo</div>
+      <div id="kitchen-offline-badge" style="display:none;font-size:11px;font-weight:700;color:#f5b942;margin-top:2px">📴 Sin conexión — mostrando últimos pedidos vistos</div>
     </div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div id="kitchen-clock" style="font-size:18px;font-weight:700;color:var(--white)"></div>
@@ -23,6 +23,10 @@
   <div style="background:#141414;padding:10px 20px;border-bottom:1px solid #2a2a2a;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
     <span style="font-size:11px;color:#8A8580;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">🕐 Turnos</span>
     <div id="kitchen-slots" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div>
+  <!-- SIN PAPEL — cocina (banner grande, tan visible como el de activar audio) -->
+  <div class="pt-papel-aviso" data-show-display="flex" style="display:none;background:#e74c3c;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+    <span style="font-size:15px;font-weight:700;color:var(--white)">📄 ¡Queda poco papel! Cambia el rollo antes de que se corte un ticket</span>
   </div>
   <!-- AUDIO UNLOCK — cocina -->
   <div id="kitchen-audio-banner" style="background:var(--amber);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">

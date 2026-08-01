@@ -10225,7 +10225,11 @@ async function _ptComprobarPapel() {
 }
 function _ptPapelUI(sinPapel) {
   document.querySelectorAll('.pt-papel-aviso').forEach(el => {
-    el.style.display = sinPapel ? 'block' : 'none';
+    // El banner grande de la pantalla de cocina necesita "flex" (para
+    // colocar el texto centrado verticalmente como el de "activa el
+    // audio"); los avisos pequeños del panel de admin usan "block" por
+    // defecto — cada elemento indica el suyo con data-show-display.
+    el.style.display = sinPapel ? (el.dataset.showDisplay || 'block') : 'none';
   });
 }
 
@@ -11238,6 +11242,28 @@ function initFirebaseListeners() {
   if (typeof loadPausaExpresFromFirebase === 'function') loadPausaExpresFromFirebase();
   if (typeof loadAvisoSaturacionFromFirebase === 'function') loadAvisoSaturacionFromFirebase();
 
+  // Aviso de "sin conexión" en la pantalla de cocina — la lista de pedidos
+  // ya sigue mostrando lo último que se vio (localStorage/último render) si
+  // se corta el wifi, pero sin este aviso nadie en cocina se entera de que
+  // los pedidos nuevos podrían no estar llegando. Mismo margen de 6s que el
+  // banner del cliente, para no alarmar por un corte breve al cambiar de red.
+  if (window.fb_listenConnectionState) {
+    let _kitchenOfflineTimeout = null;
+    window.fb_listenConnectionState(connected => {
+      const badge = document.getElementById('kitchen-offline-badge');
+      if (!badge) return;
+      if (connected) {
+        if (_kitchenOfflineTimeout) { clearTimeout(_kitchenOfflineTimeout); _kitchenOfflineTimeout = null; }
+        badge.style.display = 'none';
+      } else if (!_kitchenOfflineTimeout) {
+        _kitchenOfflineTimeout = setTimeout(() => {
+          _kitchenOfflineTimeout = null;
+          badge.style.display = 'block';
+        }, 6000);
+      }
+    });
+  }
+
   // Incidencias de clientes (formulario Tally) — en tiempo real, para que
   // el badge de la pestaña Alertas se actualice sin recargar.
   if (window.fb_listenIncidencias) {
@@ -11704,7 +11730,15 @@ async function loadLiveOrders() {
   // Firebase es la fuente de verdad (tiene todos los pedidos de todos los dispositivos)
   if (window.fb_getStats) {
     try {
-      stats = await window.fb_getStats(todayKey);
+      // Si no hay conexión de verdad (wifi del local caído), fb_getStats()
+      // puede quedarse esperando indefinidamente en vez de fallar rápido —
+      // sin este límite, recargar la pantalla de cocina sin internet se
+      // quedaba cargando para siempre en vez de caer en el respaldo de
+      // localStorage de abajo con los últimos pedidos vistos.
+      stats = await Promise.race([
+        window.fb_getStats(todayKey),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout esperando a Firebase')), 4000))
+      ]);
     } catch (e) {
       console.error('[DPF] fb_getStats error', e);
     }

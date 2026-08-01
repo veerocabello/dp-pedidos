@@ -57,7 +57,15 @@ async function loadLiveOrders() {
   // Firebase es la fuente de verdad (tiene todos los pedidos de todos los dispositivos)
   if (window.fb_getStats) {
     try {
-      stats = await window.fb_getStats(todayKey);
+      // Si no hay conexión de verdad (wifi del local caído), fb_getStats()
+      // puede quedarse esperando indefinidamente en vez de fallar rápido —
+      // sin este límite, recargar la pantalla de cocina sin internet se
+      // quedaba cargando para siempre en vez de caer en el respaldo de
+      // localStorage de abajo con los últimos pedidos vistos.
+      stats = await Promise.race([
+        window.fb_getStats(todayKey),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout esperando a Firebase')), 4000))
+      ]);
     } catch (e) {
       console.error('[DPF] fb_getStats error', e);
     }

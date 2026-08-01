@@ -467,7 +467,11 @@ async function _ptComprobarPapel() {
 }
 function _ptPapelUI(sinPapel) {
   document.querySelectorAll('.pt-papel-aviso').forEach(el => {
-    el.style.display = sinPapel ? 'block' : 'none';
+    // El banner grande de la pantalla de cocina necesita "flex" (para
+    // colocar el texto centrado verticalmente como el de "activa el
+    // audio"); los avisos pequeños del panel de admin usan "block" por
+    // defecto — cada elemento indica el suyo con data-show-display.
+    el.style.display = sinPapel ? (el.dataset.showDisplay || 'block') : 'none';
   });
 }
 
