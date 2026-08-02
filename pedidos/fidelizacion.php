@@ -428,10 +428,12 @@ try {
             }
 
             $cliente['sellos'] += 1;
+            $completoCicloAhora = false;
             if ($cliente['sellos'] >= FIDELIZACION_META) {
                 $cliente['sellos'] = 0;
                 $cliente['premiosPendientes'] += 1;
                 $cliente['vecesCompletado'] += 1;
+                $completoCicloAhora = true;
             }
 
             // Registro de cuándo se pone cada sello (con el pedido que lo
@@ -448,6 +450,7 @@ try {
 
             if (fbSetClienteSiCoincide($databaseURL, $telefono, $accessToken, $cliente, $leido['etag'])) {
                 $guardado = $cliente;
+                $guardadoCompletoCiclo = $completoCicloAhora;
                 break;
             }
             usleep(rand(20000, 80000));
@@ -462,6 +465,19 @@ try {
             ]);
             echo json_encode(['success' => false, 'error' => 'No se pudo registrar, inténtalo de nuevo.']);
             exit;
+        }
+
+        // Aviso para que caja se entere en cuanto un cliente complete sus 10
+        // sellos (antes solo se veía si alguien entraba al panel de
+        // Fidelización a mirar la lista) — se reutiliza el mismo "Registro de
+        // actividad"/Alertas que ya consulta el admin cada día.
+        if (!empty($guardadoCompletoCiclo)) {
+            $nombreAviso = $guardado['nombre'] ?? '';
+            fbAgregarActivityLog($databaseURL, $accessToken, '🎁 ' . ($nombreAviso ?: 'Un cliente') . ' (tel. ' . $telefono . ') ha completado sus 10 sellos — tiene una patata gratis pendiente de entregar', [
+                'tipo'     => 'premio_disponible',
+                'telefono' => $telefono,
+                'nombre'   => $nombreAviso,
+            ]);
         }
 
         echo json_encode(['success' => true, 'sellos' => $guardado['sellos'], 'premiosPendientes' => $guardado['premiosPendientes']]);

@@ -231,7 +231,10 @@ function renderActivityLog() {
 // ══════════════════════════════════════════════
 const ALERTAS_SEEN_KEY = 'dpf_alertas_last_seen_ts';
 function isAlertEntry(action) {
-  return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0);
+  // 🎁 también cuenta como alerta: aviso de "cliente completó sus 10
+  // sellos" (fidelizacion.php) — no es un fallo, pero igual necesita que
+  // caja se entere y lo marque como visto/entregado.
+  return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0 || action.indexOf('🎁') === 0);
 }
 function getAlertEntries() {
   return getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
