@@ -64,14 +64,32 @@ function openEmpleadosWithBimba() {
   secureLockTap();
 }
 
-// ── ACCESO A "HISTORIAL POR DÍAS" (FACTURACIÓN) ──────────────────────────────
+// ── "HISTORIAL POR DÍAS" (FACTURACIÓN) DENTRO DEL PANEL SECRETO BIMBA ────────
 // A diferencia del historial de clientes (visible para cualquiera con acceso
 // al panel), el resumen por días muestra el total facturado — información
-// que no hace falta que vea el personal, solo la dueña. Mismo candado que
-// empleados/config, solo cambia a qué sección redirige al acertar el PIN.
-function abrirHistorialDiasBimba() {
-  window._bimbaTargetHistorialDias = true;
-  secureLockTap();
+// que no hace falta que vea el personal, solo la dueña. Vive como una fila
+// más dentro del panel bimba (admin-stock-config, el mismo al que se entra
+// con el candado 👤) — como ya se pasó el PIN para llegar hasta ahí, este
+// salto no vuelve a pedirlo.
+function verHistorialDiasDesdeBimba() {
+  // Solo se alterna la clase .active — la hoja de estilos ya tiene
+  // .admin-section{display:none!important} / .admin-section.active{display:block!important},
+  // con más especificidad la segunda. Fijar un display inline aquí (como
+  // hacía antes el código de "empleados por bimba") deja ese estilo inline
+  // pegado para siempre: ni siquiera quitar .active después lo oculta, así
+  // que "← Volver" dejaría esta sección visible por encima de las demás.
+  document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  const sec = document.getElementById('admin-bimba-historial');
+  if (sec) sec.classList.add('active');
+  if (typeof loadHistorial === 'function') loadHistorial();
+  if (typeof loadAutoDeleteUI === 'function') loadAutoDeleteUI();
+  if (typeof applyAutoDelete === 'function') applyAutoDelete();
+}
+// Botón "← Volver" de las pantallas dentro de bimba (config, contraseña,
+// historial por días...) — vuelve a la pantalla principal del panel secreto.
+function bimbaVolverAlPanel() {
+  openStockConfigSecret();
 }
 
 // ── DISPOSITIVO DE CONFIANZA ──
@@ -538,19 +556,6 @@ async function secureLockConfirm() {
       if (_bimbaEmpSec) { _bimbaEmpSec.style.setProperty('display','block','important'); _bimbaEmpSec.classList.add('active'); }
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
-      }, 100);
-    } else if (window._bimbaTargetHistorialDias) {
-      window._bimbaTargetHistorialDias = false;
-      logActivity('📅 Acceso a historial por días por bimba');
-      // Mostrar sección bimba-historial directamente
-      document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
-      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-      const _bimbaHistSec = document.getElementById('admin-bimba-historial');
-      if (_bimbaHistSec) { _bimbaHistSec.style.setProperty('display','block','important'); _bimbaHistSec.classList.add('active'); }
-      setTimeout(function(){
-        if (typeof loadHistorial === 'function') loadHistorial();
-        if (typeof loadAutoDeleteUI === 'function') loadAutoDeleteUI();
-        if (typeof applyAutoDelete === 'function') applyAutoDelete();
       }, 100);
     } else {
       logActivity('🔒 Acceso bimba por candado');
