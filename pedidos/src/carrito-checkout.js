@@ -1052,6 +1052,20 @@ async function _submitOrderInner() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
   const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
+  // terminar de escribir el teléfono (con un pequeño margen + una llamada
+  // al servidor) — si el cliente confirma el pedido muy rápido justo
+  // después, esa comprobación puede no haber terminado todavía, y
+  // getFidelizacionDescuento() de abajo mira window._fidelizacionPremioActivo
+  // tal cual esté en ese momento. Sin esperarla aquí, un cliente con premio
+  // de verdad disponible podía confirmar el pedido sin que se le aplicara,
+  // porque el aviso "aún no había llegado" a tiempo aunque en el servidor
+  // sí lo tuviera. Se vuelve a comprobar (y esperar) justo antes de
+  // calcular el descuento, para no depender de si la comprobación de fondo
+  // llegó a tiempo o no.
+  if (typeof _comprobarPremioFidelizacion === 'function') {
+    await _comprobarPremioFidelizacion(phoneClean);
+  }
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   // Descuento estudiante/jubilado — autodeclarado por el cliente; la
   // verificación real del carné se hace en caja al cobrar, avisado en el

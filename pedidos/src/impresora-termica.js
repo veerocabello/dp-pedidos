@@ -492,6 +492,15 @@ async function _ptBleConectarDispositivo(device) {
     server.disconnect();
     throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
   }
+  // Muchas impresoras Bluetooth baratas todavía no están listas para
+  // recibir datos de verdad justo al terminar de conectar — si se manda el
+  // primer ticket en ese instante, el propio módulo Bluetooth de la
+  // impresora lo descarta en silencio (writeValueWithoutResponse no avisa
+  // de ningún fallo), así que la web lo da por impreso pero no sale nada
+  // en papel. Este margen deja que la conexión se asiente antes de
+  // marcarla como lista — soluciona que "el primer pedido tras conectar
+  // nunca sale, los siguientes sí".
+  await new Promise(r => setTimeout(r, 500));
   _ptBleDevice = device;
   _ptBleCharacteristic = characteristic;
   _ptTransporte = 'ble';

@@ -502,8 +502,15 @@ function exportClientesCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
-function loadHistorial() {
-  // Cargar historial completo desde Firebase (fuente de verdad entre dispositivos)
+function loadHistorial(despues) {
+  // Cargar historial completo desde Firebase (fuente de verdad entre
+  // dispositivos) — sin esto, un dispositivo que nunca lo haya sincronizado
+  // antes (p.ej. la tablet de cocina, si solo se usó para pedidos en vivo)
+  // solo tiene lo que haya en su propio localStorage, que puede estar vacío
+  // aunque en otro dispositivo (el PC donde sí se ha abierto esta vista)
+  // haya historial de sobra — tanto la vista "Por días" como la lista de
+  // Clientes dependen de esto, por eso admite un callback opcional para
+  // repintar lo que corresponda en cada caso.
   if (window.fb_loadHistorial) {
     window.fb_loadHistorial(30).then(fbHist => {
       if (fbHist && fbHist.length > 0) {
@@ -511,12 +518,14 @@ function loadHistorial() {
         fbHist.forEach(d => saveToHistorial(d));
       }
       _renderHistorial();
-    }).catch(() => _renderHistorial());
+      if (despues) despues();
+    }).catch(() => { _renderHistorial(); if (despues) despues(); });
     // Mostrar localStorage mientras llega Firebase
-    if (getHistorial().length > 0) _renderHistorial();
+    if (getHistorial().length > 0) { _renderHistorial(); if (despues) despues(); }
     return;
   }
   _renderHistorial();
+  if (despues) despues();
 }
 function _renderHistorial() {
   const hist = getHistorial();
@@ -757,7 +766,12 @@ function showAdminSection(id, btn) {
   // clientes ahora — el resumen por días (con la facturación) se movió al
   // acceso restringido (ver abrirHistorialDiasBimba en admin-accesos.js),
   // porque no es algo que necesite ver el personal.
-  if (id === 'historial') renderClientes();
+  // loadHistorial() sincroniza primero con Firebase (ver comentario en su
+  // definición) — sin esto, un dispositivo que nunca haya abierto el
+  // historial por días (p.ej. una tablet usada solo para pedidos en vivo)
+  // mostraría la lista de Clientes vacía, con solo lo que hubiera quedado
+  // en su localStorage local.
+  if (id === 'historial') loadHistorial(renderClientes);
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();

@@ -3834,6 +3834,20 @@ async function _submitOrderInner() {
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
   const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
+  // terminar de escribir el teléfono (con un pequeño margen + una llamada
+  // al servidor) — si el cliente confirma el pedido muy rápido justo
+  // después, esa comprobación puede no haber terminado todavía, y
+  // getFidelizacionDescuento() de abajo mira window._fidelizacionPremioActivo
+  // tal cual esté en ese momento. Sin esperarla aquí, un cliente con premio
+  // de verdad disponible podía confirmar el pedido sin que se le aplicara,
+  // porque el aviso "aún no había llegado" a tiempo aunque en el servidor
+  // sí lo tuviera. Se vuelve a comprobar (y esperar) justo antes de
+  // calcular el descuento, para no depender de si la comprobación de fondo
+  // llegó a tiempo o no.
+  if (typeof _comprobarPremioFidelizacion === 'function') {
+    await _comprobarPremioFidelizacion(phoneClean);
+  }
   const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
   // Descuento estudiante/jubilado — autodeclarado por el cliente; la
   // verificación real del carné se hace en caja al cobrar, avisado en el
@@ -10538,6 +10552,15 @@ async function _ptBleConectarDispositivo(device) {
     server.disconnect();
     throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
   }
+  // Muchas impresoras Bluetooth baratas todavía no están listas para
+  // recibir datos de verdad justo al terminar de conectar — si se manda el
+  // primer ticket en ese instante, el propio módulo Bluetooth de la
+  // impresora lo descarta en silencio (writeValueWithoutResponse no avisa
+  // de ningún fallo), así que la web lo da por impreso pero no sale nada
+  // en papel. Este margen deja que la conexión se asiente antes de
+  // marcarla como lista — soluciona que "el primer pedido tras conectar
+  // nunca sale, los siguientes sí".
+  await new Promise(r => setTimeout(r, 500));
   _ptBleDevice = device;
   _ptBleCharacteristic = characteristic;
   _ptTransporte = 'ble';
@@ -13905,8 +13928,15 @@ function exportClientesCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
-function loadHistorial() {
-  // Cargar historial completo desde Firebase (fuente de verdad entre dispositivos)
+function loadHistorial(despues) {
+  // Cargar historial completo desde Firebase (fuente de verdad entre
+  // dispositivos) — sin esto, un dispositivo que nunca lo haya sincronizado
+  // antes (p.ej. la tablet de cocina, si solo se usó para pedidos en vivo)
+  // solo tiene lo que haya en su propio localStorage, que puede estar vacío
+  // aunque en otro dispositivo (el PC donde sí se ha abierto esta vista)
+  // haya historial de sobra — tanto la vista "Por días" como la lista de
+  // Clientes dependen de esto, por eso admite un callback opcional para
+  // repintar lo que corresponda en cada caso.
   if (window.fb_loadHistorial) {
     window.fb_loadHistorial(30).then(fbHist => {
       if (fbHist && fbHist.length > 0) {
@@ -13914,12 +13944,14 @@ function loadHistorial() {
         fbHist.forEach(d => saveToHistorial(d));
       }
       _renderHistorial();
-    }).catch(() => _renderHistorial());
+      if (despues) despues();
+    }).catch(() => { _renderHistorial(); if (despues) despues(); });
     // Mostrar localStorage mientras llega Firebase
-    if (getHistorial().length > 0) _renderHistorial();
+    if (getHistorial().length > 0) { _renderHistorial(); if (despues) despues(); }
     return;
   }
   _renderHistorial();
+  if (despues) despues();
 }
 function _renderHistorial() {
   const hist = getHistorial();
@@ -14160,7 +14192,12 @@ function showAdminSection(id, btn) {
   // clientes ahora — el resumen por días (con la facturación) se movió al
   // acceso restringido (ver abrirHistorialDiasBimba en admin-accesos.js),
   // porque no es algo que necesite ver el personal.
-  if (id === 'historial') renderClientes();
+  // loadHistorial() sincroniza primero con Firebase (ver comentario en su
+  // definición) — sin esto, un dispositivo que nunca haya abierto el
+  // historial por días (p.ej. una tablet usada solo para pedidos en vivo)
+  // mostraría la lista de Clientes vacía, con solo lo que hubiera quedado
+  // en su localStorage local.
+  if (id === 'historial') loadHistorial(renderClientes);
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
