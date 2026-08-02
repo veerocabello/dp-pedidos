@@ -16,6 +16,16 @@ function _ptEncodeStr(str) {
   return (str || '').split('').map(c => map[c] || c).join('');
 }
 
+// El campo "time" del ticket normalmente ya viene como "HH:MM" (así lo
+// guarda el servidor en stats/<fecha>), pero algún camino interno todavía
+// puede traer la fecha completa (toLocaleString) — esto se queda solo con
+// la hora corta en cualquiera de los dos casos, para imprimirla en grande.
+function _ptHoraCorta(t) {
+  if (!t) return '';
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  return m ? m[0] : String(t);
+}
+
 // Construye los bytes ESC/POS de un ticket (mismo formato que usaba el bridge Node.js
 // en pedidos/js/index.js, incluyendo el logo). Devuelve un Uint8Array listo para USB.
 function _ptBuildTicketBytes(ticket, omitirLogo) {
@@ -56,12 +66,22 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   push(tc.telefono + '\n');
   push('------------------------------------------------\n');
 
-  // Hora de recogida, si tiene turno
+  // Hora de recogida si tiene turno — si no lo tiene (pedido con código
+  // local, sin turno porque es para ahora mismo desde el mostrador), se
+  // imprime en su lugar la hora a la que se hizo el pedido, igual de
+  // grande, para que en cocina quede claro en el propio papel sin depender
+  // de la etiqueta "🏪 En el local" que solo se ve en pantalla.
   if (ticket.slotTime) {
     center();
     push('HORA RECOGIDA\n');
     big();
     push(ticket.slotTime + '\n');
+    normal();
+  } else if (ticket.time) {
+    center();
+    push('HORA DEL PEDIDO\n');
+    big();
+    push(_ptHoraCorta(ticket.time) + '\n');
     normal();
   }
 
