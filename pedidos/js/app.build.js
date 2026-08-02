@@ -13573,18 +13573,18 @@ function _descargarHtmlComoPDF(bodyHtml, filename) {
   const styleEl = document.createElement('style');
   styleEl.textContent = _pdfStyles();
   document.head.appendChild(styleEl);
-  // OJO: cualquier truco para "esconder" el contenido antes de capturarlo
-  // (colocarlo a -99999px, o taparlo con una capa opaca por encima) puede
-  // hacer que el navegador directamente no llegue a pintarlo — está fuera
-  // de la pantalla, o completamente tapado por otra capa, así que "no hace
-  // falta" dibujarlo de verdad, y html2canvas captura un lienzo en blanco
-  // aunque el HTML esté bien. Ya se probaron las dos y el PDF seguía
-  // saliendo vacío. Así que ahora no se esconde de ninguna manera: se
-  // pinta visible de verdad (encima de todo, un instante) y se quita en
-  // cuanto termina — se prioriza que el PDF salga bien sobre que no se vea
-  // el parpadeo, que dura menos de un segundo.
+  // OJO — causa real del PDF en blanco, confirmada probándolo en un
+  // navegador real: si el contenedor lleva position:fixed o
+  // position:absolute, html2canvas (la parte de html2pdf.js que "fotografía"
+  // el HTML) le calcula 0px de alto al clonar el documento para capturarlo,
+  // aunque el navegador normal sí lo mida bien — y un lienzo de 0px de alto
+  // es un PDF en blanco. Quitando el position por completo (queda como un
+  // bloque normal, al final de la página) html2canvas lo mide y lo captura
+  // bien, comprobado con varias pruebas. Como ya no se puede tapar con
+  // z-index/posición, se añade y se quita tan rápido que en la práctica no
+  // se llega a ver.
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed;top:0;left:0;background:#fff;width:210mm;z-index:2147483647';
+  container.style.cssText = 'background:#fff;width:210mm';
   container.innerHTML = bodyHtml;
   document.body.appendChild(container);
   const limpiar = () => {
