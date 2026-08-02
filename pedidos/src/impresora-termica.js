@@ -210,6 +210,13 @@ let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir �
 let _ptEstabaConectada = false;
 function _ptStatusUI(connected, msg) {
   if (_ptEstabaConectada && !connected) _ptAvisoDesconexionImpresora();
+  if (!_ptEstabaConectada && connected) {
+    // Se acaba de reconectar: vacía sola la cola de tickets que se quedaron
+    // pendientes mientras estuvo desconectada (ver _ptColaProcesar). Un
+    // pequeño margen antes de empezar a imprimir, para que la conexión
+    // recién hecha se asiente (sobre todo por Bluetooth).
+    setTimeout(_ptColaProcesar, 800);
+  }
   if (connected) _ptOcultarAvisoDesconexion();
   _ptEstabaConectada = connected;
   const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
@@ -224,17 +231,32 @@ function _ptStatusUI(connected, msg) {
 // la pantalla de cocina como en el panel de admin. Vale igual para USB
 // que para Bluetooth, ya que _ptStatusUI es la única función de estado
 // que comparten ambos transportes.
+//
+// Si sigue sin reconectar pasado un rato, el aviso se repite solo — un
+// sonido único al desconectarse es fácil de dar por "ya lo he visto" y
+// olvidarlo de fondo mientras siguen llegando pedidos que no se imprimen.
+let _ptAvisoEscaladoTimer = null;
+const PT_AVISO_ESCALADO_MS = 3 * 60 * 1000;
 function _ptAvisoDesconexionImpresora() {
+  _ptSonarAvisoDesconexion();
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
+    el.style.display = el.dataset.showDisplay || 'block';
+  });
+  if (_ptAvisoEscaladoTimer) clearInterval(_ptAvisoEscaladoTimer);
+  _ptAvisoEscaladoTimer = setInterval(() => {
+    if (_ptIsConnected()) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; return; }
+    _ptSonarAvisoDesconexion();
+  }, PT_AVISO_ESCALADO_MS);
+}
+function _ptSonarAvisoDesconexion() {
   if (typeof playNotificationSound === 'function') {
     const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
     playNotificationSound(tipo);
   }
-  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
-    el.style.display = el.dataset.showDisplay || 'block';
-  });
 }
 function _ptOcultarAvisoDesconexion() {
   document.querySelectorAll('.pt-desconexion-aviso').forEach(el => { el.style.display = 'none'; });
+  if (_ptAvisoEscaladoTimer) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; }
 }
 
 // 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
@@ -620,6 +642,66 @@ function _ptPapelActualizarUI() {
   if (inputCap && document.activeElement !== inputCap) inputCap.value = capacidad;
 }
 document.addEventListener('DOMContentLoaded', () => { _ptPapelActualizarUI(); });
+
+// ── Cola de impresión pendiente ──────────────────────────────────────
+// Si un ticket no consigue imprimirse ni tras los reintentos normales
+// (la impresora estaba desconectada en ese momento), antes se quedaba solo
+// en un aviso que había que atender a mano ("🔧 Reintentar impresión" en
+// Alertas). Ahora, además, se guarda aquí — y en cuanto la impresora
+// vuelva a conectar (ver _ptStatusUI) se reimprime sola, en el mismo orden
+// en que llegaron, sin que nadie tenga que darle a ese botón.
+const PT_COLA_KEY = 'dpf_cola_impresion_pendiente';
+function _ptColaCargar() {
+  try { return JSON.parse(localStorage.getItem(PT_COLA_KEY) || '[]'); } catch (e) { return []; }
+}
+function _ptColaGuardar(cola) {
+  try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
+  _ptColaActualizarUI();
+}
+function _ptColaAgregar(ticket) {
+  if (!ticket || !ticket.orderNum) return;
+  const cola = _ptColaCargar();
+  if (cola.some(t => t.orderNum === ticket.orderNum)) return;
+  cola.push(ticket);
+  _ptColaGuardar(cola);
+}
+function _ptColaQuitar(orderNum) {
+  _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
+}
+function _ptColaActualizarUI() {
+  const n = _ptColaCargar().length;
+  document.querySelectorAll('.pt-cola-contador').forEach(el => {
+    el.style.display = n > 0 ? (el.dataset.showDisplay || 'block') : 'none';
+    el.textContent = '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
+  });
+}
+document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
+
+// Vacía la cola cuando la impresora reconecta — de una en una y en orden;
+// si alguna vuelve a fallar (se ha caído otra vez a media cola), se para
+// ahí y se deja para el próximo reconectar, en vez de perder el orden o
+// darlas por perdidas.
+let _ptColaProcesando = false;
+async function _ptColaProcesar() {
+  if (_ptColaProcesando || !_ptIsConnected()) return;
+  _ptColaProcesando = true;
+  try {
+    const cola = _ptColaCargar();
+    for (const ticket of cola) {
+      try {
+        await imprimirTicketTermico(ticket);
+        _ptColaQuitar(ticket.orderNum);
+        if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
+        if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
+        if (typeof logActivity === 'function') logActivity('🖨️ Ticket #' + ticket.orderNum + ' impreso solo desde la cola pendiente, al reconectar la impresora');
+      } catch (e) {
+        break;
+      }
+    }
+  } finally {
+    _ptColaProcesando = false;
+  }
+}
 
 // Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
 // y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede

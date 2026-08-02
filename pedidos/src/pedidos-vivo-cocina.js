@@ -103,6 +103,11 @@ async function loadLiveOrders() {
 }
 function _renderLiveOrders(stats, todayKey) {
   if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
+  // Guarda cuándo llegó el pedido más reciente — lo usa el panel "Estado
+  // del sistema" para mostrar "Último pedido: hace X min" de un vistazo.
+  (stats.orders || []).forEach(o => {
+    if (typeof o.ts === 'number' && o.ts > (window._ultimoPedidoTs || 0)) window._ultimoPedidoTs = o.ts;
+  });
   // Los pedidos "desde el local" (código de cola aplicado) van primero,
   // porque ese cliente ya está esperando físicamente en el mostrador y no
   // se puede ir a pedir a otro sitio — luego por turno, y por hora dentro
@@ -270,6 +275,34 @@ function setLiveStatus(num, status) {
 
 // ── KITCHEN MODE ──
 let _kitchenInterval = null;
+// ── Wake Lock: evita que la tablet de cocina entre en reposo ─────────────
+// Si la pantalla se apaga sola por inactividad, a veces corta la conexión
+// USB/Bluetooth con la impresora sin avisar. Mientras la pantalla de cocina
+// esté abierta, se le pide al navegador que mantenga la pantalla encendida.
+// No lo soportan todos los navegadores/dispositivos — si falla, se ignora:
+// solo se pierde este extra, no rompe nada más.
+let _kitchenWakeLock = null;
+async function _pedirWakeLockCocina() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _kitchenWakeLock = await navigator.wakeLock.request('screen');
+    _kitchenWakeLock.addEventListener('release', () => { _kitchenWakeLock = null; });
+  } catch (e) {
+    // P.ej. si la pestaña no está visible justo en ese instante — se
+    // reintenta solo en cuanto vuelva a estar visible (ver visibilitychange
+    // más abajo).
+  }
+}
+function _soltarWakeLockCocina() {
+  if (_kitchenWakeLock) { _kitchenWakeLock.release().catch(() => {}); _kitchenWakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  const km = document.getElementById('kitchen-mode');
+  if (document.visibilityState === 'visible' && km && km.classList.contains('open') && !_kitchenWakeLock) {
+    _pedirWakeLockCocina();
+  }
+});
+
 function activarAudioCocina() {
   unlockAudioContext();
   _adminLoggedIn = true;
@@ -288,6 +321,7 @@ function openKitchenMode() {
   const banner = document.getElementById('kitchen-audio-banner');
   if (banner) banner.style.display = _audioCtxUnlocked ? 'none' : 'flex';
   _adminLoggedIn = true; // cocina siempre en modo admin
+  _pedirWakeLockCocina();
   clearUnseenOrders();
   refreshKitchenGrid();
   updateKitchenClock();
@@ -313,6 +347,7 @@ function closeKitchenMode() {
   document.getElementById('kitchen-mode').classList.remove('open');
   clearInterval(_kitchenInterval);
   _kitchenInterval = null;
+  _soltarWakeLockCocina();
   // _adminLoggedIn permanece true — alertas siguen activas en cualquier pantalla
   document.getElementById('admin-overlay').style.display = '';
 }

@@ -358,14 +358,39 @@ async function _recuperarPedidoEnCurso() {
     try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
     if (data.success) {
       console.log('[recuperación] Pedido ' + marcador.orderNum + ' recuperado tras un cierre inesperado');
+      _ocultarAvisoFalloGuardado(marcador.orderNum);
     } else {
       console.warn('[recuperación] Pedido ' + marcador.orderNum + ' rechazado al reintentar:', data.error);
     }
   } catch (e) {
     // Sigue sin red — se deja el marcador para reintentar la próxima vez
-    // que se abra la web.
+    // que se abra la web (o en cuanto vuelva la conexión, ver más abajo).
     console.warn('[recuperación] sin conexión, se reintentará más tarde', e);
   }
+}
+// Si el pedido no se pudo guardar por falta de conexión (no porque se
+// cerrara la pestaña) y el cliente se queda esperando en la misma pantalla
+// de éxito, antes había que recargar la página para que se reintentara
+// solo. Ahora se reintenta en cuanto el navegador detecta que ha vuelto la
+// conexión — y también cada 20s por si acaso, porque en redes con
+// cobertura intermitente a veces no llega a dispararse el evento 'online'
+// (el navegador nunca se considera del todo "offline", solo dan timeout
+// las peticiones una a una).
+window.addEventListener('online', () => { _recuperarPedidoEnCurso(); });
+setInterval(() => {
+  let hayPendiente;
+  try { hayPendiente = !!localStorage.getItem('dpf_pedido_en_curso'); } catch (e) { return; }
+  if (hayPendiente) _recuperarPedidoEnCurso();
+}, 20000);
+// Complementa a _avisarClienteFalloGuardado (que muestra el aviso) — al
+// recuperarse solo el pedido, si el cliente sigue viendo la pantalla de
+// éxito de ESE mismo pedido, se le quita el aviso de que algo falló.
+function _ocultarAvisoFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'none';
 }
 document.addEventListener('DOMContentLoaded', () => { setTimeout(_recuperarPedidoEnCurso, 1500); });
 

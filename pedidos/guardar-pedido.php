@@ -213,6 +213,34 @@ function dpf_limpiar_texto($str) {
     return preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/', '', (string)$str);
 }
 
+// ── Copia de seguridad local, independiente de Firebase ──
+// Si Firebase alguna vez fallara (caída del servicio, cuota agotada, fallo
+// de red del servidor hacia Google...) el pedido ya se ha guardado aquí
+// antes de intentarlo — un archivo de texto plano en el propio hosting,
+// uno por día, que se puede abrir con el Administrador de archivos de
+// Hostinger sin depender de nada externo. Es solo un backup de lectura
+// (se añade una línea por pedido, nunca se borra ni se modifica desde
+// aquí) — no sustituye a Firebase para nada de lo que ya hace la web.
+function dpf_backup_pedido_local($ticketData) {
+    try {
+        $dir = __DIR__ . '/backup-pedidos';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+            // .htaccess por si el hosting permite listar directorios — el
+            // backup contiene nombres y teléfonos de clientes, no debe ser
+            // accesible desde el navegador.
+            file_put_contents($dir . '/.htaccess', "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Order deny,allow\n    Deny from all\n</IfModule>\n");
+        }
+        $file = $dir . '/pedidos-' . date('Y-m-d') . '.log';
+        $linea = json_encode($ticketData, JSON_UNESCAPED_UNICODE) . "\n";
+        file_put_contents($file, $linea, FILE_APPEND | LOCK_EX);
+    } catch (Exception $e) {
+        // Nunca debe romper el guardado real del pedido por un fallo de esta
+        // copia extra — solo se registra en el log de errores del servidor.
+        error_log('[guardar-pedido] backup local falló: ' . $e->getMessage());
+    }
+}
+
 // ── Lectura-modificación-escritura condicional (con reintento) de
 // stats/<fecha>, compartida por el guardado normal y por el botón
 // "Reintentar guardado" de la pestaña Alertas del panel. Idempotente por
@@ -884,6 +912,7 @@ try {
         echo json_encode(['success' => false, 'error' => 'No se pudo guardar el pedido, inténtalo de nuevo.']);
         exit;
     }
+    dpf_backup_pedido_local($ticketData);
 
     // ── 2. ACTUALIZAR ESTADÍSTICAS DEL DÍA (lo que lee "Pedidos en vivo") ──
     // stats/<fecha> es UN único nodo compartido por todos los pedidos del

@@ -469,11 +469,45 @@ async function comprobarEstadoSistema(forzar) {
     { nombre: 'Servidor de pedidos', ok: servidorOk },
     { nombre: 'Impresora térmica (este dispositivo)', ok: impresoraConectada }
   ];
+  // "Último pedido recibido" no es un ✅/❌ (no siempre tiene por qué haber
+  // pedidos recientes, p.ej. fuera de horario) — es solo informativo, para
+  // ver de un vistazo si la web sigue "viva" de verdad. window._ultimoPedidoTs
+  // lo actualiza _renderLiveOrders() cada vez que llega la lista de pedidos
+  // del día por el listener en tiempo real.
+  let ultimoPedidoTexto = 'Sin pedidos recibidos hoy en este dispositivo';
+  if (window._ultimoPedidoTs) {
+    const minsAtras = Math.max(0, Math.round((Date.now() - window._ultimoPedidoTs) / 60000));
+    ultimoPedidoTexto = minsAtras < 1 ? 'Hace menos de 1 minuto' : minsAtras === 1 ? 'Hace 1 minuto' : 'Hace ' + minsAtras + ' minutos';
+  }
   el.innerHTML = resultados.map(r => {
     const icono = r.ok === null ? '⚪' : r.ok ? '✅' : '❌';
     const color = r.ok === null ? 'var(--muted)' : r.ok ? '#166534' : '#c0392b';
     return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">' + r.nombre + '</span><span style="font-weight:700;color:' + color + '">' + icono + '</span></div>';
-  }).join('') + '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Última comprobación: ' + new Date().toLocaleTimeString('es-ES') + '</div>';
+  }).join('')
+    + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">🕓 Último pedido recibido</span><span style="font-weight:700;color:var(--muted)">' + ultimoPedidoTexto + '</span></div>'
+    + '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Última comprobación: ' + new Date().toLocaleTimeString('es-ES') + '</div>';
+}
+
+// Botón "🖨️ Probar todo" del panel de Alertas — pensado para pasarlo antes
+// de abrir el local: comprueba Firebase/servidor/impresora (como
+// comprobarEstadoSistema) y, si la impresora está conectada, imprime además
+// un ticket de prueba de verdad, para saber que todo funciona antes de que
+// llegue el primer pedido real del día.
+async function comprobarTodoAntesDeAbrir() {
+  const btn = document.getElementById('btn-comprobar-todo');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Comprobando…'; }
+  try {
+    await comprobarEstadoSistema(true);
+    const impresoraConectada = typeof _ptIsConnected === 'function' && _ptIsConnected();
+    if (impresoraConectada && typeof imprimirTicketPrueba === 'function') {
+      await imprimirTicketPrueba();
+      alert('✅ Comprobación completa. Revisa el panel de estado del sistema — y si ha salido un ticket de prueba de la impresora, todo listo para abrir.');
+    } else {
+      alert('✅ Firebase y servidor comprobados (mira el panel de arriba). ⚠️ La impresora no está conectada ahora mismo — conéctala primero para poder probarla también.');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🖨️ Probar todo'; }
+  }
 }
 function renderAlertas() {
   const entries = getAlertEntries();
@@ -790,7 +824,8 @@ function doPrint() {
     console.warn('[Impresora] error al imprimir tras varios intentos', e);
     _registrarEnvioTicket(orderNum, false);
     _avisarFalloEnvioTicket(orderNum);
-    alert('⚠️ No se pudo imprimir en la térmica (' + e.message + '). Se abrirá el diálogo de impresión del navegador como alternativa.');
+    if (typeof _ptColaAgregar === 'function') _ptColaAgregar(ticketData);
+    alert('⚠️ No se pudo imprimir en la térmica (' + e.message + '). Se abrirá el diálogo de impresión del navegador como alternativa. En cuanto la impresora vuelva a conectar, este ticket se reimprimirá solo.');
     window.print();
   });
 
@@ -831,6 +866,7 @@ function _autoImprimirPedido(order) {
       console.warn('[Impresora] auto-imprimir falló para ' + order.num + ' tras varios intentos', e);
       _registrarEnvioTicket(order.num, false);
       _avisarFalloEnvioTicket(order.num);
+      if (typeof _ptColaAgregar === 'function') _ptColaAgregar(ticketData);
     });
 
   // Guardar también en Firebase (histórico, usado por fidelización)

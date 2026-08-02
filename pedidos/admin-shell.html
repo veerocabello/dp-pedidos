@@ -33,6 +33,8 @@
   <div class="pt-desconexion-aviso" data-show-display="flex" style="display:none;background:#7a1a0e;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap">
     <span style="font-size:15px;font-weight:700;color:var(--white)">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</span>
   </div>
+  <!-- COLA DE IMPRESIÓN PENDIENTE — cocina (se imprime sola al reconectar) -->
+  <div class="pt-cola-contador" data-show-display="flex" style="display:none;background:#3D1F0D;padding:10px 20px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:13px;font-weight:700;color:var(--gold)"></div>
   <!-- AUDIO UNLOCK — cocina -->
   <div id="kitchen-audio-banner" style="background:var(--amber);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
     <span style="font-size:15px;font-weight:700;color:var(--white)">🔇 Activa el audio para recibir alertas de nuevos pedidos</span>
@@ -459,6 +461,7 @@
           <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
           <div class="pt-papel-aviso" style="display:none;width:100%;order:98;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
           <div class="pt-desconexion-aviso" style="display:none;width:100%;order:97;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
+          <div class="pt-cola-contador" style="display:none;width:100%;order:96;background:#FDECD5;border:1.5px solid var(--amber);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
             <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
             <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 USB</button>
@@ -744,7 +747,10 @@
               <div style="font-size:12px;color:var(--muted)">Comprobando…</div>
             </div>
           </div>
-          <button onclick="comprobarEstadoSistema(true)" style="padding:7px 12px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;margin-left:10px">🔄 Comprobar</button>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-left:10px">
+            <button onclick="comprobarEstadoSistema(true)" style="padding:7px 12px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🔄 Comprobar</button>
+            <button id="btn-comprobar-todo" onclick="comprobarTodoAntesDeAbrir()" style="padding:7px 12px;background:var(--amber-dark);color:var(--white);border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🖨️ Probar todo</button>
+          </div>
         </div>
 
         <div class="stat-panel-head" style="border-radius:12px;margin-bottom:6px">🔔 Alertas</div>
@@ -1779,6 +1785,7 @@
 
       <div class="pt-papel-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
       <div class="pt-desconexion-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
+      <div class="pt-cola-contador" style="display:none;background:#FDECD5;border:1.5px solid var(--amber);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
         <span class="pt-conn-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
