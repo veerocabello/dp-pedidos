@@ -13573,25 +13573,22 @@ function _descargarHtmlComoPDF(bodyHtml, filename) {
   const styleEl = document.createElement('style');
   styleEl.textContent = _pdfStyles();
   document.head.appendChild(styleEl);
-  // OJO: colocar el contenido a capturar muy lejos de la pantalla
-  // (left:-99999px, o escondido con opacity/visibility) hace que algunos
-  // navegadores no lleguen a pintarlo del todo — y html2canvas captura un
-  // lienzo en blanco, aunque el HTML esté bien (el PDF sale vacío). Para
-  // evitarlo, el contenido se coloca DENTRO del viewport real (arriba a la
-  // izquierda, tamaño normal) y se tapa con un aviso opaco de "Generando
-  // PDF…" por encima — así el navegador lo pinta de verdad, pero la
-  // usuaria solo ve el aviso, nunca el ticket en crudo.
+  // OJO: cualquier truco para "esconder" el contenido antes de capturarlo
+  // (colocarlo a -99999px, o taparlo con una capa opaca por encima) puede
+  // hacer que el navegador directamente no llegue a pintarlo — está fuera
+  // de la pantalla, o completamente tapado por otra capa, así que "no hace
+  // falta" dibujarlo de verdad, y html2canvas captura un lienzo en blanco
+  // aunque el HTML esté bien. Ya se probaron las dos y el PDF seguía
+  // saliendo vacío. Así que ahora no se esconde de ninguna manera: se
+  // pinta visible de verdad (encima de todo, un instante) y se quita en
+  // cuanto termina — se prioriza que el PDF salga bien sobre que no se vea
+  // el parpadeo, que dura menos de un segundo.
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed;top:0;left:0;background:#fff;width:210mm;z-index:99998';
+  container.style.cssText = 'position:fixed;top:0;left:0;background:#fff;width:210mm;z-index:2147483647';
   container.innerHTML = bodyHtml;
   document.body.appendChild(container);
-  const loadingOverlay = document.createElement('div');
-  loadingOverlay.style.cssText = "position:fixed;inset:0;background:#3D1F0D;color:#FFF8EE;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;font-family:'DM Sans',sans-serif;z-index:99999";
-  loadingOverlay.textContent = '📄 Generando PDF…';
-  document.body.appendChild(loadingOverlay);
   const limpiar = () => {
     container.remove();
-    loadingOverlay.remove();
     styleEl.remove();
   };
   // Un frame de margen para que el navegador termine de pintar el
