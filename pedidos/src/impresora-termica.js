@@ -894,6 +894,13 @@ if (navigator.usb || navigator.bluetooth) {
     if (!_ptIsConnected()) { _ptReconectar(); return; }
     if (_ptTransporte === 'ble') _ptBlePulso();
     else _ptComprobarPapel();
+    // La cola pendiente normalmente se vacía sola al detectar una
+    // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
+    // error puntual de escritura SIN que la impresora llegue a desconectarse
+    // de verdad — en ese caso ese flanco nunca se dispara. Este intento
+    // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
+    // ya se protege solo contra solapes (_ptColaProcesando).
+    if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
   }, 8000);
   // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
   // segundo plano — si la tablet se queda con la pantalla apagada un rato

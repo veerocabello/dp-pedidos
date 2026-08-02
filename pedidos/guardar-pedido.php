@@ -222,18 +222,31 @@ function dpf_limpiar_texto($str) {
 // (se añade una línea por pedido, nunca se borra ni se modifica desde
 // aquí) — no sustituye a Firebase para nada de lo que ya hace la web.
 function dpf_backup_pedido_local($ticketData) {
+    // mkdir()/file_put_contents() NO lanzan Exception si fallan (permisos,
+    // disco lleno...) — solo devuelven false y emiten un warning de PHP. Sin
+    // el "@" ese warning podría imprimirse en la propia respuesta (si el
+    // hosting tiene display_errors activo) y colar texto antes del JSON que
+    // espera el navegador, rompiendo el "success":true de un pedido que en
+    // realidad SÍ se guardó bien en Firebase. Por eso aquí no se confía en
+    // try/catch (no atraparía este tipo de fallo) — se suprime el warning
+    // con "@" y se comprueba el valor de retorno a mano.
     try {
         $dir = __DIR__ . '/backup-pedidos';
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            if (!@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                error_log('[guardar-pedido] backup local: no se pudo crear ' . $dir);
+                return;
+            }
             // .htaccess por si el hosting permite listar directorios — el
             // backup contiene nombres y teléfonos de clientes, no debe ser
             // accesible desde el navegador.
-            file_put_contents($dir . '/.htaccess', "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Order deny,allow\n    Deny from all\n</IfModule>\n");
+            @file_put_contents($dir . '/.htaccess', "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Order deny,allow\n    Deny from all\n</IfModule>\n");
         }
         $file = $dir . '/pedidos-' . date('Y-m-d') . '.log';
         $linea = json_encode($ticketData, JSON_UNESCAPED_UNICODE) . "\n";
-        file_put_contents($file, $linea, FILE_APPEND | LOCK_EX);
+        if (@file_put_contents($file, $linea, FILE_APPEND | LOCK_EX) === false) {
+            error_log('[guardar-pedido] backup local: no se pudo escribir en ' . $file);
+        }
     } catch (Exception $e) {
         // Nunca debe romper el guardado real del pedido por un fallo de esta
         // copia extra — solo se registra en el log de errores del servidor.

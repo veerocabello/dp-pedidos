@@ -642,6 +642,13 @@ async function _revertirVentasProductos(items) {
 async function _borrarPedidoDeFirebase(orderNum) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
+  // 0. Si este pedido tenía un ticket esperando en la cola de impresión
+  // pendiente (porque falló al imprimir mientras la impresora estaba
+  // desconectada), quitarlo — si no, en cuanto la impresora reconecte se
+  // imprimiría igualmente el ticket de un pedido ya cancelado/modificado,
+  // sin ningún aviso de que ya no es válido.
+  if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
+
   // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
   await setOrderStatus(orderNum, 'cancelado');
 

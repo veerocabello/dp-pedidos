@@ -4915,6 +4915,13 @@ async function _revertirVentasProductos(items) {
 async function _borrarPedidoDeFirebase(orderNum) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
+  // 0. Si este pedido tenía un ticket esperando en la cola de impresión
+  // pendiente (porque falló al imprimir mientras la impresora estaba
+  // desconectada), quitarlo — si no, en cuanto la impresora reconecte se
+  // imprimiría igualmente el ticket de un pedido ya cancelado/modificado,
+  // sin ningún aviso de que ya no es válido.
+  if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
+
   // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
   await setOrderStatus(orderNum, 'cancelado');
 
@@ -10905,6 +10912,13 @@ if (navigator.usb || navigator.bluetooth) {
     if (!_ptIsConnected()) { _ptReconectar(); return; }
     if (_ptTransporte === 'ble') _ptBlePulso();
     else _ptComprobarPapel();
+    // La cola pendiente normalmente se vacía sola al detectar una
+    // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
+    // error puntual de escritura SIN que la impresora llegue a desconectarse
+    // de verdad — en ese caso ese flanco nunca se dispara. Este intento
+    // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
+    // ya se protege solo contra solapes (_ptColaProcesando).
+    if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
   }, 8000);
   // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
   // segundo plano — si la tablet se queda con la pantalla apagada un rato
