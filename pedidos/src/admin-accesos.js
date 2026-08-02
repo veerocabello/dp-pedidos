@@ -64,6 +64,16 @@ function openEmpleadosWithBimba() {
   secureLockTap();
 }
 
+// ── ACCESO A "HISTORIAL POR DÍAS" (FACTURACIÓN) ──────────────────────────────
+// A diferencia del historial de clientes (visible para cualquiera con acceso
+// al panel), el resumen por días muestra el total facturado — información
+// que no hace falta que vea el personal, solo la dueña. Mismo candado que
+// empleados/config, solo cambia a qué sección redirige al acertar el PIN.
+function abrirHistorialDiasBimba() {
+  window._bimbaTargetHistorialDias = true;
+  secureLockTap();
+}
+
 // ── DISPOSITIVO DE CONFIANZA ──
 // SEGURIDAD: el flag local es solo una preferencia de UX (saltar la pantalla de login).
 
@@ -528,6 +538,19 @@ async function secureLockConfirm() {
       if (_bimbaEmpSec) { _bimbaEmpSec.style.setProperty('display','block','important'); _bimbaEmpSec.classList.add('active'); }
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
+      }, 100);
+    } else if (window._bimbaTargetHistorialDias) {
+      window._bimbaTargetHistorialDias = false;
+      logActivity('📅 Acceso a historial por días por bimba');
+      // Mostrar sección bimba-historial directamente
+      document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+      const _bimbaHistSec = document.getElementById('admin-bimba-historial');
+      if (_bimbaHistSec) { _bimbaHistSec.style.setProperty('display','block','important'); _bimbaHistSec.classList.add('active'); }
+      setTimeout(function(){
+        if (typeof loadHistorial === 'function') loadHistorial();
+        if (typeof loadAutoDeleteUI === 'function') loadAutoDeleteUI();
+        if (typeof applyAutoDelete === 'function') applyAutoDelete();
       }, 100);
     } else {
       logActivity('🔒 Acceso bimba por candado');

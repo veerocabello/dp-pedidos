@@ -6878,6 +6878,16 @@ function openEmpleadosWithBimba() {
   secureLockTap();
 }
 
+// ── ACCESO A "HISTORIAL POR DÍAS" (FACTURACIÓN) ──────────────────────────────
+// A diferencia del historial de clientes (visible para cualquiera con acceso
+// al panel), el resumen por días muestra el total facturado — información
+// que no hace falta que vea el personal, solo la dueña. Mismo candado que
+// empleados/config, solo cambia a qué sección redirige al acertar el PIN.
+function abrirHistorialDiasBimba() {
+  window._bimbaTargetHistorialDias = true;
+  secureLockTap();
+}
+
 // ── DISPOSITIVO DE CONFIANZA ──
 // SEGURIDAD: el flag local es solo una preferencia de UX (saltar la pantalla de login).
 
@@ -7342,6 +7352,19 @@ async function secureLockConfirm() {
       if (_bimbaEmpSec) { _bimbaEmpSec.style.setProperty('display','block','important'); _bimbaEmpSec.classList.add('active'); }
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
+      }, 100);
+    } else if (window._bimbaTargetHistorialDias) {
+      window._bimbaTargetHistorialDias = false;
+      logActivity('📅 Acceso a historial por días por bimba');
+      // Mostrar sección bimba-historial directamente
+      document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+      const _bimbaHistSec = document.getElementById('admin-bimba-historial');
+      if (_bimbaHistSec) { _bimbaHistSec.style.setProperty('display','block','important'); _bimbaHistSec.classList.add('active'); }
+      setTimeout(function(){
+        if (typeof loadHistorial === 'function') loadHistorial();
+        if (typeof loadAutoDeleteUI === 'function') loadAutoDeleteUI();
+        if (typeof applyAutoDelete === 'function') applyAutoDelete();
       }, 100);
     } else {
       logActivity('🔒 Acceso bimba por candado');
@@ -13528,7 +13551,37 @@ function loadBannerDia() {
 // ── EXPORTAR PDF ─────────────────────────────────────────────────────────────
 
 function _pdfStyles() {
-  return "\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: Arial, sans-serif; color: #2A1506; background: #fff; }\n    .header { background: #3D1F0D; color: #FFF8EE; padding: 20px 28px; }\n    .header h1 { font-size: 22px; font-weight: 900; margin-bottom: 2px; }\n    .header p  { font-size: 12px; opacity: .7; }\n    .content { padding: 24px 28px; }\n    .order-card { border: 1.5px solid #F5E6C8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }\n    .order-num  { font-size: 18px; font-weight: 900; color: #3D1F0D; }\n    .order-meta { font-size: 12px; color: #8A6A4E; margin: 4px 0 10px; }\n    .order-items { font-size: 13px; color: #2A1506; border-top: 1px solid #F5E6C8; padding-top: 8px; }\n    .order-item { display: flex; justify-content: space-between; padding: 3px 0; }\n    .order-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #3D1F0D; border-top: 1.5px solid #F5E6C8; margin-top: 8px; padding-top: 8px; }\n    .summary { background: #FFF8EE; border: 1.5px solid #3D1F0D; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap; }\n    .summary-item { text-align: center; }\n    .summary-item .val { font-size: 24px; font-weight: 900; color: #3D1F0D; }\n    .summary-item .lbl { font-size: 11px; color: #8A6A4E; text-transform: uppercase; letter-spacing: .05em; }\n    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n  ";
+  return "\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: Arial, sans-serif; color: #2A1506; background: #fff; }\n    .header { background: #3D1F0D; color: #FFF8EE; padding: 20px 28px; }\n    .header h1 { font-size: 22px; font-weight: 900; margin-bottom: 2px; }\n    .header p  { font-size: 12px; opacity: .7; }\n    .content { padding: 24px 28px; }\n    .order-card { border: 1.5px solid #F5E6C8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }\n    .order-num  { font-size: 18px; font-weight: 900; color: #3D1F0D; }\n    .order-meta { font-size: 12px; color: #8A6A4E; margin: 4px 0 10px; }\n    .order-items { font-size: 13px; color: #2A1506; border-top: 1px solid #F5E6C8; padding-top: 8px; }\n    .order-item { display: flex; justify-content: space-between; padding: 3px 0; }\n    .order-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #3D1F0D; border-top: 1.5px solid #F5E6C8; margin-top: 8px; padding-top: 8px; }\n    .summary { background: #FFF8EE; border: 1.5px solid #3D1F0D; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap; }\n    .summary-item { text-align: center; }\n    .summary-item .val { font-size: 24px; font-weight: 900; color: #3D1F0D; }\n    .summary-item .lbl { font-size: 11px; color: #8A6A4E; text-transform: uppercase; letter-spacing: .05em; }\n    .ticket-box { border: 2px solid #3D1F0D; border-radius: 14px; padding: 24px; margin: 24px; }\n    .ticket-title { font-size: 13px; color: #8A6A4E; text-align:center; margin-bottom: 4px; }\n    .ticket-num { font-size: 36px; font-weight: 900; color: #3D1F0D; text-align:center; margin-bottom: 16px; }\n    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n  ";
+}
+// Convierte un fragmento de HTML en un PDF de verdad que se descarga solo
+// — antes, tanto exportTicketPDF() como exportHistorialPDF() abrian una
+// ventana nueva y llamaban a window.print(), que abre el dialogo de
+// impresion del navegador (habia que elegir "Guardar como PDF" a mano, y a
+// veces se manda directo a una impresora fisica en vez de guardarlo).
+// html2pdf.js (cargado por CDN en index.html/fichar-publico.html) genera
+// el archivo .pdf directamente, sin pasar por ningun dialogo de impresion.
+function _descargarHtmlComoPDF(bodyHtml, filename) {
+  if (typeof html2pdf === 'undefined') {
+    alert('No se pudo generar el PDF (no cargo la libreria). Comprueba tu conexion y recarga la pagina.');
+    return;
+  }
+  const styleEl = document.createElement('style');
+  styleEl.textContent = _pdfStyles();
+  document.head.appendChild(styleEl);
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-99999px;top:0;background:#fff;width:210mm';
+  container.innerHTML = bodyHtml;
+  document.body.appendChild(container);
+  const limpiar = () => {
+    container.remove();
+    styleEl.remove();
+  };
+  html2pdf().from(container).set({
+    margin: 0,
+    filename,
+    html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  }).save().then(limpiar).catch(limpiar);
 }
 function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
   const fecha = new Date().toLocaleDateString('es-ES', {
@@ -13537,41 +13590,26 @@ function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
     month: 'long',
     day: 'numeric'
   });
-  const itemsHtml = (items || []).map(it => "<div class=\"order-item\"><span>".concat(it.qty, "x ").concat(escapeHtml(it.name || ''), "</span><span>").concat((it.subtotal || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Ticket ".concat(escapeHtml(num || ''), "</title>\n  <style>").concat(_pdfStyles(), "\n    body { max-width: 400px; margin: 0 auto; }\n    .ticket-box { border: 2px solid #3D1F0D; border-radius: 14px; padding: 24px; margin: 24px; }\n    .ticket-title { font-size: 13px; color: #8A6A4E; text-align:center; margin-bottom: 4px; }\n    .ticket-num { font-size: 36px; font-weight: 900; color: #3D1F0D; text-align:center; margin-bottom: 16px; }\n  </style></head><body>\n  <div class=\"header\" style=\"text-align:center\">\n    <h1>\uD83E\uDD54 Dulce Patata Food</h1>\n    <p>").concat(fecha, "</p>\n  </div>\n  <div class=\"ticket-box\">\n    <div class=\"ticket-title\">N\xFAmero de pedido</div>\n    <div class=\"ticket-num\">").concat(escapeHtml(num || ''), "</div>\n    <div class=\"order-meta\" style=\"text-align:center;margin-bottom:14px\">\n      \uD83D\uDC64 ").concat(escapeHtml(name || '—'), "\n      ").concat(phone ? "&nbsp;\xB7&nbsp; \uD83D\uDCDE ".concat(escapeHtml(phone)) : '', "\n      ").concat(time ? "&nbsp;\xB7&nbsp; \uD83D\uDD50 ".concat(escapeHtml(time)) : '', "\n      ").concat(slot ? "<br>\uD83D\uDCE6 Recogida de patata a las ".concat(escapeHtml(slot), "h") : '', "\n    </div>\n    ").concat(itemsHtml ? "<div class=\"order-items\">".concat(itemsHtml, "<div class=\"order-total\"><span>Total a pagar</span><span>").concat(parseFloat(total).toFixed(2).replace('.', ','), " \u20AC</span></div></div>") : '', "\n    ").concat(notes ? "<div style=\"font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic\">\uD83D\uDCDD ".concat(escapeHtml(notes), "</div>") : '', "\n    <div style=\"text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E\">Paga en caja cuando recojas \uD83D\uDC9B</div>\n  </div>\n  </body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
-}
-function switchHistorialTab(tab) {
-  const diasBtn = document.getElementById('htab-dias');
-  const clientesBtn = document.getElementById('htab-clientes');
-  const diasView = document.getElementById('historial-tab-dias');
-  const clientesView = document.getElementById('historial-tab-clientes');
-  if (!diasBtn) return;
-  if (tab === 'dias') {
-    diasBtn.style.borderBottomColor = '#3D1F0D';
-    diasBtn.style.color = '#3D1F0D';
-    diasBtn.style.fontWeight = '700';
-    clientesBtn.style.borderBottomColor = 'transparent';
-    clientesBtn.style.color = '#8A6A4E';
-    clientesBtn.style.fontWeight = '600';
-    diasView.style.display = 'block';
-    clientesView.style.display = 'none';
-  } else {
-    clientesBtn.style.borderBottomColor = '#3D1F0D';
-    clientesBtn.style.color = '#3D1F0D';
-    clientesBtn.style.fontWeight = '700';
-    diasBtn.style.borderBottomColor = 'transparent';
-    diasBtn.style.color = '#8A6A4E';
-    diasBtn.style.fontWeight = '600';
-    diasView.style.display = 'none';
-    clientesView.style.display = 'block';
-    renderClientes();
-  }
+  const itemsHtml = (items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+  const body = `
+    <div class="header" style="text-align:center">
+      <h1>🥔 Dulce Patata Food</h1>
+      <p>${fecha}</p>
+    </div>
+    <div class="ticket-box">
+      <div class="ticket-title">Número de pedido</div>
+      <div class="ticket-num">${escapeHtml(num || '')}</div>
+      <div class="order-meta" style="text-align:center;margin-bottom:14px">
+        👤 ${escapeHtml(name || '—')}
+        ${phone ? `&nbsp;·&nbsp; 📞 ${escapeHtml(phone)}` : ''}
+        ${time ? `&nbsp;·&nbsp; 🕐 ${escapeHtml(time)}` : ''}
+        ${slot ? `<br>📦 Recogida de patata a las ${escapeHtml(slot)}h` : ''}
+      </div>
+      ${itemsHtml ? `<div class="order-items">${itemsHtml}<div class="order-total"><span>Total a pagar</span><span>${parseFloat(total).toFixed(2).replace('.', ',')} €</span></div></div>` : ''}
+      ${notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic">📝 ${escapeHtml(notes)}</div>` : ''}
+      <div style="text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E">Paga en caja cuando recojas 💛</div>
+    </div>`;
+  _descargarHtmlComoPDF(body, 'ticket-' + (num || 'pedido') + '.pdf');
 }
 function _buildClientesMap() {
   const hist = getHistorial();
@@ -13945,16 +13983,30 @@ async function exportDayPDF() {
 function _exportDayDataPDF(orders, total, fecha, dateKey) {
   const t = total || orders.reduce((a, o) => a + (o.total || 0), 0);
   const ordersHtml = orders.map(o => {
-    const itemsHtml = (o.items || []).map(it => "<div class=\"order-item\"><span>".concat(it.qty, "x ").concat(escapeHtml(it.name || ''), "</span><span>").concat((it.subtotal || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-    return "<div class=\"order-card\">\n      <div style=\"display:flex;justify-content:space-between;align-items:flex-start\">\n        <div>\n          <div class=\"order-num\">".concat(escapeHtml(o.num || ''), "</div>\n          <div class=\"order-meta\">\uD83D\uDC64 ").concat(escapeHtml(o.name || '—'), " &nbsp;\xB7&nbsp; \uD83D\uDD50 ").concat(escapeHtml(o.time || '—')).concat(o.slot ? " &nbsp;\xB7&nbsp; \uD83D\uDCE6 ".concat(escapeHtml(o.slot)) : '').concat(o.phone ? " &nbsp;\xB7&nbsp; \uD83D\uDCDE ".concat(escapeHtml(o.phone)) : '', "</div>\n        </div>\n        <div style=\"font-size:18px;font-weight:900;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</div>\n      </div>\n      ").concat(itemsHtml ? "<div class=\"order-items\">".concat(itemsHtml, "</div>") : '', "\n      ").concat(o.notes ? "<div style=\"font-size:12px;color:#8A6A4E;margin-top:6px;font-style:italic\">\uD83D\uDCDD ".concat(escapeHtml(o.notes), "</div>") : '', "\n    </div>");
+    const itemsHtml = (o.items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+    return `<div class="order-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="order-num">${escapeHtml(o.num || '')}</div>
+          <div class="order-meta">👤 ${escapeHtml(o.name || '—')} &nbsp;·&nbsp; 🕐 ${escapeHtml(o.time || '—')}${o.slot ? ` &nbsp;·&nbsp; 📦 ${escapeHtml(o.slot)}` : ''}${o.phone ? ` &nbsp;·&nbsp; 📞 ${escapeHtml(o.phone)}` : ''}</div>
+        </div>
+        <div style="font-size:18px;font-weight:900;color:#3D1F0D">${(o.total || 0).toFixed(2).replace('.', ',')} €</div>
+      </div>
+      ${itemsHtml ? `<div class="order-items">${itemsHtml}</div>` : ''}
+      ${o.notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:6px;font-style:italic">📝 ${escapeHtml(o.notes)}</div>` : ''}
+    </div>`;
   }).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Pedidos ".concat(dateKey, "</title>\n  <style>").concat(_pdfStyles(), "</style></head><body>\n  <div class=\"header\"><h1>\uD83E\uDD54 Dulce Patata Food</h1><p>Resumen de pedidos \xB7 ").concat(fecha, "</p></div>\n  <div class=\"content\">\n    <div class=\"summary\">\n      <div class=\"summary-item\"><div class=\"val\">").concat(orders.length, "</div><div class=\"lbl\">Pedidos</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(t.toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Total</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat((t / orders.length).toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Ticket medio</div></div>\n    </div>\n    ").concat(ordersHtml, "\n  </div></body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+  const body = `
+    <div class="header"><h1>🥔 Dulce Patata Food</h1><p>Resumen de pedidos · ${fecha}</p></div>
+    <div class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="val">${orders.length}</div><div class="lbl">Pedidos</div></div>
+        <div class="summary-item"><div class="val">${t.toFixed(2).replace('.', ',')} €</div><div class="lbl">Total</div></div>
+        <div class="summary-item"><div class="val">${(t / orders.length).toFixed(2).replace('.', ',')} €</div><div class="lbl">Ticket medio</div></div>
+      </div>
+      ${ordersHtml}
+    </div>`;
+  _descargarHtmlComoPDF(body, 'pedidos-' + dateKey + '.pdf');
 }
 function exportHistorialPDF() {
   const hist = getHistorial();
@@ -13971,16 +14023,27 @@ function exportHistorialPDF() {
       month: 'short',
       year: 'numeric'
     });
-    const ordersHtml = (d.orders || []).map(o => "<div class=\"order-item\" style=\"font-size:12px\"><span>".concat(escapeHtml(o.num || ''), " \xB7 ").concat(escapeHtml(o.name || '—'), " ").concat(o.time ? '· ' + escapeHtml(o.time) : '', "</span><span>").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-    return "<div class=\"order-card\">\n      <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">\n        <div class=\"order-num\" style=\"font-size:15px\">".concat(fecha, "</div>\n        <div style=\"font-size:14px;font-weight:700;color:#3D1F0D\">").concat(d.count, " pedidos \xB7 ").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</div>\n      </div>\n      ").concat(ordersHtml, "\n    </div>");
+    const ordersHtml = (d.orders || []).map(o => `<div class="order-item" style="font-size:12px"><span>${escapeHtml(o.num || '')} · ${escapeHtml(o.name || '—')} ${o.time ? '· ' + escapeHtml(o.time) : ''}</span><span>${(o.total || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+    return `<div class="order-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="order-num" style="font-size:15px">${fecha}</div>
+        <div style="font-size:14px;font-weight:700;color:#3D1F0D">${d.count} pedidos · ${d.total.toFixed(2).replace('.', ',')} €</div>
+      </div>
+      ${ordersHtml}
+    </div>`;
   }).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Historial Dulce Patata</title>\n  <style>".concat(_pdfStyles(), "</style></head><body>\n  <div class=\"header\"><h1>\uD83E\uDD54 Dulce Patata Food</h1><p>Historial completo \xB7 ").concat(hist.length, " d\xEDas</p></div>\n  <div class=\"content\">\n    <div class=\"summary\">\n      <div class=\"summary-item\"><div class=\"val\">").concat(hist.length, "</div><div class=\"lbl\">D\xEDas</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalOrders, "</div><div class=\"lbl\">Pedidos</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalMoney.toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Total</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalOrders ? (totalMoney / totalOrders).toFixed(2).replace('.', ',') : '0,00', " \u20AC</div><div class=\"lbl\">Ticket medio</div></div>\n    </div>\n    ").concat(daysHtml, "\n  </div></body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+  const body = `
+    <div class="header"><h1>🥔 Dulce Patata Food</h1><p>Historial completo · ${hist.length} días</p></div>
+    <div class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="val">${hist.length}</div><div class="lbl">Días</div></div>
+        <div class="summary-item"><div class="val">${totalOrders}</div><div class="lbl">Pedidos</div></div>
+        <div class="summary-item"><div class="val">${totalMoney.toFixed(2).replace('.', ',')} €</div><div class="lbl">Total</div></div>
+        <div class="summary-item"><div class="val">${totalOrders ? (totalMoney / totalOrders).toFixed(2).replace('.', ',') : '0,00'} €</div><div class="lbl">Ticket medio</div></div>
+      </div>
+      ${daysHtml}
+    </div>`;
+  _descargarHtmlComoPDF(body, 'historial-dulce-patata.pdf');
 }
 function expandHistorialDay(date) {
   const hist = getHistorial();
@@ -14071,11 +14134,11 @@ function showAdminSection(id, btn) {
   _sec.style.display = 'block';
   if (btn) btn.classList.add('active');
   if (id === 'stats') loadDayStats();
-  if (id === 'historial') {
-    loadHistorial();
-    loadAutoDeleteUI();
-    applyAutoDelete();
-  }
+  // La pestaña "Historial" del panel normal solo muestra la lista de
+  // clientes ahora — el resumen por días (con la facturación) se movió al
+  // acceso restringido (ver abrirHistorialDiasBimba en admin-accesos.js),
+  // porque no es algo que necesite ver el personal.
+  if (id === 'historial') renderClientes();
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
