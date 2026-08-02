@@ -10094,6 +10094,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     big();
     push(_ptHoraCorta(ticket.time) + '\n');
     normal();
+    push('(pedido hecho en tienda)\n');
   }
 
   // Nombre del cliente

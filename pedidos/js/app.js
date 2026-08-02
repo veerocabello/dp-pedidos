@@ -306,7 +306,8 @@ Ven a recogerlo y paga en caja`,window.open("https://wa.me/?text="+encodeURIComp
 `),l(),s(e.slotTime+`
 `),d()):e.time&&(r(),s(`HORA DEL PEDIDO
 `),l(),s(_ptHoraCorta(e.time)+`
-`),d()),r(),l(),s((e.name||"").toUpperCase()+`
+`),d(),s(`(pedido hecho en tienda)
+`)),r(),l(),s((e.name||"").toUpperCase()+`
 `),d(),e.phone&&s("Tlfno. "+e.phone+`
 `),s(`------------------------------------------------
 `),r(),l(),s("PEDIDO "+e.orderNum+`
