@@ -572,6 +572,16 @@
   }
   .item-info { flex: 1; min-width: 0; }
   .item-name { font-weight: 600; font-size: 15px; color: var(--text); }
+  /* Trazo de "rotulador" dorado detrás del nombre — le da color a la
+     tarjeta sin teñir toda la tarjeta ni añadir una etiqueta de categoría
+     encima del nombre (ya se ve en el separador de categoría, arriba). */
+  .item-name-hl {
+    background-image: linear-gradient(to top, rgba(244,196,48,.55) 0, rgba(244,196,48,.55) 32%, transparent 32%);
+    background-repeat: no-repeat;
+    padding: 0 1px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
   .item-desc {
     font-size: 13px;
     color: var(--muted);

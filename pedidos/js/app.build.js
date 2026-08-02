@@ -8371,7 +8371,7 @@ function renderMenu() {
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
       + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '"><span class="item-name-hl">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</span></div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : _formatDescConAvisoIngredientes(item.desc)) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
