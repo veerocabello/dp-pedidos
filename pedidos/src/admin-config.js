@@ -1246,7 +1246,7 @@ function comprobarCodigoLocal() {
     if (!escrito) {
       feedback.textContent = '';
     } else {
-      feedback.textContent = activo ? '✅ Sin gastos de gestión aplicado' : '❌ Código incorrecto';
+      feedback.textContent = activo ? '✅ Sin gastos de gestión — pedido para ahora mismo, sin turno' : '❌ Código incorrecto';
       feedback.style.color = activo ? '#27855a' : '#c0392b';
     }
   });

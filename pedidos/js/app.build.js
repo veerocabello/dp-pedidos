@@ -3479,7 +3479,11 @@ function slotIsPast(slotTime) {
 function renderSlotPicker() {
   const group = document.getElementById('slot-picker-group');
   if (!group) return;
-  const needsSlot = cartHasAnyItem() && isSlotHour();
+  // Con el código local activo (cliente en tienda, llegó por el QR del
+  // mostrador) el pedido se prepara para ahora mismo — no tiene sentido
+  // hacerle elegir un turno futuro, así que se salta el selector entero.
+  const enTienda = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const needsSlot = cartHasAnyItem() && isSlotHour() && !enTienda;
   group.style.display = needsSlot ? 'block' : 'none';
   if (!needsSlot) {
     return;
@@ -3765,8 +3769,10 @@ async function _submitOrderInner() {
     }
   }
 
-  // Validar slot si aplica
-  const needsSlot = cartHasAnyItem() && isSlotHour();
+  // Validar slot si aplica — igual que en renderSlotPicker(), un pedido con
+  // el código local activo (cliente en tienda) no necesita turno.
+  const _enTiendaSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const needsSlot = cartHasAnyItem() && isSlotHour() && !_enTiendaSubmit;
   if (needsSlot && !selectedSlot) {
     document.getElementById('slot-error').style.display = 'block';
     document.getElementById('slot-picker-group').scrollIntoView({
@@ -9083,7 +9089,7 @@ function comprobarCodigoLocal() {
     if (!escrito) {
       feedback.textContent = '';
     } else {
-      feedback.textContent = activo ? '✅ Sin gastos de gestión aplicado' : '❌ Código incorrecto';
+      feedback.textContent = activo ? '✅ Sin gastos de gestión — pedido para ahora mismo, sin turno' : '❌ Código incorrecto';
       feedback.style.color = activo ? '#27855a' : '#c0392b';
     }
   });
