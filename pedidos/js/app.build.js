@@ -13567,26 +13567,46 @@ function _pdfStyles() {
 // el archivo .pdf directamente, sin pasar por ningun dialogo de impresion.
 function _descargarHtmlComoPDF(bodyHtml, filename) {
   if (typeof html2pdf === 'undefined') {
-    alert('No se pudo generar el PDF (no cargo la libreria). Comprueba tu conexion y recarga la pagina.');
+    alert('No se pudo generar el PDF (no cargó la librería). Comprueba tu conexión y recarga la página.');
     return;
   }
   const styleEl = document.createElement('style');
   styleEl.textContent = _pdfStyles();
   document.head.appendChild(styleEl);
+  // OJO: colocar el contenido a capturar muy lejos de la pantalla
+  // (left:-99999px, o escondido con opacity/visibility) hace que algunos
+  // navegadores no lleguen a pintarlo del todo — y html2canvas captura un
+  // lienzo en blanco, aunque el HTML esté bien (el PDF sale vacío). Para
+  // evitarlo, el contenido se coloca DENTRO del viewport real (arriba a la
+  // izquierda, tamaño normal) y se tapa con un aviso opaco de "Generando
+  // PDF…" por encima — así el navegador lo pinta de verdad, pero la
+  // usuaria solo ve el aviso, nunca el ticket en crudo.
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed;left:-99999px;top:0;background:#fff;width:210mm';
+  container.style.cssText = 'position:fixed;top:0;left:0;background:#fff;width:210mm;z-index:99998';
   container.innerHTML = bodyHtml;
   document.body.appendChild(container);
+  const loadingOverlay = document.createElement('div');
+  loadingOverlay.style.cssText = "position:fixed;inset:0;background:#3D1F0D;color:#FFF8EE;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;font-family:'DM Sans',sans-serif;z-index:99999";
+  loadingOverlay.textContent = '📄 Generando PDF…';
+  document.body.appendChild(loadingOverlay);
   const limpiar = () => {
     container.remove();
+    loadingOverlay.remove();
     styleEl.remove();
   };
-  html2pdf().from(container).set({
-    margin: 0,
-    filename,
-    html2canvas: { scale: 2, backgroundColor: '#ffffff' },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  }).save().then(limpiar).catch(limpiar);
+  // Un frame de margen para que el navegador termine de pintar el
+  // contenedor recién insertado antes de que html2canvas lo capture.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    html2pdf().from(container).set({
+      margin: 0,
+      filename,
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).save().then(limpiar).catch((err) => {
+      limpiar();
+      alert('⚠️ No se pudo generar el PDF: ' + (err && err.message || 'error desconocido'));
+    });
+  }));
 }
 function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
   const fecha = new Date().toLocaleDateString('es-ES', {
