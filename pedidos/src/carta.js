@@ -675,7 +675,16 @@ function renderUpsellDulce() {
     + '<button class="upsell-dulce-opcion-add" onclick="changeQty(' + op.id + ',1)">+ Añadir</button>'
     + '</div>'
   ).join('');
-  return '<div class="upsell-dulce">'
+  // La tarjeta lleva una animación de entrada (CSS), pero el carrito entero
+  // se repinta muchas veces mientras el cliente escribe (teléfono, notas...)
+  // — como renderCart() reconstruye el HTML entero cada vez, sin esto la
+  // tarjeta se recreaba como un elemento nuevo en cada repintado y la
+  // animación volvía a arrancar desde cero, dando la sensación de que
+  // "parpadeaba" sola mientras escribía. Solo se anima la primera vez que
+  // se muestra en este pedido; se resetea al confirmar/cancelar el pedido.
+  const primeraVez = !window._upsellYaAnimado;
+  window._upsellYaAnimado = true;
+  return '<div class="upsell-dulce' + (primeraVez ? '' : ' upsell-dulce-sin-animar') + '">'
     + '<div class="upsell-dulce-row1">'
     + '<div class="upsell-dulce-icon">' + sug.opciones[0].emoji + '</div>'
     + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'

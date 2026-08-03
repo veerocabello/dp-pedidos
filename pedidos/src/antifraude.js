@@ -444,6 +444,7 @@ function resetOrder() {
   // arrastrar el "ya se mostró"/las mismas opciones del pedido anterior.
   window._upsellFueMostrado = false;
   window._upsellOpcionesElegidas = null;
+  window._upsellYaAnimado = false;
   try {
     localStorage.removeItem('dpf_active_order');
   } catch (e) {}

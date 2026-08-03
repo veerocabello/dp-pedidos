@@ -830,6 +830,9 @@
     content: ''; position: absolute; inset: -14px;
   }
   .cart-remove:hover { color: var(--error); transform: scale(1.2); }
+  .upsell-dulce-sin-animar {
+    animation: none !important;
+  }
   .upsell-dulce {
     margin-top: 12px;
     background: #FFFFFF;
