@@ -511,18 +511,23 @@ async function _ptBleConectarDispositivo(device) {
     server.disconnect();
     throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
   }
-  // Muchas impresoras Bluetooth baratas todavía no están listas para
-  // recibir datos de verdad justo al terminar de conectar — si se manda el
-  // primer ticket en ese instante, el propio módulo Bluetooth de la
-  // impresora lo descarta en silencio (writeValueWithoutResponse no avisa
-  // de ningún fallo), así que la web lo da por impreso pero no sale nada
-  // en papel. Este margen deja que la conexión se asiente antes de
-  // marcarla como lista — soluciona que "el primer pedido tras conectar
-  // nunca sale, los siguientes sí".
-  await new Promise(r => setTimeout(r, 500));
   _ptBleDevice = device;
   _ptBleCharacteristic = characteristic;
   _ptTransporte = 'ble';
+  // Muchas impresoras Bluetooth baratas todavía no están listas para
+  // recibir datos de verdad justo al terminar de conectar — el primer envío
+  // en ese instante se puede perder en silencio (writeValueWithoutResponse
+  // no avisa de ningún fallo), así que la web lo daba por impreso pero no
+  // salía nada en papel. Antes solo había una espera fija de 0,5s, pero
+  // seguía perdiéndose el primer ticket real en algunos módulos — ahora,
+  // ANTES de esperar, se manda primero un "pulso" inofensivo (el mismo
+  // comando de estado que ya se usa para mantener viva la conexión, no
+  // imprime nada en el papel): si algo se pierde por este motivo de
+  // arranque, se pierde ese envío de prueba y no el ticket real del
+  // cliente. Después se espera un margen mayor (0,8s) antes de marcar la
+  // impresora como lista.
+  try { await _ptBlePulso(); } catch (e) {}
+  await new Promise(r => setTimeout(r, 800));
   device.addEventListener('gattserverdisconnected', () => {
     if (_ptTransporte === 'ble') _ptResetConexion();
     _ptStatusUI(false);
