@@ -4287,8 +4287,8 @@ function _mostrarAvisoFidelizacionCompletada() {
 // ── Tiempo de modificación de pedido ──
 function saveModifyWindow() {
   var _document$getElementB2;
-  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '10');
-  const valid = isNaN(v) || v < 1 || v > 300 ? 10 : v;
+  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '30');
+  const valid = isNaN(v) || v < 1 || v > 300 ? 30 : v;
   localStorage.setItem('dpf_modify_window_mins', valid);
   if (window.fb_saveConfig) {
     try {
@@ -4307,7 +4307,7 @@ function saveModifyWindow() {
   showToast('modify-window-toast');
 }
 function loadModifyWindowInput() {
-  const v = localStorage.getItem('dpf_modify_window_mins') || '10';
+  const v = localStorage.getItem('dpf_modify_window_mins') || '30';
   const el = document.getElementById('modify-window-input');
   if (el) el.value = v;
 }
@@ -4773,12 +4773,12 @@ function resetOrder() {
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
 // dpf_modify_window_mins (el nombre de la clave se mantiene por
 // compatibilidad con lo ya guardado) ahora se cuenta en SEGUNDOS, no
-// minutos — a petición expresa: 10 segundos, no 10 minutos.
-const MODIFY_WINDOW_DEFAULT_MS = 10 * 1000;
+// minutos — a petición expresa: antes 10 segundos, ahora 30.
+const MODIFY_WINDOW_DEFAULT_MS = 30 * 1000;
 function getModifyWindowMs() {
   try {
-    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '10');
-    return (isNaN(v) || v < 1 || v > 300 ? 10 : v) * 1000;
+    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '30');
+    return (isNaN(v) || v < 1 || v > 300 ? 30 : v) * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
@@ -10952,6 +10952,9 @@ async function _ptColaProcesar() {
         if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
         if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
         if (typeof logActivity === 'function') logActivity('🖨️ Ticket #' + ticket.orderNum + ' impreso solo desde la cola pendiente, al reconectar la impresora');
+        if (typeof getOrderStatus === 'function' && typeof setOrderStatus === 'function' && getOrderStatus(ticket.orderNum) === 'nuevo') {
+          setOrderStatus(ticket.orderNum, 'recibido').catch(() => {});
+        }
       } catch (e) {
         break;
       }
@@ -12018,7 +12021,15 @@ function _autoImprimirPedido(order) {
   // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
   // reintentos automáticos antes de avisar (ver _imprimirConReintentos).
   _imprimirConReintentos(ticketData, 3, 1500)
-    .then(() => { _markAsImpreso(order.num); _registrarEnvioTicket(order.num, true); })
+    .then(() => {
+      _markAsImpreso(order.num);
+      _registrarEnvioTicket(order.num, true);
+      // Al imprimirse solo (auto-imprimir), pasa a "En preparación" — igual
+      // que ya hacía el botón de imprimir manual, pero esto faltaba aquí.
+      if (typeof getOrderStatus === 'function' && getOrderStatus(order.num) === 'nuevo') {
+        setOrderStatus(order.num, 'recibido').catch(() => {});
+      }
+    })
     .catch(e => {
       console.warn('[Impresora] auto-imprimir falló para ' + order.num + ' tras varios intentos', e);
       _registrarEnvioTicket(order.num, false);

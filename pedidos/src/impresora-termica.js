@@ -748,6 +748,9 @@ async function _ptColaProcesar() {
         if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
         if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
         if (typeof logActivity === 'function') logActivity('🖨️ Ticket #' + ticket.orderNum + ' impreso solo desde la cola pendiente, al reconectar la impresora');
+        if (typeof getOrderStatus === 'function' && typeof setOrderStatus === 'function' && getOrderStatus(ticket.orderNum) === 'nuevo') {
+          setOrderStatus(ticket.orderNum, 'recibido').catch(() => {});
+        }
       } catch (e) {
         break;
       }

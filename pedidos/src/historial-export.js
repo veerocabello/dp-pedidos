@@ -866,7 +866,15 @@ function _autoImprimirPedido(order) {
   // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
   // reintentos automáticos antes de avisar (ver _imprimirConReintentos).
   _imprimirConReintentos(ticketData, 3, 1500)
-    .then(() => { _markAsImpreso(order.num); _registrarEnvioTicket(order.num, true); })
+    .then(() => {
+      _markAsImpreso(order.num);
+      _registrarEnvioTicket(order.num, true);
+      // Al imprimirse solo (auto-imprimir), pasa a "En preparación" — igual
+      // que ya hacía el botón de imprimir manual, pero esto faltaba aquí.
+      if (typeof getOrderStatus === 'function' && getOrderStatus(order.num) === 'nuevo') {
+        setOrderStatus(order.num, 'recibido').catch(() => {});
+      }
+    })
     .catch(e => {
       console.warn('[Impresora] auto-imprimir falló para ' + order.num + ' tras varios intentos', e);
       _registrarEnvioTicket(order.num, false);

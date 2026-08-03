@@ -458,12 +458,12 @@ function resetOrder() {
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
 // dpf_modify_window_mins (el nombre de la clave se mantiene por
 // compatibilidad con lo ya guardado) ahora se cuenta en SEGUNDOS, no
-// minutos — a petición expresa: 10 segundos, no 10 minutos.
-const MODIFY_WINDOW_DEFAULT_MS = 10 * 1000;
+// minutos — a petición expresa: antes 10 segundos, ahora 30.
+const MODIFY_WINDOW_DEFAULT_MS = 30 * 1000;
 function getModifyWindowMs() {
   try {
-    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '10');
-    return (isNaN(v) || v < 1 || v > 300 ? 10 : v) * 1000;
+    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '30');
+    return (isNaN(v) || v < 1 || v > 300 ? 30 : v) * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
