@@ -176,6 +176,34 @@ function getTrustedDeviceName() {
   return localStorage.getItem(TRUSTED_NAME_KEY) || 'Sin nombre';
 }
 
+// ── AVISO DE DISPOSITIVO NUEVO EN EL PANEL ADMIN ─────────────────────────────
+// Antes, un acceso correcto solo quedaba en el "Registro de actividad" (había
+// que entrar a mirarlo a propósito para enterarse). Ahora, la PRIMERA vez que
+// este deviceId entra con éxito, además se avisa como Alerta — igual que
+// otros avisos que ya se revisan cada día — para enterarse sin tener que ir
+// a buscarlo. Los accesos siguientes desde el mismo dispositivo no repiten
+// el aviso.
+async function _avisarSiDispositivoAdminNuevo(email) {
+  try {
+    if (typeof firebase === 'undefined' || !firebase.database) return;
+    const deviceId = getDeviceId();
+    const ref = firebase.database().ref('config/dispositivosAdminConocidos/' + deviceId);
+    const snap = await ref.once('value');
+    if (snap.exists()) return; // ya se había visto este dispositivo antes
+    await ref.set({
+      primeraVez: Date.now(),
+      fecha: new Date().toLocaleString('es-ES'),
+      email: email || '',
+      dispositivo: navigator.userAgent.slice(0, 120)
+    });
+    if (typeof logActivity === 'function') {
+      logActivity('🚨 Nuevo dispositivo ha entrado al panel admin (' + (email || 'sin email') + ') — ' + navigator.userAgent.slice(0, 80));
+    }
+  } catch (e) {
+    console.warn('[dispositivos-admin] no se pudo comprobar/registrar:', e);
+  }
+}
+
 async function setTrustedDevice(val, name) {
   if (val) {
     const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;

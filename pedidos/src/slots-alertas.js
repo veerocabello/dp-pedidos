@@ -446,6 +446,7 @@ async function checkAdminPwd() {
     if (audioBanner) audioBanner.style.display = _audioCtxUnlocked ? 'none' : 'block';
     setTimeout(_updateAudioBannerState, 200);
     logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
+    if (typeof _avisarSiDispositivoAdminNuevo === 'function') _avisarSiDispositivoAdminNuevo(email);
   } else {
     _adminFailedAttempts++;
     _guardarIntentosFallidosAdmin(_adminFailedAttempts);
