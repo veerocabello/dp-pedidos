@@ -1211,10 +1211,23 @@ function initFirebaseListeners() {
         _unseenOrders += diff;
         updateTabTitle(_unseenOrders);
         console.log('[DPF] NEW ORDER via Firebase! diff=' + diff + ' adminLoggedIn=' + _adminLoggedIn);
-        // Si el panel está abierto pero _adminLoggedIn no se puso, forzarlo
+        // Si el panel está abierto pero _adminLoggedIn no se puso, forzarlo.
+        // Antes solo se comprobaba si #admin-panel estaba visible — si el
+        // pedido llegaba mientras la tablet estaba en "Modo cocina" (una
+        // pantalla distinta, #kitchen-mode) o justo durante el auto-login
+        // por "dispositivo de confianza" (que tarda un momento en
+        // confirmarse tras cargar la página), esta comprobación no lo
+        // detectaba y ese pedido se perdía entero — sin imprimir Y sin
+        // sonido, porque los dos dependen de _adminLoggedIn. Ahora también
+        // se comprueba #kitchen-mode y si ya hay sesión real de Firebase
+        // Auth (la señal más fiable, vale para cualquier pantalla).
         if (!_adminLoggedIn) {
           var adminPanel = document.getElementById('admin-panel');
-          if (adminPanel && adminPanel.style.display !== 'none') {
+          var kitchenMode = document.getElementById('kitchen-mode');
+          var yaAutenticado = window.fb && window.fb.getAdminUser && window.fb.getAdminUser();
+          if ((adminPanel && adminPanel.style.display !== 'none')
+            || (kitchenMode && kitchenMode.classList.contains('open'))
+            || yaAutenticado) {
             _adminLoggedIn = true; window._adminLoggedIn = true;
           }
         }
