@@ -653,6 +653,7 @@ async function _borrarPedidoDeFirebase(orderNum) {
   await setOrderStatus(orderNum, 'cancelado');
 
   let itemsParaRevertir = null;
+  let telefonoParaRevertirSello = null;
 
   // 2. Borrar de Firebase stats y liberar slot si tenía uno
   let slotToFree = null;
@@ -667,6 +668,7 @@ async function _borrarPedidoDeFirebase(orderNum) {
     const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
     if (pedido && pedido.slot) slotToFree = pedido.slot;
     if (pedido && pedido.items) itemsParaRevertir = pedido.items;
+    if (pedido && pedido.phone) telefonoParaRevertirSello = pedido.phone;
     stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
     stats.count = Math.max(0, stats.orders.length);
     stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
@@ -688,6 +690,7 @@ async function _borrarPedidoDeFirebase(orderNum) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
       if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
+      if (pedido && pedido.phone && !telefonoParaRevertirSello) telefonoParaRevertirSello = pedido.phone;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
       local.total = local.orders.reduce((acc, o) => acc + (o.total || 0), 0);
@@ -696,6 +699,22 @@ async function _borrarPedidoDeFirebase(orderNum) {
   } catch {}
 
   if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
+
+  // Deshacer el sello de fidelización (y el canje del premio, si lo había
+  // consumido) si este pedido cancelado/modificado había llegado a
+  // sumarlo — si no, se quedaba dado para siempre aunque el pedido nunca
+  // llegara a ser real. Se hace en el servidor (fidelizacion.php), que
+  // valida contra el ticket real antes de tocar nada.
+  if (telefonoParaRevertirSello) {
+    const _telLimpio = telefonoParaRevertirSello.replace(/\D/g, '');
+    if (_telLimpio.length === 9) {
+      fetch('fidelizacion.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revertirSello', telefono: _telLimpio, orderNum })
+      }).catch(e => console.warn('[fidelizacion] no se pudo revertir el sello al cancelar el pedido:', e));
+    }
+  }
 
   // 4. El slot NO se libera al cancelar — el turno quedó ocupado
 

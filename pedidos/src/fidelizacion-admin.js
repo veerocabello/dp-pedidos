@@ -3,7 +3,25 @@ const FIDELIZACION_META_ADMIN = 10;
 // Umbral para marcar ritmo sospechoso: 2+ sellos separados por menos de
 // esto se considera posible abuso (pedidos reales no suelen ir tan seguidos).
 const FIDELIZACION_MINUTOS_SOSPECHOSO = 10;
+// Con 3 o más premios pendientes sin canjear, algo raro pasa (lo normal es
+// canjear pronto) — merece revisarse antes de que se acumule más.
+const FIDELIZACION_TOPE_PREMIOS_PENDIENTES = 3;
+// Con 3 o más nombres distintos usados por el mismo teléfono, puede que se
+// esté compartiendo/reutilizando el número entre varias personas para
+// sumar sellos más rápido de lo normal.
+const FIDELIZACION_TOPE_NOMBRES_DISTINTOS = 3;
 let _fidelizacionDataCache = null;
+
+// Comprueba que "veces que ha completado el ciclo" cuadra con "premios ya
+// canjeados + premios todavía pendientes de entregar" — si no cuadra, es
+// señal de que se ha tocado algo a mano de forma rara (o hay un fallo),
+// no solo de un ritmo de pedidos sospechoso.
+function _clienteConNumerosQueNoCuadran(c) {
+  const vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
+  const canjes = Array.isArray(c.historialCanjes) ? c.historialCanjes.length : 0;
+  const premiosPendientes = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+  return (canjes + premiosPendientes) !== vecesCompletado;
+}
 
 // Devuelve true si el cliente tiene 2 o más sellos consecutivos separados
 // por menos de FIDELIZACION_MINUTOS_SOSPECHOSO minutos. Si el admin ya
@@ -253,7 +271,9 @@ function _filtrarYPintarFidelizacion() {
     premiosPendientes: typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0),
     vecesCompletado: typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0,
     historialCanjes: c.historialCanjes || [],
-    sospechoso: _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs)
+    historialNombres: Array.isArray(c.historialNombres) ? c.historialNombres : [],
+    sospechoso: _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs),
+    noCuadra: _clienteConNumerosQueNoCuadran(c)
   }));
 
   // Filtro de búsqueda por nombre o teléfono
@@ -267,19 +287,31 @@ function _filtrarYPintarFidelizacion() {
     clientes = clientes.filter(c => c.premiosPendientes > 0);
   } else if (window._fidelizacionFiltroTipo === 'sospechoso') {
     clientes = clientes.filter(c => c.sospechoso);
+  } else if (window._fidelizacionFiltroTipo === 'noCuadra') {
+    clientes = clientes.filter(c => c.noCuadra);
+  } else if (window._fidelizacionFiltroTipo === 'topePremios') {
+    clientes = clientes.filter(c => c.premiosPendientes >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES);
+  } else if (window._fidelizacionFiltroTipo === 'nombresDistintos') {
+    clientes = clientes.filter(c => c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS);
   }
 
-  // Resumen: total clientes, con premio pendiente, total canjes, sospechosos
+  // Resumen: total clientes, con premio pendiente, total canjes, sospechosos...
   const totalClientes = Object.keys(data).length;
   const conPremio = Object.values(data).filter(c => (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0)) > 0).length;
   const totalCanjes = Object.values(data).reduce((s, c) => s + ((c.historialCanjes || []).length), 0);
   const totalSospechosos = Object.values(data).filter(c => _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs)).length;
+  const totalNoCuadran = Object.values(data).filter(c => _clienteConNumerosQueNoCuadran(c)).length;
+  const totalTopePremios = Object.values(data).filter(c => (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0)) >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES).length;
+  const totalNombresDistintos = Object.values(data).filter(c => Array.isArray(c.historialNombres) && c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS).length;
   if (resumenEl) {
     const chip = (label, val, color, onclickAttr) => "<div onclick=\"".concat(onclickAttr, "\" style=\"flex:1;min-width:110px;cursor:pointer;background:#fff;border:1.5px solid ").concat(color, ";border-radius:10px;padding:10px 16px;font-size:12px;color:#3D1F0D;text-align:center\"><div style=\"font-weight:900;font-size:18px\">").concat(val, "</div><div style=\"color:#8A6A4E\">").concat(label, "</div></div>");
     resumenEl.innerHTML = chip('Clientes en el programa', totalClientes, '#F5E6C8', "filtrarFidelizacionPorTipo('todos')")
       + chip('Con premio pendiente', conPremio, '#D9A441', "filtrarFidelizacionPorTipo('premio')")
       + chip('Premios canjeados', totalCanjes, '#F5E6C8', "mostrarFidelizacionCanjes()")
-      + (totalSospechosos > 0 ? chip('🚨 Ritmo sospechoso', totalSospechosos, '#c0392b', "filtrarFidelizacionPorTipo('sospechoso')") : '');
+      + (totalSospechosos > 0 ? chip('🚨 Ritmo sospechoso', totalSospechosos, '#c0392b', "filtrarFidelizacionPorTipo('sospechoso')") : '')
+      + (totalNoCuadran > 0 ? chip('🔍 Números que no cuadran', totalNoCuadran, '#8e44ad', "filtrarFidelizacionPorTipo('noCuadra')") : '')
+      + (totalTopePremios > 0 ? chip('📦 Muchos premios sin canjear', totalTopePremios, '#c0392b', "filtrarFidelizacionPorTipo('topePremios')") : '')
+      + (totalNombresDistintos > 0 ? chip('👥 Varios nombres, mismo tel.', totalNombresDistintos, '#c0392b', "filtrarFidelizacionPorTipo('nombresDistintos')") : '');
   }
 
   // Ordenar: primero los que tienen premio pendiente, luego por sellos descendente
@@ -295,14 +327,20 @@ function _filtrarYPintarFidelizacion() {
 
   el.innerHTML = clientes.map(c => {
     const destacado = c.premiosPendientes > 0;
-    const bg = c.sospechoso ? '#FDEDEC' : (destacado ? '#FFF3CD' : '#fff');
-    const border = c.sospechoso ? '#c0392b' : (destacado ? '#D9A441' : '#F5E6C8');
+    const tienePremiosDeSobra = c.premiosPendientes >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES;
+    const tieneNombresDistintos = c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS;
+    const conAviso = c.sospechoso || c.noCuadra || tienePremiosDeSobra || tieneNombresDistintos;
+    const bg = conAviso ? '#FDEDEC' : (destacado ? '#FFF3CD' : '#fff');
+    const border = conAviso ? '#c0392b' : (destacado ? '#D9A441' : '#F5E6C8');
     const sellosTexto = c.sellos + '/' + FIDELIZACION_META_ADMIN;
     const premioTexto = destacado
       ? '🎁 ' + c.premiosPendientes + (c.premiosPendientes > 1 ? ' premios pendientes' : ' premio pendiente')
       : (c.sellos === FIDELIZACION_META_ADMIN - 1 ? '🎉 1 sello para el premio' : '');
     const vecesTexto = c.vecesCompletado > 0 ? ' · 🏅 ha completado el ciclo ' + c.vecesCompletado + (c.vecesCompletado > 1 ? ' veces' : ' vez') : '';
     const sospechosoTexto = c.sospechoso ? ' · 🚨 ritmo sospechoso (sellos muy seguidos)' : '';
+    const noCuadraTexto = c.noCuadra ? ' · 🔍 números que no cuadran' : '';
+    const topePremiosTexto = tienePremiosDeSobra ? ' · 📦 muchos premios sin canjear' : '';
+    const nombresDistintosTexto = tieneNombresDistintos ? ' · 👥 ' + c.historialNombres.length + ' nombres distintos' : '';
     const nombreMostrar = escapeHtml(c.nombre || 'Sin nombre');
     const telMostrar = escapeHtml(c.telefono);
     // escapeHtml no basta dentro de un onclick="fn('...')": el navegador
@@ -317,7 +355,7 @@ function _filtrarYPintarFidelizacion() {
     // algo que se usa sobre todo para comprobar ritmos sospechosos.
     h += '<div onclick="toggleFidelizacionDetalle(\'' + telAttr + '\')" style="cursor:pointer;flex:1;min-width:160px">';
     h += '<div style="font-weight:700;color:#3D1F0D;font-size:14px">' + nombreMostrar + ' <span style="color:#8A6A4E;font-weight:500">(' + telMostrar + ')</span></div>';
-    h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + '</div>';
+    h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + noCuadraTexto + topePremiosTexto + nombresDistintosTexto + '</div>';
     h += '<div style="font-size:11px;color:#8A6A4E;margin-top:2px">👇 Toca para ver sus pedidos y canjes</div>';
     h += '</div>';
     h += '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">';
@@ -489,7 +527,12 @@ async function guardarFidelizacionManual() {
       premiosPendientes,
       vecesCompletado,
       historialCanjes: existente.historialCanjes || [],
-      historialSellos: existente.historialSellos || []
+      historialSellos: existente.historialSellos || [],
+      // No pisar esto al editar a mano — si no, "Editar manualmente" borraba
+      // en silencio el "ya lo revisé" de ritmo sospechoso y el historial de
+      // nombres distintos usados con este teléfono.
+      sospechosoRevisadoHastaTs: existente.sospechosoRevisadoHastaTs,
+      historialNombres: existente.historialNombres || []
     };
   };
   if (window.fb_transactJsonString) {

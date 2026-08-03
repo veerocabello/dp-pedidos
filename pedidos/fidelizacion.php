@@ -428,7 +428,25 @@ try {
                 exit;
             }
 
-            if ($nombre) $cliente['nombre'] = $nombre;
+            if ($nombre) {
+                // Guardamos también los nombres DISTINTOS con los que se ha
+                // usado este teléfono (no solo el último) — si un mismo
+                // número va cambiando de nombre muchas veces, es señal de
+                // que se está compartiendo/reutilizando entre varias
+                // personas para sumar sellos más rápido de lo normal.
+                $historialNombres = is_array($cliente['historialNombres'] ?? null) ? $cliente['historialNombres'] : [];
+                $nombreNorm = mb_strtolower(trim($nombre));
+                $yaEstaNombre = false;
+                foreach ($historialNombres as $hn) {
+                    if (mb_strtolower(trim((string)$hn)) === $nombreNorm) { $yaEstaNombre = true; break; }
+                }
+                if (!$yaEstaNombre) {
+                    $historialNombres[] = $nombre;
+                    if (count($historialNombres) > 8) $historialNombres = array_slice($historialNombres, -8);
+                }
+                $cliente['historialNombres'] = $historialNombres;
+                $cliente['nombre'] = $nombre;
+            }
 
             // Si este pedido consume un premio pendiente (la patata gratis ya
             // se descontó en el carrito), se resta 1 y se registra en el
@@ -494,6 +512,109 @@ try {
         }
 
         echo json_encode(['success' => true, 'sellos' => $guardado['sellos'], 'premiosPendientes' => $guardado['premiosPendientes']]);
+        exit;
+    }
+
+    // ── REVERTIR SELLO: al cancelar/modificar un pedido que ya lo había sumado ──
+    // Antes, si se cancelaba un pedido después de haberle dado sello (o
+    // cocina cancelaba uno con premio ya canjeado), el cliente se quedaba
+    // ese sello/premio para siempre aunque el pedido nunca llegara a ser
+    // real. Se valida contra el ticket real (mismo teléfono) igual que
+    // registrarSello, para que nadie pueda quitarle el sello a otro
+    // cliente sin conocer también su número de pedido real.
+    if ($action === 'revertirSello') {
+        $orderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
+        if (!$orderNum) {
+            echo json_encode(['success' => true, 'skipped' => true]);
+            exit;
+        }
+        $todayKey = date('Y-m-d');
+        $ticketKey = normOrderKey($orderNum);
+        $ch = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+        $response = curl_exec($ch);
+        curl_close($ch);
+        $ticket = json_decode($response, true);
+        if (!is_array($ticket) || preg_replace('/[^0-9]/', '', (string)($ticket['phone'] ?? '')) !== $telefono) {
+            echo json_encode(['success' => true, 'skipped' => true]);
+            exit;
+        }
+
+        for ($intento = 0; $intento < 5; $intento++) {
+            $leido = fbGetClienteConEtag($databaseURL, $telefono, $accessToken);
+            $cliente = $leido['cliente'];
+            if (!$cliente) {
+                echo json_encode(['success' => true, 'skipped' => true]);
+                exit;
+            }
+            $historialSellos = is_array($cliente['historialSellos'] ?? null) ? $cliente['historialSellos'] : [];
+            $idx = null;
+            foreach ($historialSellos as $i => $h) {
+                if (normOrderKey($h['orderNum'] ?? '') === $ticketKey) { $idx = $i; break; }
+            }
+            if ($idx === null) {
+                // Este pedido nunca llegó a sumar sello (sin patata, por
+                // debajo del mínimo...) — nada que revertir.
+                echo json_encode(['success' => true, 'skipped' => true]);
+                exit;
+            }
+
+            // Simular el historial ordenado por fecha, con y sin esta
+            // entrada, para saber si fue justo la que completó un ciclo de
+            // 10 — así se revierte el sitio correcto aunque el pedido
+            // cancelado sea antiguo y desde entonces se hayan sumado más
+            // sellos (restar 1 sin más al contador actual sería incorrecto
+            // en ese caso).
+            $ordenados = $historialSellos;
+            usort($ordenados, function ($a, $b) { return ($a['ts'] ?? 0) <=> ($b['ts'] ?? 0); });
+            $simular = function ($lista) {
+                $sellos = 0; $ciclos = 0;
+                foreach ($lista as $h) {
+                    $sellos += 1;
+                    if ($sellos >= FIDELIZACION_META) { $sellos = 0; $ciclos += 1; }
+                }
+                return [$sellos, $ciclos];
+            };
+            list($sellosAntes, $ciclosAntes) = $simular($ordenados);
+            $sinEsta = array_values(array_filter($ordenados, function ($h) use ($ticketKey) {
+                return normOrderKey($h['orderNum'] ?? '') !== $ticketKey;
+            }));
+            list($sellosDespues, $ciclosDespues) = $simular($sinEsta);
+            $ciclosPerdidos = $ciclosAntes - $ciclosDespues;
+
+            $cliente['historialSellos'] = $sinEsta;
+            $cliente['sellos'] = $sellosDespues;
+            $premiosPendientes = is_numeric($cliente['premiosPendientes'] ?? null) ? (int)$cliente['premiosPendientes'] : 0;
+            $vecesCompletado = is_numeric($cliente['vecesCompletado'] ?? null) ? (int)$cliente['vecesCompletado'] : 0;
+            if ($ciclosPerdidos > 0) {
+                $premiosPendientes = max(0, $premiosPendientes - $ciclosPerdidos);
+                $vecesCompletado = max(0, $vecesCompletado - $ciclosPerdidos);
+            }
+
+            // Si este pedido había consumido un premio (patata gratis ya
+            // descontada en su momento), el canje también se anula y el
+            // premio vuelve a quedar pendiente de entregar.
+            $historialCanjes = is_array($cliente['historialCanjes'] ?? null) ? $cliente['historialCanjes'] : [];
+            $idxCanje = null;
+            foreach ($historialCanjes as $i => $cj) {
+                if (normOrderKey($cj['ticket'] ?? '') === $ticketKey) { $idxCanje = $i; break; }
+            }
+            if ($idxCanje !== null) {
+                array_splice($historialCanjes, $idxCanje, 1);
+                $cliente['historialCanjes'] = $historialCanjes;
+                $premiosPendientes += 1;
+            }
+            $cliente['premiosPendientes'] = $premiosPendientes;
+            $cliente['vecesCompletado'] = $vecesCompletado;
+
+            if (fbSetClienteSiCoincide($databaseURL, $telefono, $accessToken, $cliente, $leido['etag'])) {
+                echo json_encode(['success' => true]);
+                exit;
+            }
+            usleep(rand(20000, 80000));
+        }
+        echo json_encode(['success' => false, 'error' => 'No se pudo revertir, inténtalo de nuevo.']);
         exit;
     }
 
