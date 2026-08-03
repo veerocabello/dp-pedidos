@@ -445,6 +445,7 @@ function resetOrder() {
   window._upsellFueMostrado = false;
   window._upsellOpcionesElegidas = null;
   window._upsellYaAnimado = false;
+  window._upsellDismissed = { dulce: false, bebida: false };
   try {
     localStorage.removeItem('dpf_active_order');
   } catch (e) {}

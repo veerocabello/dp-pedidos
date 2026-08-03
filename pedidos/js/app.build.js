@@ -2374,19 +2374,28 @@ const UPSELL_TARTA_IDS = { 34: 'La Viña', 35: 'Tres Chocolates', 36: 'de la Abu
 const UPSELL_GALLETA_IDS = [27, 28, 29, 30, 31, 32, 33]; // Pistacho, Lotus, Oreo, Kit Kat, Nutella, Kinder, Huesitos
 const UPSELL_SABOR_TARTA = { 'lotus': 37, 'pistacho': 38, 'dinosaurio': 39, 'kinder': 40 };
 const UPSELL_PESADAS = ['cheddar-bacon', 'carnívora', '4 quesos'];
+// Solo bebidas individuales sin alcohol para el upsell — nada de cerveza
+// (la web no verifica la edad de quien pide) ni de garrafas de 1,5-2L, que
+// no pegan como "añade algo de beber" de un solo trago.
+const UPSELL_BEBIDA_IDS = [41, 43, 44, 46]; // Refresco lata, Agua pequeña, Refresco 500ml, Monster/Red Bull
 
-function _upsellDismissedThisSession() {
-  try { return sessionStorage.getItem('upsell_dulce_dismissed') === '1'; } catch (e) { return false; }
-}
-function dismissUpsellDulce() {
-  try { sessionStorage.setItem('upsell_dulce_dismissed', '1'); } catch (e) {}
+// "No, gracias" ahora solo vale para ESTE pedido (antes se guardaba en
+// sessionStorage y se recordaba para toda la visita a la web, aunque el
+// cliente hiciera otro pedido justo después) — se guarda por tipo
+// (dulce/bebida) para no descartar los dos a la vez si solo dice que no a
+// uno. Se resetea al confirmar/cancelar el pedido (ver antifraude.js).
+window._upsellDismissed = window._upsellDismissed || { dulce: false, bebida: false };
+function dismissUpsellDulce(tipo) {
+  window._upsellDismissed[tipo || 'dulce'] = true;
   renderCart();
 }
 
-// Devuelve { pregunta, opciones: [{id, name, price, emoji}, ...] } o null si no toca mostrar sugerencia
-function getUpsellDulce() {
-  if (_upsellDismissedThisSession()) return null;
-
+// Devuelve { tipo, pregunta, opciones: [{id, name, price, emoji}, ...] } o
+// null si no toca mostrar ninguna sugerencia. Primero comprueba el postre;
+// si ya no aplica (porque ya hay uno en el carrito, o el cliente lo
+// descartó), pasa a comprobar la bebida — así solo se ve una tarjeta cada
+// vez, no las dos a la vez.
+function getUpsellCarrito() {
   // Cantidad de patatas/boniatos en el pedido: cart normal + custCart (Al Gusto/Bomba)
   // + extrasCart (patatas con queso/gratinado, como Philadelphia, Carbonara, Carnívora, etc.)
   const papasIdsCart = Object.entries(cart).filter(([id, qty]) => {
@@ -2406,65 +2415,92 @@ function getUpsellDulce() {
 
   const papasQty = papasCartQty + papasCustQty + papasExtrasQty;
 
-  if (papasQty === 0) return null; // sin patatas/boniato, no aplica
+  if (papasQty === 0) return null; // sin patatas/boniato, no aplica ningún upsell
+  const esPlural = papasQty >= 2;
 
-  // Si ya hay tarta o galleta en el carrito, ya está "vendido" → no mostrar
+  // ── 1. ¿Postre? ──
   const yaHayDulce = Object.keys(cart).some(id => {
     const item = MENU.find(m => m.id == id);
     return item && (item.cat === 'Tartas' || item.cat === 'Cookies') && cart[id] > 0;
   });
-  if (yaHayDulce) return null;
+  if (!yaHayDulce && !window._upsellDismissed.dulce) {
+    const pregunta = esPlural ? '¿Le metéis algo dulce de postre?' : '¿Le metes algo dulce de postre?';
 
-  const esPlural = papasQty >= 2;
-  const pregunta = esPlural ? '¿Le metéis algo dulce de postre?' : '¿Le metes algo dulce de postre?';
+    // ¿Algún producto del carrito (cart o extrasCart) tiene sabor con tarta a juego?
+    const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
+    const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
+    const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
+    let tartaSaborId = null;
+    for (const sabor in UPSELL_SABOR_TARTA) {
+      if (nombresEnCarrito.includes(sabor)) {
+        tartaSaborId = UPSELL_SABOR_TARTA[sabor];
+        break;
+      }
+    }
 
-  // ¿Algún producto del carrito (cart o extrasCart) tiene sabor con tarta a juego?
-  const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
-  const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
-  const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
-  let tartaSaborId = null;
-  for (const sabor in UPSELL_SABOR_TARTA) {
-    if (nombresEnCarrito.includes(sabor)) {
-      tartaSaborId = UPSELL_SABOR_TARTA[sabor];
-      break;
+    // Se eligen 2-3 opciones (tarta con sabor a juego primero, si aplica) y
+    // se guardan en caché para no volver a sortear otras al repintar el
+    // carrito (p.ej. tras comprobar fidelización mientras el cliente sigue
+    // escribiendo) — eso daba la sensación de que las tarjetas "parpadeaban".
+    // Si cambia de singular a plural (añade una segunda patata) sí se
+    // recalcula, porque el fondo de opciones a elegir es distinto.
+    window._upsellOpcionesElegidas = window._upsellOpcionesElegidas || {};
+    const cacheDulce = window._upsellOpcionesElegidas.dulce;
+    if (!cacheDulce || cacheDulce.esPlural !== esPlural) {
+      const elegidos = [];
+      if (tartaSaborId) elegidos.push(tartaSaborId);
+      const pool = (esPlural ? Object.keys(UPSELL_TARTA_IDS).map(Number) : UPSELL_GALLETA_IDS)
+        .filter(id => !elegidos.includes(id));
+      // Barajar el resto del fondo y completar hasta 3 opciones en total
+      const barajado = pool.slice().sort(() => Math.random() - 0.5);
+      for (const id of barajado) {
+        if (elegidos.length >= 3) break;
+        elegidos.push(id);
+      }
+      window._upsellOpcionesElegidas.dulce = { esPlural, ids: elegidos.slice(0, 3) };
+    }
+
+    const opciones = window._upsellOpcionesElegidas.dulce.ids
+      .map(id => MENU.find(m => m.id === id))
+      .filter(Boolean)
+      .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: it.cat === 'Tartas' ? '🎂' : '🍪' }));
+    if (opciones.length) {
+      // Se usa en submitOrder() para saber si el aviso llegó a mostrarse de
+      // verdad (para las estadísticas de "mostrado vs añadido").
+      window._upsellFueMostrado = true;
+      return { tipo: 'dulce', pregunta, opciones };
     }
   }
 
-  // Se eligen 2-3 opciones (tarta con sabor a juego primero, si aplica) y se
-  // guardan en caché por sesión para no volver a sortear otras al repintar
-  // el carrito (p.ej. tras comprobar fidelización mientras el cliente sigue
-  // escribiendo) — eso daba la sensación de que las tarjetas "parpadeaban".
-  // Si cambia de singular a plural (añade una segunda patata) sí se
-  // recalcula, porque el fondo de opciones a elegir es distinto.
-  if (!window._upsellOpcionesElegidas || window._upsellOpcionesElegidas.esPlural !== esPlural) {
-    const elegidos = [];
-    if (tartaSaborId) elegidos.push(tartaSaborId);
-    const pool = (esPlural ? Object.keys(UPSELL_TARTA_IDS).map(Number) : UPSELL_GALLETA_IDS)
-      .filter(id => !elegidos.includes(id));
-    // Barajar el resto del fondo y completar hasta 3 opciones en total
-    const barajado = pool.slice().sort(() => Math.random() - 0.5);
-    for (const id of barajado) {
-      if (elegidos.length >= 3) break;
-      elegidos.push(id);
+  // ── 2. ¿Bebida? (solo si el postre ya no toca, para no amontonar dos tarjetas a la vez) ──
+  const yaHayBebida = Object.keys(cart).some(id => {
+    const item = MENU.find(m => m.id == id);
+    return item && item.cat === 'Bebidas' && cart[id] > 0;
+  });
+  if (!yaHayBebida && !window._upsellDismissed.bebida) {
+    const pregunta = esPlural ? '¿Le añadís algo de beber?' : '¿Le añades algo de beber?';
+
+    window._upsellOpcionesElegidas = window._upsellOpcionesElegidas || {};
+    if (!window._upsellOpcionesElegidas.bebida) {
+      const barajado = UPSELL_BEBIDA_IDS.slice().sort(() => Math.random() - 0.5);
+      window._upsellOpcionesElegidas.bebida = { ids: barajado.slice(0, 3) };
     }
-    window._upsellOpcionesElegidas = { esPlural, ids: elegidos.slice(0, 3) };
+
+    const opciones = window._upsellOpcionesElegidas.bebida.ids
+      .map(id => MENU.find(m => m.id === id))
+      .filter(Boolean)
+      .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: '🥤' }));
+    if (opciones.length) {
+      window._upsellFueMostrado = true;
+      return { tipo: 'bebida', pregunta, opciones };
+    }
   }
 
-  const opciones = window._upsellOpcionesElegidas.ids
-    .map(id => MENU.find(m => m.id === id))
-    .filter(Boolean)
-    .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: it.cat === 'Tartas' ? '🎂' : '🍪' }));
-  if (!opciones.length) return null;
-
-  // Se usa en submitOrder() para saber si el aviso llegó a mostrarse de
-  // verdad (para las estadísticas de "mostrado vs añadido").
-  window._upsellFueMostrado = true;
-
-  return { pregunta, opciones };
+  return null;
 }
 
 function renderUpsellDulce() {
-  const sug = getUpsellDulce();
+  const sug = getUpsellCarrito();
   if (!sug) return '';
   const opcionesHtml = sug.opciones.map(op =>
     '<div class="upsell-dulce-opcion">'
@@ -2486,7 +2522,7 @@ function renderUpsellDulce() {
     + '<div class="upsell-dulce-row1">'
     + '<div class="upsell-dulce-icon">' + sug.opciones[0].emoji + '</div>'
     + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'
-    + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce()" title="No, gracias">&#10005;</button>'
+    + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce(\'' + sug.tipo + '\')" title="No, gracias">&#10005;</button>'
     + '</div>'
     + '<div class="upsell-dulce-opciones">' + opcionesHtml + '</div>'
     + '</div>';
@@ -3991,12 +4027,16 @@ async function _submitOrderInner() {
   const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
-  // Estadística "¿le metes algo dulce?": si se llegó a mostrar la sugerencia
-  // (window._upsellFueMostrado, marcado por getUpsellDulce() al ofrecerla) y
-  // si el cliente acabó añadiendo alguna de las opciones ofrecidas.
+  // Estadística "¿le metes algo dulce/de beber?": si se llegó a mostrar
+  // alguna sugerencia (window._upsellFueMostrado, marcado por
+  // getUpsellCarrito() al ofrecerla, sea de postre o de bebida) y si el
+  // cliente acabó añadiendo alguna de las opciones ofrecidas de cualquiera
+  // de los dos tipos.
   const upsellMostrado = !!window._upsellFueMostrado;
-  const upsellAnadido = !!(window._upsellOpcionesElegidas && window._upsellOpcionesElegidas.ids
-    && window._upsellOpcionesElegidas.ids.some(id => (cart[id] || 0) > 0));
+  const _upsellIdsOfrecidos = window._upsellOpcionesElegidas
+    ? [].concat((window._upsellOpcionesElegidas.dulce || {}).ids || [], (window._upsellOpcionesElegidas.bebida || {}).ids || [])
+    : [];
+  const upsellAnadido = _upsellIdsOfrecidos.some(id => (cart[id] || 0) > 0);
 
   // Aviso destacado en el ticket para que se compruebe/recuerde el sello de
   // fidelización — mismo criterio que decide si el pedido sumará sello de
@@ -4769,6 +4809,7 @@ function resetOrder() {
   window._upsellFueMostrado = false;
   window._upsellOpcionesElegidas = null;
   window._upsellYaAnimado = false;
+  window._upsellDismissed = { dulce: false, bebida: false };
   try {
     localStorage.removeItem('dpf_active_order');
   } catch (e) {}

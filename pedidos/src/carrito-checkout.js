@@ -1200,12 +1200,16 @@ async function _submitOrderInner() {
   const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
-  // Estadística "¿le metes algo dulce?": si se llegó a mostrar la sugerencia
-  // (window._upsellFueMostrado, marcado por getUpsellDulce() al ofrecerla) y
-  // si el cliente acabó añadiendo alguna de las opciones ofrecidas.
+  // Estadística "¿le metes algo dulce/de beber?": si se llegó a mostrar
+  // alguna sugerencia (window._upsellFueMostrado, marcado por
+  // getUpsellCarrito() al ofrecerla, sea de postre o de bebida) y si el
+  // cliente acabó añadiendo alguna de las opciones ofrecidas de cualquiera
+  // de los dos tipos.
   const upsellMostrado = !!window._upsellFueMostrado;
-  const upsellAnadido = !!(window._upsellOpcionesElegidas && window._upsellOpcionesElegidas.ids
-    && window._upsellOpcionesElegidas.ids.some(id => (cart[id] || 0) > 0));
+  const _upsellIdsOfrecidos = window._upsellOpcionesElegidas
+    ? [].concat((window._upsellOpcionesElegidas.dulce || {}).ids || [], (window._upsellOpcionesElegidas.bebida || {}).ids || [])
+    : [];
+  const upsellAnadido = _upsellIdsOfrecidos.some(id => (cart[id] || 0) > 0);
 
   // Aviso destacado en el ticket para que se compruebe/recuerde el sello de
   // fidelización — mismo criterio que decide si el pedido sumará sello de
