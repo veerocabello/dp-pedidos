@@ -1229,6 +1229,49 @@ function generarCodigoLocalNuevo() {
   const el = document.getElementById('tc-local-fee-code');
   if (el) el.value = c;
 }
+// ── TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda) ──
+// Si llegan varios pedidos "desde el local" seguidos, todos salían con la
+// hora real en que se hicieron ("ahora mismo") — cocina los veía todos
+// como urgentes a la vez. Con esto, cada uno se reparte en el tiempo por
+// el intervalo elegido (15/20/25 min), igual que un turno normal.
+const TIENDA_ESPERA_MINUTOS_KEY = 'dpf_tienda_espera_minutos';
+function getTiendaEsperaMinutos() {
+  return parseInt(localStorage.getItem(TIENDA_ESPERA_MINUTOS_KEY) || '0', 10) || 0;
+}
+function saveTiendaEsperaMinutos(minutos) {
+  const m = parseInt(minutos, 10) || 0;
+  localStorage.setItem(TIENDA_ESPERA_MINUTOS_KEY, m);
+  if (window.fb_saveTiendaEsperaMinutos) window.fb_saveTiendaEsperaMinutos(m).catch(function () {});
+  logActivity('⏱️ Tiempo de espera entre tickets (QR tienda): ' + (m ? m + ' min' : 'desactivado'));
+}
+function loadTiendaEsperaMinutosFromFirebase() {
+  if (!window.fb_listenTiendaEsperaMinutos) return;
+  window.fb_listenTiendaEsperaMinutos(function (minutos) {
+    localStorage.setItem(TIENDA_ESPERA_MINUTOS_KEY, minutos || 0);
+  });
+}
+// Transacción en Firebase (no localStorage): varios clientes pidiendo desde
+// sus propios móviles con el mismo código QR necesitan compartir la misma
+// "cola" para repartirse bien, aunque no sea el mismo dispositivo.
+async function _asignarHoraTiendaQR() {
+  const minutos = getTiendaEsperaMinutos();
+  if (!minutos || typeof firebase === 'undefined' || !firebase.database) return null;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const intervaloMs = minutos * 60000;
+  try {
+    const res = await firebase.database().ref('tiendaColaQR/' + todayKey).transaction(function (current) {
+      const ahora = Date.now();
+      const base = (current && typeof current.proximoTs === 'number' && current.proximoTs > ahora) ? current.proximoTs : ahora;
+      return { proximoTs: base + intervaloMs };
+    });
+    const val = res && res.committed && res.snapshot ? res.snapshot.val() : null;
+    if (!val || !val.proximoTs) return null;
+    return new Date(val.proximoTs).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    console.warn('[tienda-qr] no se pudo asignar hora escalonada:', e);
+    return null;
+  }
+}
 // Comprueba el código que escribió el cliente — sin distinguir mayúsculas/minúsculas
 function _modoLocalActivo() {
   const input = document.getElementById('local-fee-code-input');
@@ -2009,7 +2052,7 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       window._fidelizacionProximoSelloActivo = null;
       _ocultarAvisoProximoSelloFidelizacion();
       _mostrarAvisoPremioFidelizacion(phoneClean);
-    } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata()) {
+    } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata() && _carritoSubtotalActual() >= FIDELIZACION_PEDIDO_MINIMO) {
       // El cliente está a 1 sello del premio (9/10) y este pedido ya incluye
       // patata: este sería el pedido que completa el sello. Avisamos antes
       // de confirmar, no después.
@@ -2042,6 +2085,29 @@ function _carritoTienePatata() {
     // por ejemplo "Patata Al Gusto" vive en custCart, no en cart.
     return typeof cartHasPatatas === 'function' ? cartHasPatatas() : false;
   } catch (e) { return false; }
+}
+// Subtotal aproximado del carrito (sin gastos fijos ni descuentos) — solo
+// para el aviso de "este pedido completa tu 10º sello", que debe coincidir
+// con el mismo mínimo de gasto que exige el sello de verdad al confirmar
+// (ver FIDELIZACION_PEDIDO_MINIMO / _pedidoElegibleFidelizacion en
+// carrito-checkout.js). No hace falta ser exacto al céntimo aquí: si al
+// final el pedido no llega al mínimo, simplemente no se le da el sello,
+// esto es solo el aviso previo.
+function _carritoSubtotalActual() {
+  try {
+    const regularTotal = Object.entries(cart).reduce((s, [id, q]) => {
+      const it = MENU.find(m => m.id == id);
+      return s + (it ? it.price * q : 0);
+    }, 0);
+    const custTotal = Object.values(custCart).filter(c => c.qty > 0).reduce((s, c) => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return s;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return s + unitPrice * c.qty;
+    }, 0);
+    const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + (typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) * c.qty : 0), 0);
+    return regularTotal + custTotal + extTotal;
+  } catch (e) { return 0; }
 }
 function _campoTelefonoVisible(phoneCleanEsperado) {
   // En escritorio el formulario vive en la página principal (customer-phone);

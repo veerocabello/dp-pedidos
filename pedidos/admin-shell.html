@@ -689,7 +689,7 @@
       <!-- FIDELIZACIÓN (SELLO DIGITAL) -->
       <div class="admin-section" id="admin-fidelizacion" style="display:none">
         <div class="stat-panel-head" style="border-radius:12px;margin-bottom:16px">🎁 Sello digital — Fidelización</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Cada pedido con al menos 1 patata suma 1 sello. Al llegar a 10, el cliente puede elegir una patata gratis en su siguiente pedido.</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Cada pedido con al menos 1 patata y un mínimo de 5€ suma 1 sello. Al llegar a 10, el cliente puede elegir una patata gratis en su siguiente pedido.</div>
 
         <!-- SUB-PESTAÑAS -->
         <div style="display:flex;margin-bottom:16px;border-bottom:2px solid var(--warm);padding-bottom:0">
@@ -1882,6 +1882,16 @@
           <button onclick="generarCodigoLocalNuevo()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🎲 Nuevo</button>
         </div>
         <button onclick="saveLocalFeeCode(document.getElementById('tc-local-fee-code').value);imprimirCartelQRLocal()" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨️ Guardar e imprimir cartel QR</button>
+        <div style="margin-top:14px;padding-top:14px;border-top:1.5px dashed var(--warm)">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">⏱️ Tiempo de espera entre tickets</div>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Si llegan varios pedidos seguidos hechos con este QR, esto reparte la hora que sale en el ticket para que no salgan todos "para ahora mismo" a la vez.</p>
+          <select id="tc-tienda-espera" onchange="saveTiendaEsperaMinutos(this.value)" style="width:100%;padding:9px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none">
+            <option value="0">Desactivado (hora real del pedido)</option>
+            <option value="15">15 minutos</option>
+            <option value="20">20 minutos</option>
+            <option value="25">25 minutos</option>
+          </select>
+        </div>
       </div>
 
       <button onclick="bimbaGuardarTicketConfig()" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Guardar</button>

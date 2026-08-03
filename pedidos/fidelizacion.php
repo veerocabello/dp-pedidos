@@ -26,6 +26,10 @@
 header('Content-Type: application/json');
 
 const FIDELIZACION_META = 10;
+// Pedido mínimo (en €) para sumar sello — igual que el mínimo que ya
+// comprueba el navegador (FIDELIZACION_PEDIDO_MINIMO en carrito-checkout.js),
+// pero exigido aquí también porque el navegador no es de fiar.
+const FIDELIZACION_PEDIDO_MINIMO = 5;
 
 // ── LÍMITE DE INTENTOS: máximo 30 peticiones por IP cada 5 minutos ──
 // (más alto que otros endpoints porque "consultar" se llama cada vez
@@ -381,6 +385,15 @@ try {
                 'nombre'   => $nombre,
             ]);
             echo json_encode(['success' => false, 'error' => 'Pedido no encontrado']);
+            exit;
+        }
+        // Pedido por debajo del mínimo para sumar sello: esto pasará a
+        // menudo con pedidos normales y pequeños (no es un fallo de nada),
+        // así que no se avisa como alerta — solo se responde "skipped",
+        // igual que cuando el pedido no llevaba patata.
+        $totalTicket = isset($ticket['total']) ? (float)$ticket['total'] : 0;
+        if ($totalTicket < FIDELIZACION_PEDIDO_MINIMO) {
+            echo json_encode(['success' => true, 'skipped' => true, 'motivo' => 'pedido_bajo_minimo']);
             exit;
         }
         if (!$consumioPremio && _ticketPareceConDescuentoGrande($ticket)) {

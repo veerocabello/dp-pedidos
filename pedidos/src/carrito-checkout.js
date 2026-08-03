@@ -1022,6 +1022,15 @@ async function _submitOrderInner() {
     return;
   }
   const orderNum = await generateOrderNumber();
+  // Si hay un tiempo de espera configurado para los pedidos "desde el
+  // local" (panel > Configuración impresora), aquí se reparte la hora que
+  // saldrá en el ticket para este pedido, en vez de "ahora mismo" — ver
+  // _asignarHoraTiendaQR() en admin-config.js. Se hace aquí (con el número
+  // de pedido ya reservado) y no antes, para no gastar un hueco de la cola
+  // si el pedido se corta por una validación anterior.
+  const _horaTiendaAsignadaSubmit = _enTiendaSubmit && typeof _asignarHoraTiendaQR === 'function'
+    ? await _asignarHoraTiendaQR()
+    : null;
   const regularTotal = Object.entries(cart).reduce((s, _ref9) => {
     let _ref0 = _slicedToArray(_ref9, 2),
       id = _ref0[0],
@@ -1198,13 +1207,24 @@ async function _submitOrderInner() {
   const upsellAnadido = !!(window._upsellOpcionesElegidas && window._upsellOpcionesElegidas.ids
     && window._upsellOpcionesElegidas.ids.some(id => (cart[id] || 0) > 0));
 
+  // Aviso destacado en el ticket para que se compruebe/recuerde el sello de
+  // fidelización — mismo criterio que decide si el pedido sumará sello de
+  // verdad (_pedidoElegibleFidelizacion, definida más abajo pero disponible
+  // aquí porque las funciones declaradas con "function" se izan).
+  const _fidelizacionElegibleSubmit = (typeof _pedidoElegibleFidelizacion === 'function')
+    ? _pedidoElegibleFidelizacion({ items: orderItems, total: orderTotal })
+    : false;
+
   // Datos estructurados del ticket (para impresión HTML)
   const ticketData = {
     orderNum,
     name,
     phone,
     notes,
-    slotTime: selectedSlot || null,
+    // Si el pedido es "desde el local" (QR) y hay un tiempo de espera entre
+    // tickets configurado, _horaTiendaAsignadaSubmit reparte la hora que
+    // sale en el ticket en vez de "ahora mismo" (ver más arriba).
+    slotTime: selectedSlot || _horaTiendaAsignadaSubmit || null,
     items: orderItems,
     total: orderTotal,
     time: now,
@@ -1216,7 +1236,8 @@ async function _submitOrderInner() {
     esPedidoLocal: _sinGastosPorCodigoLocalSubmit,
     // Descuento estudiante/jubilado autodeclarado — se imprime destacado en
     // el ticket y se marca en cocina para que se compruebe el carné al cobrar.
-    esEstudianteJubilado: _esEstudianteJubiladoSubmit
+    esEstudianteJubilado: _esEstudianteJubiladoSubmit,
+    fidelizacionElegible: _fidelizacionElegibleSubmit
   };
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
@@ -1238,7 +1259,7 @@ async function _submitOrderInner() {
         phone: phone || "–",
         notes: notes || "–",
         ticket: ticketText,
-        pickup_time: needsSlot ? selectedSlot : "–",
+        pickup_time: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || "–"),
         total: orderTotal.toFixed(2) + " €"
       });
     } catch (err) {
@@ -1271,7 +1292,7 @@ async function _submitOrderInner() {
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
     orderNum,
-    slotTime: needsSlot ? selectedSlot : null,
+    slotTime: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || null),
     phone,
     phoneClean,
     ticketData: ticketData,
@@ -1368,7 +1389,8 @@ async function _finalizarPedido() {
       upsellMostrado: window._pendingTicketData.upsellMostrado || false,
       upsellAnadido: window._pendingTicketData.upsellAnadido || false,
       esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,
-      esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false
+      esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false,
+      fidelizacionElegible: window._pendingTicketData.fidelizacionElegible || false
     };
     // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
     // cierra o se pierde la conexión justo después de confirmar (antes de
@@ -1428,12 +1450,18 @@ function _avisarClienteFalloGuardado(orderNum) {
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
 const FIDELIZACION_META = 10;
+// Pedido mínimo para sumar sello — evita que un pedido mínimo (p.ej. 1
+// patata suelta de 2€) valga igual que uno grande a efectos de fidelización.
+const FIDELIZACION_PEDIDO_MINIMO = 5;
 function _ticketTienePatata(ticketData) {
   if (!ticketData || !Array.isArray(ticketData.items)) return false;
   return ticketData.items.some(it => typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata'));
 }
+function _pedidoElegibleFidelizacion(ticketData) {
+  return _ticketTienePatata(ticketData) && !!ticketData && typeof ticketData.total === 'number' && ticketData.total >= FIDELIZACION_PEDIDO_MINIMO;
+}
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
-  if (!phoneClean || !_ticketTienePatata(ticketData)) return;
+  if (!phoneClean || !_pedidoElegibleFidelizacion(ticketData)) return;
   // El cálculo del sello (sumar, resetear a los 10, descontar premio
   // canjeado) se hace en el servidor (fidelizacion.php): el navegador ya
   // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie

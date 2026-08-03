@@ -858,7 +858,9 @@ function _autoImprimirPedido(order) {
     items: order.items || [],
     total: order.total,
     time: order.time,
-    esEstudianteJubilado: order.esEstudianteJubilado || false
+    esPedidoLocal: order.esPedidoLocal || false,
+    esEstudianteJubilado: order.esEstudianteJubilado || false,
+    fidelizacionElegible: order.fidelizacionElegible || false
   };
 
   // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
@@ -1054,6 +1056,7 @@ function initFirebaseListeners() {
   loadFeeFromFirebase();
   if (typeof loadFee2FromFirebase === 'function') loadFee2FromFirebase();
   if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
+  if (typeof loadTiendaEsperaMinutosFromFirebase === 'function') loadTiendaEsperaMinutosFromFirebase();
   if (typeof loadStudentDiscountFromFirebase === 'function') loadStudentDiscountFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();

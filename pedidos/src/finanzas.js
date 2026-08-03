@@ -750,6 +750,8 @@ function bimbaPintarTicketConfig() {
   }
   const tcLocalCode = document.getElementById('tc-local-fee-code');
   if (tcLocalCode && typeof getLocalFeeCode === 'function') tcLocalCode.value = getLocalFeeCode();
+  const tcTiendaEspera = document.getElementById('tc-tienda-espera');
+  if (tcTiendaEspera && typeof getTiendaEsperaMinutos === 'function') tcTiendaEspera.value = String(getTiendaEsperaMinutos());
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');

@@ -70,13 +70,19 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   // local, sin turno porque es para ahora mismo desde el mostrador), se
   // imprime en su lugar la hora a la que se hizo el pedido, igual de
   // grande, para que en cocina quede claro en el propio papel sin depender
-  // de la etiqueta "🏪 En el local" que solo se ve en pantalla.
+  // de la etiqueta "🏪 En el local" que solo se ve en pantalla. Si hay un
+  // tiempo de espera configurado para pedidos de tienda (panel >
+  // Configuración impresora), slotTime SÍ viene relleno también para estos
+  // pedidos (con la hora ya repartida, ver _asignarHoraTiendaQR en
+  // admin-config.js) — se etiqueta distinto ("HORA ESTIMADA") para no
+  // confundirlo con un turno elegido de verdad por el cliente.
   if (ticket.slotTime) {
     center();
-    push('HORA RECOGIDA\n');
+    push(ticket.esPedidoLocal ? 'HORA ESTIMADA\n' : 'HORA RECOGIDA\n');
     big();
     push(ticket.slotTime + '\n');
     normal();
+    if (ticket.esPedidoLocal) push('(pedido hecho en tienda)\n');
   } else if (ticket.time) {
     center();
     push('HORA DEL PEDIDO\n');
@@ -146,6 +152,19 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   });
 
   push('------------------------------------------------\n');
+
+  // Pedido que cumple los requisitos del sello de fidelización (patata +
+  // pedido mínimo) — aviso destacado para que se compruebe/aplique el
+  // sello al cobrar, igual que el de estudiante/jubilado justo debajo.
+  if (ticket.fidelizacionElegible) {
+    center();
+    bold(true);
+    big();
+    push('*** COMPROBAR SELLOS ***\n');
+    normal();
+    bold(false);
+    push('------------------------------------------------\n');
+  }
 
   // Descuento estudiante/jubilado autodeclarado — aviso destacado justo
   // antes del total, para que se compruebe el carné en el momento de cobrar.

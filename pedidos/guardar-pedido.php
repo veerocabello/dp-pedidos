@@ -822,6 +822,10 @@ try {
     // Descuento estudiante/jubilado autodeclarado — se guarda para avisar en
     // el ticket y en cocina que hay que comprobar el carné al cobrar.
     $esEstudianteJubilado = !empty($payload['esEstudianteJubilado']);
+    // Pedido que cumple los requisitos del sello de fidelización (patata +
+    // mínimo de gasto) — se guarda para avisar en el ticket que hay que
+    // comprobar/aplicar el sello, igual que el aviso de carné de arriba.
+    $fidelizacionElegible = !empty($payload['fidelizacionElegible']);
 
     $phoneClean = preg_replace('/[^0-9]/', '', (string)$phone);
     // La web ya exige 9 dígitos (carrito-checkout.js) — comprobarlo también
@@ -914,6 +918,7 @@ try {
         'time'     => date('d/m/Y, H:i:s'),
         'esPedidoLocal' => $esPedidoLocal,
         'esEstudianteJubilado' => $esEstudianteJubilado,
+        'fidelizacionElegible' => $fidelizacionElegible,
     ];
     $ticketGuardado = fbPutSiCoincide($databaseURL, $ticketPath, $accessToken, $ticketData, $leidoTicket['etag']);
     if (!$ticketGuardado) {
@@ -943,6 +948,7 @@ try {
         'slot'  => $slotTime,
         'esPedidoLocal' => $esPedidoLocal,
         'esEstudianteJubilado' => $esEstudianteJubilado,
+        'fidelizacionElegible' => $fidelizacionElegible,
         'ts'    => (int)(microtime(true) * 1000),
     ];
     $statsGuardado = guardarPedidoEnStats($databaseURL, $accessToken, $todayKey, $newOrder, $total);

@@ -431,6 +431,9 @@ function _initFirebase() {
   // en tiempo real reciba su primer dato, que en una visita nueva/incógnito
   // puede tardar más de lo que tarda el cliente en rellenar el formulario.
   window.fb_loadLocalFeeCode = async function() { var sn = await jget("config/localFeeCode"); return sn.exists() ? sn.val() : ""; };
+  // TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda)
+  window.fb_saveTiendaEsperaMinutos = async function(min) { await jset("config/tiendaEsperaMinutos", min); };
+  window.fb_listenTiendaEsperaMinutos = function(cb) { return jlisten("config/tiendaEsperaMinutos", function(sn){ cb(sn.exists()?sn.val():0); }); };
   // INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu pedido?",
   // recibidas y guardadas por webhook-incidencia.php en el nodo "incidencias")
   window.fb_listenIncidencias = function(cb) { return jlisten("incidencias", function(sn){ cb(sn.exists()?sn.val():{}); }); };
