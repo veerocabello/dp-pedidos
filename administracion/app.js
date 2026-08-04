@@ -1726,7 +1726,7 @@ function closeMkCalendarioOverlay() {
 }
 let _mkMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let _mkMesFiltroDia = null;
-const MK_RED_COLOR = { Instagram: '#C13584', TikTok: '#000000', Facebook: '#1877F2' };
+const MK_RED_COLOR = { Instagram: '#C13584', 'Instagram (Historias)': '#833AB4', TikTok: '#000000', Facebook: '#1877F2' };
 const MK_MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 async function bimbaRenderMkCalendario() {
@@ -1793,7 +1793,7 @@ function bimbaPintarMkCalendarioLista() {
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + (p.fecha ? _fechaCorta(p.fecha) : 'sin fecha') + ' · ' + escapeHtml(p.red || '') + ' · ' + escapeHtml(p.tipo || '') + '</div>'
       + (p.texto ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap">' + escapeHtml(p.texto) + '</div>' : '')
-      + '<select onchange="bimbaCambiarEstadoMkCalendario(\'' + p.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:4px 22px 4px 8px;border-radius:99px;cursor:pointer;border:1.5px solid ' + color + ';background:' + color + '1A;color:' + color + ';font-family:\'DM Sans\',sans-serif">'
+      + '<select onchange="bimbaCambiarEstadoMkCalendario(\'' + p.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:5px 22px 5px 10px;border-radius:99px;cursor:pointer;border:none;background:' + color + ';color:#fff;font-family:\'DM Sans\',sans-serif">'
       + MK_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (p.estado || 'Idea') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
       + '</select>'
       + '</div>';
