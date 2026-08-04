@@ -148,6 +148,7 @@ window.fb_loadEmpleados = async function () {
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
+    .replace(/ /g, ' ')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
