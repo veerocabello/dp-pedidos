@@ -466,6 +466,14 @@ function syncCashTotal(orderTotal) {
   if (!cashTotalEdited) document.getElementById('cash-total').value = orderTotal > 0 ? orderTotal.toFixed(2) : '';
   updateChange();
 }
+// Al abrir el desplegable "Cobrar", refresca siempre el total con el de
+// la comanda actual (por si se había escrito un importe suelto antes).
+function onCashCalcToggle() {
+  if (document.getElementById('cash-calc').open) {
+    cashTotalEdited = false;
+    syncCashTotal(currentOrderTotal());
+  }
+}
 function addCashAmount(v) {
   const el = document.getElementById('cash-received');
   el.value = (parseFloat(el.value) || 0) + v;

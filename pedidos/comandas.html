@@ -51,7 +51,7 @@
     <div class="cart-total-row" id="cart-total-row" style="display:none">
       <span>Total</span><span id="cart-total">0,00 €</span>
     </div>
-    <details class="cash-calc" id="cash-calc" open>
+    <details class="cash-calc" id="cash-calc" open ontoggle="if(window.onCashCalcToggle)onCashCalcToggle()">
       <summary class="cash-calc-summary">💵 Cobrar</summary>
       <div class="cash-calc-body">
         <div class="cash-calc-row cash-calc-total-row">
@@ -65,6 +65,10 @@
           <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
           <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
           <input id="cash-received" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Paga con" oninput="updateChange()">
+        </div>
+        <div class="cash-calc-row">
+          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(1)">+1€</button>
+          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(2)">+2€</button>
         </div>
         <div class="cash-calc-row">
           <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.05)">+0,05€</button>
