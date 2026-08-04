@@ -21,6 +21,7 @@
   <div class="topbar-actions">
     <span id="printer-status" class="printer-status">comprobando impresora…</span>
     <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
+    <button class="btn-ghost" onclick="openCaja()">🧮 Hacer caja</button>
     <button class="btn-ghost" onclick="openCartaAdmin()">🍽️ Carta</button>
     <button class="btn-ghost" onclick="openSettings()">⚙️ Ajustes</button>
   </div>
@@ -51,6 +52,10 @@
     <div class="paid-toggle-row" id="paid-toggle-row" style="display:none">
       <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
       <button type="button" class="paid-toggle-btn paid-toggle-yes" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ PAGADO</button>
+    </div>
+    <div class="payment-method-row" id="payment-method-row" style="display:none">
+      <button type="button" class="payment-method-btn active" id="pay-method-cash" onclick="setPaymentMethod('efectivo')">💵 Efectivo</button>
+      <button type="button" class="payment-method-btn" id="pay-method-card" onclick="setPaymentMethod('tarjeta')">💳 Tarjeta</button>
     </div>
     <details class="cash-calc" id="cash-calc" open ontoggle="if(window.onCashCalcToggle)onCashCalcToggle()">
       <summary class="cash-calc-summary">💵 Cobrar</summary>
@@ -238,7 +243,24 @@
     <div id="carta-admin-list"></div>
 
     <div class="settings-help">
-      Los productos que añadas aquí se añaden directos a la comanda con un solo precio (sin personalización de ingredientes, como las bebidas). Para quitar uno pulsa 🗑️ — no hay deshacer, así que revisa antes de confirmar.
+      Los productos que añadas aquí se añaden directos a la comanda con un solo precio (sin personalización de ingredientes, como las bebidas). Usa ⬆️/⬇️ para moverlos, 👁️ para ocultarlos temporalmente si se agota algo (sin borrarlo), ✏️ para editar nombre/descripción y si se pueden quitar ingredientes, y 🗑️ para quitarlos de la carta del todo — esto último no tiene deshacer, así que revisa antes de confirmar.
+    </div>
+  </div>
+</div>
+
+<!-- ── EDITAR PRODUCTO (desde Gestionar carta) ── -->
+<div id="carta-edit-modal" class="modal-overlay" onclick="if(event.target===this)closeCartaEdit()">
+  <div class="modal-box" style="max-width:420px">
+    <button class="modal-close" onclick="closeCartaEdit()">&#x2715;</button>
+    <div class="modal-title">✏️ Editar producto</div>
+    <div class="form-group"><label>Nombre</label><input id="carta-edit-name" type="text"></div>
+    <div class="form-group"><label>Descripción</label><input id="carta-edit-desc" type="text"></div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">Permitir quitar/cambiar ingredientes</div><div class="option-sub">Desactívalo si la mezcla no se puede alterar (como la 4 Quesos)</div></div>
+      <input type="checkbox" id="carta-edit-quitar" style="width:20px;height:20px;flex-shrink:0">
+    </label>
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="saveCartaEdit()">💾 Guardar cambios</button>
     </div>
   </div>
 </div>
@@ -250,6 +272,23 @@
     <div class="modal-title">🧾 Pedidos de hoy</div>
     <div class="modal-subtitle">Reimprime o revisa cualquier comanda de hoy si se atasca el papel.</div>
     <div id="historial-list"></div>
+  </div>
+</div>
+
+<!-- ── HACER CAJA MODAL ── -->
+<div id="caja-modal" class="modal-overlay" onclick="if(event.target===this)closeCaja()">
+  <div class="modal-box" style="max-width:460px">
+    <button class="modal-close" onclick="closeCaja()">&#x2715;</button>
+    <div class="modal-title">🧮 Hacer caja</div>
+    <div class="modal-subtitle" id="caja-fecha">Resumen de hoy</div>
+    <div class="form-group">
+      <label>Fondo de caja inicial (con el que abriste hoy)</label>
+      <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
+    </div>
+    <div id="caja-summary"></div>
+    <div class="settings-help">
+      "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo hoy. Cuenta el cajón físico y compáralo con esa cifra para cuadrar caja. Lo cobrado con tarjeta no debe estar en el cajón.
+    </div>
   </div>
 </div>
 
@@ -270,6 +309,7 @@
     <button class="modal-close" onclick="closeDiscountModal()">&#x2715;</button>
     <div class="modal-title">🏷️ Descuento / oferta</div>
     <div class="modal-subtitle">Se aplica al total de esta comanda.</div>
+    <button type="button" class="btn-secondary" style="width:100%;margin-bottom:12px" onclick="applyPresetDiscount()">🎓 ESTUDIANTE/JUBILADO 10%</button>
     <div class="form-group">
       <label>Tipo</label>
       <select id="discount-type">

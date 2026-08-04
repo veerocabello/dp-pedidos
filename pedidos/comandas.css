@@ -246,6 +246,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   letter-spacing: .5px;
 }
 
+.menu-subcat-sep {
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amber-dark);
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin: 12px 2px 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--warm);
+}
+.menu-subcat-sep:first-of-type { margin-top: 4px; }
+
 .item-row {
   position: relative;
   background: var(--white);
@@ -293,6 +306,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   color: var(--muted);
   line-height: 1.4;
   margin-top: 3px;
+}
+.item-warn {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--error);
+  margin-top: 4px;
+}
+.item-row.agotado { opacity: .55; }
+.item-badge-agotado {
+  display: inline-block;
+  background: var(--muted);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  border-radius: 99px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 .item-controls {
   display: flex;
@@ -521,6 +554,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .paid-toggle-btn:hover { border-color: var(--amber); }
 .paid-toggle-btn.paid-toggle-no.active { background: var(--error); border-color: var(--error); color: #fff; }
 .paid-toggle-btn.paid-toggle-yes.active { background: #2e8b57; border-color: #2e8b57; color: #fff; }
+
+.payment-method-row { display: flex; gap: 6px; margin-top: 6px; }
+.payment-method-btn {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  background: var(--white);
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.payment-method-btn:hover { border-color: var(--amber); }
+.payment-method-btn.active { background: var(--amber); border-color: var(--amber); color: #fff; }
 
 /* ── Calculadora de cambio (pago en efectivo) ── */
 .cash-calc {
@@ -856,15 +906,31 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .carta-admin-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .carta-admin-name { font-weight: 700; font-size: 13.5px; color: var(--text); }
 .carta-admin-price { font-size: 12px; color: var(--muted); }
-.carta-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.carta-nuevo-btn, .carta-remove-btn {
+.carta-admin-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.carta-nuevo-btn, .carta-remove-btn, .carta-move-btn {
   background: var(--warm); border: none; border-radius: var(--radius-xs);
-  padding: 7px 10px; cursor: pointer; font-size: 14px; line-height: 1;
+  padding: 7px 9px; cursor: pointer; font-size: 13px; line-height: 1;
   transition: background .15s, filter .15s;
 }
-.carta-nuevo-btn:hover { background: var(--amber); }
+.carta-nuevo-btn:hover, .carta-move-btn:hover { background: var(--amber); }
 .carta-nuevo-btn.on { background: var(--gold); filter: none; }
 .carta-remove-btn:hover { background: var(--error); filter: brightness(1.1); }
+.carta-move-btn:disabled { opacity: .3; cursor: not-allowed; }
+.carta-move-btn:disabled:hover { background: var(--warm); }
+.carta-admin-row.agotado { opacity: .6; }
+.carta-agotado-tag {
+  display: inline-block;
+  background: var(--muted);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  border-radius: 99px;
+  padding: 2px 7px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 
 /* ── Toast ── */
 .toast {
