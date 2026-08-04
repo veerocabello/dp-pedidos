@@ -66,6 +66,23 @@ auth.onAuthStateChanged(function (user) {
   }
 });
 
+// ── NAVEGACIÓN: PANTALLA DE INICIO ──
+function mostrarSeccionHome() {
+  document.getElementById('seccion-home').style.display = 'block';
+  document.getElementById('seccion-administracion').style.display = 'none';
+  document.getElementById('seccion-marketing').style.display = 'none';
+}
+function mostrarSeccionAdmin() {
+  document.getElementById('seccion-home').style.display = 'none';
+  document.getElementById('seccion-administracion').style.display = 'block';
+  document.getElementById('seccion-marketing').style.display = 'none';
+}
+function mostrarSeccionMarketing() {
+  document.getElementById('seccion-home').style.display = 'none';
+  document.getElementById('seccion-administracion').style.display = 'none';
+  document.getElementById('seccion-marketing').style.display = 'block';
+}
+
 // ── DATOS: MENU ──
 let MENU = [];
 

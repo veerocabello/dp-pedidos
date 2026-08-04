@@ -185,12 +185,40 @@
   <main>
     <div id="loading-msg" style="display:none">Cargando datos...</div>
     <div id="app-content">
-      <div class="welcome">
-        <div class="hi">Finanzas · Dulce Patata Food</div>
-        <h2>¿Qué quieres mirar hoy?</h2>
+
+      <div id="seccion-home">
+        <div class="welcome">
+          <div class="hi">Dulce Patata Food</div>
+          <h2>¿Qué quieres mirar hoy?</h2>
+        </div>
+        <div class="row-group">
+          <div class="row" onclick="mostrarSeccionAdmin()">
+            <span class="row-icon">🏪</span>
+            <div class="row-text">
+              <div class="row-title">Administración</div>
+              <div class="row-desc">Márgenes, precios, equipo, gastos y resumen del negocio.</div>
+            </div>
+            <span class="row-chevron">›</span>
+          </div>
+          <div class="row" onclick="mostrarSeccionMarketing()">
+            <span class="row-icon">📣</span>
+            <div class="row-text">
+              <div class="row-title">Marketing</div>
+              <div class="row-desc">Calendario de contenido, banco de ideas y promociones.</div>
+            </div>
+            <span class="row-chevron">›</span>
+          </div>
+        </div>
       </div>
-      <div class="row-group">
-        <div class="row" onclick="openMargenesOverlay()">
+
+      <div id="seccion-administracion" style="display:none">
+        <button onclick="mostrarSeccionHome()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:16px">← Volver</button>
+        <div class="welcome">
+          <div class="hi">Finanzas · Dulce Patata Food</div>
+          <h2>Administración</h2>
+        </div>
+        <div class="row-group">
+          <div class="row" onclick="openMargenesOverlay()">
           <span class="row-icon">💰</span>
           <div class="row-text">
             <div class="row-title">Márgenes por producto</div>
@@ -239,9 +267,15 @@
           <span class="row-chevron">›</span>
         </div>
       </div>
+      </div><!-- /seccion-administracion -->
 
-      <div class="sec-head" style="margin-top:24px">Marketing y redes</div>
-      <div class="row-group">
+      <div id="seccion-marketing" style="display:none">
+        <button onclick="mostrarSeccionHome()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:16px">← Volver</button>
+        <div class="welcome">
+          <div class="hi">Marketing · Dulce Patata Food</div>
+          <h2>Marketing y redes</h2>
+        </div>
+        <div class="row-group">
         <div class="row" onclick="openMkCalendarioOverlay()">
           <span class="row-icon">📅</span>
           <div class="row-text">
@@ -267,6 +301,8 @@
           <span class="row-chevron">›</span>
         </div>
       </div>
+      </div><!-- /seccion-marketing -->
+
     </div>
   </main>
 </div>
