@@ -1695,6 +1695,11 @@ function openMkCalendarioOverlay() {
 function closeMkCalendarioOverlay() {
   document.getElementById('mk-calendario-overlay').classList.remove('open');
 }
+let _mkMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let _mkMesFiltroDia = null;
+const MK_RED_COLOR = { Instagram: '#C13584', TikTok: '#000000', Facebook: '#1877F2' };
+const MK_MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
 async function bimbaRenderMkCalendario() {
   const el = document.getElementById('mk-calendario-lista');
   el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
@@ -1708,11 +1713,17 @@ async function bimbaRenderMkCalendario() {
     el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
     return;
   }
-  if (!_mkCalendarioCache.length) {
-    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin publicaciones planeadas todavía</div>';
+  bimbaPintarMkCalendarioLista();
+  if (document.getElementById('mk-calendario-vista-mes').style.display !== 'none') bimbaRenderMkMes();
+}
+function bimbaPintarMkCalendarioLista() {
+  const el = document.getElementById('mk-calendario-lista');
+  const lista = _mkMesFiltroDia ? _mkCalendarioCache.filter(function (p) { return p.fecha === _mkMesFiltroDia; }) : _mkCalendarioCache;
+  if (!lista.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">' + (_mkMesFiltroDia ? 'Sin publicaciones ese día' : 'Sin publicaciones planeadas todavía') + '</div>';
     return;
   }
-  el.innerHTML = _mkCalendarioCache.map(function (p) {
+  el.innerHTML = lista.map(function (p) {
     const color = MK_ESTADO_COLOR[p.estado] || '#8A6A4E';
     return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
@@ -1721,18 +1732,89 @@ async function bimbaRenderMkCalendario() {
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + (p.fecha ? _fechaCorta(p.fecha) : 'sin fecha') + ' · ' + escapeHtml(p.red || '') + ' · ' + escapeHtml(p.tipo || '') + '</div>'
       + (p.texto ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap">' + escapeHtml(p.texto) + '</div>' : '')
-      + '<span onclick="bimbaAvanzarEstadoMkCalendario(\'' + p.id + '\')" style="display:inline-block;font-size:11px;font-weight:800;padding:4px 10px;border-radius:99px;cursor:pointer;background:' + color + '1A;color:' + color + '">' + escapeHtml(p.estado || 'Idea') + ' ›</span>'
+      + '<select onchange="bimbaCambiarEstadoMkCalendario(\'' + p.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:4px 22px 4px 8px;border-radius:99px;cursor:pointer;border:1.5px solid ' + color + ';background:' + color + '1A;color:' + color + ';font-family:\'DM Sans\',sans-serif">'
+      + MK_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (p.estado || 'Idea') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
+      + '</select>'
       + '</div>';
   }).join('');
 }
-async function bimbaAvanzarEstadoMkCalendario(id) {
+async function bimbaCambiarEstadoMkCalendario(id, nuevoEstado) {
   const item = _mkCalendarioCache.find(function (p) { return p.id === id; });
   if (!item) return;
-  const idx = MK_ESTADOS.indexOf(item.estado || 'Idea');
-  const siguiente = MK_ESTADOS[(idx + 1) % MK_ESTADOS.length];
-  item.estado = siguiente;
-  bimbaRenderMkCalendario();
-  try { await firebase.database().ref('marketing/calendario/' + id + '/estado').set(siguiente); } catch (e) {}
+  item.estado = nuevoEstado;
+  bimbaPintarMkCalendarioLista();
+  try { await firebase.database().ref('marketing/calendario/' + id + '/estado').set(nuevoEstado); } catch (e) {}
+}
+
+// ── Calendario de contenido: pestañas Lista / Mes ──
+function bimbaMkCalVista(vista) {
+  const tabLista = document.getElementById('mk-cal-tab-lista');
+  const tabMes = document.getElementById('mk-cal-tab-mes');
+  const vistaMes = document.getElementById('mk-calendario-vista-mes');
+  const esMes = vista === 'mes';
+  tabMes.style.background = esMes ? '#3D1F0D' : '#fff';
+  tabMes.style.color = esMes ? '#fff' : '#8A6A4E';
+  tabMes.style.borderColor = esMes ? '#3D1F0D' : '#F5E6C8';
+  tabLista.style.background = esMes ? '#fff' : '#3D1F0D';
+  tabLista.style.color = esMes ? '#8A6A4E' : '#fff';
+  tabLista.style.borderColor = esMes ? '#F5E6C8' : '#3D1F0D';
+  vistaMes.style.display = esMes ? 'block' : 'none';
+  if (esMes) bimbaRenderMkMes();
+}
+function bimbaMkMesCambiar(delta) {
+  _mkMesActual = new Date(_mkMesActual.getFullYear(), _mkMesActual.getMonth() + delta, 1);
+  bimbaRenderMkMes();
+}
+function bimbaRenderMkMes() {
+  const anio = _mkMesActual.getFullYear();
+  const mes = _mkMesActual.getMonth();
+  document.getElementById('mk-mes-titulo').textContent = MK_MESES_NOMBRE[mes] + ' ' + anio;
+
+  const porDia = {};
+  _mkCalendarioCache.forEach(function (p) {
+    if (!p.fecha) return;
+    (porDia[p.fecha] = porDia[p.fecha] || []).push(p);
+  });
+
+  const primerDiaSemana = (new Date(anio, mes, 1).getDay() + 6) % 7; // lunes = 0
+  const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+  const hoyStr = new Date().toISOString().slice(0, 10);
+
+  let html = '';
+  for (let i = 0; i < primerDiaSemana; i++) html += '<div></div>';
+  for (let dia = 1; dia <= diasEnMes; dia++) {
+    const fechaStr = anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(dia).padStart(2, '0');
+    const posts = porDia[fechaStr] || [];
+    const esHoy = fechaStr === hoyStr;
+    const esSeleccionado = fechaStr === _mkMesFiltroDia;
+    const dots = posts.slice(0, 3).map(function (p) {
+      return '<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:' + (MK_RED_COLOR[p.red] || '#8A6A4E') + ';margin:0 1px"></span>';
+    }).join('');
+    const extra = posts.length > 3 ? '<div style="font-size:8px;color:#8A6A4E;font-weight:700">+' + (posts.length - 3) + '</div>' : '';
+    html += '<div onclick="bimbaMkMesFiltrarDia(\'' + fechaStr + '\')" style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:' + (esSeleccionado ? '#FBEFD6' : '#fff') + ';border:1.5px solid ' + (esSeleccionado ? '#F4C430' : '#F5E6C8') + '">'
+      + '<div style="font-size:11px;font-weight:' + (esHoy ? '800' : '600') + ';color:' + (esHoy ? '#C2711A' : '#3D1F0D') + '">' + dia + '</div>'
+      + (posts.length ? '<div style="margin-top:2px">' + dots + '</div>' + extra : '')
+      + '</div>';
+  }
+  document.getElementById('mk-mes-grid').innerHTML = html;
+}
+function bimbaMkMesFiltrarDia(fechaStr) {
+  _mkMesFiltroDia = (_mkMesFiltroDia === fechaStr) ? null : fechaStr;
+  const filtroEl = document.getElementById('mk-mes-filtro');
+  if (_mkMesFiltroDia) {
+    filtroEl.style.display = 'flex';
+    document.getElementById('mk-mes-filtro-texto').textContent = 'Mostrando: ' + _fechaCorta(_mkMesFiltroDia);
+  } else {
+    filtroEl.style.display = 'none';
+  }
+  bimbaRenderMkMes();
+  bimbaPintarMkCalendarioLista();
+}
+function bimbaMkMesLimpiarFiltro() {
+  _mkMesFiltroDia = null;
+  document.getElementById('mk-mes-filtro').style.display = 'none';
+  bimbaRenderMkMes();
+  bimbaPintarMkCalendarioLista();
 }
 async function bimbaEliminarMkCalendario(id) {
   if (!confirm('¿Borrar esta publicación del calendario?')) return;

@@ -725,7 +725,7 @@
     <button class="admin-close" onclick="closeMkCalendarioOverlay()">✕</button>
     <h2>📅 Calendario de contenido</h2>
     <div class="admin-modal-body">
-      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Planifica qué publicas, cuándo y en qué red social. Toca el estado de una publicación para avanzarlo.</div>
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Planifica qué publicas, cuándo y en qué red social.</div>
 
       <div onclick="bimbaToggleMkForm('calendario')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
         <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir publicación</span>
@@ -753,6 +753,33 @@
 
         <button onclick="bimbaGuardarMkCalendario()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
         <div id="mk-calendario-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div id="mk-cal-tab-lista" onclick="bimbaMkCalVista('lista')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #3D1F0D;background:#3D1F0D;color:#fff">📋 Lista</div>
+        <div id="mk-cal-tab-mes" onclick="bimbaMkCalVista('mes')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">🗓️ Mes</div>
+      </div>
+
+      <div id="mk-calendario-vista-mes" style="display:none;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <button onclick="bimbaMkMesCambiar(-1)" style="background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;width:32px;height:32px;font-size:15px;font-weight:700;color:#3D1F0D;cursor:pointer">‹</button>
+          <div id="mk-mes-titulo" style="font-family:'Oswald',sans-serif;font-size:14px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.04em"></div>
+          <button onclick="bimbaMkMesCambiar(1)" style="background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;width:32px;height:32px;font-size:15px;font-weight:700;color:#3D1F0D;cursor:pointer">›</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px">
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">L</div>
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">M</div>
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">X</div>
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">J</div>
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">V</div>
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">S</div>
+          <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">D</div>
+        </div>
+        <div id="mk-mes-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px"></div>
+        <div id="mk-mes-filtro" style="display:none;align-items:center;justify-content:space-between;background:#FBEFD6;border:1.5px solid #F4C430;border-radius:8px;padding:8px 10px;margin-top:10px">
+          <span id="mk-mes-filtro-texto" style="font-size:12px;font-weight:700;color:#854F0B"></span>
+          <span onclick="bimbaMkMesLimpiarFiltro()" style="font-size:11px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline">Ver todas</span>
+        </div>
       </div>
 
       <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Publicaciones planeadas</div>
