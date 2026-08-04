@@ -11,9 +11,15 @@
 <body>
 
 <header class="topbar">
-  <div class="topbar-brand">🥔 Comandas <span class="topbar-sub">Dulce Patata Food · funciona sin internet</span></div>
+  <div class="topbar-brand">
+    <img src="img/logo.png" alt="" class="topbar-logo">
+    <div>
+      <div class="topbar-title">Comandas</div>
+      <span class="topbar-sub">Dulce Patata Food · funciona sin internet</span>
+    </div>
+  </div>
   <div class="topbar-actions">
-    <span id="printer-status" class="printer-status">🖨️ comprobando impresora…</span>
+    <span id="printer-status" class="printer-status">comprobando impresora…</span>
     <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
     <button class="btn-ghost" onclick="openSettings()">⚙️ Ajustes</button>
   </div>
@@ -21,8 +27,8 @@
 
 <div class="layout">
   <main class="menu-area">
-    <nav id="tabs" class="tabs"></nav>
-    <div id="menu-grid" class="menu-grid"></div>
+    <nav id="tabs" class="tabs-sidebar"></nav>
+    <div id="menu-grid" class="menu-list"></div>
   </main>
 
   <aside class="cart-panel">

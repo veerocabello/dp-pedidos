@@ -103,34 +103,47 @@ function toast(msg, ms = 2600) {
 /* ══════════════════════════════════════════════════════════════
    RENDER — CARTA
    ══════════════════════════════════════════════════════════════ */
+const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🥪', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤' };
+
 function initTabs() {
   document.getElementById('tabs').innerHTML = categories.map(c =>
-    `<button class="tab ${c === activeCategory ? 'active' : ''}" onclick="setCategory('${c}')">${c}</button>`
+    `<button class="tab ${c === activeCategory ? 'active' : ''}" onclick="setCategory('${c}')"><span class="tab-icon">${CATEGORY_ICONS[c] || '🍽️'}</span>${c}</button>`
   ).join('');
 }
 function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
 
+function renderItemRow(item) {
+  const qty = cart[item.id] || 0;
+  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id);
+  const nameHtml = escapeHtml(item.name) + (item.nuevo ? '<span class="item-badge-new">Nuevo</span>' : '');
+  const control = isSpecial
+    ? `<button class="add-btn" id="addbtn-${item.id}" onclick="onAddClick(${item.id})">+ Añadir</button>`
+    : (qty > 0
+      ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
+      : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
+  return `<div class="item-row" id="card-${item.id}">
+    <div class="item-info">
+      <div class="item-name">${nameHtml}</div>
+      ${item.desc ? `<div class="item-desc">${escapeHtml(item.desc)}</div>` : ''}
+    </div>
+    <div class="item-controls">
+      <div class="item-price">${fmt(item.price)} €</div>
+      ${control}
+    </div>
+  </div>`;
+}
+
 function renderMenu() {
   const grid = document.getElementById('menu-grid');
-  const items = activeCategory === 'Todos' ? MENU : MENU.filter(m => m.cat === activeCategory);
-  grid.innerHTML = items.map(item => {
-    const qty = cart[item.id] || 0;
-    const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id);
-    const nameHtml = escapeHtml(item.name) + (item.nuevo ? '<span class="product-badge-new">Nuevo</span>' : '');
-    const control = isSpecial
-      ? `<button class="add-btn" id="addbtn-${item.id}" onclick="onAddClick(${item.id})">+ Añadir</button>`
-      : (qty > 0
-        ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
-        : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
-    return `<div class="product-card" id="card-${item.id}">
-      <div class="product-name">${nameHtml}</div>
-      <div class="product-desc">${escapeHtml(item.desc || '')}</div>
-      <div class="product-footer">
-        <div class="product-price">${fmt(item.price)} €</div>
-        ${control}
-      </div>
-    </div>`;
-  }).join('');
+  if (activeCategory === 'Todos') {
+    grid.innerHTML = categories.filter(c => c !== 'Todos').map(cat => {
+      const items = MENU.filter(m => m.cat === cat);
+      return `<div class="menu-cat-sep"><span class="cat-emoji">${CATEGORY_ICONS[cat] || ''}</span><span class="cat-name">${cat.toUpperCase()}</span></div>`
+        + items.map(renderItemRow).join('');
+    }).join('');
+  } else {
+    grid.innerHTML = MENU.filter(m => m.cat === activeCategory).map(renderItemRow).join('');
+  }
 }
 
 function animateAdd(id) {
