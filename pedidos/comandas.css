@@ -454,11 +454,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .cart-line-extra { width: 100%; font-size: 11px; color: var(--muted); line-height: 1.5; }
 .cart-line-qty { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .cart-line-price { font-weight: 700; color: var(--amber-dark); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.cart-remove {
+.cart-qty-mini {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--warm); border-radius: 999px; padding: 3px;
+}
+.qty-btn-sm {
+  width: 21px; height: 21px; border-radius: 50%; border: none;
+  background: var(--white); color: var(--brown); font-weight: 800; font-size: 13px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+}
+.qty-btn-sm:hover { background: var(--amber); color: #fff; }
+.cart-qty-mini span { min-width: 14px; text-align: center; font-weight: 700; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.cart-edit, .cart-remove {
   background: none; border: none; color: var(--muted);
   cursor: pointer; font-size: 14px; padding: 3px 5px; border-radius: 6px;
   transition: background .15s, color .15s;
 }
+.cart-edit:hover { color: var(--amber-dark); background: rgba(232,148,58,.12); }
 .cart-remove:hover { color: var(--error); background: rgba(192,57,43,.1); }
 
 .cart-total-row {
@@ -561,6 +574,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .option-check.on { background: var(--brown); border-color: var(--brown); box-shadow: var(--shadow-sm); }
 .option-check.on::after { content: '✓'; color: #fff; font-size: 12px; font-weight: 700; }
+.option-row.on { border-color: var(--brown); background: var(--amber-light); }
 
 .section-label {
   font-size: 11.5px; font-weight: 700; color: var(--brown);
@@ -575,6 +589,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .chip:hover { border-color: var(--amber); background: var(--amber-light); transform: translateY(-1px); }
 .chip.selected { background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%); border-color: var(--brown); color: var(--gold); font-weight: 700; box-shadow: var(--shadow-md); }
+.chip.extra { background: var(--amber-light); border-color: var(--amber-dark); color: var(--amber-dark); font-weight: 700; }
 .chip.disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .chip.disabled:hover { transform: none; border-color: var(--warm); background: var(--white); }
 

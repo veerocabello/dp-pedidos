@@ -71,6 +71,7 @@ const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
 const EXTRAS_ING_PRECIO1 = ["Jamón York", "Carne Picada", "Pollo", "Carne Kebab", "Atún", "Gambas", "Tronquitos de Mar", "Huevo", "Bacon", "Queso Mozzarella", "4 Quesos"];
 const EXTRAS_ING_PRECIO07 = ["Tomate Natural", "Maíz", "Aceitunas", "Zanahoria", "Remolacha", "Piña", "Cebolla", "Champiñón"];
+const EXTRAS_SALSA_PRECIO = 0.90;
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 6.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
@@ -84,8 +85,8 @@ let activeCategory = "Todos";
 
 /* ── Estado del carrito (3 capas, igual que en la web) ── */
 let cart = {};        // id -> qty (productos simples, sin personalizar)
-let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado}
-let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], basePrice, cheddarCarne?}
+let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
+let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
 
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -179,16 +180,57 @@ function removeItem(id) { delete cart[id]; renderMenu(); renderCart(); }
 function removeCustItem(key) { delete custCart[key]; renderCart(); }
 function removeExtrasItem(key) { delete extrasCart[key]; renderCart(); }
 
+function changeCustQty(key, delta) {
+  const c = custCart[key];
+  if (!c) return;
+  c.qty += delta;
+  if (c.qty <= 0) delete custCart[key];
+  renderCart();
+}
+function changeExtrasQty(key, delta) {
+  const c = extrasCart[key];
+  if (!c) return;
+  c.qty += delta;
+  if (c.qty <= 0) delete extrasCart[key];
+  renderCart();
+}
+function editCustItem(key) {
+  const c = custCart[key];
+  if (!c) return;
+  openCustomizer(c.menuId, key);
+}
+function editExtrasItem(key) {
+  const c = extrasCart[key];
+  if (!c) return;
+  if (c.menuId === CHEDDAR_ID) openCheddarModal(key);
+  else openExtrasModal(c.menuId, key);
+}
+
 /* ══════════════════════════════════════════════════════════════
    CARRITO
    ══════════════════════════════════════════════════════════════ */
+// Si se acumulan tantos ingredientes/salsas extra como una Al Gusto o una
+// Bomba, se cobra el precio plano de esa patata en vez de sumar cada
+// extra por separado (evita cobrar de más por construir, ingrediente a
+// ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
+function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra) {
+  const totalPicks = (ingredientesExtra || []).length + (salsasExtra || []).length;
+  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return CUSTOMIZER_CONFIG.bomba.price;
+  if (totalPicks >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return CUSTOMIZER_CONFIG.algusto.price;
+  let core = basePrice;
+  (ingredientesExtra || []).forEach(i => { core += EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7; });
+  core += (salsasExtra || []).length * EXTRAS_SALSA_PRECIO;
+  return core;
+}
+function extrasAutoUpgradeLabel(ingredientesExtra, salsasExtra) {
+  const totalPicks = (ingredientesExtra || []).length + (salsasExtra || []).length;
+  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'Precio Bomba aplicado automáticamente';
+  if (totalPicks >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'Precio Al Gusto aplicado automáticamente';
+  return '';
+}
 function getExtrasItemPrice(e) {
-  let t = e.basePrice + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0);
-  (e.ingredientesExtra || []).forEach(i => {
-    if (EXTRAS_ING_PRECIO1.includes(i)) t += 1;
-    else if (EXTRAS_ING_PRECIO07.includes(i)) t += 0.7;
-  });
-  return t;
+  const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra);
+  return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0);
 }
 function getExtrasItemLabel(e) {
   const item = MENU.find(m => m.id == e.menuId);
@@ -201,6 +243,7 @@ function getExtrasItemDetails(e) {
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
+  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
   return out;
 }
 function cartHasAnyItem() {
@@ -231,7 +274,11 @@ function renderCart() {
     total += subtotal;
     html += `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
-      <span class="cart-line-qty">x${qty}</span>
+      <div class="cart-qty-mini">
+        <button class="qty-btn-sm" onclick="changeQty(${item.id},-1)">−</button>
+        <span>${qty}</span>
+        <button class="qty-btn-sm" onclick="changeQty(${item.id},1)">+</button>
+      </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-remove" onclick="removeItem(${item.id})" title="Quitar">🗑️</button>
     </div>`;
@@ -240,14 +287,19 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
     const subtotal = unitPrice * c.qty;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(', ');
+    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
     html += `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
-      <span class="cart-line-qty">x${c.qty}</span>
+      <div class="cart-qty-mini">
+        <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
+        <span>${c.qty}</span>
+        <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',1)">+</button>
+      </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
+      <button class="cart-edit" onclick="editCustItem('${c.key}')" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeCustItem('${c.key}')" title="Quitar">🗑️</button>
       <div class="cart-line-extra">${escapeHtml(details)}</div>
     </div>`;
@@ -260,8 +312,13 @@ function renderCart() {
     const details = getExtrasItemDetails(c).join(' · ');
     html += `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(getExtrasItemLabel(c))}</span>
-      <span class="cart-line-qty">x${c.qty}</span>
+      <div class="cart-qty-mini">
+        <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',-1)">−</button>
+        <span>${c.qty}</span>
+        <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',1)">+</button>
+      </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
+      <button class="cart-edit" onclick="editExtrasItem('${c.key}')" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
     </div>`;
@@ -285,23 +342,34 @@ function clearOrder(silent) {
 /* ══════════════════════════════════════════════════════════════
    MODAL — CUSTOMIZER (Al Gusto / Bomba)
    ══════════════════════════════════════════════════════════════ */
-let custType = null, custSelSauces = [], custSelIngredients = [], custExtraQueso = false, custExtraGratinado = false;
+let custType = null, custSelSauces = [], custSelIngredients = [], custExtraQueso = false, custExtraGratinado = false, custSelExtraSauces = [], custEditKey = null;
 
-function openCustomizer(id) {
+function openCustomizer(id, editKey) {
+  custEditKey = editKey || null;
   custType = id === 15 ? 'algusto' : 'bomba';
-  custSelSauces = []; custSelIngredients = []; custExtraQueso = false; custExtraGratinado = false;
+  const existing = custEditKey ? custCart[custEditKey] : null;
+  if (existing) {
+    custSelSauces = [...existing.sauces];
+    custSelIngredients = [...existing.ingredients];
+    custExtraQueso = !!existing.extraQueso;
+    custExtraGratinado = !!existing.extraGratinado;
+    custSelExtraSauces = [...(existing.extraSauces || [])];
+  } else {
+    custSelSauces = []; custSelIngredients = []; custExtraQueso = false; custExtraGratinado = false; custSelExtraSauces = [];
+  }
   const cfg = CUSTOMIZER_CONFIG[custType];
   document.getElementById('cust-title').textContent = cfg.name;
   document.getElementById('cust-subtitle').textContent = cfg.subtitle;
-  document.getElementById('cust-price').textContent = fmt(cfg.price) + ' €';
   document.getElementById('cust-error').style.display = 'none';
-  updateCustExtraUI('queso', false);
-  updateCustExtraUI('gratinado', false);
+  document.getElementById('cust-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
+  updateCustExtraUI('queso', custExtraQueso);
+  updateCustExtraUI('gratinado', custExtraGratinado);
   renderCustChips();
   updateCustBadges();
+  updateCustTotalPrice();
   document.getElementById('customizer-modal').classList.add('open');
 }
-function closeCustomizer() { document.getElementById('customizer-modal').classList.remove('open'); custType = null; }
+function closeCustomizer() { document.getElementById('customizer-modal').classList.remove('open'); custType = null; custEditKey = null; }
 
 function custSelTotal() { return custSelSauces.length + custSelIngredients.length; }
 
@@ -311,8 +379,9 @@ function renderCustChips() {
   const iEl = document.getElementById('cust-ingredients');
   sEl.innerHTML = CUST_SAUCES.map(n => {
     const sel = custSelSauces.includes(n);
-    const disabled = !sel && ((cfg.maxSauces !== null && custSelSauces.length >= cfg.maxSauces) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal));
-    return `<button class="chip ${sel ? 'selected' : ''} ${disabled ? 'disabled' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${n}</button>`;
+    const extra = custSelExtraSauces.includes(n);
+    const label = extra ? n + ' +' + fmt(EXTRAS_SALSA_PRECIO) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = CUST_INGREDIENTS.map(n => {
     const sel = custSelIngredients.includes(n);
@@ -321,14 +390,17 @@ function renderCustChips() {
   }).join('');
 }
 function toggleCustSauce(n) {
-  const i = custSelSauces.indexOf(n);
-  if (i >= 0) custSelSauces.splice(i, 1);
+  const cfg = CUSTOMIZER_CONFIG[custType];
+  const iN = custSelSauces.indexOf(n);
+  const iE = custSelExtraSauces.indexOf(n);
+  if (iN >= 0) custSelSauces.splice(iN, 1);
+  else if (iE >= 0) custSelExtraSauces.splice(iE, 1);
   else {
-    const cfg = CUSTOMIZER_CONFIG[custType];
-    if ((cfg.maxSauces !== null && custSelSauces.length >= cfg.maxSauces) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal)) return;
-    custSelSauces.push(n);
+    const roomInLimit = (cfg.maxSauces === null || custSelSauces.length < cfg.maxSauces) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
+    if (roomInLimit) custSelSauces.push(n);
+    else custSelExtraSauces.push(n); // fuera del límite incluido → se cobra aparte
   }
-  renderCustChips(); updateCustBadges();
+  renderCustChips(); updateCustBadges(); updateCustTotalPrice();
 }
 function toggleCustIng(n) {
   const i = custSelIngredients.indexOf(n);
@@ -342,11 +414,12 @@ function toggleCustIng(n) {
 }
 function updateCustBadges() {
   const cfg = CUSTOMIZER_CONFIG[custType];
+  const extraNote = custSelExtraSauces.length ? ' (+' + custSelExtraSauces.length + ' salsa extra)' : '';
   if (cfg.maxTotal !== null) {
-    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length;
+    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + extraNote;
     document.getElementById('cust-ing-badge').textContent = custSelTotal() + '/' + cfg.maxTotal;
   } else {
-    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + '/' + cfg.maxSauces;
+    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + '/' + cfg.maxSauces + extraNote;
     document.getElementById('cust-ing-badge').textContent = custSelIngredients.length + '/' + cfg.maxIngredients;
   }
 }
@@ -370,52 +443,91 @@ function updateCustTotalPrice() {
   let p = cfg.price;
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
+  p += custSelExtraSauces.length * EXTRAS_SALSA_PRECIO;
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
 }
 function confirmCustomizer() {
   const cfg = CUSTOMIZER_CONFIG[custType];
   const errEl = document.getElementById('cust-error');
   errEl.style.display = 'none';
-  if (cfg.maxTotal !== null && custSelTotal() === 0) {
+  if (cfg.maxTotal !== null && custSelTotal() === 0 && custSelExtraSauces.length === 0) {
     errEl.textContent = 'Elige al menos 1 ingrediente o salsa';
     errEl.style.display = 'block';
     return;
   }
-  if (cfg.maxTotal === null && custSelIngredients.length === 0 && custSelSauces.length === 0) {
+  if (cfg.maxTotal === null && custSelIngredients.length === 0 && custSelSauces.length === 0 && custSelExtraSauces.length === 0) {
     errEl.textContent = 'Elige al menos 1 ingrediente';
     errEl.style.display = 'block';
     return;
   }
-  const key = 'cust:' + custType + ':' + Date.now() + ':' + Math.random().toString(36).slice(2, 7);
-  custCart[key] = {
+  const entry = {
     menuId: custType === 'algusto' ? 15 : 16,
     qty: 1,
     sauces: [...custSelSauces],
     ingredients: [...custSelIngredients],
     extraQueso: custExtraQueso,
     extraGratinado: custExtraGratinado,
-    key,
+    extraSauces: [...custSelExtraSauces],
   };
+  const wasEdit = !!custEditKey;
+  if (custEditKey && custCart[custEditKey]) {
+    entry.qty = custCart[custEditKey].qty;
+    entry.key = custEditKey;
+    custCart[custEditKey] = entry;
+  } else {
+    const key = 'cust:' + custType + ':' + Date.now() + ':' + Math.random().toString(36).slice(2, 7);
+    entry.key = key;
+    custCart[key] = entry;
+  }
   closeCustomizer();
   renderCart();
-  toast('✅ Añadido al pedido');
+  toast(wasEdit ? '✅ Cambios guardados' : '✅ Añadido al pedido');
 }
 
 /* ══════════════════════════════════════════════════════════════
    MODAL — CHEDDAR-BACON
    ══════════════════════════════════════════════════════════════ */
-let cheddarCarne = null;
-function openCheddarModal() {
-  cheddarCarne = null;
-  ['picada', 'kebab'].forEach(k => document.getElementById('cheddar-check-' + k).classList.remove('on'));
+let cheddarCarne = null, cheddarSalsasExtra = {}, cheddarEditKey = null;
+function openCheddarModal(editKey) {
+  cheddarEditKey = editKey || null;
+  const existing = cheddarEditKey ? extrasCart[cheddarEditKey] : null;
+  cheddarCarne = existing ? existing.cheddarCarne : null;
+  cheddarSalsasExtra = {};
+  if (existing) (existing.salsasExtra || []).forEach(s => cheddarSalsasExtra[s] = true);
+  ['picada', 'kebab'].forEach(k => document.getElementById('cheddar-check-' + k).classList.toggle('on', cheddarCarne === k));
   document.getElementById('cheddar-error').style.display = 'none';
+  document.getElementById('cheddar-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
+  renderCheddarSalsasExtra();
+  updateCheddarPrice();
   document.getElementById('cheddar-modal').classList.add('open');
 }
-function closeCheddarModal() { document.getElementById('cheddar-modal').classList.remove('open'); }
+function closeCheddarModal() { document.getElementById('cheddar-modal').classList.remove('open'); cheddarEditKey = null; }
 function selectCheddarCarne(k) {
   cheddarCarne = k;
   ['picada', 'kebab'].forEach(x => document.getElementById('cheddar-check-' + x).classList.toggle('on', x === k));
   document.getElementById('cheddar-error').style.display = 'none';
+}
+function renderCheddarSalsasExtra() {
+  const el = document.getElementById('cheddar-salsas-list');
+  if (!el) return;
+  el.innerHTML = CUST_SAUCES.map(s => {
+    const slug = 'cheddar-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
+    const on = !!cheddarSalsasExtra[s];
+    return `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">
+      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
+    </label>`;
+  }).join('');
+}
+function toggleCheddarSalsa(s) {
+  cheddarSalsasExtra[s] = !cheddarSalsasExtra[s];
+  renderCheddarSalsasExtra();
+  updateCheddarPrice();
+}
+function updateCheddarPrice() {
+  const item = MENU.find(m => m.id === CHEDDAR_ID);
+  const n = Object.values(cheddarSalsasExtra).filter(Boolean).length;
+  document.getElementById('cheddar-price').textContent = fmt(item.price + n * EXTRAS_SALSA_PRECIO) + ' €';
 }
 function confirmCheddar() {
   if (!cheddarCarne) {
@@ -423,44 +535,73 @@ function confirmCheddar() {
     return;
   }
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne;
-  if (extrasCart[key]) extrasCart[key].qty++;
-  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: 1, queso: false, gratinado: false, ingredientesExtra: [], basePrice: item.price, cheddarCarne, key };
+  const salsaList = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).map(([s]) => s).sort();
+  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (salsaList.length ? '_S' + salsaList.join('|') : '');
+  let qtyToSet = 1;
+  if (cheddarEditKey && extrasCart[cheddarEditKey]) {
+    qtyToSet = extrasCart[cheddarEditKey].qty;
+    delete extrasCart[cheddarEditKey];
+  }
+  if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
+  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: [], salsasExtra: salsaList, basePrice: item.price, cheddarCarne, key };
+  const wasEdit = !!cheddarEditKey;
   closeCheddarModal();
   renderCart();
-  toast('✅ Añadido al pedido');
+  toast(wasEdit ? '✅ Cambios guardados' : '✅ Añadido al pedido');
 }
 
 /* ══════════════════════════════════════════════════════════════
    MODAL — EXTRAS (patatas 1-14: queso/gratinado + ingredientes extra)
    ══════════════════════════════════════════════════════════════ */
-let extrasCurrentId = null, extrasQueso = false, extrasGratinado = false, extrasIngredientes = {};
+let extrasCurrentId = null, extrasQueso = false, extrasGratinado = false, extrasIngredientes = {}, extrasSalsas = {}, extrasEditKey = null;
 
-function openExtrasModal(id) {
-  extrasCurrentId = id; extrasQueso = false; extrasGratinado = false; extrasIngredientes = {};
+function openExtrasModal(id, editKey) {
+  extrasEditKey = editKey || null;
+  extrasCurrentId = id;
+  const existing = extrasEditKey ? extrasCart[extrasEditKey] : null;
+  extrasQueso = existing ? !!existing.queso : false;
+  extrasGratinado = existing ? !!existing.gratinado : false;
+  extrasIngredientes = {};
+  extrasSalsas = {};
+  if (existing) {
+    (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = true);
+    (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = true);
+  }
   const item = MENU.find(m => m.id == id);
   if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
   document.getElementById('extras-base-price').textContent = 'Base: ' + fmt(item.price) + ' €';
+  document.getElementById('extras-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(id);
   let html = '';
   if (!soloGratinado) {
     html += `<label class="option-row" onclick="toggleExtra('queso')">
       <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
-      <div class="option-check" id="extra-check-queso"></div>
+      <div class="option-check ${extrasQueso ? 'on' : ''}" id="extra-check-queso"></div>
     </label>`;
   }
   html += `<label class="option-row" onclick="toggleExtra('gratinado')">
     <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
-    <div class="option-check" id="extra-check-gratinado"></div>
+    <div class="option-check ${extrasGratinado ? 'on' : ''}" id="extra-check-gratinado"></div>
   </label>`;
+  html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
+  CUST_SAUCES.forEach(s => {
+    const slug = 'extra-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
+    const on = !!extrasSalsas[s];
+    html += `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
+    </label>`;
+  });
+  html += `</div>`;
   html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
   [...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07].forEach(ing => {
     const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
     const slug = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    html += `<label id="lbl-${slug}" class="option-row" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+    const on = !!extrasIngredientes[ing];
+    html += `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
       <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
-      <div class="option-check" id="${slug}" style="width:20px;height:20px"></div>
+      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
     </label>`;
   });
   html += `</div>`;
@@ -468,7 +609,7 @@ function openExtrasModal(id) {
   updateExtrasTotalPrice();
   document.getElementById('extras-modal').classList.add('open');
 }
-function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; }
+function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; extrasEditKey = null; }
 function toggleExtra(which) {
   if (which === 'queso') extrasQueso = !extrasQueso; else extrasGratinado = !extrasGratinado;
   const el = document.getElementById('extra-check-' + which);
@@ -482,28 +623,43 @@ function toggleExtraIng(ing) {
   if (el) el.classList.toggle('on', !!extrasIngredientes[ing]);
   updateExtrasTotalPrice();
 }
+function toggleExtraSalsa(s) {
+  extrasSalsas[s] = !extrasSalsas[s];
+  const slug = 'extra-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
+  const el = document.getElementById(slug);
+  if (el) el.classList.toggle('on', !!extrasSalsas[s]);
+  updateExtrasTotalPrice();
+}
 function updateExtrasTotalPrice() {
   const item = MENU.find(m => m.id == extrasCurrentId);
   if (!item) return;
-  let p = item.price + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0);
-  Object.entries(extrasIngredientes).forEach(([ing, on]) => {
-    if (!on) return;
-    p += EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
-  });
+  const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing);
+  const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
+  const core = computeExtrasCorePrice(item.price, ingList, salsaList);
+  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
+  const noteEl = document.getElementById('extras-price-note');
+  if (noteEl) noteEl.textContent = extrasAutoUpgradeLabel(ingList, salsaList);
 }
 function confirmExtras() {
   const id = extrasCurrentId;
   const item = MENU.find(m => m.id == id);
   if (!item) return;
   const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing).sort();
-  const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '') + (ingList.length ? 'I' + ingList.join('|') : '') || 'BASE';
+  const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
+  const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '') + (ingList.length ? 'I' + ingList.join('|') : '') + (salsaList.length ? 'S' + salsaList.join('|') : '') || 'BASE';
   const key = 'ext:' + id + ':' + sig;
-  if (extrasCart[key]) extrasCart[key].qty++;
-  else extrasCart[key] = { menuId: id, qty: 1, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, basePrice: item.price, key };
+  let qtyToSet = 1;
+  if (extrasEditKey && extrasCart[extrasEditKey]) {
+    qtyToSet = extrasCart[extrasEditKey].qty;
+    delete extrasCart[extrasEditKey];
+  }
+  if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, basePrice: item.price, key };
+  const wasEdit = !!extrasEditKey;
   closeExtrasModal();
   renderCart();
-  toast('✅ Añadido al pedido');
+  toast(wasEdit ? '✅ Cambios guardados' : '✅ Añadido al pedido');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -578,10 +734,11 @@ function buildOrderObject() {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
     const extras = [...c.sauces, ...c.ingredients];
     if (c.extraQueso) extras.push('Queso mozzarella');
     if (c.extraGratinado) extras.push('Gratinado');
+    (c.extraSauces || []).forEach(s => extras.push(s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
     items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, extras });
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {

@@ -75,7 +75,7 @@
     </div>
     <div class="modal-footer">
       <div class="modal-price" id="cust-price">6,90 €</div>
-      <button class="modal-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
+      <button class="modal-confirm-btn" id="cust-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
     </div>
     <div class="modal-error" id="cust-error"></div>
   </div>
@@ -97,9 +97,11 @@
       <div class="option-check" id="cheddar-check-kebab"></div>
     </label>
     <div class="modal-error" id="cheddar-error">⚠️ Elige la carne para continuar</div>
+    <div class="section-label">Salsas extra</div>
+    <div class="ing-grid" id="cheddar-salsas-list"></div>
     <div class="modal-footer">
-      <div class="modal-price">8,50 €</div>
-      <button class="modal-confirm-btn" onclick="confirmCheddar()">&#x2192; Añadir al pedido</button>
+      <div class="modal-price" id="cheddar-price">8,50 €</div>
+      <button class="modal-confirm-btn" id="cheddar-confirm-btn" onclick="confirmCheddar()">&#x2192; Añadir al pedido</button>
     </div>
   </div>
 </div>
@@ -112,8 +114,11 @@
     <div class="modal-subtitle" id="extras-base-price">Base: 3,00 €</div>
     <div id="extras-options"></div>
     <div class="modal-footer">
-      <div class="modal-price" id="extras-total-price">3,00 €</div>
-      <button class="modal-confirm-btn" onclick="confirmExtras()">&#x2192; Añadir al pedido</button>
+      <div>
+        <div class="modal-price" id="extras-total-price">3,00 €</div>
+        <div id="extras-price-note" style="font-size:11.5px;font-weight:700;color:var(--amber-dark)"></div>
+      </div>
+      <button class="modal-confirm-btn" id="extras-confirm-btn" onclick="confirmExtras()">&#x2192; Añadir al pedido</button>
     </div>
   </div>
 </div>
