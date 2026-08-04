@@ -271,6 +271,19 @@ function getExtrasItemDetails(e) {
   (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
   return out;
 }
+// Igual que getExtrasItemDetails() pero con el formato de texto plano que
+// usa la impresora de tienda (pedidos/js/index.js): sin emojis, y con el
+// precio entre paréntesis en EUR — así el ticket impreso sale igual.
+function getExtrasItemTicketExtras(e) {
+  const out = [];
+  (e.quitados || []).forEach(q => out.push('Sin ' + q));
+  (e.cambios || []).forEach(c => out.push(c.from + ' por ' + c.to));
+  if (e.queso) out.push('Queso Mozzarella ' + plusEur(1));
+  if (e.gratinado) out.push('Gratinado ' + plusEur(0.5));
+  (e.ingredientesExtra || []).forEach(i => out.push(i + ' ' + plusEur(EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7)));
+  (e.salsasExtra || []).forEach(s => out.push(s + ' ' + plusEur(EXTRAS_SALSA_PRECIO)));
+  return out;
+}
 function cartHasAnyItem() {
   return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0);
 }
@@ -316,10 +329,10 @@ function removeDiscount() {
   renderCart();
   toast('Descuento eliminado');
 }
-function discountLineLabel() {
+function discountLineLabel(forTicket) {
   const label = (orderDiscount.label && orderDiscount.label.trim()) || 'Descuento';
   const suffix = orderDiscount.type === 'percent' ? ' (-' + orderDiscount.value + '%)' : '';
-  return '🏷️ ' + label + suffix;
+  return (forTicket ? '' : '🏷️ ') + label + suffix;
 }
 function computeDiscountAmount(subtotal) {
   if (!orderDiscount || subtotal <= 0) return 0;
@@ -710,16 +723,18 @@ function renderExtrasBody(item) {
     });
     html += `</div>`;
     html += `<div class="section-label">Cambiar un ingrediente</div>`;
-    html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-      <select id="cambio-from" style="flex:1;min-width:100px">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-      <span style="font-size:12px;color:var(--muted)">por</span>
-      <select id="cambio-to" style="flex:1;min-width:100px">${[...CUST_INGREDIENTS, ...CUST_SAUCES].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-      <button class="btn-secondary" style="padding:8px 12px" onclick="addExtraCambio()">+ Añadir</button>
+    html += `<div class="swap-card">
+      <div class="swap-row">
+        <select id="cambio-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        <span class="swap-arrow">→</span>
+        <select id="cambio-to" class="swap-select">${[...CUST_INGREDIENTS, ...CUST_SAUCES].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+      </div>
+      <button class="swap-add-btn" onclick="addExtraCambio()">+ Añadir cambio</button>
     </div>`;
     if (extrasCambios.length) {
-      html += extrasCambios.map((c, i) =>
-        `<div class="option-row" style="padding:8px 12px;margin-bottom:6px"><span style="font-size:13px">🔄 ${escapeHtml(c.from)} → ${escapeHtml(c.to)}</span><button class="cart-remove" onclick="removeExtraCambio(${i})" title="Quitar cambio">🗑️</button></div>`
-      ).join('');
+      html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
+        `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
+      ).join('') + `</div>`;
     }
   } else if (NO_QUITAR_IDS.has(item.id)) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Salsa cocinada a diario · no se pueden quitar ni cambiar ingredientes.</div>`;
@@ -866,41 +881,6 @@ function saveTicketConfig(cfg) { localStorage.setItem(TICKET_CONFIG_KEY, JSON.st
 
 function getPaperWidthChars() { return getTicketConfig().anchoPapel == 58 ? 32 : 48; }
 
-function padCenter(s, width) {
-  s = s.slice(0, width);
-  const total = width - s.length;
-  const left = Math.floor(total / 2), right = total - left;
-  return ' '.repeat(Math.max(0, left)) + s + ' '.repeat(Math.max(0, right));
-}
-function padRight(s, width) { s = s.slice(0, width); return s + ' '.repeat(Math.max(0, width - s.length)); }
-function padLeft(s, width) { s = s.slice(0, width); return ' '.repeat(Math.max(0, width - s.length)) + s; }
-function wrapText(s, width) {
-  const words = String(s).split(' ');
-  const lines = []; let cur = '';
-  words.forEach(w => {
-    if ((cur + ' ' + w).trim().length > width) { if (cur) lines.push(cur); cur = w; }
-    else cur = (cur + ' ' + w).trim();
-  });
-  if (cur) lines.push(cur);
-  return lines.length ? lines : [''];
-}
-function wrapIndented(prefix, text, width, contPrefix) {
-  contPrefix = contPrefix !== undefined ? contPrefix : ' '.repeat(prefix.length);
-  const avail = Math.max(1, width - prefix.length);
-  const wrapped = wrapText(text, avail);
-  return wrapped.map((l, i) => (i === 0 ? prefix : contPrefix) + l);
-}
-function twoColLines(left, right, width) {
-  const combined = left + ' ' + right;
-  if (combined.length <= width) return [padRight(left, width - right.length) + right];
-  const leftLines = wrapText(left, width);
-  const out = leftLines.slice();
-  const lastIdx = out.length - 1;
-  if ((out[lastIdx] + ' ' + right).length <= width) out[lastIdx] = padRight(out[lastIdx], width - right.length) + right;
-  else out.push(padLeft(right, width));
-  return out;
-}
-
 function buildOrderObject() {
   const items = [];
   Object.entries(cart).forEach(([id, qty]) => {
@@ -913,18 +893,18 @@ function buildOrderObject() {
     if (!item) return;
     const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
     const extras = [...c.sauces, ...c.ingredients];
-    if (c.extraQueso) extras.push('Queso mozzarella');
-    if (c.extraGratinado) extras.push('Gratinado');
-    (c.extraSauces || []).forEach(s => extras.push(s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
+    if (c.extraQueso) extras.push('Queso Mozzarella ' + plusEur(1));
+    if (c.extraGratinado) extras.push('Gratinado ' + plusEur(0.5));
+    (c.extraSauces || []).forEach(s => extras.push(s + ' ' + plusEur(EXTRAS_SALSA_PRECIO)));
     items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, extras });
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
-    items.push({ name: getExtrasItemLabel(c), qty: c.qty, subtotal: getExtrasItemPrice(c) * c.qty, extras: getExtrasItemDetails(c) });
+    items.push({ name: getExtrasItemLabel(c), qty: c.qty, subtotal: getExtrasItemPrice(c) * c.qty, extras: getExtrasItemTicketExtras(c) });
   });
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
   const discountAmount = computeDiscountAmount(subtotal);
   if (discountAmount > 0) {
-    items.push({ name: discountLineLabel(), qty: 1, subtotal: -discountAmount, extras: [] });
+    items.push({ name: discountLineLabel(true), qty: 1, subtotal: -discountAmount, extras: [] });
   }
   const total = items.reduce((s, it) => s + it.subtotal, 0);
   return {
@@ -937,132 +917,151 @@ function buildOrderObject() {
   };
 }
 
-/* ── Ticket en HTML — mismo maquetado que buildTicketHTML() de la web
-   de pedidos (pedidos/src/historial-export.js), para que el ticket
-   impreso sea igual que el de un pedido online. ── */
-function buildTicketItemHTML(it) {
-  const right = fmt(it.subtotal) + ' €';
-  const label = it.qty + 'x ' + it.name;
-  if (it.extras && it.extras.length > 0) {
-    const extrasList = it.extras.map(ex =>
-      `<div style="display:flex;justify-content:space-between"><span>&nbsp;&nbsp;&nbsp;· ${escapeHtml(ex)}</span></div>`
-    ).join('');
-    return `<div style="margin-bottom:5px"><div style="display:flex;justify-content:space-between;font-weight:bold"><span>${escapeHtml(label)}</span><span style="white-space:nowrap;padding-left:4px">${right}</span></div><div style="font-size:10px;color:#333;line-height:1.8;margin-top:1px">${extrasList}</div></div>`;
-  } else if (label.length <= 26) {
-    return `<div style="display:flex;justify-content:space-between"><span style="flex:1">${escapeHtml(label)}</span><span style="white-space:nowrap;padding-left:4px">${right}</span></div>`;
+/* ── Ticket — igual que el que imprime pedidos/js/index.js en la tienda
+   (el programa que corre en el ordenador conectado a la impresora): mismo
+   logo, mismos separadores de 48 guiones, mismo orden de bloques, mismo
+   formato de líneas de producto y el mismo "doblado" de acentos a ASCII
+   (esa impresora no usa codepage, solo entiende ASCII plano). Un único
+   buildTicketBlocks() alimenta tanto la vista previa / diálogo de
+   impresión como los bytes ESC/POS de la impresora térmica, así lo que
+   se ve en pantalla es exactamente lo que sale impreso. ── */
+const TICKET_DIVIDER = '-'.repeat(48);
+const ACCENT_FOLD = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?','€':'EUR' };
+function foldAccents(str) {
+  return String(str).split('').map(c => ACCENT_FOLD[c] !== undefined ? ACCENT_FOLD[c] : c).join('');
+}
+function fmtEur(n) { return n.toFixed(2) + ' EUR'; }
+function plusEur(n) { return '(+' + n.toFixed(2) + ' EUR)'; }
+
+// Divide un producto en líneas igual que imprimirUnaCopia(): el precio se
+// alinea a la derecha en la misma línea si cabe; si no cabe, el NOMBRE se
+// trunca (no se ajusta de línea) y el precio baja a la línea siguiente.
+function formatItemLines(item, width) {
+  const parts = foldAccents(item.name || '').split(' + ');
+  const nombrePrincipal = parts[0];
+  const extrasDelNombre = parts.slice(1);
+  const extrasArr = item.extras || [];
+  const precio = fmtEur(item.subtotal || 0);
+  const prefix = item.qty + 'x ';
+  const spaces = width - prefix.length - nombrePrincipal.length - precio.length;
+  const lines = [];
+  if (spaces >= 0) {
+    lines.push(prefix + nombrePrincipal + ' '.repeat(spaces) + precio);
   } else {
-    return `<div style="margin-bottom:3px"><div style="word-break:break-word;white-space:normal;line-height:1.4">${escapeHtml(label)}</div><div style="text-align:right;font-weight:bold">${right}</div></div>`;
+    lines.push(prefix + nombrePrincipal.substring(0, width - prefix.length));
+    lines.push(' '.repeat(Math.max(0, width - precio.length)) + precio);
   }
-}
-function buildTicketHTML(order) {
-  const tc = getTicketConfig();
-  const itemsHTML = order.items.map(buildTicketItemHTML).join('');
-  const headerRow = order.name
-    ? `<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">${escapeHtml(order.name.toUpperCase())}</div>`
-    : '';
-  return `
-    <div style="text-align:center;margin-bottom:6px">
-      <div style="font-size:15px;font-weight:bold;letter-spacing:1px">${escapeHtml(tc.nombre)}</div>
-      <div style="font-size:10px;color:#555">${escapeHtml(tc.direccion)}</div>
-      <div style="font-size:10px;color:#555">${escapeHtml(tc.telefono)}</div>
-    </div>
-    <div style="border-top:2px solid #000;margin:6px 0"></div>
-    ${headerRow}
-    <div style="border-top:1.5px solid #000;margin:6px 0 4px"></div>
-    <div style="font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px">PEDIDO ${escapeHtml(order.num)}</div>
-    <div style="font-size:10px;text-align:center;color:#555;margin-bottom:4px">${escapeHtml(order.time)}</div>
-    <div style="border-top:1.5px solid #000;margin:4px 0 6px"></div>
-    <div style="font-size:11px">${itemsHTML}</div>
-    <div style="border-top:1px dashed #000;margin:6px 0"></div>
-    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:bold">
-      <span>TOTAL</span><span>${fmt(order.total)} €</span>
-    </div>
-    <div style="font-size:10px;text-align:center;color:#555;margin-top:2px">${escapeHtml(tc.textoPago)}</div>
-    ${order.notes ? `<div style="border-top:1px dashed #000;margin:6px 0"></div><div style="font-size:10px"><b>NOTAS:</b> ${escapeHtml(order.notes)}</div>` : ''}
-    <div style="border-top:1px dashed #000;margin:8px 0"></div>
-    <div style="text-align:center;font-size:10px;color:#555">${escapeHtml(tc.despedida)}</div>
-    <div style="margin-bottom:16px"></div>
-  `;
-}
-function renderTicketPreview(order) {
-  const container = document.getElementById('ticket-html-content');
-  container.innerHTML = buildTicketHTML(order);
-  container.classList.toggle('w58', getTicketConfig().anchoPapel == 58);
-}
-
-/* ── Texto plano — mismo contenido que el ticket HTML, para la
-   impresora térmica ESC/POS (no puede renderizar HTML/CSS). ── */
-function buildTicketLines(order) {
-  const width = getPaperWidthChars();
-  const cfg = getTicketConfig();
-  const L = [];
-  L.push({ text: padCenter(cfg.nombre, width), bold: true });
-  wrapText(cfg.direccion, width).forEach(l => L.push({ text: padCenter(l, width) }));
-  L.push({ text: padCenter(cfg.telefono, width) });
-  L.push({ text: '='.repeat(width) });
-  if (order.name) {
-    L.push({ text: padCenter(order.name.toUpperCase(), width), bold: true });
-    L.push({ text: '='.repeat(width) });
-  }
-  L.push({ text: padCenter('PEDIDO ' + order.num, width), bold: true });
-  L.push({ text: padCenter(order.time, width) });
-  L.push({ text: '='.repeat(width) });
-  order.items.forEach(it => {
-    twoColLines(it.qty + 'x ' + it.name, fmt(it.subtotal) + '€', width).forEach(l => L.push({ text: l }));
-    (it.extras || []).forEach(ex => wrapIndented('   · ', ex, width).forEach(l => L.push({ text: l })));
+  [...extrasDelNombre, ...extrasArr].forEach(extra => {
+    lines.push('     - ' + foldAccents(extra));
   });
-  L.push({ text: '-'.repeat(width) });
-  twoColLines('TOTAL', fmt(order.total) + ' €', width).forEach(l => L.push({ text: l, bold: true }));
-  L.push({ text: padCenter(cfg.textoPago, width) });
-  if (order.notes) {
-    L.push({ text: '-'.repeat(width) });
-    L.push({ text: 'NOTAS:', bold: true });
-    wrapText(order.notes, width).forEach(l => L.push({ text: l }));
-  }
-  L.push({ text: '-'.repeat(width) });
-  L.push({ text: padCenter(cfg.despedida, width) });
-  return L;
+  return lines;
 }
 
-/* ── Codificación CP850 para acentos/ñ en impresoras ESC/POS ── */
-const CP850_MAP = {
-  'á': 0xA0, 'í': 0xA1, 'ó': 0xA2, 'ú': 0xA3, 'ñ': 0xA4, 'Ñ': 0xA5, 'ª': 0xA6, 'º': 0xA7,
-  '¿': 0xA8, '¡': 0xAD, '«': 0xAE, '»': 0xAF,
-  'é': 0x82, 'â': 0x83, 'ä': 0x84, 'à': 0x85, 'å': 0x86, 'ç': 0x87, 'ê': 0x88, 'ë': 0x89,
-  'è': 0x8A, 'ï': 0x8B, 'î': 0x8C, 'ì': 0x8D, 'Ä': 0x8E, 'Å': 0x8F,
-  'É': 0x90, 'æ': 0x91, 'Æ': 0x92, 'ô': 0x93, 'ö': 0x94, 'ò': 0x95, 'û': 0x96, 'ù': 0x97,
-  'ÿ': 0x98, 'Ö': 0x99, 'Ü': 0x9A, 'ü': 0x81,
-  'Á': 0xB5, 'Í': 0xD6, 'Ó': 0xE0, 'Ú': 0xE9,
-};
-function textToCp850Bytes(str) {
-  const bytes = [];
-  for (const ch of String(str)) {
-    const code = ch.codePointAt(0);
-    if (code < 128) { bytes.push(code); continue; }
-    if (ch === '€') { bytes.push(0x45, 0x55, 0x52); continue; } // "EUR" — € no existe en CP850
-    const mapped = CP850_MAP[ch];
-    bytes.push(mapped !== undefined ? mapped : 0x3F);
+// Construye el ticket como una lista de bloques en el mismo orden que
+// imprimirUnaCopia(): {logo:true} o {text, align, big, bold, notesLabel}.
+function buildTicketBlocks(order) {
+  const cfg = getTicketConfig();
+  const width = getPaperWidthChars();
+  const B = [];
+  B.push({ logo: true });
+  B.push({ text: foldAccents(cfg.nombre), align: 'center', big: true });
+  B.push({ text: foldAccents(cfg.direccion), align: 'center' });
+  B.push({ text: foldAccents(cfg.telefono), align: 'center' });
+  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: foldAccents((order.name || '').toUpperCase()), align: 'center', big: true });
+  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: foldAccents('PEDIDO ' + order.num), align: 'center', big: true });
+  B.push({ text: foldAccents(order.time), align: 'center' });
+  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  order.items.forEach(it => {
+    formatItemLines(it, width).forEach(text => B.push({ text, align: 'left' }));
+  });
+  B.push({ text: TICKET_DIVIDER, align: 'left' });
+  B.push({ text: fmtEur(order.total || 0), align: 'center', big: true });
+  B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
+  if (order.notes) {
+    B.push({ text: TICKET_DIVIDER, align: 'left' });
+    B.push({ text: 'NOTAS: ' + foldAccents(order.notes), align: 'left', notesLabel: true });
   }
+  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: foldAccents(cfg.despedida), align: 'center' });
+  return B;
+}
+
+/* ── Vista previa en pantalla / diálogo de impresión (HTML) ── */
+function renderTicketPreview(order) {
+  const blocks = buildTicketBlocks(order);
+  const container = document.getElementById('ticket-html-content');
+  let html = '';
+  blocks.forEach(b => {
+    if (b.logo) {
+      html += '<div style="text-align:center;margin-bottom:2px"><img src="img/logo.png" alt="" style="width:110px;height:110px;object-fit:contain"></div>';
+      return;
+    }
+    if (b.notesLabel) {
+      const idx = b.text.indexOf(': ') + 2;
+      html += '<div style="text-align:' + b.align + '"><b>' + escapeHtml(b.text.slice(0, idx)) + '</b>' + escapeHtml(b.text.slice(idx)) + '</div>';
+      return;
+    }
+    const style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
+    html += '<div style="' + style + '">' + (escapeHtml(b.text) || '&nbsp;') + '</div>';
+  });
+  container.innerHTML = html;
+}
+
+/* ── Bytes ESC/POS para la impresora térmica (mismo logo e idVendor/
+   idProduct que pedidos/js/index.js — el propio programa de la tienda). ── */
+const LOGO_W = 384, LOGO_H = 384;
+const LOGO_B64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//gAAAH///////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///gAAAf///////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB////AAAD/////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf///+AAAP/////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////+AAA///////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////8AAD///////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////4AAP///////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/////4AAf///////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////wAB/////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//////wAD/////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//////gAH/////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////gAf/////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////AA//////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////AB///////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////AD///////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//////+AH///////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////+Af///////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////+Af///////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////8A////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////8B/////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////8D/////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////4H/////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////4P/////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA////////4P/////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB////////4f/////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////////4//////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH////////x//////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH////////x//////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP////////z///////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////z///////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////3///////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////////3///////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/////////////////////////+AAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/////////////////////////4B///gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/////////////////////////wf///+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/////////////////////////D/////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////////////////////8f/////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////////////////////5//////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////////////////////n///////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAH////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAH////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAD////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAD////////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAA////////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAB///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAP//////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAH//////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAD//////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////+B///////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAf////gAH//AB//////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///+AAB/4AAP/////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAA////4AAA/gAAD/////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAD////wH8APAAAB/////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAP////h//gEA//Af////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAf////H//8AH//4P////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAA////+f//+Af//+H////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAB////9////h////j////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////////z////z////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAH//////////////9////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAB///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAA////////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAH////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAA////////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAA////////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////////////////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAH////////n/////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAH////////j////v////////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////+B////H////////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////8Af//8D////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////wAP//wB///////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///////AAB//AA///////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//////4AAAHgAAP//////////////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB////4AAAAAAAAAD/////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB////wAAAAAAAAAAf/g//////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA////AAAAAAAAAAAAAAP////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//4AAAAAAAAAAAAAAD////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//4AAAAAAAAAAAAAAAf//v////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//wAAAAAAAAAAAAAAAAOAP////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//wAAAAAAAAAAAAAAAAAAP////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wAAAAAAAAAAAAAAAAAAP////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//wAAAAAAAAAAAAAAAAAAP////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAAAAAAAAAAAAAAAAP////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAAAAAAAAAAAAAAAAP////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAAAAAAAAAAAAAAAAP////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAAAAAAAAAAAAAAAAP////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAAAAAAAAAAAAAAAAP////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAAAAAAAAAAAAAAAAH////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAH////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAAAAAAAAAAAAAAAAAAH////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAAfgAAAAAAAAAAAAAAD////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAB/wAAAAAAAP4AAAAAD////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAD/4AAAAAAAf+AAAAAB////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAH/8AAAAAAA//AAAAAB////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf+AAH/8AAAAAAB//AAAAAA////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf+AAP/+AAAAAAB//gAAAAAf///////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAP/+AAAAAAD//gAAAAAP///////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAP/+AAAAAAD//wAAAAAP///////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAP//AAAAAAD//wAAAAAP///////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAf//AAAAAAH//wAAAAAP///////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAf//AAAAAAH//wAAAAAP///////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAf//AAAAAAH//wAAAAAf///////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAf//AAAAAAH//wAAAAAf///////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAf//AAAAAAH//wAAAAAf///////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAf/+AAAAAAH//wAAAAAf//////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAP/+AAAAAAH//wAAAAAf//////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8AAP/+AAAAAAD//wAAAAAf//+Af/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8AAP/+AAAAAAD//gAAAAAf//4AH/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAH/8AAAAAAD//gAAAAAf//wAD/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAH/4AAAAAAD//gAAAAAf//gAB//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAD/4AAAAAAB//AAAAAAf//AAB//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAB/wAAAAAAA/+AAAAAA//+AAA//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAAfAAAAAAAAf8AAAAAA//8AAA//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAAAAAAAAAAAP4AAAAAA//8AAA//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAAAAAAAAAAAAAAAAAAA//8AAAf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAAA//4AAAf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAAA//4AAAf/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAAA//4AAAf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAAB//wAAAf/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAB//wDgAf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAB//wH4Af/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAB//wP4Af/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAB/4AA//AAAAAAAAB//gP8A//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAP/+AH//wAAAAAAAB//gf8A//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAA///gP//8AAAAAAAB//gf8A//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAD///w////AAAAAAAD//gf8A//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAH///5////wAAAAAAD//gf8B//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAf////////4AAAAAAD//gf8B/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAA/////////+AAAAAAD//gP4B/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAD//////////AAAAAAD//gP4D/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wAAH//////////wAAAAAH//AHwD/+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/w8Af//////////8AAAAAH//AAAH/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/x/D////////////ABgAAH//AAAH/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/x//////////////4PwAAH//AAAP/4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/x////////////////4AAH//AAAf/4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/h////////////////4AAP//AAA//4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/h////////////////4AAP//AAB//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/h////////////////wAAP//AAB//gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/g////////////////wAAP//AAH//gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/w////////////////wAAf/+AAP//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/w////////////////gAAf/+AAf//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wf///////////////AAAf/+AB//+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wP///////////////AAAf//gf//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wP//////////////+AAAf//////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wH//////////////8AAA///////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wD//////////////4AAA///////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wB//////////////wAAA///////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wA//////////////AAAB///////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wAP////////////+AAAB//////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAD////////////4AAAB//////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAf//////////+AAAAD//////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAD//////////8AAAAD//////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAD//////////8AAAAD/////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAB//////////8AAAAH/////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAB//////////8AAAAH////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAB/////////v4AAAAH///+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAB//3/////7v4AAAAP///+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/4AAA////P3///v4AAAAP///8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/4AAA//////////wAAAAP///8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8AAA/////v////wAAAAf///8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8AAAf/////////gAAAAf///8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8AAAf///vf//+/gAAAA////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8AAAP/f/v/////AAAAA////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAAP///u/////AAAAB////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAAH///t////+AAAAB////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+AAAH////////8AAAAD////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//AAAD/v//////8AAAAD////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAAB////////4AAAAH////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/AAAA////////wAAAAH////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAA////////gAAAAP////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/gAAAf/////3/AAAAAf////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/wAAAP/P///f+AAAAAf////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/wAAAH/7//9/8AAAAA/////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/4AAAD/+//P/4AAAAB/////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/8AAAB//8H//wAAAAD////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/8AAAA//////AAAAAD////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/+AAAAP////+AAAAAH////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB//AAAAH////4AAAAAP////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//AAAAB////gAAAAAf////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//gAAAAP//+AAAAAA/////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/wAAAAB//gAAAAAB/////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/4AAAAAAAAAAAAAD/////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/8AAAEAAAAAAAAAH/////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/+AAAHAAAIAAAAAf/////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//AAAH8AA4AAAAA/////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wAAH///4AAAAB/////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB//4AAH///wAAAAH/////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//+AAH///wAAAAP/////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//AAH///wAAAA//////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//wAH///gAAAD//////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//8AH///gAAAP//////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///AD///AAAA//////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///4D///AAAD//////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA////D//+AAAf//////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////8AAD///////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//////4AB////////gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//////4D/////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA////////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//////////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//////////+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//////////4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf///////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB//////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+let _logoBytesCache = null;
+function getLogoBytes() {
+  if (_logoBytesCache) return _logoBytesCache;
+  const bin = atob(LOGO_B64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  _logoBytesCache = bytes;
   return bytes;
 }
 class EscPosBuilder {
   constructor() { this.bytes = []; }
   raw(arr) { for (const b of arr) this.bytes.push(b); return this; }
   init() { return this.raw([0x1B, 0x40]); }
-  codepage850() { return this.raw([0x1B, 0x74, 2]); }
+  center() { return this.raw([0x1B, 0x61, 0x01]); }
+  left() { return this.raw([0x1B, 0x61, 0x00]); }
+  big() { return this.raw([0x1B, 0x21, 0x30]); }
+  normal() { return this.raw([0x1B, 0x21, 0x00]); }
   bold(on) { return this.raw([0x1B, 0x45, on ? 1 : 0]); }
-  text(str) { return this.raw(textToCp850Bytes(str)); }
+  text(str) { const s = String(str); for (let i = 0; i < s.length; i++) this.bytes.push(s.charCodeAt(i) & 0xFF); return this; }
   newline() { return this.raw([0x0A]); }
-  feed(n) { return this.raw([0x1B, 0x64, n]); }
-  cut() { return this.raw([0x1D, 0x56, 0x00]); }
+  logo() {
+    this.center();
+    const bpr = (LOGO_W + 7) >> 3;
+    this.raw([0x1D, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, LOGO_H & 0xFF, (LOGO_H >> 8) & 0xFF]);
+    const logoBytes = getLogoBytes();
+    for (let i = 0; i < logoBytes.length; i++) this.bytes.push(logoBytes[i]);
+    return this;
+  }
+  cut() { return this.raw([0x1D, 0x56, 0x42, 0x00]); }
   toBytes() { return new Uint8Array(this.bytes); }
 }
-function buildEscPosBytes(lines) {
+function buildEscPosBytes(order) {
+  const blocks = buildTicketBlocks(order);
   const b = new EscPosBuilder();
-  b.init().codepage850();
-  lines.forEach(l => { b.bold(!!l.bold); b.text(l.text); b.newline(); });
-  b.bold(false);
-  b.feed(4);
+  b.init();
+  blocks.forEach(blk => {
+    if (blk.logo) { b.logo(); return; }
+    blk.align === 'center' ? b.center() : b.left();
+    blk.big ? b.big() : b.normal();
+    if (blk.notesLabel) {
+      const idx = blk.text.indexOf(': ') + 2;
+      b.bold(true); b.text(blk.text.slice(0, idx)); b.bold(false); b.text(blk.text.slice(idx));
+    } else {
+      b.text(blk.text);
+    }
+    b.newline();
+  });
+  b.normal(); b.left();
+  b.text('\n\n\n');
   b.cut();
   return b.toBytes();
 }
@@ -1186,8 +1185,7 @@ async function printOrder(order) {
   let printedViaUsb = false;
   if (cfg.modoImpresion !== 'dialog') {
     try {
-      const lines = buildTicketLines(order);
-      const bytes = buildEscPosBytes(lines);
+      const bytes = buildEscPosBytes(order);
       const copies = Math.max(1, parseInt(cfg.copias, 10) || 1);
       for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
       printedViaUsb = true;
