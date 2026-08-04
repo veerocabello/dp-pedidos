@@ -8,7 +8,7 @@
 
 /* ── CARTA ── (mismos productos y precios que pedidos/src/carta.js) */
 const MENU = [
-  { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla, sal y pimienta", price: 3.00 },
+  { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla (una u otra, no las dos), sal y pimienta", price: 3.00 },
   { id: 2, cat: "Patatas", name: "Patata Vegetal", desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural", price: 5.60 },
   { id: 3, cat: "Patatas", name: "Patata Picante", desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas", price: 5.60 },
   { id: 4, cat: "Patatas", name: "Patata Carbonara", desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario", price: 5.80 },
@@ -77,7 +77,7 @@ const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 6.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
   bomba: { name: "Patata Bomba 🆕", price: 8.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
-const CUST_SAUCES = ["Ranchera", "Brava", "BBQ", "Ketchup", "Mayonesa", "Alioli", "Salsa Rosa", "Salsa de Yogur", "Tomate Frito", "Queso Philadelphia", "Roquefort"];
+const CUST_SAUCES = ["Salsa Ranchera", "Salsa Brava", "Salsa BBQ", "Ketchup", "Mayonesa", "Alioli", "Salsa Rosa", "Salsa de Yogur", "Tomate Frito", "Queso Philadelphia", "Salsa Roquefort"];
 const CUST_INGREDIENTS = ["Jamón York", "Carne Picada", "Pollo", "Carne Kebab", "Atún", "Gambas", "Tronquitos de Mar", "Huevo", "Bacon", "Queso Mozzarella", "4 Quesos", "Tomate Natural", "Maíz", "Aceitunas", "Zanahoria", "Remolacha", "Piña", "Cebolla", "Champiñón"];
 
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
