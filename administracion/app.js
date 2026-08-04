@@ -1791,7 +1791,7 @@ function bimbaPintarMkCalendarioLista() {
       + '<button onclick="bimbaEliminarMkCalendario(\'' + p.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + (p.fecha ? _fechaCorta(p.fecha) : 'sin fecha') + ' · ' + escapeHtml(p.red || '') + ' · ' + escapeHtml(p.tipo || '') + '</div>'
-      + (p.texto ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap">' + escapeHtml(p.texto) + '</div>' : '')
+      + (p.texto ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">' + escapeHtml(p.texto) + '</div>' : '')
       + '<select onchange="bimbaCambiarEstadoMkCalendario(\'' + p.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:5px 22px 5px 10px;border-radius:99px;cursor:pointer;border:none;background:' + color + ';color:#fff;font-family:\'DM Sans\',sans-serif">'
       + MK_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (p.estado || 'Idea') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
       + '</select>'
@@ -2045,7 +2045,7 @@ function bimbaMkIdeaCardHtml(i) {
   return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
     + '<div style="display:flex;align-items:flex-start;gap:10px">'
     + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:18px;line-height:1.4;cursor:pointer;flex-shrink:0;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
-    + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-wrap">' + _mkFormatearTexto(i.idea) + '</div>'
+    + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">' + _mkFormatearTexto(i.idea) + '</div>'
     + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:14px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✏️</button>'
     + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✕</button>'
     + '</div>'
@@ -2263,7 +2263,7 @@ function bimbaPintarMkColabsLista() {
       + '<button onclick="bimbaEliminarMkColab(\'' + c.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(c.red || '') + (c.contacto ? ' · ' + escapeHtml(c.contacto) : '') + '</div>'
-      + (c.notas ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap">' + escapeHtml(c.notas) + '</div>' : '')
+      + (c.notas ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word">' + escapeHtml(c.notas) + '</div>' : '')
       + '<select onchange="bimbaCambiarEstadoMkColab(\'' + c.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:5px 22px 5px 10px;border-radius:99px;cursor:pointer;border:none;background:' + color + ';color:#fff;font-family:\'DM Sans\',sans-serif">'
       + MK_COLAB_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (c.estado || 'Contactado') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
       + '</select>'
