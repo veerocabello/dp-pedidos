@@ -1932,6 +1932,8 @@ function closeMkIdeasOverlay() {
 async function bimbaRenderMkIdeas() {
   const el = document.getElementById('mk-ideas-lista');
   el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
+  await _mkCargarIdeaCategorias();
+  bimbaPoblarMkIdeaCategorias();
   try {
     const sn = await firebase.database().ref('marketing/ideas').once('value');
     const lista = [];
@@ -1947,17 +1949,69 @@ async function bimbaRenderMkIdeas() {
   }
   bimbaPintarMkIdeasLista();
 }
-const MK_IDEA_CATEGORIAS = ['Producto', 'Detrás de cámaras', 'Promoción', 'Testimonio', 'Tendencia', 'Colaboración'];
+const MK_IDEA_CATEGORIAS_DEFAULT = ['Producto', 'Detrás de cámaras', 'Promoción', 'Testimonio', 'Tendencia', 'Colaboración'];
 const MK_IDEA_CATEGORIA_COLOR = { 'Producto': '#0C5C8A', 'Detrás de cámaras': '#6B3FA0', 'Promoción': '#B5862C', 'Testimonio': '#27855a', 'Tendencia': '#C13584', 'Colaboración': '#c0392b' };
+let _mkIdeaCategorias = MK_IDEA_CATEGORIAS_DEFAULT.slice();
 let _mkIdeaEditandoId = null;
+async function _mkCargarIdeaCategorias() {
+  try {
+    const sn = await firebase.database().ref('config/ideasCategorias').once('value');
+    if (sn.exists() && Array.isArray(sn.val()) && sn.val().length) _mkIdeaCategorias = sn.val();
+  } catch (e) { /* nos quedamos con las categorías por defecto */ }
+}
+function bimbaPoblarMkIdeaCategorias() {
+  const sel = document.getElementById('mk-idea-categoria');
+  if (!sel) return;
+  const valorActual = sel.value;
+  sel.innerHTML = _mkIdeaCategorias.map(function (c) { return '<option value="' + escapeAttr(c) + '">' + escapeHtml(c) + '</option>'; }).join('') + '<option value="__nueva__">➕ Nueva categoría...</option>';
+  if (_mkIdeaCategorias.includes(valorActual)) sel.value = valorActual;
+  bimbaPintarMkCategoriasManager();
+}
+function bimbaMkIdeaCategoriaChange() {
+  const sel = document.getElementById('mk-idea-categoria');
+  if (sel.value !== '__nueva__') return;
+  const nombre = prompt('Nombre de la nueva categoría:');
+  if (nombre && nombre.trim()) {
+    const limpio = nombre.trim();
+    if (!_mkIdeaCategorias.includes(limpio)) {
+      _mkIdeaCategorias.push(limpio);
+      firebase.database().ref('config/ideasCategorias').set(_mkIdeaCategorias).catch(function () {});
+    }
+    bimbaPoblarMkIdeaCategorias();
+    sel.value = limpio;
+  } else {
+    sel.value = _mkIdeaCategorias[0] || '';
+  }
+}
+function bimbaToggleMkCategoriasManager() {
+  const el = document.getElementById('mk-idea-categorias-manager');
+  if (!el) return;
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function bimbaPintarMkCategoriasManager() {
+  const el = document.getElementById('mk-idea-categorias-manager-lista');
+  if (!el) return;
+  el.innerHTML = _mkIdeaCategorias.map(function (c) {
+    const color = MK_IDEA_CATEGORIA_COLOR[c] || '#3D1F0D';
+    return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 6px 4px 10px;border-radius:99px;background:' + color + '1A;color:' + color + '">' + escapeHtml(c) + '<span onclick="bimbaMkIdeaBorrarCategoria(\'' + escapeAttr(c) + '\')" style="cursor:pointer;font-weight:800;padding:0 3px">✕</span></span>';
+  }).join('');
+}
+function bimbaMkIdeaBorrarCategoria(cat) {
+  if (_mkIdeaCategorias.length <= 1) { alert('Necesitas al menos una categoría.'); return; }
+  if (!confirm('¿Borrar la categoría "' + cat + '"? Las ideas que ya la tenían la conservan, pero no podrás elegirla para ideas nuevas.')) return;
+  _mkIdeaCategorias = _mkIdeaCategorias.filter(function (c) { return c !== cat; });
+  firebase.database().ref('config/ideasCategorias').set(_mkIdeaCategorias).catch(function () {});
+  bimbaPoblarMkIdeaCategorias();
+}
 function bimbaMkIdeaFormatear(textareaId, tipo) {
   const ta = document.getElementById(textareaId);
   if (!ta) return;
   const start = ta.selectionStart;
   const end = ta.selectionEnd;
   const val = ta.value;
-  const marker = tipo === 'bold' ? '**' : '__';
-  const seleccion = val.slice(start, end) || (tipo === 'bold' ? 'negrita' : 'subrayado');
+  const marker = tipo === 'bold' ? '**' : (tipo === 'italic' ? '~' : '__');
+  const placeholder = tipo === 'bold' ? 'negrita' : (tipo === 'italic' ? 'cursiva' : 'subrayado');
+  const seleccion = val.slice(start, end) || placeholder;
   ta.value = val.slice(0, start) + marker + seleccion + marker + val.slice(end);
   ta.focus();
   const nuevaPos = start + marker.length + seleccion.length + marker.length;
@@ -1967,6 +2021,7 @@ function _mkFormatearTexto(texto) {
   let html = escapeHtml(texto || '');
   html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   html = html.replace(/__([^_]+)__/g, '<u>$1</u>');
+  html = html.replace(/~([^~]+)~/g, '<i>$1</i>');
   return html;
 }
 function bimbaMkIdeaCardHtml(i) {
@@ -1974,11 +2029,12 @@ function bimbaMkIdeaCardHtml(i) {
     return '<div style="background:#fff;border:1.5px solid #C8860A;border-radius:12px;padding:14px;margin-bottom:10px">'
       + '<div style="display:flex;gap:6px;margin-bottom:6px">'
       + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'bold\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">B</button>'
+      + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'italic\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;font-style:italic;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">I</button>'
       + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'underline\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;text-decoration:underline;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">U</button>'
       + '</div>'
       + '<textarea id="mk-idea-edit-texto-' + i.id + '" rows="3" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical">' + escapeHtml(i.idea || '') + '</textarea>'
       + '<select id="mk-idea-edit-categoria-' + i.id + '" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D">'
-      + MK_IDEA_CATEGORIAS.map(function (c) { return '<option' + (c === i.categoria ? ' selected' : '') + '>' + c + '</option>'; }).join('')
+      + _mkIdeaCategorias.map(function (c) { return '<option' + (c === i.categoria ? ' selected' : '') + '>' + c + '</option>'; }).join('')
       + '</select>'
       + '<div style="display:flex;gap:8px">'
       + '<button onclick="bimbaMkIdeaGuardarEdicion(\'' + i.id + '\')" style="flex:1;background:#3D1F0D;color:#fff;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Guardar</button>'
@@ -2007,7 +2063,7 @@ function bimbaPintarMkIdeasLista() {
   const porCat = {};
   _mkIdeasCache.forEach(function (i) { (porCat[i.categoria] = porCat[i.categoria] || []).push(i); });
   let html = '';
-  MK_IDEA_CATEGORIAS.forEach(function (cat) {
+  _mkIdeaCategorias.forEach(function (cat) {
     const lista = porCat[cat];
     if (!lista || !lista.length) return;
     const color = MK_IDEA_CATEGORIA_COLOR[cat] || '#3D1F0D';
@@ -2063,6 +2119,7 @@ async function bimbaGuardarMkIdea() {
   const idea = document.getElementById('mk-idea-texto').value.trim();
   const categoria = document.getElementById('mk-idea-categoria').value;
   if (!idea) { msgEl.textContent = 'Escribe la idea'; msgEl.style.color = '#c0392b'; return; }
+  if (!categoria || categoria === '__nueva__') { msgEl.textContent = 'Elige una categoría'; msgEl.style.color = '#c0392b'; return; }
   try {
     await firebase.database().ref('marketing/ideas').push({ idea: idea, categoria: categoria, destacada: _mkIdeaStarNueva, ts: Date.now() });
     msgEl.style.color = '#27855a';
