@@ -255,6 +255,25 @@ function getExtrasItemPrice(e) {
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder);
   return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0);
 }
+function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
+  const ingCount = (ingredientesExtra || []).length;
+  const salsaCount = (salsasExtra || []).length;
+  return (ingCount + salsaCount) >= CUSTOMIZER_CONFIG.bomba.maxTotal
+    || (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients);
+}
+// Precio "base" para la línea principal del ticket (sin queso/gratinado,
+// que se listan aparte). Si se aplicó el precio plano Al Gusto/Bomba, es
+// ese precio (más lo que se haya pasado del límite); si no, es el precio
+// base normal de la patata — así cada extra puede llevar su propio precio
+// en su línea sin que la suma deje de cuadrar con el total.
+function getExtrasItemBaseSubtotal(e) {
+  if (extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra)) {
+    // El precio plano ya incluye los ingredientes/salsas cubiertos; lo que
+    // se pase del límite se cobra aparte dentro de computeExtrasCorePrice.
+    return computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder);
+  }
+  return e.basePrice; // los ingredientes/salsas van cada uno en su propia línea, con su propio precio
+}
 function getExtrasItemLabel(e) {
   const item = MENU.find(m => m.id == e.menuId);
   if (!item) return 'Producto desconocido';
@@ -271,17 +290,21 @@ function getExtrasItemDetails(e) {
   (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
   return out;
 }
-// Igual que getExtrasItemDetails() pero con el formato de texto plano que
-// usa la impresora de tienda (pedidos/js/index.js): sin emojis, y con el
-// precio entre paréntesis en EUR — así el ticket impreso sale igual.
+// Igual que getExtrasItemDetails() pero como {name, price} — así el
+// ticket puede alinear el precio de cada extra a la derecha, igual que
+// en un ticket real impreso (ej. "  - QUESO           +1.00 EUR").
 function getExtrasItemTicketExtras(e) {
   const out = [];
-  (e.quitados || []).forEach(q => out.push('Sin ' + q));
-  (e.cambios || []).forEach(c => out.push(c.from + ' por ' + c.to));
-  if (e.queso) out.push('Queso Mozzarella ' + plusEur(1));
-  if (e.gratinado) out.push('Gratinado ' + plusEur(0.5));
-  (e.ingredientesExtra || []).forEach(i => out.push(i + ' ' + plusEur(EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7)));
-  (e.salsasExtra || []).forEach(s => out.push(s + ' ' + plusEur(EXTRAS_SALSA_PRECIO)));
+  (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q }));
+  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to }));
+  if (e.queso) out.push({ name: 'Queso', price: 1 });
+  if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5 });
+  // Si se aplicó el precio plano Al Gusto/Bomba, los ingredientes/salsas ya
+  // están incluidos en el precio base de la línea — no se cobran aparte,
+  // así que se listan sin precio para no descuadrar la suma del ticket.
+  const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
+  (e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: upgraded ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: upgraded ? null : EXTRAS_SALSA_PRECIO }));
   return out;
 }
 function cartHasAnyItem() {
@@ -892,14 +915,22 @@ function buildOrderObject() {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
     const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
-    const extras = [...c.sauces, ...c.ingredients];
-    if (c.extraQueso) extras.push('Queso Mozzarella ' + plusEur(1));
-    if (c.extraGratinado) extras.push('Gratinado ' + plusEur(0.5));
-    (c.extraSauces || []).forEach(s => extras.push(s + ' ' + plusEur(EXTRAS_SALSA_PRECIO)));
-    items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, extras });
+    const extras = [...c.sauces, ...c.ingredients].map(n => ({ name: n }));
+    if (c.extraQueso) extras.push({ name: 'Queso', price: 1 });
+    if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5 });
+    (c.extraSauces || []).forEach(s => extras.push({ name: s, price: EXTRAS_SALSA_PRECIO }));
+    // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
+    // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
+    // extra van cada uno en su línea con su propio precio.
+    items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras });
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
-    items.push({ name: getExtrasItemLabel(c), qty: c.qty, subtotal: getExtrasItemPrice(c) * c.qty, extras: getExtrasItemTicketExtras(c) });
+    items.push({
+      name: getExtrasItemLabel(c), qty: c.qty,
+      subtotal: getExtrasItemPrice(c) * c.qty,
+      displaySubtotal: getExtrasItemBaseSubtotal(c) * c.qty,
+      extras: getExtrasItemTicketExtras(c),
+    });
   });
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
   const discountAmount = computeDiscountAmount(subtotal);
@@ -926,33 +957,45 @@ function buildOrderObject() {
    impresión como los bytes ESC/POS de la impresora térmica, así lo que
    se ve en pantalla es exactamente lo que sale impreso. ── */
 const TICKET_DIVIDER = '-'.repeat(48);
-const ACCENT_FOLD = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?','€':'EUR' };
+// "€" nunca debe aparecer en un texto ya troceado/alineado: al convertirlo
+// a "EUR" (3 caracteres) después de calcular el ancho, la línea se pasaba
+// del ancho real de la impresora y esta partía "EUR" por la mitad al
+// ajustar de línea sola. Por eso fmtEur() escribe "EUR" desde
+// el principio, antes de ningún cálculo de columnas.
+const ACCENT_FOLD = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?' };
 function foldAccents(str) {
-  return String(str).split('').map(c => ACCENT_FOLD[c] !== undefined ? ACCENT_FOLD[c] : c).join('');
+  const out = [];
+  for (const c of String(str)) {
+    if (ACCENT_FOLD[c] !== undefined) { out.push(ACCENT_FOLD[c]); continue; }
+    if (c.codePointAt(0) > 255) continue; // quita emojis y símbolos que la impresora no entiende
+    out.push(c);
+  }
+  return out.join('');
 }
 function fmtEur(n) { return n.toFixed(2) + ' EUR'; }
-function plusEur(n) { return '(+' + n.toFixed(2) + ' EUR)'; }
 
-// Divide un producto en líneas igual que imprimirUnaCopia(): el precio se
-// alinea a la derecha en la misma línea si cabe; si no cabe, el NOMBRE se
-// trunca (no se ajusta de línea) y el precio baja a la línea siguiente.
+// Coloca un texto y un precio en la misma línea si caben (precio a la
+// derecha); si no caben, el texto se trunca y el precio baja a la línea
+// siguiente — igual que hace la impresora física.
+function twoCol(left, right, width) {
+  const spaces = width - left.length - right.length;
+  if (spaces >= 0) return [left + ' '.repeat(spaces) + right];
+  return [left.substring(0, width), ' '.repeat(Math.max(0, width - right.length)) + right];
+}
+
+// Divide un producto (y sus extras) en líneas de texto, en mayúsculas,
+// igual que sale en un ticket real: "1x PATATA SIMPLE      3.00 EUR" y
+// cada extra con su propio precio alineado a la derecha, ej.
+// "  - QUESO                     +1.00 EUR".
 function formatItemLines(item, width) {
-  const parts = foldAccents(item.name || '').split(' + ');
-  const nombrePrincipal = parts[0];
-  const extrasDelNombre = parts.slice(1);
-  const extrasArr = item.extras || [];
-  const precio = fmtEur(item.subtotal || 0);
+  const nombre = foldAccents(item.name || '').toUpperCase();
+  const precio = fmtEur((item.displaySubtotal !== undefined ? item.displaySubtotal : item.subtotal) || 0);
   const prefix = item.qty + 'x ';
-  const spaces = width - prefix.length - nombrePrincipal.length - precio.length;
-  const lines = [];
-  if (spaces >= 0) {
-    lines.push(prefix + nombrePrincipal + ' '.repeat(spaces) + precio);
-  } else {
-    lines.push(prefix + nombrePrincipal.substring(0, width - prefix.length));
-    lines.push(' '.repeat(Math.max(0, width - precio.length)) + precio);
-  }
-  [...extrasDelNombre, ...extrasArr].forEach(extra => {
-    lines.push('     - ' + foldAccents(extra));
+  const lines = twoCol(prefix + nombre, precio, width);
+  (item.extras || []).forEach(ex => {
+    const label = '  - ' + foldAccents(ex.name).toUpperCase();
+    if (ex.price) lines.push(...twoCol(label, '+' + fmtEur(ex.price), width));
+    else lines.push(label.substring(0, width));
   });
   return lines;
 }
