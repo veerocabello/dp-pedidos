@@ -1947,25 +1947,81 @@ async function bimbaRenderMkIdeas() {
   }
   bimbaPintarMkIdeasLista();
 }
+const MK_IDEA_CATEGORIAS = ['Producto', 'Detrás de cámaras', 'Promoción', 'Testimonio', 'Tendencia', 'Colaboración'];
+const MK_IDEA_CATEGORIA_COLOR = { 'Producto': '#0C5C8A', 'Detrás de cámaras': '#6B3FA0', 'Promoción': '#B5862C', 'Testimonio': '#27855a', 'Tendencia': '#C13584', 'Colaboración': '#c0392b' };
+let _mkIdeaEditandoId = null;
+function bimbaMkIdeaCardHtml(i) {
+  if (i.id === _mkIdeaEditandoId) {
+    return '<div style="background:#fff;border:1.5px solid #C8860A;border-radius:12px;padding:14px;margin-bottom:10px">'
+      + '<input type="text" id="mk-idea-edit-texto-' + i.id + '" value="' + escapeAttr(i.idea || '') + '" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D">'
+      + '<select id="mk-idea-edit-categoria-' + i.id + '" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D">'
+      + MK_IDEA_CATEGORIAS.map(function (c) { return '<option' + (c === i.categoria ? ' selected' : '') + '>' + c + '</option>'; }).join('')
+      + '</select>'
+      + '<div style="display:flex;gap:8px">'
+      + '<button onclick="bimbaMkIdeaGuardarEdicion(\'' + i.id + '\')" style="flex:1;background:#3D1F0D;color:#fff;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Guardar</button>'
+      + '<button onclick="bimbaMkIdeaCancelarEdicion()" style="flex:1;background:#fff;color:#8A6A4E;border:1.5px solid #F5E6C8;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancelar</button>'
+      + '</div>'
+      + '</div>';
+  }
+  const catColor = MK_IDEA_CATEGORIA_COLOR[i.categoria] || '#8A6A4E';
+  return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
+    + '<div style="display:flex;align-items:flex-start;gap:10px">'
+    + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:18px;line-height:1.4;cursor:pointer;flex-shrink:0;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
+    + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45">' + escapeHtml(i.idea || '') + '</div>'
+    + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:14px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✏️</button>'
+    + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✕</button>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-top:12px">'
+    + '<span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px;background:' + catColor + '1A;color:' + catColor + '">' + escapeHtml(i.categoria || '') + '</span>'
+    + '<button id="mk-idea-btn-cal-' + i.id + '" onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:11px;font-weight:700;color:#fff;background:#3D1F0D;border:none;border-radius:99px;padding:5px 12px;cursor:pointer;margin-left:auto;font-family:\'DM Sans\',sans-serif">📅 Añadir al calendario</button>'
+    + '</div>'
+    + '</div>';
+}
 function bimbaPintarMkIdeasLista() {
   const el = document.getElementById('mk-ideas-lista');
   if (!_mkIdeasCache.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin ideas guardadas todavía</div>';
     return;
   }
-  el.innerHTML = _mkIdeasCache.map(function (i) {
-    return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
-      + '<div style="display:flex;align-items:flex-start;gap:10px">'
-      + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:18px;line-height:1.4;cursor:pointer;flex-shrink:0;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
-      + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45">' + escapeHtml(i.idea || '') + '</div>'
-      + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✕</button>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:10px;margin-top:12px">'
-      + '<span style="font-size:11px;color:#8A6A4E">' + escapeHtml(i.categoria || '') + '</span>'
-      + '<button id="mk-idea-btn-cal-' + i.id + '" onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:11px;font-weight:700;color:#fff;background:#3D1F0D;border:none;border-radius:99px;padding:5px 12px;cursor:pointer;margin-left:auto;font-family:\'DM Sans\',sans-serif">📅 Añadir al calendario</button>'
-      + '</div>'
-      + '</div>';
-  }).join('');
+  const porCat = {};
+  _mkIdeasCache.forEach(function (i) { (porCat[i.categoria] = porCat[i.categoria] || []).push(i); });
+  let html = '';
+  MK_IDEA_CATEGORIAS.forEach(function (cat) {
+    const lista = porCat[cat];
+    if (!lista || !lista.length) return;
+    const color = MK_IDEA_CATEGORIA_COLOR[cat] || '#3D1F0D';
+    html += '<div style="font-family:\'Oswald\',sans-serif;font-size:11px;font-weight:700;color:#fff;background:' + color + ';text-transform:uppercase;letter-spacing:0.05em;padding:6px 12px;border-radius:8px;margin:14px 0 8px">' + escapeHtml(cat) + '</div>';
+    html += lista.map(bimbaMkIdeaCardHtml).join('');
+    delete porCat[cat];
+  });
+  Object.keys(porCat).forEach(function (cat) {
+    html += _mkIdeaCatHeaderHtml(cat);
+    html += porCat[cat].map(bimbaMkIdeaCardHtml).join('');
+  });
+  el.innerHTML = html;
+}
+function _mkIdeaCatHeaderHtml(cat) {
+  return '<div style="font-family:\'Oswald\',sans-serif;font-size:11px;font-weight:700;color:#fff;background:#3D1F0D;text-transform:uppercase;letter-spacing:0.05em;padding:6px 12px;border-radius:8px;margin:14px 0 8px">' + escapeHtml(cat || 'Sin categoría') + '</div>';
+}
+function bimbaMkIdeaEditar(id) {
+  _mkIdeaEditandoId = id;
+  bimbaPintarMkIdeasLista();
+}
+function bimbaMkIdeaCancelarEdicion() {
+  _mkIdeaEditandoId = null;
+  bimbaPintarMkIdeasLista();
+}
+async function bimbaMkIdeaGuardarEdicion(id) {
+  const item = _mkIdeasCache.find(function (i) { return i.id === id; });
+  if (!item) return;
+  const nuevoTexto = document.getElementById('mk-idea-edit-texto-' + id).value.trim();
+  const nuevaCategoria = document.getElementById('mk-idea-edit-categoria-' + id).value;
+  if (!nuevoTexto) return;
+  item.idea = nuevoTexto;
+  item.categoria = nuevaCategoria;
+  _mkIdeaEditandoId = null;
+  bimbaPintarMkIdeasLista();
+  try { await firebase.database().ref('marketing/ideas/' + id).update({ idea: nuevoTexto, categoria: nuevaCategoria }); } catch (e) {}
 }
 async function bimbaToggleMkIdeaDestacada(id) {
   const item = _mkIdeasCache.find(function (i) { return i.id === id; });
