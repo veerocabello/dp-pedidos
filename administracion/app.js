@@ -1963,7 +1963,6 @@ function bimbaMkIdeaCardHtml(i) {
       + '</div>'
       + '</div>';
   }
-  const catColor = MK_IDEA_CATEGORIA_COLOR[i.categoria] || '#8A6A4E';
   return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
     + '<div style="display:flex;align-items:flex-start;gap:10px">'
     + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:18px;line-height:1.4;cursor:pointer;flex-shrink:0;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
@@ -1971,8 +1970,7 @@ function bimbaMkIdeaCardHtml(i) {
     + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:14px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✏️</button>'
     + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✕</button>'
     + '</div>'
-    + '<div style="display:flex;align-items:center;gap:10px;margin-top:12px">'
-    + '<span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px;background:' + catColor + '1A;color:' + catColor + '">' + escapeHtml(i.categoria || '') + '</span>'
+    + '<div style="display:flex;align-items:center;margin-top:12px">'
     + '<button id="mk-idea-btn-cal-' + i.id + '" onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:11px;font-weight:700;color:#fff;background:#3D1F0D;border:none;border-radius:99px;padding:5px 12px;cursor:pointer;margin-left:auto;font-family:\'DM Sans\',sans-serif">📅 Añadir al calendario</button>'
     + '</div>'
     + '</div>';
