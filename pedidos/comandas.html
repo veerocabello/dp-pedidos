@@ -51,26 +51,33 @@
     <div class="cart-total-row" id="cart-total-row" style="display:none">
       <span>Total</span><span id="cart-total">0,00 €</span>
     </div>
-    <div class="cash-calc" id="cash-calc">
-      <div class="cash-calc-head">
-        <span>💵 Calculadora de cambio</span>
-        <button class="cash-clear-btn" onclick="clearCashReceived()">✕ Limpiar</button>
+    <details class="cash-calc" id="cash-calc" open>
+      <summary class="cash-calc-summary">💵 Cobrar</summary>
+      <div class="cash-calc-body">
+        <div class="cash-calc-row cash-calc-total-row">
+          <label for="cash-total">Total a cobrar</label>
+          <input id="cash-total" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00" oninput="cashTotalEdited=true;updateChange()">
+          <button class="cash-clear-btn" onclick="clearCashReceived()">✕ Limpiar</button>
+        </div>
+        <div class="cash-calc-row">
+          <button class="cash-quick-btn" onclick="addCashAmount(5)">+5€</button>
+          <button class="cash-quick-btn" onclick="addCashAmount(10)">+10€</button>
+          <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
+          <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
+          <input id="cash-received" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Paga con" oninput="updateChange()">
+        </div>
+        <div class="cash-calc-row">
+          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.05)">+0,05€</button>
+          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.10)">+0,10€</button>
+          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.20)">+0,20€</button>
+          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.50)">+0,50€</button>
+        </div>
+        <div class="cash-change-row" id="cash-change-row" style="display:none">
+          <span id="cash-change-label">Cambio a devolver</span><span id="cash-change-amount">0,00 €</span>
+        </div>
       </div>
-      <div class="cash-calc-row cash-calc-total-row">
-        <label for="cash-total">Total a cobrar</label>
-        <input id="cash-total" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00" oninput="cashTotalEdited=true;updateChange()">
-      </div>
-      <div class="cash-calc-row">
-        <button class="cash-quick-btn" onclick="addCashAmount(5)">+5€</button>
-        <button class="cash-quick-btn" onclick="addCashAmount(10)">+10€</button>
-        <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
-        <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
-        <input id="cash-received" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Paga con" oninput="updateChange()">
-      </div>
-      <div class="cash-change-row" id="cash-change-row" style="display:none">
-        <span id="cash-change-label">Cambio a devolver</span><span id="cash-change-amount">0,00 €</span>
-      </div>
-    </div>
+    </details>
+    <button class="btn-secondary" style="width:100%;margin-top:10px" onclick="previewTicket()">👁️ Ver ticket completo</button>
     <button class="btn-print" id="print-btn" onclick="handlePrintOrder()">🖨️ Imprimir comanda</button>
   </aside>
 </div>
@@ -205,8 +212,19 @@
   <div class="modal-box" style="max-width:480px">
     <button class="modal-close" onclick="closeHistorial()">&#x2715;</button>
     <div class="modal-title">🧾 Pedidos de hoy</div>
-    <div class="modal-subtitle">Reimprime cualquier comanda de hoy si se atasca el papel.</div>
+    <div class="modal-subtitle">Reimprime o revisa cualquier comanda de hoy si se atasca el papel.</div>
     <div id="historial-list"></div>
+  </div>
+</div>
+
+<!-- ── VER TICKET (sin imprimir) ── -->
+<div id="ticket-view-modal" class="modal-overlay" onclick="if(event.target===this)closeTicketView()">
+  <div class="modal-box" style="max-width:400px">
+    <button class="modal-close" onclick="closeTicketView()">&#x2715;</button>
+    <div class="modal-title">👁️ Ticket</div>
+    <div class="ticket-view-wrap">
+      <div class="ticket-doc" id="ticket-view-content"></div>
+    </div>
   </div>
 </div>
 

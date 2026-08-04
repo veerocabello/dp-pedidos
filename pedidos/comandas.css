@@ -495,26 +495,38 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* ── Calculadora de cambio (pago en efectivo) ── */
 .cash-calc {
   margin-top: 8px;
-  padding: 10px 12px;
   background: var(--amber-light);
   border: 1.5px solid rgba(232,148,58,.4);
   border-radius: var(--radius-sm);
+  overflow: hidden;
 }
-.cash-calc-head {
+.cash-calc-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 12px;
+  padding: 11px 12px;
+  cursor: pointer;
+  font-size: 13px;
   font-weight: 700;
   color: var(--brown);
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
+  list-style: none;
+  user-select: none;
 }
+.cash-calc-summary::-webkit-details-marker { display: none; }
+.cash-calc-summary::after {
+  content: '▾';
+  font-size: 13px;
+  color: var(--amber-dark);
+  transition: transform .15s;
+}
+.cash-calc[open] .cash-calc-summary::after { transform: rotate(180deg); }
+.cash-calc-body { padding: 0 12px 12px; }
 .cash-clear-btn {
   background: none; border: none; color: var(--muted);
   font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: underline;
-  text-transform: none; letter-spacing: normal;
+  text-transform: none; letter-spacing: normal; flex-shrink: 0;
 }
 .cash-clear-btn:hover { color: var(--error); }
 .cash-calc-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -543,6 +555,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cash-quick-btn:hover { background: var(--brown); color: var(--cream); border-color: var(--brown); }
 .cash-quick-btn:active { transform: scale(.95); }
+.cash-quick-btn-coin { padding: 6px 9px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.cash-quick-btn-coin:hover { background: var(--amber-dark); color: #fff; border-color: var(--amber-dark); }
 #cash-received {
   flex: 1;
   min-width: 90px;
@@ -833,6 +847,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin: 0 auto;
 }
 .ticket-doc.w58 { width: 48ch; } /* los separadores son siempre 48 guiones, igual que en la tienda */
+
+/* ── Modal "Ver ticket" (previsualización en pantalla, sin imprimir) ── */
+.ticket-view-wrap {
+  background: #fff;
+  border-radius: var(--radius-sm);
+  padding: 16px 10px;
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm);
+}
 
 @media print {
   body * { visibility: hidden; }

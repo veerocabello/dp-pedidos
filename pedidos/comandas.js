@@ -953,7 +953,7 @@ function saveTicketConfig(cfg) { localStorage.setItem(TICKET_CONFIG_KEY, JSON.st
 
 function getPaperWidthChars() { return getTicketConfig().anchoPapel == 58 ? 32 : 48; }
 
-function buildOrderObject() {
+function buildOrderObject(preview) {
   const items = [];
   Object.entries(cart).forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
@@ -988,7 +988,7 @@ function buildOrderObject() {
   }
   const total = items.reduce((s, it) => s + it.subtotal, 0);
   return {
-    num: getNextOrderNum(),
+    num: preview ? peekNextOrderNum() : getNextOrderNum(),
     time: new Date().toLocaleString('es-ES'),
     name: document.getElementById('order-name').value.trim(),
     notes: document.getElementById('order-notes').value.trim(),
@@ -1081,9 +1081,8 @@ function buildTicketBlocks(order) {
 }
 
 /* ── Vista previa en pantalla / diálogo de impresión (HTML) ── */
-function renderTicketPreview(order) {
+function buildTicketPreviewHTML(order) {
   const blocks = buildTicketBlocks(order);
-  const container = document.getElementById('ticket-html-content');
   let html = '';
   blocks.forEach(b => {
     if (b.logo) {
@@ -1098,8 +1097,31 @@ function renderTicketPreview(order) {
     const style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
     html += '<div style="' + style + '">' + (escapeHtml(b.text) || '&nbsp;') + '</div>';
   });
-  container.innerHTML = html;
+  return html;
 }
+function renderTicketPreview(order) {
+  document.getElementById('ticket-html-content').innerHTML = buildTicketPreviewHTML(order);
+}
+
+/* ── Ver ticket sin imprimir (la impresión directa por USB no abre
+   ningún diálogo, así que esta es la única forma de comprobar el
+   ticket antes o después de imprimirlo). ── */
+function peekNextOrderNum() {
+  const today = new Date().toISOString().slice(0, 10);
+  let data;
+  try { data = JSON.parse(localStorage.getItem(ORDER_COUNTER_KEY) || '{}'); } catch (e) { data = {}; }
+  if (data.date !== today) data = { date: today, n: 0 };
+  return 'C' + String(data.n + 1).padStart(3, '0');
+}
+function previewTicket() {
+  if (!cartHasAnyItem()) { toast('La comanda está vacía'); return; }
+  openTicketView(buildOrderObject(true));
+}
+function openTicketView(order) {
+  document.getElementById('ticket-view-content').innerHTML = buildTicketPreviewHTML(order);
+  document.getElementById('ticket-view-modal').classList.add('open');
+}
+function closeTicketView() { document.getElementById('ticket-view-modal').classList.remove('open'); }
 
 /* ── Bytes ESC/POS para la impresora térmica (mismo logo e idVendor/
    idProduct que pedidos/js/index.js — el propio programa de la tienda). ── */
@@ -1189,7 +1211,10 @@ function openHistorial() {
     ? `<div class="historial-empty">Todavía no hay comandas impresas hoy.</div>`
     : list.map((o, i) => `<div class="historial-item">
         <div><div class="h-num">${o.num}</div><div class="h-meta">${escapeHtml(o.time)} · ${o.name ? escapeHtml(o.name) + ' · ' : ''}${fmt(o.total)} €</div></div>
-        <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="viewHistorialOrder(${i})">👁️ Ver</button>
+          <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
+        </div>
       </div>`).join('');
   document.getElementById('historial-modal').classList.add('open');
 }
@@ -1200,6 +1225,12 @@ async function reprintOrder(index) {
   if (!order) return;
   await printOrder(order);
   toast('🖨️ Reimprimiendo ' + order.num);
+}
+function viewHistorialOrder(index) {
+  const list = getHistorial();
+  const order = list[index];
+  if (!order) return;
+  openTicketView(order);
 }
 
 /* ══════════════════════════════════════════════════════════════
