@@ -2310,3 +2310,79 @@ async function bimbaGuardarMkColab() {
     msgEl.textContent = 'Error al guardar';
   }
 }
+
+// ── Banco de fotos pendientes ──
+let _mkFotosCache = [];
+function openMkFotosOverlay() {
+  document.getElementById('mk-fotos-overlay').classList.add('open');
+  bimbaRenderMkFotos();
+}
+function closeMkFotosOverlay() {
+  document.getElementById('mk-fotos-overlay').classList.remove('open');
+}
+async function bimbaRenderMkFotos() {
+  const el = document.getElementById('mk-fotos-lista');
+  el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
+  try {
+    const sn = await firebase.database().ref('marketing/fotos').once('value');
+    const lista = [];
+    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    lista.sort(function (a, b) {
+      if (!!a.hecha !== !!b.hecha) return a.hecha ? 1 : -1;
+      return (b.ts || 0) - (a.ts || 0);
+    });
+    _mkFotosCache = lista;
+  } catch (e) {
+    el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
+    return;
+  }
+  bimbaPintarMkFotosLista();
+}
+function bimbaPintarMkFotosLista() {
+  const el = document.getElementById('mk-fotos-lista');
+  if (!_mkFotosCache.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin fotos pendientes todavía</div>';
+    return;
+  }
+  el.innerHTML = _mkFotosCache.map(function (f) {
+    const hecha = !!f.hecha;
+    return '<div style="display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
+      + '<span onclick="bimbaToggleMkFotoHecha(\'' + f.id + '\')" style="font-size:19px;line-height:1;cursor:pointer;flex-shrink:0">' + (hecha ? '✅' : '⬜') + '</span>'
+      + '<div style="flex:1;min-width:0;font-size:13px;color:' + (hecha ? '#B99B84' : '#3D1F0D') + ';text-decoration:' + (hecha ? 'line-through' : 'none') + '">' + escapeHtml(f.texto || '') + '</div>'
+      + '<button onclick="bimbaEliminarMkFoto(\'' + f.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+      + '</div>';
+  }).join('');
+}
+async function bimbaToggleMkFotoHecha(id) {
+  const item = _mkFotosCache.find(function (f) { return f.id === id; });
+  if (!item) return;
+  item.hecha = !item.hecha;
+  _mkFotosCache.sort(function (a, b) {
+    if (!!a.hecha !== !!b.hecha) return a.hecha ? 1 : -1;
+    return (b.ts || 0) - (a.ts || 0);
+  });
+  bimbaPintarMkFotosLista();
+  try { await firebase.database().ref('marketing/fotos/' + id + '/hecha').set(item.hecha); } catch (e) {}
+}
+async function bimbaEliminarMkFoto(id) {
+  if (!confirm('¿Borrar esta foto pendiente?')) return;
+  try {
+    await firebase.database().ref('marketing/fotos/' + id).remove();
+    bimbaRenderMkFotos();
+  } catch (e) {}
+}
+async function bimbaGuardarMkFoto() {
+  const msgEl = document.getElementById('mk-foto-msg');
+  const texto = document.getElementById('mk-foto-texto').value.trim();
+  if (!texto) { msgEl.textContent = 'Escribe qué foto falta'; msgEl.style.color = '#c0392b'; return; }
+  try {
+    await firebase.database().ref('marketing/fotos').push({ texto: texto, hecha: false, ts: Date.now() });
+    msgEl.style.color = '#27855a';
+    msgEl.textContent = '✅ Guardado';
+    document.getElementById('mk-foto-texto').value = '';
+    bimbaRenderMkFotos();
+  } catch (e) {
+    msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'Error al guardar';
+  }
+}

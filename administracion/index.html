@@ -183,7 +183,7 @@
     <h1>🏪 Administración</h1>
     <button id="logout-btn" onclick="hacerLogout()">Salir</button>
   </header>
-  <div style="text-align:center;font-size:10px;color:#B99B84;padding:4px 0;background:#FBF6EC">versión v15</div>
+  <div style="text-align:center;font-size:10px;color:#B99B84;padding:4px 0;background:#FBF6EC">versión v16</div>
   <main>
     <div id="loading-msg" style="display:none">Cargando datos...</div>
     <div id="app-content">
@@ -307,6 +307,14 @@
           <div class="row-text">
             <div class="row-title">Colaboraciones</div>
             <div class="row-desc">Perfiles contactados y en qué punto está cada uno.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openMkFotosOverlay()">
+          <span class="row-icon">📸</span>
+          <div class="row-text">
+            <div class="row-title">Banco de fotos pendientes</div>
+            <div class="row-desc">Fotos que te faltan por hacer, para cuando tengas un rato.</div>
           </div>
           <span class="row-chevron">›</span>
         </div>
@@ -920,9 +928,34 @@
   </div>
 </div><!-- /mk-colabs-overlay -->
 
+<div id="mk-fotos-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkFotosOverlay()">✕</button>
+    <h2>📸 Banco de fotos pendientes</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta fotos que te faltan por hacer, para cuando tengas un rato en la cocina con buena luz. Marca ✓ cuando ya la tengas.</div>
+
+      <div onclick="bimbaToggleMkForm('foto')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir foto pendiente</span>
+        <span id="mk-foto-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-foto-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Foto</label>
+        <input type="text" id="mk-foto-texto" placeholder="ej. boniato fries de cerca, con luz natural" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <button onclick="bimbaGuardarMkFoto()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-foto-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Tus fotos pendientes</div>
+      <div id="mk-fotos-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-fotos-overlay -->
+
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
