@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Comandas · Dulce Patata Food (sin conexión)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
+<link rel="stylesheet" href="comandas.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-brand">🥔 Comandas <span class="topbar-sub">Dulce Patata Food · funciona sin internet</span></div>
+  <div class="topbar-actions">
+    <span id="printer-status" class="printer-status">🖨️ comprobando impresora…</span>
+    <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
+    <button class="btn-ghost" onclick="openSettings()">⚙️ Ajustes</button>
+  </div>
+</header>
+
+<div class="layout">
+  <main class="menu-area">
+    <nav id="tabs" class="tabs"></nav>
+    <div id="menu-grid" class="menu-grid"></div>
+  </main>
+
+  <aside class="cart-panel">
+    <div class="cart-header">
+      <h2>Comanda</h2>
+      <button class="btn-text" onclick="clearOrder()">Vaciar</button>
+    </div>
+    <div class="form-group">
+      <label for="order-name">Nombre para avisar (opcional)</label>
+      <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana">
+    </div>
+    <div class="form-group">
+      <label for="order-notes">Notas (opcional)</label>
+      <textarea id="order-notes" maxlength="200" placeholder="Ej. sin cebolla, para llevar…"></textarea>
+    </div>
+    <div id="cart-body" class="cart-body"></div>
+    <div class="cart-total-row" id="cart-total-row" style="display:none">
+      <span>Total</span><span id="cart-total">0,00 €</span>
+    </div>
+    <button class="btn-print" id="print-btn" onclick="handlePrintOrder()">🖨️ Imprimir comanda</button>
+  </aside>
+</div>
+
+<!-- ── CUSTOMIZER MODAL (Al Gusto / Bomba) ── -->
+<div id="customizer-modal" class="modal-overlay" onclick="if(event.target===this)closeCustomizer()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeCustomizer()">&#x2715;</button>
+    <div class="modal-title" id="cust-title">Patata Al Gusto</div>
+    <div class="modal-subtitle" id="cust-subtitle">Hasta 1 salsa y hasta 6 ingredientes a elegir</div>
+    <div class="section-label">Salsas <span id="cust-sauce-badge">0/1</span></div>
+    <div class="chip-grid" id="cust-sauces"></div>
+    <div class="section-label">Ingredientes <span id="cust-ing-badge">0/6</span></div>
+    <div class="chip-grid" id="cust-ingredients"></div>
+    <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px">
+      <div class="section-label" style="margin-top:0">Extras opcionales</div>
+      <label class="option-row" id="cust-queso-label" onclick="toggleCustExtra('queso')">
+        <div><div class="option-title">🧀 Queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
+        <div class="option-check" id="cust-extra-check-queso"></div>
+      </label>
+      <label class="option-row" id="cust-gratinado-label" onclick="toggleCustExtra('gratinado')">
+        <div><div class="option-title">🔥 Gratinado</div><div class="option-sub">+0,50 €</div></div>
+        <div class="option-check" id="cust-extra-check-gratinado"></div>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-price" id="cust-price">6,90 €</div>
+      <button class="modal-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
+    </div>
+    <div class="modal-error" id="cust-error"></div>
+  </div>
+</div>
+
+<!-- ── CHEDDAR-BACON MODAL ── -->
+<div id="cheddar-modal" class="modal-overlay" onclick="if(event.target===this)closeCheddarModal()">
+  <div class="modal-box" style="max-width:400px">
+    <button class="modal-close" onclick="closeCheddarModal()">&#x2715;</button>
+    <div class="modal-title">Patata Cheddar-Bacon 🆕</div>
+    <div class="modal-subtitle">Salsa queso cheddar · caramelo de bacon · queso mozzarella gratinado</div>
+    <div class="section-label" style="margin-top:0">🍖 Elige la carne *</div>
+    <label class="option-row" id="cheddar-opt-picada" onclick="selectCheddarCarne('picada')">
+      <div class="option-title">Carne Picada</div>
+      <div class="option-check" id="cheddar-check-picada"></div>
+    </label>
+    <label class="option-row" id="cheddar-opt-kebab" onclick="selectCheddarCarne('kebab')">
+      <div class="option-title">Carne Kebab</div>
+      <div class="option-check" id="cheddar-check-kebab"></div>
+    </label>
+    <div class="modal-error" id="cheddar-error">⚠️ Elige la carne para continuar</div>
+    <div class="modal-footer">
+      <div class="modal-price">8,50 €</div>
+      <button class="modal-confirm-btn" onclick="confirmCheddar()">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── EXTRAS MODAL (patatas 1-14: queso/gratinado + ingredientes extra) ── -->
+<div id="extras-modal" class="modal-overlay" onclick="if(event.target===this)closeExtrasModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeExtrasModal()">&#x2715;</button>
+    <div class="modal-title" id="extras-title">Patata Simple</div>
+    <div class="modal-subtitle" id="extras-base-price">Base: 3,00 €</div>
+    <div id="extras-options"></div>
+    <div class="modal-footer">
+      <div class="modal-price" id="extras-total-price">3,00 €</div>
+      <button class="modal-confirm-btn" onclick="confirmExtras()">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SETTINGS MODAL ── -->
+<div id="settings-modal" class="modal-overlay" onclick="if(event.target===this)closeSettings()">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="closeSettings()">&#x2715;</button>
+    <div class="modal-title">⚙️ Ajustes</div>
+    <div class="modal-subtitle">Datos del ticket e impresora. Se guardan en este ordenador.</div>
+
+    <div class="section-label" style="margin-top:0">Datos del negocio (aparecen en el ticket)</div>
+    <div class="form-group"><label>Nombre</label><input id="set-nombre" type="text"></div>
+    <div class="form-group"><label>Dirección</label><input id="set-direccion" type="text"></div>
+    <div class="form-group"><label>Teléfono</label><input id="set-telefono" type="text"></div>
+    <div class="form-group"><label>Texto de pago</label><input id="set-texto-pago" type="text"></div>
+    <div class="form-group"><label>Despedida</label><input id="set-despedida" type="text"></div>
+
+    <div class="section-label">Papel e impresión</div>
+    <div class="settings-grid">
+      <div class="form-group">
+        <label>Ancho de papel</label>
+        <select id="set-ancho-papel">
+          <option value="58">58 mm (32 columnas)</option>
+          <option value="80">80 mm (48 columnas)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Copias por comanda</label>
+        <select id="set-copias">
+          <option value="1">1 copia</option>
+          <option value="2">2 copias</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Modo de impresión</label>
+      <select id="set-modo-impresion">
+        <option value="auto">Directa a la impresora (recomendado) — si falla, usa el diálogo</option>
+        <option value="dialog">Siempre usar el diálogo de impresión de Windows/Chrome</option>
+      </select>
+    </div>
+
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
+      <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
+    </div>
+
+    <div class="settings-help">
+      <b>¿Cómo funciona?</b> "Directa a la impresora" manda el ticket por USB sin abrir ningún diálogo (necesita Chrome o Edge, y pulsar "Conectar impresora directa" una vez). Si tu impresora ya está instalada como impresora de Windows, es posible que el navegador no pueda tomar el control directo — en ese caso esta página abrirá automáticamente el diálogo de impresión normal, donde puedes elegir tu impresora ya instalada. La primera vez que imprimas así, configura el tamaño de papel (58/80&nbsp;mm) y "sin márgenes" en el diálogo; Chrome lo recordará las siguientes veces.
+    </div>
+  </div>
+</div>
+
+<!-- ── HISTORIAL MODAL ── -->
+<div id="historial-modal" class="modal-overlay" onclick="if(event.target===this)closeHistorial()">
+  <div class="modal-box" style="max-width:480px">
+    <button class="modal-close" onclick="closeHistorial()">&#x2715;</button>
+    <div class="modal-title">🧾 Pedidos de hoy</div>
+    <div class="modal-subtitle">Reimprime cualquier comanda de hoy si se atasca el papel.</div>
+    <div id="historial-list"></div>
+  </div>
+</div>
+
+<!-- ── TICKET (vista/impresión) ── -->
+<div id="ticket-print"><pre class="ticket-pre" id="ticket-pre-content"></pre></div>
+
+<div id="toast" class="toast"></div>
+
+<script src="comandas.js"></script>
+</body>
+</html>
