@@ -93,16 +93,16 @@ const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
-const EXTRAS_ING_PRECIO1 = ["Jamón York", "Carne Picada", "Pollo", "Carne Kebab", "Atún", "Gambas", "Tronquitos de Mar", "Huevo", "Bacon", "Queso Mozzarella", "4 Quesos"];
-const EXTRAS_ING_PRECIO07 = ["Tomate Natural", "Maíz", "Aceitunas", "Zanahoria", "Remolacha", "Piña", "Cebolla", "Champiñón"];
+const EXTRAS_ING_PRECIO1 = ["4 Quesos", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Gambas", "Huevo", "Jamón York", "Pollo", "Queso Mozzarella", "Tronquitos de Mar"];
+const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Piña", "Remolacha", "Tomate Natural", "Zanahoria"];
 const EXTRAS_SALSA_PRECIO = 0.90;
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 6.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
   bomba: { name: "Patata Bomba 🆕", price: 8.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
-const CUST_SAUCES = ["Salsa Ranchera", "Salsa Brava", "Salsa BBQ", "Ketchup", "Mayonesa", "Alioli", "Salsa Rosa", "Salsa de Yogur", "Tomate Frito", "Queso Philadelphia", "Salsa Roquefort"];
-const CUST_INGREDIENTS = ["Jamón York", "Carne Picada", "Pollo", "Carne Kebab", "Atún", "Gambas", "Tronquitos de Mar", "Huevo", "Bacon", "Queso Mozzarella", "4 Quesos", "Tomate Natural", "Maíz", "Aceitunas", "Zanahoria", "Remolacha", "Piña", "Cebolla", "Champiñón"];
+const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Queso Philadelphia", "Salsa BBQ", "Salsa Brava", "Salsa de Yogur", "Salsa Ranchera", "Salsa Roquefort", "Salsa Rosa", "Tomate Frito"];
+const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
 
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
 let activeCategory = "Todos";
@@ -123,6 +123,7 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function fmt(n) { return n.toFixed(2).replace('.', ','); }
+function sortEs(arr) { return [...arr].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })); }
 function toast(msg, ms = 2600) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -868,21 +869,21 @@ function renderExtrasBody(item) {
       <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
+    html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
+    sortEs([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
+      const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
+      const on = !!extrasIngredientes[ing];
+      html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+        <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
+        <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+      </label>`;
+    });
+    html += `</div>`;
     html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
     CUST_SAUCES.forEach(s => {
       const on = !!extrasSalsas[s];
       html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
         <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
-    });
-    html += `</div>`;
-    html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
-    [...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07].forEach(ing => {
-      const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
-      const on = !!extrasIngredientes[ing];
-      html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
         <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
       </label>`;
     });
