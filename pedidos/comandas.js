@@ -115,7 +115,7 @@ function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
 
 function renderItemRow(item) {
   const qty = cart[item.id] || 0;
-  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id);
+  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id) || BONIATO_IDS.has(item.id);
   const nameHtml = escapeHtml(item.name) + (item.nuevo ? '<span class="item-badge-new">Nuevo</span>' : '');
   const control = isSpecial
     ? `<button class="add-btn" id="addbtn-${item.id}" onclick="onAddClick(${item.id})">+ Añadir</button>`
@@ -165,7 +165,7 @@ function animateAdd(id) {
 function onAddClick(id) {
   if (id === 15 || id === 16) { openCustomizer(id); return; }
   if (id === CHEDDAR_ID) { openCheddarModal(); return; }
-  if (ALL_EXTRAS_IDS.has(id)) { openExtrasModal(id); return; }
+  if (ALL_EXTRAS_IDS.has(id) || BONIATO_IDS.has(id)) { openExtrasModal(id); return; }
 }
 
 function changeQty(id, delta) {
@@ -511,7 +511,6 @@ function updateChange() {
 function clearOrder(silent) {
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
   document.getElementById('order-name').value = '';
-  document.getElementById('order-notes').value = '';
   document.getElementById('cash-received').value = '';
   cashTotalEdited = false;
   renderMenu();
@@ -733,7 +732,8 @@ function confirmCheddar() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — EXTRAS (patatas 1-14: queso/gratinado + ingredientes extra)
    ══════════════════════════════════════════════════════════════ */
-const NO_QUITAR_IDS = new Set([4, 5, 8]); // Carbonara, Boloñesa y 4 Quesos: no se pueden quitar ni cambiar ingredientes
+const NO_QUITAR_IDS = new Set([4, 5, 8, 20]); // Carbonara, Boloñesa, 4 Quesos y Boniato G.O.A.T. (queso de cabra): no se pueden quitar ni cambiar ingredientes
+const BONIATO_IDS = new Set([17, 18, 19, 20, 21]); // no llevan queso/gratinado como extra, solo quitar/cambiar ingredientes
 function parseBaseComponents(item) {
   if (!item.desc) return [];
   let clean = item.desc.split(' · ')[0]; // quita coletillas tipo "· Salsa cocinada a diario"
@@ -791,6 +791,7 @@ function openExtrasModal(id, editKey) {
 function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; extrasEditKey = null; }
 
 function renderExtrasBody(item) {
+  const isBoniato = BONIATO_IDS.has(item.id);
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
   const baseComponents = parseBaseComponents(item);
   const canQuitar = !NO_QUITAR_IDS.has(item.id) && baseComponents.length > 0;
@@ -817,18 +818,20 @@ function renderExtrasBody(item) {
       ).join('') + `</div>`;
     }
   } else if (NO_QUITAR_IDS.has(item.id)) {
-    html += `<div class="settings-help" style="margin-top:0">⚠️ Esta patata lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
+    html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
-  if (!soloGratinado) {
-    html += `<label class="option-row" onclick="toggleExtra('queso')">
-      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
-      <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
+  if (!isBoniato) {
+    if (!soloGratinado) {
+      html += `<label class="option-row" onclick="toggleExtra('queso')">
+        <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
+        <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
+      </label>`;
+    }
+    html += `<label class="option-row" onclick="toggleExtra('gratinado')">
+      <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
+      <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
   }
-  html += `<label class="option-row" onclick="toggleExtra('gratinado')">
-    <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
-    <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
-  </label>`;
   html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
   CUST_SAUCES.forEach(s => {
     const on = !!extrasSalsas[s];
@@ -1008,7 +1011,7 @@ function buildOrderObject(preview) {
     num: preview ? peekNextOrderNum() : getNextOrderNum(),
     time: new Date().toLocaleString('es-ES'),
     name: document.getElementById('order-name').value.trim(),
-    notes: document.getElementById('order-notes').value.trim(),
+    notes: '',
     items,
     total,
   };
