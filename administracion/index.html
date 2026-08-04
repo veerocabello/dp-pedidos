@@ -300,6 +300,14 @@
           </div>
           <span class="row-chevron">›</span>
         </div>
+        <div class="row" onclick="openMkColabsOverlay()">
+          <span class="row-icon">🤝</span>
+          <div class="row-text">
+            <div class="row-title">Colaboraciones</div>
+            <div class="row-desc">Perfiles contactados y en qué punto está cada uno.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
       </div>
       </div><!-- /seccion-marketing -->
 
@@ -795,7 +803,7 @@
     <button class="admin-close" onclick="closeMkIdeasOverlay()">✕</button>
     <h2>💡 Banco de ideas</h2>
     <div class="admin-modal-body">
-      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta ideas sueltas de contenido para cuando te falte inspiración. Desde cada idea puedes mandarla directa al calendario.</div>
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta ideas sueltas de contenido para cuando te falte inspiración. El botón "📅 Añadir al calendario" crea directamente la publicación en el calendario de contenido, con la fecha de hoy y estado Idea, para que la ajustes ahí.</div>
 
       <div onclick="bimbaToggleMkForm('idea')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
         <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir idea</span>
@@ -810,10 +818,10 @@
           <option>Producto</option><option>Detrás de cámaras</option><option>Promoción</option><option>Testimonio</option><option>Tendencia</option><option>Colaboración</option>
         </select>
 
-        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Prioridad</label>
-        <select id="mk-idea-prioridad" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
-          <option>Alta</option><option selected>Media</option><option>Baja</option>
-        </select>
+        <div onclick="bimbaToggleMkIdeaStarNueva()" style="display:flex;align-items:center;justify-content:space-between;background:#fafafa;border:1.5px solid #F5E6C8;border-radius:8px;padding:9px 12px;margin-bottom:12px;cursor:pointer">
+          <label style="font-size:12px;color:#8A6A4E;font-weight:700;cursor:pointer">Destacar esta idea</label>
+          <span id="mk-idea-star-nueva" style="font-size:19px;line-height:1">☆</span>
+        </div>
 
         <button onclick="bimbaGuardarMkIdea()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
         <div id="mk-idea-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
@@ -866,6 +874,42 @@
     </div>
   </div>
 </div><!-- /mk-promos-overlay -->
+
+<div id="mk-colabs-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkColabsOverlay()">✕</button>
+    <h2>🤝 Colaboraciones</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Perfiles y colaboraciones que vas contactando, para no perder el hilo de en qué punto está cada uno.</div>
+
+      <div onclick="bimbaToggleMkForm('colab')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir colaboración</span>
+        <span id="mk-colab-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-colab-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Nombre / perfil</label>
+        <input type="text" id="mk-colab-nombre" placeholder="ej. @granadafoodie" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Red social</label>
+        <select id="mk-colab-red" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          <option>Instagram</option><option>TikTok</option><option>Facebook</option><option>Otro</option>
+        </select>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Contacto (opcional)</label>
+        <input type="text" id="mk-colab-contacto" placeholder="email, teléfono o usuario" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Notas (opcional)</label>
+        <textarea id="mk-colab-notas" rows="2" placeholder="qué se ofrece a cambio, condiciones..." style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical"></textarea>
+
+        <button onclick="bimbaGuardarMkColab()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-colab-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Tus colaboraciones</div>
+      <div id="mk-colabs-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-colabs-overlay -->
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>

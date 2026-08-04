@@ -1670,7 +1670,6 @@ function bimbaRenderSimulador() {
 // ════════════════════════════════════════════════════
 const MK_ESTADOS = ['Idea', 'Guion', 'Grabado', 'Editado', 'Publicado'];
 const MK_ESTADO_COLOR = { Idea: '#8A6A4E', Guion: '#B5862C', Grabado: '#0C5C8A', Editado: '#6B3FA0', Publicado: '#27855a' };
-const MK_PRIORIDAD_COLOR = { Alta: '#c0392b', Media: '#B5862C', Baja: '#27855a' };
 let _mkCalendarioCache = [];
 let _mkIdeasCache = [];
 let _mkPromosCache = [];
@@ -1704,8 +1703,8 @@ async function bimbaCargarMkResumenHome() {
 }
 
 function bimbaToggleMkForm(tipo) {
-  const form = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-form');
-  const chevron = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-chevron');
+  const form = document.getElementById('mk-' + tipo + '-form');
+  const chevron = document.getElementById('mk-' + tipo + '-chevron');
   if (!form) return;
   const estaAbierto = form.style.display !== 'none';
   form.style.display = estaAbierto ? 'none' : 'block';
@@ -1917,6 +1916,12 @@ async function bimbaGuardarMkCalendario(temaPrellenado) {
 }
 
 // ── Banco de ideas ──
+let _mkIdeaStarNueva = false;
+function bimbaToggleMkIdeaStarNueva() {
+  _mkIdeaStarNueva = !_mkIdeaStarNueva;
+  const el = document.getElementById('mk-idea-star-nueva');
+  if (el) el.textContent = _mkIdeaStarNueva ? '★' : '☆';
+}
 function openMkIdeasOverlay() {
   document.getElementById('mk-ideas-overlay').classList.add('open');
   bimbaRenderMkIdeas();
@@ -1931,31 +1936,43 @@ async function bimbaRenderMkIdeas() {
     const sn = await firebase.database().ref('marketing/ideas').once('value');
     const lista = [];
     if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
-    const orden = { Alta: 0, Media: 1, Baja: 2 };
-    lista.sort(function (a, b) { return (orden[a.prioridad] || 1) - (orden[b.prioridad] || 1); });
+    lista.sort(function (a, b) {
+      if (!!a.destacada !== !!b.destacada) return a.destacada ? -1 : 1;
+      return (b.ts || 0) - (a.ts || 0);
+    });
     _mkIdeasCache = lista;
   } catch (e) {
     el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
     return;
   }
+  bimbaPintarMkIdeasLista();
+}
+function bimbaPintarMkIdeasLista() {
+  const el = document.getElementById('mk-ideas-lista');
   if (!_mkIdeasCache.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin ideas guardadas todavía</div>';
     return;
   }
   el.innerHTML = _mkIdeasCache.map(function (i) {
-    const colorP = MK_PRIORIDAD_COLOR[i.prioridad] || '#8A6A4E';
     return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
+      + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:17px;line-height:1;cursor:pointer;flex-shrink:0">' + (i.destacada ? '★' : '☆') + '</span>'
       + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D">' + escapeHtml(i.idea || '') + '</div>'
       + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
       + '<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:#F5E6C8;color:#8A6A4E">' + escapeHtml(i.categoria || '') + '</span>'
-      + '<span style="font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:99px;background:' + colorP + '1A;color:' + colorP + '">' + escapeHtml(i.prioridad || '') + '</span>'
-      + '<span onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:10.5px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline;margin-left:auto">→ Calendario</span>'
+      + '<button id="mk-idea-btn-cal-' + i.id + '" onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:10.5px;font-weight:700;color:#fff;background:#3D1F0D;border:none;border-radius:99px;padding:4px 10px;cursor:pointer;margin-left:auto;font-family:\'DM Sans\',sans-serif">📅 Añadir al calendario</button>'
       + '</div>'
       + '</div>';
   }).join('');
+}
+async function bimbaToggleMkIdeaDestacada(id) {
+  const item = _mkIdeasCache.find(function (i) { return i.id === id; });
+  if (!item) return;
+  item.destacada = !item.destacada;
+  bimbaPintarMkIdeasLista();
+  try { await firebase.database().ref('marketing/ideas/' + id + '/destacada').set(item.destacada); } catch (e) {}
 }
 async function bimbaEliminarMkIdea(id) {
   if (!confirm('¿Borrar esta idea?')) return;
@@ -1968,30 +1985,39 @@ async function bimbaGuardarMkIdea() {
   const msgEl = document.getElementById('mk-idea-msg');
   const idea = document.getElementById('mk-idea-texto').value.trim();
   const categoria = document.getElementById('mk-idea-categoria').value;
-  const prioridad = document.getElementById('mk-idea-prioridad').value;
   if (!idea) { msgEl.textContent = 'Escribe la idea'; msgEl.style.color = '#c0392b'; return; }
   try {
-    await firebase.database().ref('marketing/ideas').push({ idea: idea, categoria: categoria, prioridad: prioridad, ts: Date.now() });
+    await firebase.database().ref('marketing/ideas').push({ idea: idea, categoria: categoria, destacada: _mkIdeaStarNueva, ts: Date.now() });
     msgEl.style.color = '#27855a';
     msgEl.textContent = '✅ Guardado';
     document.getElementById('mk-idea-texto').value = '';
+    _mkIdeaStarNueva = false;
+    const starEl = document.getElementById('mk-idea-star-nueva');
+    if (starEl) starEl.textContent = '☆';
     bimbaRenderMkIdeas();
   } catch (e) {
     msgEl.style.color = '#c0392b';
     msgEl.textContent = 'Error al guardar';
   }
 }
-function bimbaMkIdeaAlCalendario(id) {
+async function bimbaMkIdeaAlCalendario(id) {
   const idea = _mkIdeasCache.find(function (i) { return i.id === id; });
   if (!idea) return;
-  closeMkIdeasOverlay();
-  openMkCalendarioOverlay();
-  setTimeout(function () {
-    const form = document.getElementById('mk-calendario-form');
-    if (form.style.display === 'none') bimbaToggleMkForm('calendario');
-    document.getElementById('mk-cal-tema').value = idea.idea;
-    document.getElementById('mk-cal-fecha').value = new Date().toISOString().slice(0, 10);
-  }, 50);
+  const btn = document.getElementById('mk-idea-btn-cal-' + id);
+  try {
+    await firebase.database().ref('marketing/calendario').push({
+      fecha: new Date().toISOString().slice(0, 10),
+      red: 'Instagram',
+      tipo: 'Post',
+      tema: idea.idea,
+      texto: '',
+      estado: 'Idea',
+      ts: Date.now()
+    });
+    if (btn) { btn.textContent = '✅ Añadida'; btn.disabled = true; btn.style.opacity = '0.7'; }
+  } catch (e) {
+    if (btn) btn.textContent = 'Error, prueba otra vez';
+  }
 }
 
 // ── Promociones y campañas ──
@@ -2057,6 +2083,88 @@ async function bimbaGuardarMkPromo() {
     document.getElementById('mk-promo-oferta').value = '';
     document.getElementById('mk-promo-objetivo').value = '';
     bimbaRenderMkPromos();
+  } catch (e) {
+    msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'Error al guardar';
+  }
+}
+
+// ── Colaboraciones ──
+const MK_COLAB_ESTADOS = ['Contactado', 'Negociando', 'Confirmado', 'Publicado', 'Descartado'];
+const MK_COLAB_ESTADO_COLOR = { Contactado: '#8A6A4E', Negociando: '#B5862C', Confirmado: '#0C5C8A', Publicado: '#27855a', Descartado: '#c0392b' };
+let _mkColabsCache = [];
+function openMkColabsOverlay() {
+  document.getElementById('mk-colabs-overlay').classList.add('open');
+  bimbaRenderMkColabs();
+}
+function closeMkColabsOverlay() {
+  document.getElementById('mk-colabs-overlay').classList.remove('open');
+}
+async function bimbaRenderMkColabs() {
+  const el = document.getElementById('mk-colabs-lista');
+  el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
+  try {
+    const sn = await firebase.database().ref('marketing/colaboraciones').once('value');
+    const lista = [];
+    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    lista.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    _mkColabsCache = lista;
+  } catch (e) {
+    el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
+    return;
+  }
+  bimbaPintarMkColabsLista();
+}
+function bimbaPintarMkColabsLista() {
+  const el = document.getElementById('mk-colabs-lista');
+  if (!_mkColabsCache.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin colaboraciones guardadas todavía</div>';
+    return;
+  }
+  el.innerHTML = _mkColabsCache.map(function (c) {
+    const color = MK_COLAB_ESTADO_COLOR[c.estado] || '#8A6A4E';
+    return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(c.nombre || '') + '</div>'
+      + '<button onclick="bimbaEliminarMkColab(\'' + c.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+      + '</div>'
+      + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(c.red || '') + (c.contacto ? ' · ' + escapeHtml(c.contacto) : '') + '</div>'
+      + (c.notas ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap">' + escapeHtml(c.notas) + '</div>' : '')
+      + '<select onchange="bimbaCambiarEstadoMkColab(\'' + c.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:5px 22px 5px 10px;border-radius:99px;cursor:pointer;border:none;background:' + color + ';color:#fff;font-family:\'DM Sans\',sans-serif">'
+      + MK_COLAB_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (c.estado || 'Contactado') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
+      + '</select>'
+      + '</div>';
+  }).join('');
+}
+async function bimbaCambiarEstadoMkColab(id, nuevoEstado) {
+  const item = _mkColabsCache.find(function (c) { return c.id === id; });
+  if (!item) return;
+  item.estado = nuevoEstado;
+  bimbaPintarMkColabsLista();
+  try { await firebase.database().ref('marketing/colaboraciones/' + id + '/estado').set(nuevoEstado); } catch (e) {}
+}
+async function bimbaEliminarMkColab(id) {
+  if (!confirm('¿Borrar esta colaboración?')) return;
+  try {
+    await firebase.database().ref('marketing/colaboraciones/' + id).remove();
+    bimbaRenderMkColabs();
+  } catch (e) {}
+}
+async function bimbaGuardarMkColab() {
+  const msgEl = document.getElementById('mk-colab-msg');
+  const nombre = document.getElementById('mk-colab-nombre').value.trim();
+  const red = document.getElementById('mk-colab-red').value;
+  const contacto = document.getElementById('mk-colab-contacto').value.trim();
+  const notas = document.getElementById('mk-colab-notas').value.trim();
+  if (!nombre) { msgEl.textContent = 'Pon un nombre'; msgEl.style.color = '#c0392b'; return; }
+  try {
+    await firebase.database().ref('marketing/colaboraciones').push({ nombre: nombre, red: red, contacto: contacto, notas: notas, estado: 'Contactado', ts: Date.now() });
+    msgEl.style.color = '#27855a';
+    msgEl.textContent = '✅ Guardado';
+    document.getElementById('mk-colab-nombre').value = '';
+    document.getElementById('mk-colab-contacto').value = '';
+    document.getElementById('mk-colab-notas').value = '';
+    bimbaRenderMkColabs();
   } catch (e) {
     msgEl.style.color = '#c0392b';
     msgEl.textContent = 'Error al guardar';
