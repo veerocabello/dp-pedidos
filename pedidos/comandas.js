@@ -374,8 +374,7 @@ function renderCart() {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
     document.getElementById('print-btn').disabled = true;
-    document.getElementById('cash-calc').style.display = 'none';
-    currentOrderTotal = 0;
+    syncCashTotal(0);
     return;
   }
 
@@ -451,17 +450,22 @@ function renderCart() {
 
   bodyEl.innerHTML = html;
   totalRowEl.style.display = 'flex';
-  currentOrderTotal = total - discountAmount;
-  document.getElementById('cart-total').textContent = fmt(currentOrderTotal) + ' €';
+  const orderTotal = total - discountAmount;
+  document.getElementById('cart-total').textContent = fmt(orderTotal) + ' €';
   document.getElementById('print-btn').disabled = false;
-  document.getElementById('cash-calc').style.display = 'block';
-  updateChange();
+  syncCashTotal(orderTotal);
 }
 
 /* ══════════════════════════════════════════════════════════════
-   CALCULADORA DE CAMBIO (pago en efectivo)
+   CALCULADORA DE CAMBIO (pago en efectivo) — siempre visible, debajo
+   de la comanda; el total se rellena solo desde el carrito pero se
+   puede editar a mano para calcular un cobro suelto.
    ══════════════════════════════════════════════════════════════ */
-let currentOrderTotal = 0;
+let cashTotalEdited = false;
+function syncCashTotal(orderTotal) {
+  if (!cashTotalEdited) document.getElementById('cash-total').value = orderTotal > 0 ? orderTotal.toFixed(2) : '';
+  updateChange();
+}
 function addCashAmount(v) {
   const el = document.getElementById('cash-received');
   el.value = (parseFloat(el.value) || 0) + v;
@@ -469,16 +473,22 @@ function addCashAmount(v) {
 }
 function clearCashReceived() {
   document.getElementById('cash-received').value = '';
-  updateChange();
+  cashTotalEdited = false;
+  syncCashTotal(currentOrderTotal());
+}
+function currentOrderTotal() {
+  const el = document.getElementById('cart-total');
+  return el ? parseFloat(el.textContent.replace(',', '.')) || 0 : 0;
 }
 function updateChange() {
+  const total = parseFloat(document.getElementById('cash-total').value) || 0;
   const received = parseFloat(document.getElementById('cash-received').value) || 0;
   const row = document.getElementById('cash-change-row');
   const label = document.getElementById('cash-change-label');
   const amountEl = document.getElementById('cash-change-amount');
   if (received <= 0) { row.style.display = 'none'; return; }
   row.style.display = 'flex';
-  const change = received - currentOrderTotal;
+  const change = received - total;
   if (change < -0.001) {
     label.textContent = 'Faltan';
     amountEl.textContent = fmt(-change) + ' €';
@@ -495,6 +505,7 @@ function clearOrder(silent) {
   document.getElementById('order-name').value = '';
   document.getElementById('order-notes').value = '';
   document.getElementById('cash-received').value = '';
+  cashTotalEdited = false;
   renderMenu();
   renderCart();
   if (!silent) toast('Comanda vaciada');

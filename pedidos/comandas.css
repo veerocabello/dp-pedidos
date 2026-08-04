@@ -516,7 +516,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   text-transform: none; letter-spacing: normal;
 }
 .cash-clear-btn:hover { color: var(--error); }
-.cash-calc-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.cash-calc-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.cash-calc-row:last-of-type { margin-bottom: 0; }
+.cash-calc-total-row { align-items: center; }
+.cash-calc-total-row label {
+  font-size: 12px; font-weight: 700; color: var(--brown);
+  text-transform: uppercase; letter-spacing: .4px; flex-shrink: 0;
+}
+#cash-total {
+  flex: 1; min-width: 80px; padding: 7px 9px;
+  border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  font-size: 13px; font-weight: 700; font-family: var(--font-body);
+  background: var(--white); color: var(--text); text-align: right;
+}
 .cash-quick-btn {
   background: var(--white);
   border: 1.5px solid var(--warm);
