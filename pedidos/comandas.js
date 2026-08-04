@@ -725,7 +725,7 @@ function confirmCheddar() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — EXTRAS (patatas 1-14: queso/gratinado + ingredientes extra)
    ══════════════════════════════════════════════════════════════ */
-const NO_QUITAR_IDS = new Set([4, 5]); // Carbonara y Boloñesa: salsa cocinada a diario, no se pueden quitar ingredientes
+const NO_QUITAR_IDS = new Set([4, 5, 8]); // Carbonara, Boloñesa y 4 Quesos: no se pueden quitar ni cambiar ingredientes
 function parseBaseComponents(item) {
   if (!item.desc) return [];
   let clean = item.desc.split(' · ')[0]; // quita coletillas tipo "· Salsa cocinada a diario"
@@ -809,7 +809,7 @@ function renderExtrasBody(item) {
       ).join('') + `</div>`;
     }
   } else if (NO_QUITAR_IDS.has(item.id)) {
-    html += `<div class="settings-help" style="margin-top:0">⚠️ Salsa cocinada a diario · no se pueden quitar ni cambiar ingredientes.</div>`;
+    html += `<div class="settings-help" style="margin-top:0">⚠️ Esta patata lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
   if (!soloGratinado) {
     html += `<label class="option-row" onclick="toggleExtra('queso')">
