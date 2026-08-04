@@ -569,8 +569,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   cursor: pointer;
   transition: all .15s;
 }
-.payment-method-btn:hover { border-color: var(--amber); }
-.payment-method-btn.active { background: var(--amber); border-color: var(--amber); color: #fff; }
+.payment-method-btn:hover { border-color: var(--brown); }
+.payment-method-btn.active { background: var(--brown); border-color: var(--brown); color: #fff; }
 
 /* ── Calculadora de cambio (pago en efectivo) ── */
 .cash-calc {
