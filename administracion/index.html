@@ -239,6 +239,34 @@
           <span class="row-chevron">›</span>
         </div>
       </div>
+
+      <div class="sec-head" style="margin-top:24px">Marketing y redes</div>
+      <div class="row-group">
+        <div class="row" onclick="openMkCalendarioOverlay()">
+          <span class="row-icon">📅</span>
+          <div class="row-text">
+            <div class="row-title">Calendario de contenido</div>
+            <div class="row-desc">Qué publicas, cuándo y en qué red social.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openMkIdeasOverlay()">
+          <span class="row-icon">💡</span>
+          <div class="row-text">
+            <div class="row-title">Banco de ideas</div>
+            <div class="row-desc">Ideas sueltas para cuando te falte inspiración.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openMkPromosOverlay()">
+          <span class="row-icon">🎉</span>
+          <div class="row-text">
+            <div class="row-title">Promociones y campañas</div>
+            <div class="row-desc">Ofertas activas, fechas y objetivo de cada una.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+      </div>
     </div>
   </main>
 </div>
@@ -655,9 +683,128 @@
   </div>
 </div><!-- /receta-overlay -->
 
+<!-- ── OVERLAYS DE MARKETING Y REDES ── -->
+<div id="mk-calendario-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkCalendarioOverlay()">✕</button>
+    <h2>📅 Calendario de contenido</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Planifica qué publicas, cuándo y en qué red social. Toca el estado de una publicación para avanzarlo.</div>
+
+      <div onclick="bimbaToggleMkForm('calendario')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir publicación</span>
+        <span id="mk-calendario-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-calendario-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Fecha</label>
+        <input type="date" id="mk-cal-fecha" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Red social</label>
+        <select id="mk-cal-red" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          <option>Instagram</option><option>TikTok</option><option>Facebook</option>
+        </select>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Tipo de contenido</label>
+        <select id="mk-cal-tipo" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          <option>Reel</option><option>Story</option><option>Carrusel</option><option>Post</option><option>Video corto</option>
+        </select>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Tema / idea</label>
+        <input type="text" id="mk-cal-tema" placeholder="ej. patata rellena especial verano" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Texto / notas (opcional)</label>
+        <textarea id="mk-cal-texto" rows="2" placeholder="Copy, hashtags..." style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical"></textarea>
+
+        <button onclick="bimbaGuardarMkCalendario()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-calendario-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Publicaciones planeadas</div>
+      <div id="mk-calendario-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-calendario-overlay -->
+
+<div id="mk-ideas-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkIdeasOverlay()">✕</button>
+    <h2>💡 Banco de ideas</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta ideas sueltas de contenido para cuando te falte inspiración. Desde cada idea puedes mandarla directa al calendario.</div>
+
+      <div onclick="bimbaToggleMkForm('idea')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir idea</span>
+        <span id="mk-idea-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-idea-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Idea</label>
+        <input type="text" id="mk-idea-texto" placeholder="ej. vídeo detrás de cámaras en cocina" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Categoría</label>
+        <select id="mk-idea-categoria" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          <option>Producto</option><option>Detrás de cámaras</option><option>Promoción</option><option>Testimonio</option><option>Tendencia</option><option>Colaboración</option>
+        </select>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Prioridad</label>
+        <select id="mk-idea-prioridad" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          <option>Alta</option><option selected>Media</option><option>Baja</option>
+        </select>
+
+        <button onclick="bimbaGuardarMkIdea()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-idea-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Tus ideas</div>
+      <div id="mk-ideas-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-ideas-overlay -->
+
+<div id="mk-promos-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkPromosOverlay()">✕</button>
+    <h2>🎉 Promociones y campañas</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Lleva el control de tus ofertas: cuándo empiezan, cuándo acaban y qué objetivo tienen.</div>
+
+      <div onclick="bimbaToggleMkForm('promo')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir promoción</span>
+        <span id="mk-promo-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-promo-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Nombre de la campaña</label>
+        <input type="text" id="mk-promo-nombre" placeholder="ej. Vuelta al cole" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <div style="flex:1">
+            <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Inicio</label>
+            <input type="date" id="mk-promo-inicio" style="width:100%;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          </div>
+          <div style="flex:1">
+            <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Fin</label>
+            <input type="date" id="mk-promo-fin" style="width:100%;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          </div>
+        </div>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Oferta</label>
+        <input type="text" id="mk-promo-oferta" placeholder="ej. 10% dto en recogida" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Objetivo (opcional)</label>
+        <input type="text" id="mk-promo-objetivo" placeholder="ej. aumentar pedidos entre semana" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <button onclick="bimbaGuardarMkPromo()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-promo-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Campañas</div>
+      <div id="mk-promos-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-promos-overlay -->
+
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
