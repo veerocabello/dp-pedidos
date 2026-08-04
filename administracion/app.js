@@ -1991,21 +1991,23 @@ function bimbaPoblarMkIdeaCategorias() {
   if (_mkIdeaCategorias.includes(valorActual)) sel.value = valorActual;
   bimbaPintarMkCategoriasManager();
 }
+function bimbaMkIdeaAgregarCategoria() {
+  const nombre = prompt('Nombre de la nueva categoría:');
+  if (!nombre || !nombre.trim()) return;
+  const limpio = nombre.trim();
+  if (!_mkIdeaCategorias.includes(limpio)) {
+    _mkIdeaCategorias.push(limpio);
+    firebase.database().ref('config/ideasCategorias').set(_mkIdeaCategorias).catch(function () {});
+  }
+  bimbaPoblarMkIdeaCategorias();
+  const sel = document.getElementById('mk-idea-categoria');
+  if (sel) sel.value = limpio;
+}
 function bimbaMkIdeaCategoriaChange() {
   const sel = document.getElementById('mk-idea-categoria');
   if (sel.value !== '__nueva__') return;
-  const nombre = prompt('Nombre de la nueva categoría:');
-  if (nombre && nombre.trim()) {
-    const limpio = nombre.trim();
-    if (!_mkIdeaCategorias.includes(limpio)) {
-      _mkIdeaCategorias.push(limpio);
-      firebase.database().ref('config/ideasCategorias').set(_mkIdeaCategorias).catch(function () {});
-    }
-    bimbaPoblarMkIdeaCategorias();
-    sel.value = limpio;
-  } else {
-    sel.value = _mkIdeaCategorias[0] || '';
-  }
+  bimbaMkIdeaAgregarCategoria();
+  if (sel.value === '__nueva__') sel.value = _mkIdeaCategorias[0] || '';
 }
 function bimbaToggleMkCategoriasManager() {
   const el = document.getElementById('mk-idea-categorias-manager');
@@ -2018,7 +2020,7 @@ function bimbaPintarMkCategoriasManager() {
   el.innerHTML = _mkIdeaCategorias.map(function (c) {
     const color = MK_IDEA_CATEGORIA_COLOR[c] || '#3D1F0D';
     return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 6px 4px 10px;border-radius:99px;background:' + color + '1A;color:' + color + '">' + escapeHtml(c) + '<span onclick="bimbaMkIdeaBorrarCategoria(\'' + escapeAttr(c) + '\')" style="cursor:pointer;font-weight:800;padding:0 3px">✕</span></span>';
-  }).join('');
+  }).join('') + '<span onclick="bimbaMkIdeaAgregarCategoria()" style="display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;border:1.5px dashed #C2711A;color:#C2711A;cursor:pointer">➕ Añadir</span>';
 }
 function bimbaMkIdeaBorrarCategoria(cat) {
   if (_mkIdeaCategorias.length <= 1) { alert('Necesitas al menos una categoría.'); return; }
