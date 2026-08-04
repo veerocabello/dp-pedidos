@@ -424,6 +424,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .cart-body {
   flex: 1;
+  min-height: 90px;
   overflow-y: auto;
   padding-top: 2px;
   margin-top: 2px;
