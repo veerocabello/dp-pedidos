@@ -57,10 +57,14 @@ auth.onAuthStateChanged(function (user) {
   const btn = document.getElementById('login-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
   if (user) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     loginScreen.style.display = 'none';
     appScreen.style.display = 'block';
     cargarDatosIniciales();
     mostrarSeccionHome();
+    // en iOS el teclado tarda en cerrarse y puede desplazar la página después de este punto
+    setTimeout(mostrarSeccionHome, 300);
+    setTimeout(mostrarSeccionHome, 700);
   } else {
     loginScreen.style.display = 'flex';
     appScreen.style.display = 'none';
@@ -68,6 +72,7 @@ auth.onAuthStateChanged(function (user) {
 });
 
 // ── NAVEGACIÓN: PANTALLA DE INICIO ──
+let _homeFija = false;
 function mostrarSeccionHome() {
   document.getElementById('seccion-home').style.display = 'block';
   document.getElementById('seccion-administracion').style.display = 'none';
@@ -75,8 +80,16 @@ function mostrarSeccionHome() {
   document.body.style.overflow = 'hidden';
   document.documentElement.style.overflow = 'hidden';
   window.scrollTo(0, 0);
+  _homeFija = true;
 }
+window.addEventListener('resize', function () {
+  if (_homeFija) window.scrollTo(0, 0);
+});
+window.addEventListener('scroll', function () {
+  if (_homeFija && window.scrollY !== 0) window.scrollTo(0, 0);
+});
 function mostrarSeccionAdmin() {
+  _homeFija = false;
   document.getElementById('seccion-home').style.display = 'none';
   document.getElementById('seccion-administracion').style.display = 'block';
   document.getElementById('seccion-marketing').style.display = 'none';
@@ -85,6 +98,7 @@ function mostrarSeccionAdmin() {
   window.scrollTo(0, 0);
 }
 function mostrarSeccionMarketing() {
+  _homeFija = false;
   document.getElementById('seccion-home').style.display = 'none';
   document.getElementById('seccion-administracion').style.display = 'none';
   document.getElementById('seccion-marketing').style.display = 'block';
