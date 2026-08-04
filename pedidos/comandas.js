@@ -213,23 +213,46 @@ function editExtrasItem(key) {
 // Bomba, se cobra el precio plano de esa patata en vez de sumar cada
 // extra por separado (evita cobrar de más por construir, ingrediente a
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
-function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra) {
-  const totalPicks = (ingredientesExtra || []).length + (salsasExtra || []).length;
-  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return CUSTOMIZER_CONFIG.bomba.price;
-  if (totalPicks >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return CUSTOMIZER_CONFIG.algusto.price;
+function priceOfPick(p) { return p.type === 'salsa' ? EXTRAS_SALSA_PRECIO : (EXTRAS_ING_PRECIO1.includes(p.name) ? 1 : 0.7); }
+
+// Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
+// total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
+// precio plano de esa patata; lo que se elija POR ENCIMA del umbral se
+// sigue sumando aparte a precio normal (no se pierde, ni se regala).
+function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickOrder) {
+  const ingCount = (ingredientesExtra || []).length;
+  const salsaCount = (salsasExtra || []).length;
+  const totalPicks = ingCount + salsaCount;
+  const order = pickOrder && pickOrder.length === totalPicks ? pickOrder : null;
+
+  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) {
+    let core = CUSTOMIZER_CONFIG.bomba.price;
+    if (order) order.slice(CUSTOMIZER_CONFIG.bomba.maxTotal).forEach(p => { core += priceOfPick(p); });
+    return core;
+  }
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) {
+    let core = CUSTOMIZER_CONFIG.algusto.price;
+    if (order) {
+      order.filter(p => p.type === 'salsa').slice(CUSTOMIZER_CONFIG.algusto.maxSauces).forEach(p => { core += priceOfPick(p); });
+      order.filter(p => p.type === 'ing').slice(CUSTOMIZER_CONFIG.algusto.maxIngredients).forEach(p => { core += priceOfPick(p); });
+    }
+    return core;
+  }
   let core = basePrice;
   (ingredientesExtra || []).forEach(i => { core += EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7; });
-  core += (salsasExtra || []).length * EXTRAS_SALSA_PRECIO;
+  core += salsaCount * EXTRAS_SALSA_PRECIO;
   return core;
 }
 function extrasAutoUpgradeLabel(ingredientesExtra, salsasExtra) {
-  const totalPicks = (ingredientesExtra || []).length + (salsasExtra || []).length;
-  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'Precio Bomba aplicado automáticamente';
-  if (totalPicks >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'Precio Al Gusto aplicado automáticamente';
+  const ingCount = (ingredientesExtra || []).length;
+  const salsaCount = (salsasExtra || []).length;
+  const totalPicks = ingCount + salsaCount;
+  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'Precio Bomba aplicado (lo que se pase de 9 se cobra aparte)';
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'Precio Al Gusto aplicado (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
   return '';
 }
 function getExtrasItemPrice(e) {
-  const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra);
+  const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder);
   return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0);
 }
 function getExtrasItemLabel(e) {
@@ -240,6 +263,8 @@ function getExtrasItemLabel(e) {
 }
 function getExtrasItemDetails(e) {
   const out = [];
+  (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
+  (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to));
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
@@ -248,6 +273,58 @@ function getExtrasItemDetails(e) {
 }
 function cartHasAnyItem() {
   return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DESCUENTO / OFERTA — se aplica como una línea más del pedido
+   (con importe negativo), igual que hace la web con la fidelización.
+   ══════════════════════════════════════════════════════════════ */
+let orderDiscount = null; // {type:'percent'|'fixed', value, label}
+
+function openDiscountModal() {
+  document.getElementById('discount-type').value = orderDiscount ? orderDiscount.type : 'percent';
+  document.getElementById('discount-value').value = orderDiscount ? orderDiscount.value : '';
+  document.getElementById('discount-label').value = orderDiscount ? (orderDiscount.label || '') : '';
+  document.getElementById('discount-error').style.display = 'none';
+  document.getElementById('discount-remove-btn').style.display = orderDiscount ? 'inline-block' : 'none';
+  document.getElementById('discount-modal').classList.add('open');
+}
+function closeDiscountModal() { document.getElementById('discount-modal').classList.remove('open'); }
+function applyDiscount() {
+  const type = document.getElementById('discount-type').value;
+  const value = parseFloat(document.getElementById('discount-value').value);
+  const label = document.getElementById('discount-label').value.trim();
+  const errEl = document.getElementById('discount-error');
+  if (!value || value <= 0) {
+    errEl.textContent = 'Introduce un valor mayor que 0';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (type === 'percent' && value > 100) {
+    errEl.textContent = 'El porcentaje no puede superar 100';
+    errEl.style.display = 'block';
+    return;
+  }
+  orderDiscount = { type, value, label };
+  closeDiscountModal();
+  renderCart();
+  toast('✅ Descuento aplicado');
+}
+function removeDiscount() {
+  orderDiscount = null;
+  closeDiscountModal();
+  renderCart();
+  toast('Descuento eliminado');
+}
+function discountLineLabel() {
+  const label = (orderDiscount.label && orderDiscount.label.trim()) || 'Descuento';
+  const suffix = orderDiscount.type === 'percent' ? ' (-' + orderDiscount.value + '%)' : '';
+  return '🏷️ ' + label + suffix;
+}
+function computeDiscountAmount(subtotal) {
+  if (!orderDiscount || subtotal <= 0) return 0;
+  let amt = orderDiscount.type === 'percent' ? subtotal * orderDiscount.value / 100 : orderDiscount.value;
+  return Math.max(0, Math.min(amt, subtotal));
 }
 
 function renderCart() {
@@ -324,14 +401,24 @@ function renderCart() {
     </div>`;
   });
 
+  const discountAmount = computeDiscountAmount(total);
+  if (discountAmount > 0) {
+    html += `<div class="cart-line cart-line-discount">
+      <span class="cart-line-name">${escapeHtml(discountLineLabel())}</span>
+      <span class="cart-line-price">-${fmt(discountAmount)} €</span>
+      <button class="cart-edit" onclick="openDiscountModal()" title="Editar">✏️</button>
+      <button class="cart-remove" onclick="removeDiscount()" title="Quitar">🗑️</button>
+    </div>`;
+  }
+
   bodyEl.innerHTML = html;
   totalRowEl.style.display = 'flex';
-  document.getElementById('cart-total').textContent = fmt(total) + ' €';
+  document.getElementById('cart-total').textContent = fmt(total - discountAmount) + ' €';
   document.getElementById('print-btn').disabled = false;
 }
 
 function clearOrder(silent) {
-  cart = {}; custCart = {}; extrasCart = {};
+  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
   document.getElementById('order-name').value = '';
   document.getElementById('order-notes').value = '';
   renderMenu();
@@ -553,7 +640,25 @@ function confirmCheddar() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — EXTRAS (patatas 1-14: queso/gratinado + ingredientes extra)
    ══════════════════════════════════════════════════════════════ */
-let extrasCurrentId = null, extrasQueso = false, extrasGratinado = false, extrasIngredientes = {}, extrasSalsas = {}, extrasEditKey = null;
+const NO_QUITAR_IDS = new Set([4, 5]); // Carbonara y Boloñesa: salsa cocinada a diario, no se pueden quitar ingredientes
+function parseBaseComponents(item) {
+  if (!item.desc) return [];
+  let clean = item.desc.split(' · ')[0]; // quita coletillas tipo "· Salsa cocinada a diario"
+  const lastY = clean.lastIndexOf(' y ');
+  if (lastY !== -1) clean = clean.slice(0, lastY) + ', ' + clean.slice(lastY + 3);
+  return clean.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+let extrasCurrentId = null, extrasQueso = false, extrasGratinado = false, extrasIngredientes = {}, extrasSalsas = {}, extrasQuitados = {}, extrasCambios = [], extrasEditKey = null;
+let extrasPickSeq = 0, extrasIngOrder = {}, extrasSalsaOrder = {};
+
+function getOrderedExtrasPicks() {
+  const picks = [];
+  Object.entries(extrasIngredientes).forEach(([ing, on]) => { if (on) picks.push({ type: 'ing', name: ing, seq: extrasIngOrder[ing] || 0 }); });
+  Object.entries(extrasSalsas).forEach(([s, on]) => { if (on) picks.push({ type: 'salsa', name: s, seq: extrasSalsaOrder[s] || 0 }); });
+  picks.sort((a, b) => a.seq - b.seq);
+  return picks.map(p => ({ type: p.type, name: p.name }));
+}
 
 function openExtrasModal(id, editKey) {
   extrasEditKey = editKey || null;
@@ -563,71 +668,129 @@ function openExtrasModal(id, editKey) {
   extrasGratinado = existing ? !!existing.gratinado : false;
   extrasIngredientes = {};
   extrasSalsas = {};
+  extrasQuitados = {};
+  extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to })) : [] : [];
+  extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
     (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = true);
     (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = true);
+    (existing.quitados || []).forEach(q => extrasQuitados[q] = true);
+    // Reconstruye el orden de selección para saber qué se cobra "extra" si se edita.
+    // Si el pedido no lo guardó (versiones anteriores), usa el orden de los arrays tal cual.
+    const order = (existing.pickOrder && existing.pickOrder.length) ? existing.pickOrder : [
+      ...(existing.ingredientesExtra || []).map(name => ({ type: 'ing', name })),
+      ...(existing.salsasExtra || []).map(name => ({ type: 'salsa', name })),
+    ];
+    order.forEach(p => {
+      extrasPickSeq++;
+      if (p.type === 'ing') extrasIngOrder[p.name] = extrasPickSeq; else extrasSalsaOrder[p.name] = extrasPickSeq;
+    });
   }
   const item = MENU.find(m => m.id == id);
   if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
   document.getElementById('extras-base-price').textContent = 'Base: ' + fmt(item.price) + ' €';
   document.getElementById('extras-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
-  const soloGratinado = EXTRAS_SOLO_GRATINADO.has(id);
+  renderExtrasBody(item);
+  updateExtrasTotalPrice();
+  document.getElementById('extras-modal').classList.add('open');
+}
+function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; extrasEditKey = null; }
+
+function renderExtrasBody(item) {
+  const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
+  const baseComponents = parseBaseComponents(item);
+  const canQuitar = !NO_QUITAR_IDS.has(item.id) && baseComponents.length > 0;
   let html = '';
+  if (canQuitar) {
+    html += `<div class="section-label" style="margin-top:0">Quitar ingredientes</div><div class="chip-grid">`;
+    baseComponents.forEach(comp => {
+      const on = !!extrasQuitados[comp];
+      html += `<button class="chip ${on ? 'quitado' : ''}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${on ? '🚫 ' : ''}${escapeHtml(comp)}</button>`;
+    });
+    html += `</div>`;
+    html += `<div class="section-label">Cambiar un ingrediente</div>`;
+    html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <select id="cambio-from" style="flex:1;min-width:100px">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+      <span style="font-size:12px;color:var(--muted)">por</span>
+      <select id="cambio-to" style="flex:1;min-width:100px">${[...CUST_INGREDIENTS, ...CUST_SAUCES].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+      <button class="btn-secondary" style="padding:8px 12px" onclick="addExtraCambio()">+ Añadir</button>
+    </div>`;
+    if (extrasCambios.length) {
+      html += extrasCambios.map((c, i) =>
+        `<div class="option-row" style="padding:8px 12px;margin-bottom:6px"><span style="font-size:13px">🔄 ${escapeHtml(c.from)} → ${escapeHtml(c.to)}</span><button class="cart-remove" onclick="removeExtraCambio(${i})" title="Quitar cambio">🗑️</button></div>`
+      ).join('');
+    }
+  } else if (NO_QUITAR_IDS.has(item.id)) {
+    html += `<div class="settings-help" style="margin-top:0">⚠️ Salsa cocinada a diario · no se pueden quitar ni cambiar ingredientes.</div>`;
+  }
   if (!soloGratinado) {
     html += `<label class="option-row" onclick="toggleExtra('queso')">
       <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
-      <div class="option-check ${extrasQueso ? 'on' : ''}" id="extra-check-queso"></div>
+      <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
     </label>`;
   }
   html += `<label class="option-row" onclick="toggleExtra('gratinado')">
     <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
-    <div class="option-check ${extrasGratinado ? 'on' : ''}" id="extra-check-gratinado"></div>
+    <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
   </label>`;
   html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
   CUST_SAUCES.forEach(s => {
-    const slug = 'extra-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
     const on = !!extrasSalsas[s];
-    html += `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+    html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
       <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
-      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
+      <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
     </label>`;
   });
   html += `</div>`;
   html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
   [...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07].forEach(ing => {
     const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
-    const slug = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
     const on = !!extrasIngredientes[ing];
-    html += `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+    html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
       <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
-      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
+      <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
     </label>`;
   });
   html += `</div>`;
   document.getElementById('extras-options').innerHTML = html;
-  updateExtrasTotalPrice();
-  document.getElementById('extras-modal').classList.add('open');
 }
-function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; extrasEditKey = null; }
+function toggleExtraQuitar(comp) {
+  extrasQuitados[comp] = !extrasQuitados[comp];
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+  updateExtrasTotalPrice();
+}
+function addExtraCambio() {
+  const from = document.getElementById('cambio-from').value;
+  const to = document.getElementById('cambio-to').value;
+  if (!from || !to || from === to) return;
+  if (extrasCambios.some(c => c.from === from)) return; // ya hay un cambio para ese ingrediente
+  extrasCambios.push({ from, to });
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+  updateExtrasTotalPrice();
+}
+function removeExtraCambio(i) {
+  extrasCambios.splice(i, 1);
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+  updateExtrasTotalPrice();
+}
 function toggleExtra(which) {
   if (which === 'queso') extrasQueso = !extrasQueso; else extrasGratinado = !extrasGratinado;
-  const el = document.getElementById('extra-check-' + which);
-  if (el) el.classList.toggle('on', which === 'queso' ? extrasQueso : extrasGratinado);
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
 function toggleExtraIng(ing) {
-  extrasIngredientes[ing] = !extrasIngredientes[ing];
-  const slug = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-  const el = document.getElementById(slug);
-  if (el) el.classList.toggle('on', !!extrasIngredientes[ing]);
+  const on = !extrasIngredientes[ing];
+  extrasIngredientes[ing] = on;
+  if (on) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; } else { delete extrasIngOrder[ing]; }
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
 function toggleExtraSalsa(s) {
-  extrasSalsas[s] = !extrasSalsas[s];
-  const slug = 'extra-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
-  const el = document.getElementById(slug);
-  if (el) el.classList.toggle('on', !!extrasSalsas[s]);
+  const on = !extrasSalsas[s];
+  extrasSalsas[s] = on;
+  if (on) { extrasPickSeq++; extrasSalsaOrder[s] = extrasPickSeq; } else { delete extrasSalsaOrder[s]; }
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
 function updateExtrasTotalPrice() {
@@ -635,7 +798,7 @@ function updateExtrasTotalPrice() {
   if (!item) return;
   const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing);
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
-  const core = computeExtrasCorePrice(item.price, ingList, salsaList);
+  const core = computeExtrasCorePrice(item.price, ingList, salsaList, getOrderedExtrasPicks());
   const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
@@ -647,7 +810,14 @@ function confirmExtras() {
   if (!item) return;
   const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing).sort();
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
-  const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '') + (ingList.length ? 'I' + ingList.join('|') : '') + (salsaList.length ? 'S' + salsaList.join('|') : '') || 'BASE';
+  const quitadosList = Object.entries(extrasQuitados).filter(([, on]) => on).map(([q]) => q).sort();
+  const cambiosList = extrasCambios.map(c => ({ from: c.from, to: c.to }));
+  const pickOrder = getOrderedExtrasPicks();
+  const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
+    + (ingList.length ? 'I' + ingList.join('|') : '')
+    + (salsaList.length ? 'S' + salsaList.join('|') : '')
+    + (quitadosList.length ? 'X' + quitadosList.join('|') : '')
+    + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '') || 'BASE';
   const key = 'ext:' + id + ':' + sig;
   let qtyToSet = 1;
   if (extrasEditKey && extrasCart[extrasEditKey]) {
@@ -655,7 +825,7 @@ function confirmExtras() {
     delete extrasCart[extrasEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, basePrice: item.price, key };
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, cambios: cambiosList, pickOrder, basePrice: item.price, key };
   const wasEdit = !!extrasEditKey;
   closeExtrasModal();
   renderCart();
@@ -668,7 +838,13 @@ function confirmExtras() {
    monoespaciado) COMO para los bytes ESC/POS de la impresora térmica,
    así lo que se ve en pantalla es exactamente lo que sale impreso.
    ══════════════════════════════════════════════════════════════ */
-const TICKET_CONFIG_KEY = 'dpf_comandas_ticket_config';
+// Misma clave y mismos campos que la configuración del ticket en el panel
+// de administración de la web de pedidos (pedidos/src/admin-config.js),
+// así que si esta página se abre alguna vez en el mismo navegador que el
+// panel, comparten la configuración automáticamente. "modoImpresion" es
+// el único campo propio de esta herramienta offline (no existe en la web,
+// que siempre imprime a través de Firebase).
+const TICKET_CONFIG_KEY = 'dpf_ticket_config';
 const TICKET_CONFIG_DEFAULTS = {
   nombre: 'DULCE PATATA FOOD',
   direccion: 'Carretera de Málaga 111, Granada',
@@ -677,6 +853,7 @@ const TICKET_CONFIG_DEFAULTS = {
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
   copias: 1,
+  autoImprimir: true,
   modoImpresion: 'auto',
 };
 function getTicketConfig() {
@@ -744,6 +921,11 @@ function buildOrderObject() {
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
     items.push({ name: getExtrasItemLabel(c), qty: c.qty, subtotal: getExtrasItemPrice(c) * c.qty, extras: getExtrasItemDetails(c) });
   });
+  const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
+  const discountAmount = computeDiscountAmount(subtotal);
+  if (discountAmount > 0) {
+    items.push({ name: discountLineLabel(), qty: 1, subtotal: -discountAmount, extras: [] });
+  }
   const total = items.reduce((s, it) => s + it.subtotal, 0);
   return {
     num: getNextOrderNum(),
@@ -755,6 +937,61 @@ function buildOrderObject() {
   };
 }
 
+/* ── Ticket en HTML — mismo maquetado que buildTicketHTML() de la web
+   de pedidos (pedidos/src/historial-export.js), para que el ticket
+   impreso sea igual que el de un pedido online. ── */
+function buildTicketItemHTML(it) {
+  const right = fmt(it.subtotal) + ' €';
+  const label = it.qty + 'x ' + it.name;
+  if (it.extras && it.extras.length > 0) {
+    const extrasList = it.extras.map(ex =>
+      `<div style="display:flex;justify-content:space-between"><span>&nbsp;&nbsp;&nbsp;· ${escapeHtml(ex)}</span></div>`
+    ).join('');
+    return `<div style="margin-bottom:5px"><div style="display:flex;justify-content:space-between;font-weight:bold"><span>${escapeHtml(label)}</span><span style="white-space:nowrap;padding-left:4px">${right}</span></div><div style="font-size:10px;color:#333;line-height:1.8;margin-top:1px">${extrasList}</div></div>`;
+  } else if (label.length <= 26) {
+    return `<div style="display:flex;justify-content:space-between"><span style="flex:1">${escapeHtml(label)}</span><span style="white-space:nowrap;padding-left:4px">${right}</span></div>`;
+  } else {
+    return `<div style="margin-bottom:3px"><div style="word-break:break-word;white-space:normal;line-height:1.4">${escapeHtml(label)}</div><div style="text-align:right;font-weight:bold">${right}</div></div>`;
+  }
+}
+function buildTicketHTML(order) {
+  const tc = getTicketConfig();
+  const itemsHTML = order.items.map(buildTicketItemHTML).join('');
+  const headerRow = order.name
+    ? `<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">${escapeHtml(order.name.toUpperCase())}</div>`
+    : '';
+  return `
+    <div style="text-align:center;margin-bottom:6px">
+      <div style="font-size:15px;font-weight:bold;letter-spacing:1px">${escapeHtml(tc.nombre)}</div>
+      <div style="font-size:10px;color:#555">${escapeHtml(tc.direccion)}</div>
+      <div style="font-size:10px;color:#555">${escapeHtml(tc.telefono)}</div>
+    </div>
+    <div style="border-top:2px solid #000;margin:6px 0"></div>
+    ${headerRow}
+    <div style="border-top:1.5px solid #000;margin:6px 0 4px"></div>
+    <div style="font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px">PEDIDO ${escapeHtml(order.num)}</div>
+    <div style="font-size:10px;text-align:center;color:#555;margin-bottom:4px">${escapeHtml(order.time)}</div>
+    <div style="border-top:1.5px solid #000;margin:4px 0 6px"></div>
+    <div style="font-size:11px">${itemsHTML}</div>
+    <div style="border-top:1px dashed #000;margin:6px 0"></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:bold">
+      <span>TOTAL</span><span>${fmt(order.total)} €</span>
+    </div>
+    <div style="font-size:10px;text-align:center;color:#555;margin-top:2px">${escapeHtml(tc.textoPago)}</div>
+    ${order.notes ? `<div style="border-top:1px dashed #000;margin:6px 0"></div><div style="font-size:10px"><b>NOTAS:</b> ${escapeHtml(order.notes)}</div>` : ''}
+    <div style="border-top:1px dashed #000;margin:8px 0"></div>
+    <div style="text-align:center;font-size:10px;color:#555">${escapeHtml(tc.despedida)}</div>
+    <div style="margin-bottom:16px"></div>
+  `;
+}
+function renderTicketPreview(order) {
+  const container = document.getElementById('ticket-html-content');
+  container.innerHTML = buildTicketHTML(order);
+  container.classList.toggle('w58', getTicketConfig().anchoPapel == 58);
+}
+
+/* ── Texto plano — mismo contenido que el ticket HTML, para la
+   impresora térmica ESC/POS (no puede renderizar HTML/CSS). ── */
 function buildTicketLines(order) {
   const width = getPaperWidthChars();
   const cfg = getTicketConfig();
@@ -762,31 +999,29 @@ function buildTicketLines(order) {
   L.push({ text: padCenter(cfg.nombre, width), bold: true });
   wrapText(cfg.direccion, width).forEach(l => L.push({ text: padCenter(l, width) }));
   L.push({ text: padCenter(cfg.telefono, width) });
-  L.push({ text: '-'.repeat(width) });
-  L.push({ text: padCenter('COMANDA MOSTRADOR', width), bold: true });
-  L.push({ text: padCenter('#' + order.num, width), bold: true });
+  L.push({ text: '='.repeat(width) });
+  if (order.name) {
+    L.push({ text: padCenter(order.name.toUpperCase(), width), bold: true });
+    L.push({ text: '='.repeat(width) });
+  }
+  L.push({ text: padCenter('PEDIDO ' + order.num, width), bold: true });
   L.push({ text: padCenter(order.time, width) });
-  if (order.name) L.push({ text: padCenter('Para: ' + order.name, width), bold: true });
   L.push({ text: '='.repeat(width) });
   order.items.forEach(it => {
     twoColLines(it.qty + 'x ' + it.name, fmt(it.subtotal) + '€', width).forEach(l => L.push({ text: l }));
-    (it.extras || []).forEach(ex => wrapIndented('  · ', ex, width).forEach(l => L.push({ text: l })));
+    (it.extras || []).forEach(ex => wrapIndented('   · ', ex, width).forEach(l => L.push({ text: l })));
   });
   L.push({ text: '-'.repeat(width) });
-  twoColLines('TOTAL', fmt(order.total) + ' €', width).forEach((l, i) => L.push({ text: l, bold: true }));
-  L.push({ text: padCenter('(' + cfg.textoPago + ')', width) });
+  twoColLines('TOTAL', fmt(order.total) + ' €', width).forEach(l => L.push({ text: l, bold: true }));
+  L.push({ text: padCenter(cfg.textoPago, width) });
   if (order.notes) {
-    L.push({ text: '' });
+    L.push({ text: '-'.repeat(width) });
     L.push({ text: 'NOTAS:', bold: true });
     wrapText(order.notes, width).forEach(l => L.push({ text: l }));
   }
-  L.push({ text: '' });
+  L.push({ text: '-'.repeat(width) });
   L.push({ text: padCenter(cfg.despedida, width) });
   return L;
-}
-
-function renderTicketPreview(lines) {
-  document.getElementById('ticket-pre-content').textContent = lines.map(l => l.text).join('\n');
 }
 
 /* ── Codificación CP850 para acentos/ñ en impresoras ESC/POS ── */
@@ -946,12 +1181,12 @@ if (navigator.usb) {
 }
 
 async function printOrder(order) {
-  const lines = buildTicketLines(order);
-  renderTicketPreview(lines);
+  renderTicketPreview(order);
   const cfg = getTicketConfig();
   let printedViaUsb = false;
   if (cfg.modoImpresion !== 'dialog') {
     try {
+      const lines = buildTicketLines(order);
       const bytes = buildEscPosBytes(lines);
       const copies = Math.max(1, parseInt(cfg.copias, 10) || 1);
       for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
@@ -977,7 +1212,7 @@ async function handlePrintOrder() {
     btn.disabled = false;
   }
   saveToHistorial(order);
-  clearOrder(true);
+  if (getTicketConfig().autoImprimir !== false) clearOrder(true);
   toast(printedViaUsb ? '✅ Comanda ' + order.num + ' impresa' : '🖨️ Comanda ' + order.num + ' — abriendo diálogo de impresión…');
 }
 
@@ -989,10 +1224,11 @@ function openSettings() {
   document.getElementById('set-nombre').value = cfg.nombre;
   document.getElementById('set-direccion').value = cfg.direccion;
   document.getElementById('set-telefono').value = cfg.telefono;
-  document.getElementById('set-texto-pago').value = cfg.textoPago;
   document.getElementById('set-despedida').value = cfg.despedida;
+  document.getElementById('set-texto-pago').value = cfg.textoPago;
   document.getElementById('set-ancho-papel').value = String(cfg.anchoPapel);
   document.getElementById('set-copias').value = String(cfg.copias);
+  document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
   document.getElementById('settings-modal').classList.add('open');
 }
@@ -1002,10 +1238,11 @@ function saveSettingsForm() {
     nombre: document.getElementById('set-nombre').value.trim() || TICKET_CONFIG_DEFAULTS.nombre,
     direccion: document.getElementById('set-direccion').value.trim() || TICKET_CONFIG_DEFAULTS.direccion,
     telefono: document.getElementById('set-telefono').value.trim() || TICKET_CONFIG_DEFAULTS.telefono,
-    textoPago: document.getElementById('set-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     despedida: document.getElementById('set-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
+    textoPago: document.getElementById('set-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('set-ancho-papel').value, 10),
-    copias: parseInt(document.getElementById('set-copias').value, 10),
+    copias: Math.max(1, parseInt(document.getElementById('set-copias').value, 10) || 1),
+    autoImprimir: document.getElementById('set-auto-imprimir').checked,
     modoImpresion: document.getElementById('set-modo-impresion').value,
   };
   saveTicketConfig(cfg);

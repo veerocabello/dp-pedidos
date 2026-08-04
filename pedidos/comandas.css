@@ -451,6 +451,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   box-shadow: var(--shadow-sm);
 }
 .cart-line-name { flex: 1; min-width: 100px; font-weight: 700; color: var(--text); }
+.cart-line-discount { border-left-color: var(--amber-dark); background: var(--amber-light); }
+.cart-line-discount .cart-line-price { color: var(--amber-dark); }
 .cart-line-extra { width: 100%; font-size: 11px; color: var(--muted); line-height: 1.5; }
 .cart-line-qty { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .cart-line-price { font-weight: 700; color: var(--amber-dark); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -590,6 +592,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .chip:hover { border-color: var(--amber); background: var(--amber-light); transform: translateY(-1px); }
 .chip.selected { background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%); border-color: var(--brown); color: var(--gold); font-weight: 700; box-shadow: var(--shadow-md); }
 .chip.extra { background: var(--amber-light); border-color: var(--amber-dark); color: var(--amber-dark); font-weight: 700; }
+.chip.quitado { background: rgba(192,57,43,.1); border-color: var(--error); color: var(--error); font-weight: 700; text-decoration: line-through; }
 .chip.disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .chip.disabled:hover { transform: none; border-color: var(--warm); background: var(--white); }
 
@@ -663,18 +666,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ── Ticket preview (also used for browser-print fallback) ── */
+/* ── Ticket preview (also used for browser-print fallback) ──
+   Mismo maquetado que el ticket de la web de pedidos (historial-export.js
+   buildTicketHTML): mismas divisiones, tamaños y jerarquía. */
 #ticket-print {
   display: none;
 }
-.ticket-pre {
-  font-family: var(--font-mono);
+.ticket-doc {
+  font-family: var(--font-body);
   font-size: 12px;
-  line-height: 1.35;
-  white-space: pre-wrap;
   color: #000;
   background: #fff;
+  width: 288px;
+  margin: 0 auto;
 }
+.ticket-doc.w58 { width: 208px; }
 
 @media print {
   body * { visibility: hidden; }

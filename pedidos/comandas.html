@@ -34,7 +34,10 @@
   <aside class="cart-panel">
     <div class="cart-header">
       <h2>Comanda</h2>
-      <button class="btn-text" onclick="clearOrder()">Vaciar</button>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
+        <button class="btn-text" onclick="clearOrder()">Vaciar</button>
+      </div>
     </div>
     <div class="form-group">
       <label for="order-name">Nombre para avisar (opcional)</label>
@@ -134,8 +137,8 @@
     <div class="form-group"><label>Nombre</label><input id="set-nombre" type="text"></div>
     <div class="form-group"><label>Dirección</label><input id="set-direccion" type="text"></div>
     <div class="form-group"><label>Teléfono</label><input id="set-telefono" type="text"></div>
-    <div class="form-group"><label>Texto de pago</label><input id="set-texto-pago" type="text"></div>
     <div class="form-group"><label>Despedida</label><input id="set-despedida" type="text"></div>
+    <div class="form-group"><label>Texto de pago</label><input id="set-texto-pago" type="text"></div>
 
     <div class="section-label">Papel e impresión</div>
     <div class="settings-grid">
@@ -154,8 +157,12 @@
         </select>
       </div>
     </div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">Imprimir automáticamente al confirmar</div><div class="option-sub">Si lo desactivas, la comanda no se vacía sola tras imprimir (para revisar o sacar copias antes de empezar la siguiente)</div></div>
+      <input type="checkbox" id="set-auto-imprimir" style="width:20px;height:20px;flex-shrink:0" checked>
+    </label>
     <div class="form-group">
-      <label>Modo de impresión</label>
+      <label>Modo de impresión (propio de esta herramienta offline)</label>
       <select id="set-modo-impresion">
         <option value="auto">Directa a la impresora (recomendado) — si falla, usa el diálogo</option>
         <option value="dialog">Siempre usar el diálogo de impresión de Windows/Chrome</option>
@@ -183,8 +190,37 @@
   </div>
 </div>
 
+<!-- ── DESCUENTO / OFERTA ── -->
+<div id="discount-modal" class="modal-overlay" onclick="if(event.target===this)closeDiscountModal()">
+  <div class="modal-box" style="max-width:400px">
+    <button class="modal-close" onclick="closeDiscountModal()">&#x2715;</button>
+    <div class="modal-title">🏷️ Descuento / oferta</div>
+    <div class="modal-subtitle">Se aplica al total de esta comanda.</div>
+    <div class="form-group">
+      <label>Tipo</label>
+      <select id="discount-type">
+        <option value="percent">Porcentaje (%)</option>
+        <option value="fixed">Importe fijo (€)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label id="discount-value-label">Valor</label>
+      <input id="discount-value" type="number" min="0" step="0.01" placeholder="Ej. 10">
+    </div>
+    <div class="form-group">
+      <label>Motivo (aparece en el ticket, opcional)</label>
+      <input id="discount-label" type="text" maxlength="40" placeholder="Ej. Promo verano, empleado…">
+    </div>
+    <div class="modal-error" id="discount-error"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="discount-remove-btn" onclick="removeDiscount()" style="display:none">🗑️ Quitar descuento</button>
+      <button class="modal-confirm-btn" onclick="applyDiscount()">→ Aplicar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── TICKET (vista/impresión) ── -->
-<div id="ticket-print"><pre class="ticket-pre" id="ticket-pre-content"></pre></div>
+<div id="ticket-print"><div class="ticket-doc" id="ticket-html-content"></div></div>
 
 <div id="toast" class="toast"></div>
 
