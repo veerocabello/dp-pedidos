@@ -812,7 +812,11 @@
       </div>
       <div id="mk-idea-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Idea</label>
-        <input type="text" id="mk-idea-texto" placeholder="ej. vídeo detrás de cámaras en cocina" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <button type="button" onclick="bimbaMkIdeaFormatear('mk-idea-texto','bold')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;cursor:pointer;color:#3D1F0D;font-family:'DM Sans',sans-serif">B</button>
+          <button type="button" onclick="bimbaMkIdeaFormatear('mk-idea-texto','underline')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;text-decoration:underline;cursor:pointer;color:#3D1F0D;font-family:'DM Sans',sans-serif">U</button>
+        </div>
+        <textarea id="mk-idea-texto" rows="3" placeholder="ej. vídeo detrás de cámaras en cocina" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical"></textarea>
 
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Categoría</label>
         <select id="mk-idea-categoria" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">

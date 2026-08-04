@@ -1950,10 +1950,33 @@ async function bimbaRenderMkIdeas() {
 const MK_IDEA_CATEGORIAS = ['Producto', 'Detrás de cámaras', 'Promoción', 'Testimonio', 'Tendencia', 'Colaboración'];
 const MK_IDEA_CATEGORIA_COLOR = { 'Producto': '#0C5C8A', 'Detrás de cámaras': '#6B3FA0', 'Promoción': '#B5862C', 'Testimonio': '#27855a', 'Tendencia': '#C13584', 'Colaboración': '#c0392b' };
 let _mkIdeaEditandoId = null;
+function bimbaMkIdeaFormatear(textareaId, tipo) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const val = ta.value;
+  const marker = tipo === 'bold' ? '**' : '__';
+  const seleccion = val.slice(start, end) || (tipo === 'bold' ? 'negrita' : 'subrayado');
+  ta.value = val.slice(0, start) + marker + seleccion + marker + val.slice(end);
+  ta.focus();
+  const nuevaPos = start + marker.length + seleccion.length + marker.length;
+  ta.setSelectionRange(nuevaPos, nuevaPos);
+}
+function _mkFormatearTexto(texto) {
+  let html = escapeHtml(texto || '');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  html = html.replace(/__([^_]+)__/g, '<u>$1</u>');
+  return html;
+}
 function bimbaMkIdeaCardHtml(i) {
   if (i.id === _mkIdeaEditandoId) {
     return '<div style="background:#fff;border:1.5px solid #C8860A;border-radius:12px;padding:14px;margin-bottom:10px">'
-      + '<input type="text" id="mk-idea-edit-texto-' + i.id + '" value="' + escapeAttr(i.idea || '') + '" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D">'
+      + '<div style="display:flex;gap:6px;margin-bottom:6px">'
+      + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'bold\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">B</button>'
+      + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'underline\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;text-decoration:underline;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">U</button>'
+      + '</div>'
+      + '<textarea id="mk-idea-edit-texto-' + i.id + '" rows="3" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical">' + escapeHtml(i.idea || '') + '</textarea>'
       + '<select id="mk-idea-edit-categoria-' + i.id + '" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D">'
       + MK_IDEA_CATEGORIAS.map(function (c) { return '<option' + (c === i.categoria ? ' selected' : '') + '>' + c + '</option>'; }).join('')
       + '</select>'
@@ -1966,7 +1989,7 @@ function bimbaMkIdeaCardHtml(i) {
   return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
     + '<div style="display:flex;align-items:flex-start;gap:10px">'
     + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:18px;line-height:1.4;cursor:pointer;flex-shrink:0;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
-    + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45">' + escapeHtml(i.idea || '') + '</div>'
+    + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-wrap">' + _mkFormatearTexto(i.idea) + '</div>'
     + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:14px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✏️</button>'
     + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✕</button>'
     + '</div>'
