@@ -374,6 +374,8 @@ function renderCart() {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
     document.getElementById('print-btn').disabled = true;
+    document.getElementById('cash-calc').style.display = 'none';
+    currentOrderTotal = 0;
     return;
   }
 
@@ -449,14 +451,50 @@ function renderCart() {
 
   bodyEl.innerHTML = html;
   totalRowEl.style.display = 'flex';
-  document.getElementById('cart-total').textContent = fmt(total - discountAmount) + ' €';
+  currentOrderTotal = total - discountAmount;
+  document.getElementById('cart-total').textContent = fmt(currentOrderTotal) + ' €';
   document.getElementById('print-btn').disabled = false;
+  document.getElementById('cash-calc').style.display = 'block';
+  updateChange();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CALCULADORA DE CAMBIO (pago en efectivo)
+   ══════════════════════════════════════════════════════════════ */
+let currentOrderTotal = 0;
+function addCashAmount(v) {
+  const el = document.getElementById('cash-received');
+  el.value = (parseFloat(el.value) || 0) + v;
+  updateChange();
+}
+function clearCashReceived() {
+  document.getElementById('cash-received').value = '';
+  updateChange();
+}
+function updateChange() {
+  const received = parseFloat(document.getElementById('cash-received').value) || 0;
+  const row = document.getElementById('cash-change-row');
+  const label = document.getElementById('cash-change-label');
+  const amountEl = document.getElementById('cash-change-amount');
+  if (received <= 0) { row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  const change = received - currentOrderTotal;
+  if (change < -0.001) {
+    label.textContent = 'Faltan';
+    amountEl.textContent = fmt(-change) + ' €';
+    row.className = 'cash-change-row short';
+  } else {
+    label.textContent = 'Cambio a devolver';
+    amountEl.textContent = fmt(Math.max(0, change)) + ' €';
+    row.className = 'cash-change-row ok';
+  }
 }
 
 function clearOrder(silent) {
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
   document.getElementById('order-name').value = '';
   document.getElementById('order-notes').value = '';
+  document.getElementById('cash-received').value = '';
   renderMenu();
   renderCart();
   if (!silent) toast('Comanda vaciada');

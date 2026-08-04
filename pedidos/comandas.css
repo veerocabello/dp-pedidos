@@ -491,6 +491,74 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cart-total-row span:last-child { font-variant-numeric: tabular-nums; color: var(--gold); }
 
+/* ── Calculadora de cambio (pago en efectivo) ── */
+.cash-calc {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--amber-light);
+  border: 1.5px solid rgba(232,148,58,.4);
+  border-radius: var(--radius-sm);
+}
+.cash-calc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brown);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.cash-clear-btn {
+  background: none; border: none; color: var(--muted);
+  font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: underline;
+  text-transform: none; letter-spacing: normal;
+}
+.cash-clear-btn:hover { color: var(--error); }
+.cash-calc-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.cash-quick-btn {
+  background: var(--white);
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--brown);
+  cursor: pointer;
+  transition: all .15s;
+}
+.cash-quick-btn:hover { background: var(--brown); color: var(--cream); border-color: var(--brown); }
+.cash-quick-btn:active { transform: scale(.95); }
+#cash-received {
+  flex: 1;
+  min-width: 90px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  background: var(--white);
+  color: var(--text);
+  text-align: right;
+}
+.cash-change-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(138,106,78,.35);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--brown);
+}
+.cash-change-row span:last-child { font-variant-numeric: tabular-nums; }
+.cash-change-row.short span:last-child { color: var(--error); }
+.cash-change-row.ok span:last-child { color: var(--success); }
+
 .btn-print {
   width: 100%;
   padding: 15px;
