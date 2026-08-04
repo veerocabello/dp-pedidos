@@ -104,7 +104,7 @@ function toast(msg, ms = 2600) {
 /* ══════════════════════════════════════════════════════════════
    RENDER — CARTA
    ══════════════════════════════════════════════════════════════ */
-const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🥪', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤' };
+const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🥖', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤' };
 
 function initTabs() {
   document.getElementById('tabs').innerHTML = categories.map(c =>
