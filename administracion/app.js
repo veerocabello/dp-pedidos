@@ -2386,3 +2386,91 @@ async function bimbaGuardarMkFoto() {
     msgEl.textContent = 'Error al guardar';
   }
 }
+
+// ── Extractor de color ──
+function openMkPaletaOverlay() {
+  document.getElementById('mk-paleta-overlay').classList.add('open');
+}
+function closeMkPaletaOverlay() {
+  document.getElementById('mk-paleta-overlay').classList.remove('open');
+}
+function bimbaMkPaletaProcesar(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const resultEl = document.getElementById('mk-paleta-resultado');
+  resultEl.innerHTML = '<div style="color:#8A6A4E;font-size:12px;text-align:center;padding:14px">Analizando...</div>';
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const img = new Image();
+    img.onload = function () {
+      const previewEl = document.getElementById('mk-paleta-preview');
+      previewEl.src = e.target.result;
+      previewEl.style.display = 'block';
+
+      const tamano = 100;
+      const canvas = document.getElementById('mk-paleta-canvas');
+      canvas.width = tamano;
+      canvas.height = tamano;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, tamano, tamano);
+      let datos;
+      try {
+        datos = ctx.getImageData(0, 0, tamano, tamano).data;
+      } catch (err) {
+        resultEl.innerHTML = '<div style="color:#c0392b;font-size:12px;text-align:center;padding:14px">No se pudo leer la imagen</div>';
+        return;
+      }
+      bimbaMkPaletaPintar(bimbaMkPaletaExtraer(datos));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function bimbaMkPaletaExtraer(datos) {
+  const cubos = {};
+  const paso = 32;
+  for (let i = 0; i < datos.length; i += 4) {
+    if (datos[i + 3] < 128) continue; // ignora píxeles muy transparentes
+    const r = Math.round(datos[i] / paso) * paso;
+    const g = Math.round(datos[i + 1] / paso) * paso;
+    const b = Math.round(datos[i + 2] / paso) * paso;
+    const clave = r + ',' + g + ',' + b;
+    cubos[clave] = (cubos[clave] || 0) + 1;
+  }
+  const ordenado = Object.keys(cubos).sort(function (x, y) { return cubos[y] - cubos[x]; });
+  return ordenado.slice(0, 6).map(function (clave) {
+    const partes = clave.split(',').map(Number);
+    return _mkRgbAHex(partes[0], partes[1], partes[2]);
+  });
+}
+function _mkRgbAHex(r, g, b) {
+  function componente(n) {
+    return Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  }
+  return '#' + componente(r) + componente(g) + componente(b);
+}
+function bimbaMkPaletaPintar(colores) {
+  const el = document.getElementById('mk-paleta-resultado');
+  if (!colores.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;text-align:center;padding:14px">No se detectaron colores</div>';
+    return;
+  }
+  el.innerHTML = '<div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Colores dominantes (toca para copiar)</div>'
+    + colores.map(function (hex) {
+      return '<div onclick="bimbaMkPaletaCopiar(\'' + hex + '\', this)" style="display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer">'
+        + '<div style="width:32px;height:32px;border-radius:8px;background:' + hex + ';border:1.5px solid rgba(0,0,0,0.08);flex-shrink:0"></div>'
+        + '<div style="flex:1;font-family:monospace;font-size:14px;font-weight:700;color:#3D1F0D">' + hex.toUpperCase() + '</div>'
+        + '<span class="mk-paleta-copy-msg" style="font-size:11px;color:#27855a;font-weight:700"></span>'
+        + '</div>';
+    }).join('');
+}
+async function bimbaMkPaletaCopiar(hex, el) {
+  try {
+    await navigator.clipboard.writeText(hex);
+    const msg = el.querySelector('.mk-paleta-copy-msg');
+    if (msg) {
+      msg.textContent = '✓ copiado';
+      setTimeout(function () { msg.textContent = ''; }, 1500);
+    }
+  } catch (e) {}
+}

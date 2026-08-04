@@ -183,7 +183,7 @@
     <h1>🏪 Administración</h1>
     <button id="logout-btn" onclick="hacerLogout()">Salir</button>
   </header>
-  <div style="text-align:center;font-size:10px;color:#B99B84;padding:4px 0;background:#FBF6EC">versión v16</div>
+  <div style="text-align:center;font-size:10px;color:#B99B84;padding:4px 0;background:#FBF6EC">versión v17</div>
   <main>
     <div id="loading-msg" style="display:none">Cargando datos...</div>
     <div id="app-content">
@@ -325,6 +325,14 @@
             <div class="row-desc">Abre WhatTheFont en una pestaña nueva — sube ahí la foto con la fuente que te guste.</div>
           </div>
           <span class="row-chevron">↗</span>
+        </div>
+        <div class="row" onclick="openMkPaletaOverlay()">
+          <span class="row-icon">🎨</span>
+          <div class="row-text">
+            <div class="row-title">Extractor de color</div>
+            <div class="row-desc">Sube una foto y saca sus colores dominantes en hexadecimal.</div>
+          </div>
+          <span class="row-chevron">›</span>
         </div>
       </div>
       </div><!-- /seccion-marketing -->
@@ -961,9 +969,26 @@
   </div>
 </div><!-- /mk-fotos-overlay -->
 
+<div id="mk-paleta-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkPaletaOverlay()">✕</button>
+    <h2>🎨 Extractor de color</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Sube una foto de referencia y saca sus colores dominantes en hexadecimal. Se procesa en tu propio navegador, la foto no se sube a ningún sitio. Toca un color para copiarlo.</div>
+
+      <input type="file" accept="image/*" id="mk-paleta-input" onchange="bimbaMkPaletaProcesar(event)" style="width:100%;padding:10px;margin-bottom:14px;border:1.5px dashed #C2711A;border-radius:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+      <canvas id="mk-paleta-canvas" style="display:none"></canvas>
+      <img id="mk-paleta-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:14px">
+
+      <div id="mk-paleta-resultado"></div>
+    </div>
+  </div>
+</div><!-- /mk-paleta-overlay -->
+
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
