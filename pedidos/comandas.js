@@ -8,7 +8,7 @@
 
 /* ── CARTA ── (mismos productos y precios que pedidos/src/carta.js) */
 const MENU = [
-  { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla (una u otra, no las dos), sal y pimienta", price: 3.00 },
+  { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla (una u otra, no las dos), sal y pimienta", price: 3.00, components: ["Aceite de oliva", "Mantequilla", "sal", "pimienta"] },
   { id: 2, cat: "Patatas", name: "Patata Vegetal", desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural", price: 5.60 },
   { id: 3, cat: "Patatas", name: "Patata Picante", desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas", price: 5.60 },
   { id: 4, cat: "Patatas", name: "Patata Carbonara", desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario", price: 5.80 },
@@ -31,6 +31,7 @@ const MENU = [
   { id: 19, cat: "Boniato", name: "Boniato Bacon", desc: "Salsa a elegir + bacon + queso mozzarella", price: 5.50 },
   { id: 20, cat: "Boniato", name: "Boniato G.O.A.T.", desc: "Salsa miel mostaza + cebolla crujiente + queso de cabra", price: 5.50 },
   { id: 21, cat: "Boniato", name: "Boniato Pistacchio", desc: "Crema de pistacho + queso mozzarella + pistacho crujiente", price: 5.50, nuevo: true },
+  { id: 51, cat: "Boniato", name: "Boniato Pulled Pork", desc: "Salsa cheddar + salsa yogur + pulled pork BBQ + cebolla crujiente + caramelo de bacon", price: 5.50, nuevo: true },
 
   { id: 22, cat: "Paninis", name: "Panini Jamón York y Queso", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 23, cat: "Paninis", name: "Panini Carbonara", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
@@ -65,6 +66,29 @@ const MENU = [
   { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.50 },
 ];
 
+/* ── Personalización de la carta guardada en este ordenador: productos
+   sencillos añadidos/quitados a mano y etiqueta NUEVO puesta/quitada a
+   mano, desde "🍽️ Carta". Se aplica una vez al cargar, mutando MENU
+   directamente para que el resto del código (que ya usa MENU por todos
+   lados) no tenga que cambiar. ── */
+const MENU_REMOVED_KEY = 'comandas_menu_removed_v1';
+const MENU_CUSTOM_KEY = 'comandas_menu_custom_v1';
+const MENU_NUEVO_OVERRIDES_KEY = 'comandas_menu_nuevo_overrides_v1';
+function loadMenuRemoved() { try { return JSON.parse(localStorage.getItem(MENU_REMOVED_KEY) || '[]'); } catch (e) { return []; } }
+function loadMenuCustom() { try { return JSON.parse(localStorage.getItem(MENU_CUSTOM_KEY) || '[]'); } catch (e) { return []; } }
+function loadMenuNuevoOverrides() { try { return JSON.parse(localStorage.getItem(MENU_NUEVO_OVERRIDES_KEY) || '{}'); } catch (e) { return {}; } }
+(function applyMenuCustomizations() {
+  const removedSet = new Set(loadMenuRemoved());
+  for (let i = MENU.length - 1; i >= 0; i--) {
+    if (removedSet.has(MENU[i].id)) MENU.splice(i, 1);
+  }
+  loadMenuCustom().forEach(item => MENU.push(item));
+  const nuevoOverrides = loadMenuNuevoOverrides();
+  MENU.forEach(item => {
+    if (Object.prototype.hasOwnProperty.call(nuevoOverrides, item.id)) item.nuevo = nuevoOverrides[item.id];
+  });
+})();
+
 const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
@@ -87,6 +111,12 @@ let activeCategory = "Todos";
 let cart = {};        // id -> qty (productos simples, sin personalizar)
 let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
+let orderPaid = false;
+function setOrderPaid(v) {
+  orderPaid = v;
+  document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
+  document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
+}
 
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -373,10 +403,12 @@ function renderCart() {
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
+    document.getElementById('paid-toggle-row').style.display = 'none';
     document.getElementById('print-btn').disabled = true;
     syncCashTotal(0);
     return;
   }
+  document.getElementById('paid-toggle-row').style.display = 'flex';
 
   let total = 0;
   let html = '';
@@ -513,6 +545,7 @@ function clearOrder(silent) {
   document.getElementById('order-name').value = '';
   document.getElementById('cash-received').value = '';
   cashTotalEdited = false;
+  setOrderPaid(false);
   renderMenu();
   renderCart();
   if (!silent) toast('Comanda vaciada');
@@ -733,10 +766,12 @@ function confirmCheddar() {
    MODAL — EXTRAS (patatas 1-14: queso/gratinado + ingredientes extra)
    ══════════════════════════════════════════════════════════════ */
 const NO_QUITAR_IDS = new Set([4, 5, 8, 20]); // Carbonara, Boloñesa, 4 Quesos y Boniato G.O.A.T. (queso de cabra): no se pueden quitar ni cambiar ingredientes
-const BONIATO_IDS = new Set([17, 18, 19, 20, 21]); // no llevan queso/gratinado como extra, solo quitar/cambiar ingredientes
+const BONIATO_IDS = new Set([17, 18, 19, 20, 21, 51]); // no llevan queso/gratinado como extra, solo quitar ingredientes
 function parseBaseComponents(item) {
+  if (item.components) return item.components;
   if (!item.desc) return [];
   let clean = item.desc.split(' · ')[0]; // quita coletillas tipo "· Salsa cocinada a diario"
+  if (clean.includes(' + ')) return clean.split(' + ').map(s => s.trim()).filter(Boolean);
   const lastY = clean.lastIndexOf(' y ');
   if (lastY !== -1) clean = clean.slice(0, lastY) + ', ' + clean.slice(lastY + 3);
   return clean.split(',').map(s => s.trim()).filter(Boolean);
@@ -803,19 +838,21 @@ function renderExtrasBody(item) {
       html += `<button class="chip ${on ? 'quitado' : ''}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${on ? '🚫 ' : ''}${escapeHtml(comp)}</button>`;
     });
     html += `</div>`;
-    html += `<div class="section-label">Cambiar un ingrediente</div>`;
-    html += `<div class="swap-card">
-      <div class="swap-row">
-        <select id="cambio-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-        <span class="swap-arrow">→</span>
-        <select id="cambio-to" class="swap-select">${[...CUST_INGREDIENTS, ...CUST_SAUCES].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-      </div>
-      <button class="swap-add-btn" onclick="addExtraCambio()">+ Añadir cambio</button>
-    </div>`;
-    if (extrasCambios.length) {
-      html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
-        `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
-      ).join('') + `</div>`;
+    if (!isBoniato) {
+      html += `<div class="section-label">Cambiar un ingrediente</div>`;
+      html += `<div class="swap-card">
+        <div class="swap-row">
+          <select id="cambio-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          <span class="swap-arrow">→</span>
+          <select id="cambio-to" class="swap-select">${[...CUST_INGREDIENTS, ...CUST_SAUCES].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        </div>
+        <button class="swap-add-btn" onclick="addExtraCambio()">+ Añadir cambio</button>
+      </div>`;
+      if (extrasCambios.length) {
+        html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
+          `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
+        ).join('') + `</div>`;
+      }
     }
   } else if (NO_QUITAR_IDS.has(item.id)) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
@@ -831,26 +868,26 @@ function renderExtrasBody(item) {
       <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
+    html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
+    CUST_SAUCES.forEach(s => {
+      const on = !!extrasSalsas[s];
+      html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+        <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+        <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+      </label>`;
+    });
+    html += `</div>`;
+    html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
+    [...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07].forEach(ing => {
+      const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
+      const on = !!extrasIngredientes[ing];
+      html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+        <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
+        <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+      </label>`;
+    });
+    html += `</div>`;
   }
-  html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
-  CUST_SAUCES.forEach(s => {
-    const on = !!extrasSalsas[s];
-    html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
-      <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
-    </label>`;
-  });
-  html += `</div>`;
-  html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
-  [...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07].forEach(ing => {
-    const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
-    const on = !!extrasIngredientes[ing];
-    html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
-      <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
-    </label>`;
-  });
-  html += `</div>`;
   document.getElementById('extras-options').innerHTML = html;
 }
 function toggleExtraQuitar(comp) {
@@ -956,6 +993,7 @@ const TICKET_CONFIG_DEFAULTS = {
   nombre: 'DULCE PATATA FOOD',
   direccion: 'Carretera de Málaga 111, Granada',
   telefono: '604 82 31 80',
+  nif: '77558832A',
   despedida: '¡Gracias por tu pedido! 🥔',
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
@@ -1012,6 +1050,7 @@ function buildOrderObject(preview) {
     time: new Date().toLocaleString('es-ES'),
     name: document.getElementById('order-name').value.trim(),
     notes: '',
+    paid: orderPaid,
     items,
     total,
   };
@@ -1079,6 +1118,7 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(cfg.nombre), align: 'center', big: true });
   B.push({ text: foldAccents(cfg.direccion), align: 'center' });
   B.push({ text: foldAccents(cfg.telefono), align: 'center' });
+  B.push({ text: 'NIF: ' + foldAccents(cfg.nif), align: 'center' });
   B.push({ text: TICKET_DIVIDER, align: 'center' });
   B.push({ text: foldAccents((order.name || '').toUpperCase()), align: 'center', big: true });
   B.push({ text: TICKET_DIVIDER, align: 'center' });
@@ -1090,6 +1130,7 @@ function buildTicketBlocks(order) {
   });
   B.push({ text: TICKET_DIVIDER, align: 'left' });
   B.push({ text: fmtEur(order.total || 0), align: 'center', big: true });
+  B.push({ text: order.paid ? 'PAGADO' : 'NO PAGADO', align: 'center', big: true, paidStatus: order.paid ? 'yes' : 'no' });
   B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
   if (order.notes) {
     B.push({ text: TICKET_DIVIDER, align: 'left' });
@@ -1115,7 +1156,8 @@ function buildTicketPreviewHTML(order) {
       html += '<div style="text-align:' + b.align + '"><b>' + escapeHtml(b.text.slice(0, idx)) + '</b>' + escapeHtml(b.text.slice(idx)) + '</div>';
       return;
     }
-    const style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
+    let style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
+    if (b.paidStatus) style += ';color:' + (b.paidStatus === 'yes' ? '#2e8b57' : '#c0392b');
     html += '<div style="' + style + '">' + (escapeHtml(b.text) || '&nbsp;') + '</div>';
   });
   return html;
@@ -1366,6 +1408,7 @@ function openSettings() {
   document.getElementById('set-nombre').value = cfg.nombre;
   document.getElementById('set-direccion').value = cfg.direccion;
   document.getElementById('set-telefono').value = cfg.telefono;
+  document.getElementById('set-nif').value = cfg.nif;
   document.getElementById('set-despedida').value = cfg.despedida;
   document.getElementById('set-texto-pago').value = cfg.textoPago;
   document.getElementById('set-ancho-papel').value = String(cfg.anchoPapel);
@@ -1380,6 +1423,7 @@ function saveSettingsForm() {
     nombre: document.getElementById('set-nombre').value.trim() || TICKET_CONFIG_DEFAULTS.nombre,
     direccion: document.getElementById('set-direccion').value.trim() || TICKET_CONFIG_DEFAULTS.direccion,
     telefono: document.getElementById('set-telefono').value.trim() || TICKET_CONFIG_DEFAULTS.telefono,
+    nif: document.getElementById('set-nif').value.trim() || TICKET_CONFIG_DEFAULTS.nif,
     despedida: document.getElementById('set-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
     textoPago: document.getElementById('set-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('set-ancho-papel').value, 10),
@@ -1390,6 +1434,89 @@ function saveSettingsForm() {
   saveTicketConfig(cfg);
   closeSettings();
   toast('✅ Ajustes guardados');
+}
+
+/* ── Gestionar carta: añadir/quitar productos sencillos y poner/quitar
+   la etiqueta NUEVO, todo guardado en este ordenador (localStorage). ── */
+function openCartaAdmin() {
+  const catSelect = document.getElementById('carta-new-cat');
+  catSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  document.getElementById('carta-new-name').value = '';
+  document.getElementById('carta-new-price').value = '';
+  document.getElementById('carta-new-desc').value = '';
+  document.getElementById('carta-new-nuevo').checked = false;
+  renderCartaAdminList();
+  document.getElementById('carta-modal').classList.add('open');
+}
+function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
+function renderCartaAdminList() {
+  const customIds = new Set(loadMenuCustom().map(i => i.id));
+  const html = categories.filter(c => c !== 'Todos').map(cat => {
+    const items = MENU.filter(m => m.cat === cat);
+    if (!items.length) return '';
+    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map(item => `
+      <div class="carta-admin-row">
+        <div class="carta-admin-info">
+          <span class="carta-admin-name">${escapeHtml(item.name)}</span>
+          <span class="carta-admin-price">${fmt(item.price)} €</span>
+        </div>
+        <div class="carta-admin-actions">
+          <button class="carta-nuevo-btn ${item.nuevo ? 'on' : ''}" onclick="toggleCartaNuevo(${item.id})" title="Poner/quitar etiqueta NUEVO">🆕</button>
+          <button class="carta-remove-btn" onclick="removeCartaProduct(${item.id}, '${item.name.replace(/'/g, "\\'")}')" title="Quitar de la carta">🗑️</button>
+        </div>
+      </div>`).join('');
+  }).join('');
+  document.getElementById('carta-admin-list').innerHTML = html;
+}
+function addCartaProduct() {
+  const name = document.getElementById('carta-new-name').value.trim();
+  const cat = document.getElementById('carta-new-cat').value;
+  const price = parseFloat(document.getElementById('carta-new-price').value);
+  const desc = document.getElementById('carta-new-desc').value.trim();
+  const nuevo = document.getElementById('carta-new-nuevo').checked;
+  if (!name || !cat || !(price >= 0)) { toast('⚠️ Rellena nombre, categoría y precio'); return; }
+  const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
+  const item = { id: nextId, cat, name, desc, price };
+  if (nuevo) item.nuevo = true;
+  const custom = loadMenuCustom();
+  custom.push(item);
+  localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
+  MENU.push(item);
+  renderMenu();
+  renderCartaAdminList();
+  document.getElementById('carta-new-name').value = '';
+  document.getElementById('carta-new-price').value = '';
+  document.getElementById('carta-new-desc').value = '';
+  document.getElementById('carta-new-nuevo').checked = false;
+  toast('✅ Producto añadido');
+}
+function removeCartaProduct(id, name) {
+  if (!confirm('¿Quitar "' + name + '" de la carta?')) return;
+  const idx = MENU.findIndex(m => m.id === id);
+  if (idx !== -1) MENU.splice(idx, 1);
+  // Si era un producto añadido a mano, se quita también de la lista guardada de añadidos.
+  const custom = loadMenuCustom().filter(i => i.id !== id);
+  localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
+  // Si era un producto de fábrica, se guarda como quitado para que no reaparezca.
+  const removed = loadMenuRemoved();
+  if (!removed.includes(id)) { removed.push(id); localStorage.setItem(MENU_REMOVED_KEY, JSON.stringify(removed)); }
+  renderMenu();
+  renderCartaAdminList();
+  toast('🗑️ Producto quitado');
+}
+function toggleCartaNuevo(id) {
+  const item = MENU.find(m => m.id === id);
+  if (!item) return;
+  item.nuevo = !item.nuevo;
+  const overrides = loadMenuNuevoOverrides();
+  overrides[id] = item.nuevo;
+  localStorage.setItem(MENU_NUEVO_OVERRIDES_KEY, JSON.stringify(overrides));
+  // Si es un producto añadido a mano, actualiza también su copia guardada.
+  const custom = loadMenuCustom();
+  const c = custom.find(i => i.id === id);
+  if (c) { c.nuevo = item.nuevo; localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom)); }
+  renderMenu();
+  renderCartaAdminList();
 }
 
 /* ══════════════════════════════════════════════════════════════

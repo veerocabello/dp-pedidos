@@ -363,6 +363,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   max-height: calc(100vh - 90px);
   box-shadow: var(--shadow-lg);
 }
+/* Solo .cart-body puede encogerse/hacer scroll; el resto (nombre, total,
+   Cobrar, botones) mantiene siempre su altura completa y nunca se recorta. */
+.cart-panel > *:not(.cart-body) { flex-shrink: 0; }
 .cart-header {
   display: flex;
   align-items: center;
@@ -499,6 +502,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   font-size: 19px;
 }
 .cart-total-row span:last-child { font-variant-numeric: tabular-nums; color: var(--gold); }
+
+.paid-toggle-row { display: flex; gap: 6px; margin-top: 6px; }
+.paid-toggle-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  background: var(--white);
+  color: var(--muted);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .3px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.paid-toggle-btn:hover { border-color: var(--amber); }
+.paid-toggle-btn.paid-toggle-no.active { background: var(--error); border-color: var(--error); color: #fff; }
+.paid-toggle-btn.paid-toggle-yes.active { background: #2e8b57; border-color: #2e8b57; color: #fff; }
 
 /* ── Calculadora de cambio (pago en efectivo) ── */
 .cash-calc {
@@ -825,6 +847,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .historial-item button:hover { background: var(--amber); color: #fff; }
 .historial-empty { text-align: center; color: var(--muted); padding: 26px; font-size: 13px; }
 
+/* ── Gestionar carta ── */
+.carta-admin-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; background: var(--white); border-radius: var(--radius-sm);
+  margin-bottom: 7px; gap: 10px; box-shadow: var(--shadow-sm);
+}
+.carta-admin-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.carta-admin-name { font-weight: 700; font-size: 13.5px; color: var(--text); }
+.carta-admin-price { font-size: 12px; color: var(--muted); }
+.carta-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.carta-nuevo-btn, .carta-remove-btn {
+  background: var(--warm); border: none; border-radius: var(--radius-xs);
+  padding: 7px 10px; cursor: pointer; font-size: 14px; line-height: 1;
+  transition: background .15s, filter .15s;
+}
+.carta-nuevo-btn:hover { background: var(--amber); }
+.carta-nuevo-btn.on { background: var(--gold); filter: none; }
+.carta-remove-btn:hover { background: var(--error); filter: brightness(1.1); }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(24px);
@@ -860,7 +901,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .ticket-view-wrap {
   background: #fff;
   border-radius: var(--radius-sm);
-  padding: 16px 10px;
+  padding: 16px 6px;
   overflow-x: auto;
   box-shadow: var(--shadow-sm);
 }

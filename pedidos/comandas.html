@@ -21,6 +21,7 @@
   <div class="topbar-actions">
     <span id="printer-status" class="printer-status">comprobando impresora…</span>
     <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
+    <button class="btn-ghost" onclick="openCartaAdmin()">🍽️ Carta</button>
     <button class="btn-ghost" onclick="openSettings()">⚙️ Ajustes</button>
   </div>
 </header>
@@ -47,6 +48,10 @@
     <div class="cart-total-row" id="cart-total-row" style="display:none">
       <span>Total</span><span id="cart-total">0,00 €</span>
     </div>
+    <div class="paid-toggle-row" id="paid-toggle-row" style="display:none">
+      <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
+      <button type="button" class="paid-toggle-btn paid-toggle-yes" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ PAGADO</button>
+    </div>
     <details class="cash-calc" id="cash-calc" open ontoggle="if(window.onCashCalcToggle)onCashCalcToggle()">
       <summary class="cash-calc-summary">💵 Cobrar</summary>
       <div class="cash-calc-body">
@@ -61,10 +66,6 @@
           <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
           <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
           <input id="cash-received" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Paga con" oninput="updateChange()">
-        </div>
-        <div class="cash-calc-row">
-          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(1)">+1€</button>
-          <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(2)">+2€</button>
         </div>
         <div class="cash-calc-row">
           <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.05)">+0,05€</button>
@@ -164,6 +165,7 @@
     <div class="form-group"><label>Nombre</label><input id="set-nombre" type="text"></div>
     <div class="form-group"><label>Dirección</label><input id="set-direccion" type="text"></div>
     <div class="form-group"><label>Teléfono</label><input id="set-telefono" type="text"></div>
+    <div class="form-group"><label>NIF</label><input id="set-nif" type="text"></div>
     <div class="form-group"><label>Despedida</label><input id="set-despedida" type="text"></div>
     <div class="form-group"><label>Texto de pago</label><input id="set-texto-pago" type="text"></div>
 
@@ -207,6 +209,40 @@
   </div>
 </div>
 
+<!-- ── GESTIONAR CARTA MODAL ── -->
+<div id="carta-modal" class="modal-overlay" onclick="if(event.target===this)closeCartaAdmin()">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="closeCartaAdmin()">&#x2715;</button>
+    <div class="modal-title">🍽️ Gestionar carta</div>
+    <div class="modal-subtitle">Añade o quita productos sencillos (bebidas, tartas, cookies…) y marca o quita la etiqueta NUEVO. Se guarda en este ordenador.</div>
+
+    <div class="section-label" style="margin-top:0">Añadir producto</div>
+    <div class="form-group"><label>Nombre</label><input id="carta-new-name" type="text" placeholder="Ej. Batido de fresa"></div>
+    <div class="settings-grid">
+      <div class="form-group">
+        <label>Categoría</label>
+        <select id="carta-new-cat"></select>
+      </div>
+      <div class="form-group"><label>Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
+    </div>
+    <div class="form-group"><label>Descripción (opcional)</label><input id="carta-new-desc" type="text" placeholder="Ej. 500 ml"></div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">🆕 Marcar como NUEVO</div></div>
+      <input type="checkbox" id="carta-new-nuevo" style="width:20px;height:20px;flex-shrink:0">
+    </label>
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="addCartaProduct()">+ Añadir a la carta</button>
+    </div>
+
+    <div class="section-label">Productos actuales</div>
+    <div id="carta-admin-list"></div>
+
+    <div class="settings-help">
+      Los productos que añadas aquí se añaden directos a la comanda con un solo precio (sin personalización de ingredientes, como las bebidas). Para quitar uno pulsa 🗑️ — no hay deshacer, así que revisa antes de confirmar.
+    </div>
+  </div>
+</div>
+
 <!-- ── HISTORIAL MODAL ── -->
 <div id="historial-modal" class="modal-overlay" onclick="if(event.target===this)closeHistorial()">
   <div class="modal-box" style="max-width:480px">
@@ -219,7 +255,7 @@
 
 <!-- ── VER TICKET (sin imprimir) ── -->
 <div id="ticket-view-modal" class="modal-overlay" onclick="if(event.target===this)closeTicketView()">
-  <div class="modal-box" style="max-width:400px">
+  <div class="modal-box" style="max-width:440px">
     <button class="modal-close" onclick="closeTicketView()">&#x2715;</button>
     <div class="modal-title">👁️ Ticket</div>
     <div class="ticket-view-wrap">
