@@ -203,7 +203,7 @@
           <div class="row" onclick="mostrarSeccionMarketing()">
             <span class="row-icon">📣</span>
             <div class="row-text">
-              <div class="row-title">Marketing</div>
+              <div class="row-title">Marketing <span id="mk-home-badge" style="display:none;font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;background:#F4C430;color:#3D1F0D;margin-left:4px;vertical-align:middle;white-space:nowrap"></span></div>
               <div class="row-desc">Calendario de contenido, banco de ideas y promociones.</div>
             </div>
             <span class="row-chevron">›</span>
@@ -759,6 +759,8 @@
         <div id="mk-cal-tab-lista" onclick="bimbaMkCalVista('lista')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #3D1F0D;background:#3D1F0D;color:#fff">📋 Lista</div>
         <div id="mk-cal-tab-mes" onclick="bimbaMkCalVista('mes')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">🗓️ Mes</div>
       </div>
+
+      <div id="mk-cal-resumen-estados" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 
       <div id="mk-calendario-vista-mes" style="display:none;margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">

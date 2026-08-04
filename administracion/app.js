@@ -103,6 +103,7 @@ async function cargarDatosIniciales() {
   await _gastosCargarCategorias();
   await _cargarIngredientesYRecetas();
   await _cargarNombresDeStock();
+  bimbaCargarMkResumenHome();
   loadingEl.style.display = 'none';
   contentEl.style.display = 'block';
 }
@@ -1674,6 +1675,34 @@ let _mkCalendarioCache = [];
 let _mkIdeasCache = [];
 let _mkPromosCache = [];
 
+function _mkRangoSemanaActual() {
+  const hoy = new Date();
+  const diaSemana = (hoy.getDay() + 6) % 7; // lunes = 0
+  const lunes = new Date(hoy);
+  lunes.setDate(hoy.getDate() - diaSemana);
+  const domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  return { inicio: lunes.toISOString().slice(0, 10), fin: domingo.toISOString().slice(0, 10) };
+}
+async function bimbaCargarMkResumenHome() {
+  const badge = document.getElementById('mk-home-badge');
+  if (!badge) return;
+  try {
+    const sn = await firebase.database().ref('marketing/calendario').once('value');
+    const lista = [];
+    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    _mkCalendarioCache = lista;
+  } catch (e) { return; }
+  const { inicio, fin } = _mkRangoSemanaActual();
+  const pendientes = _mkCalendarioCache.filter(function (p) { return p.fecha >= inicio && p.fecha <= fin && p.estado !== 'Publicado'; });
+  if (pendientes.length > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = pendientes.length + ' esta semana';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 function bimbaToggleMkForm(tipo) {
   const form = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-form');
   const chevron = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-chevron');
@@ -1704,11 +1733,18 @@ async function bimbaRenderMkCalendario() {
   const el = document.getElementById('mk-calendario-lista');
   el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
   try {
-    const sn = await firebase.database().ref('marketing/calendario').once('value');
+    const [snCal, snPromo] = await Promise.all([
+      firebase.database().ref('marketing/calendario').once('value'),
+      firebase.database().ref('marketing/promos').once('value')
+    ]);
     const lista = [];
-    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    if (snCal.exists()) snCal.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
     lista.sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); });
     _mkCalendarioCache = lista;
+
+    const promos = [];
+    if (snPromo.exists()) snPromo.forEach(function (s) { promos.push(Object.assign({ id: s.key }, s.val())); });
+    _mkPromosCache = promos;
   } catch (e) {
     el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
     return;
@@ -1716,14 +1752,39 @@ async function bimbaRenderMkCalendario() {
   bimbaPintarMkCalendarioLista();
   if (document.getElementById('mk-calendario-vista-mes').style.display !== 'none') bimbaRenderMkMes();
 }
+function bimbaPintarMkResumenEstados() {
+  const el = document.getElementById('mk-cal-resumen-estados');
+  if (!el) return;
+  const counts = {};
+  MK_ESTADOS.forEach(function (e) { counts[e] = 0; });
+  _mkCalendarioCache.forEach(function (p) { const e = p.estado || 'Idea'; counts[e] = (counts[e] || 0) + 1; });
+  el.innerHTML = MK_ESTADOS.map(function (e) {
+    const color = MK_ESTADO_COLOR[e];
+    return '<span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px;background:' + color + '1A;color:' + color + '">' + e + ' ' + counts[e] + '</span>';
+  }).join('');
+}
 function bimbaPintarMkCalendarioLista() {
   const el = document.getElementById('mk-calendario-lista');
-  const lista = _mkMesFiltroDia ? _mkCalendarioCache.filter(function (p) { return p.fecha === _mkMesFiltroDia; }) : _mkCalendarioCache;
-  if (!lista.length) {
+  bimbaPintarMkResumenEstados();
+  const posts = (_mkMesFiltroDia ? _mkCalendarioCache.filter(function (p) { return p.fecha === _mkMesFiltroDia; }) : _mkCalendarioCache)
+    .map(function (p) { return { tipo: 'post', fecha: p.fecha, data: p }; });
+  const promos = (_mkMesFiltroDia ? (_mkPromosCache || []).filter(function (pr) { return pr.fechaInicio === _mkMesFiltroDia; }) : (_mkPromosCache || []))
+    .map(function (pr) { return { tipo: 'promo', fecha: pr.fechaInicio, data: pr }; });
+  const combinado = posts.concat(promos).sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); });
+
+  if (!combinado.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">' + (_mkMesFiltroDia ? 'Sin publicaciones ese día' : 'Sin publicaciones planeadas todavía') + '</div>';
     return;
   }
-  el.innerHTML = lista.map(function (p) {
+  el.innerHTML = combinado.map(function (item) {
+    if (item.tipo === 'promo') {
+      const pr = item.data;
+      return '<div style="background:#FFFDF5;border:1.5px solid #F4C430;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
+        + '<div style="font-size:12.5px;font-weight:800;color:#854F0B;margin-bottom:2px">🎉 Empieza: ' + escapeHtml(pr.nombre || '') + '</div>'
+        + '<div style="font-size:11px;color:#8A6A4E">' + (pr.fechaInicio ? _fechaCorta(pr.fechaInicio) : '') + (pr.oferta ? ' · ' + escapeHtml(pr.oferta) : '') + '</div>'
+        + '</div>';
+    }
+    const p = item.data;
     const color = MK_ESTADO_COLOR[p.estado] || '#8A6A4E';
     return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
@@ -1776,6 +1837,12 @@ function bimbaRenderMkMes() {
     (porDia[p.fecha] = porDia[p.fecha] || []).push(p);
   });
 
+  const promosPorDia = {};
+  (_mkPromosCache || []).forEach(function (pr) {
+    if (!pr.fechaInicio) return;
+    promosPorDia[pr.fechaInicio] = true;
+  });
+
   const primerDiaSemana = (new Date(anio, mes, 1).getDay() + 6) % 7; // lunes = 0
   const diasEnMes = new Date(anio, mes + 1, 0).getDate();
   const hoyStr = new Date().toISOString().slice(0, 10);
@@ -1785,13 +1852,17 @@ function bimbaRenderMkMes() {
   for (let dia = 1; dia <= diasEnMes; dia++) {
     const fechaStr = anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(dia).padStart(2, '0');
     const posts = porDia[fechaStr] || [];
+    const empiezaPromo = !!promosPorDia[fechaStr];
     const esHoy = fechaStr === hoyStr;
     const esSeleccionado = fechaStr === _mkMesFiltroDia;
     const dots = posts.slice(0, 3).map(function (p) {
       return '<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:' + (MK_RED_COLOR[p.red] || '#8A6A4E') + ';margin:0 1px"></span>';
     }).join('');
     const extra = posts.length > 3 ? '<div style="font-size:8px;color:#8A6A4E;font-weight:700">+' + (posts.length - 3) + '</div>' : '';
-    html += '<div onclick="bimbaMkMesFiltrarDia(\'' + fechaStr + '\')" style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:' + (esSeleccionado ? '#FBEFD6' : '#fff') + ';border:1.5px solid ' + (esSeleccionado ? '#F4C430' : '#F5E6C8') + '">'
+    const fondoCelda = esSeleccionado ? '#FBEFD6' : (empiezaPromo ? '#FFFDF5' : '#fff');
+    const bordeCelda = esSeleccionado ? '#F4C430' : (empiezaPromo ? '#F4C430' : '#F5E6C8');
+    html += '<div onclick="bimbaMkMesFiltrarDia(\'' + fechaStr + '\')" style="position:relative;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:' + fondoCelda + ';border:1.5px solid ' + bordeCelda + '">'
+      + (empiezaPromo ? '<span style="position:absolute;top:1px;right:2px;font-size:7px;line-height:1">🎉</span>' : '')
       + '<div style="font-size:11px;font-weight:' + (esHoy ? '800' : '600') + ';color:' + (esHoy ? '#C2711A' : '#3D1F0D') + '">' + dia + '</div>'
       + (posts.length ? '<div style="margin-top:2px">' + dots + '</div>' + extra : '')
       + '</div>';
