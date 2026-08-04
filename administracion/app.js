@@ -2070,8 +2070,8 @@ function bimbaMkIdeaCardHtml(i) {
       + '</div>';
   }
   return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
-    + '<div style="overflow:hidden;zoom:1">'
-    + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="float:left;margin-right:10px;font-size:18px;line-height:1.45;cursor:pointer;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
+    + '<div style="position:relative;padding-left:28px">'
+    + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="position:absolute;left:0;top:1px;font-size:18px;line-height:1.45;cursor:pointer;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
     + '<div style="font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-line">' + _mkFormatearTexto(i.idea) + '</div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
