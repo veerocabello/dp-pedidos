@@ -862,7 +862,16 @@ function removeExtraCambio(i) {
   updateExtrasTotalPrice();
 }
 function toggleExtra(which) {
-  if (which === 'queso') extrasQueso = !extrasQueso; else extrasGratinado = !extrasGratinado;
+  const soloGratinado = EXTRAS_SOLO_GRATINADO.has(extrasCurrentId); // ya lleva queso incluido de base
+  if (which === 'queso') {
+    extrasQueso = !extrasQueso;
+    // Sin queso no hay nada que gratinar (salvo que la patata ya lo lleve de base).
+    if (!extrasQueso && !soloGratinado && extrasGratinado) extrasGratinado = false;
+  } else {
+    extrasGratinado = !extrasGratinado;
+    // Gratinar necesita queso: si la patata no lo lleva de base, se añade solo.
+    if (extrasGratinado && !soloGratinado && !extrasQueso) extrasQueso = true;
+  }
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -1077,6 +1086,7 @@ function buildTicketBlocks(order) {
   }
   B.push({ text: TICKET_DIVIDER, align: 'center' });
   B.push({ text: foldAccents(cfg.despedida), align: 'center' });
+  B.push({ text: 'IVA incluido 10%', align: 'center' });
   return B;
 }
 
