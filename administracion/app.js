@@ -60,6 +60,7 @@ auth.onAuthStateChanged(function (user) {
     loginScreen.style.display = 'none';
     appScreen.style.display = 'block';
     cargarDatosIniciales();
+    mostrarSeccionHome();
   } else {
     loginScreen.style.display = 'flex';
     appScreen.style.display = 'none';
@@ -71,16 +72,25 @@ function mostrarSeccionHome() {
   document.getElementById('seccion-home').style.display = 'block';
   document.getElementById('seccion-administracion').style.display = 'none';
   document.getElementById('seccion-marketing').style.display = 'none';
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+  window.scrollTo(0, 0);
 }
 function mostrarSeccionAdmin() {
   document.getElementById('seccion-home').style.display = 'none';
   document.getElementById('seccion-administracion').style.display = 'block';
   document.getElementById('seccion-marketing').style.display = 'none';
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+  window.scrollTo(0, 0);
 }
 function mostrarSeccionMarketing() {
   document.getElementById('seccion-home').style.display = 'none';
   document.getElementById('seccion-administracion').style.display = 'none';
   document.getElementById('seccion-marketing').style.display = 'block';
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+  window.scrollTo(0, 0);
 }
 
 // ── DATOS: MENU ──
@@ -2046,11 +2056,10 @@ function bimbaMkIdeaCardHtml(i) {
     + '<div style="display:flex;align-items:flex-start;gap:10px">'
     + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="font-size:18px;line-height:1.4;cursor:pointer;flex-shrink:0;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
     + '<div style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-wrap;overflow-wrap:break-word">' + _mkFormatearTexto(i.idea) + '</div>'
-    + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:14px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✏️</button>'
-    + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#B99B84;font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.4">✕</button>'
     + '</div>'
-    + '<div style="display:flex;align-items:center;margin-top:12px">'
-    + '<button id="mk-idea-btn-cal-' + i.id + '" onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:11px;font-weight:700;color:#fff;background:#3D1F0D;border:none;border-radius:99px;padding:5px 12px;cursor:pointer;margin-left:auto;font-family:\'DM Sans\',sans-serif">📅 Añadir al calendario</button>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="width:36px;height:32px;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;font-size:15px;cursor:pointer">✏️</button>'
+    + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="width:36px;height:32px;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;font-size:15px;cursor:pointer">🗑️</button>'
     + '</div>'
     + '</div>';
 }
@@ -2134,26 +2143,6 @@ async function bimbaGuardarMkIdea() {
     msgEl.textContent = 'Error al guardar';
   }
 }
-async function bimbaMkIdeaAlCalendario(id) {
-  const idea = _mkIdeasCache.find(function (i) { return i.id === id; });
-  if (!idea) return;
-  const btn = document.getElementById('mk-idea-btn-cal-' + id);
-  try {
-    await firebase.database().ref('marketing/calendario').push({
-      fecha: new Date().toISOString().slice(0, 10),
-      red: 'Instagram',
-      tipo: 'Post',
-      tema: idea.idea,
-      texto: '',
-      estado: 'Idea',
-      ts: Date.now()
-    });
-    if (btn) { btn.textContent = '✅ Añadida'; btn.disabled = true; btn.style.opacity = '0.7'; }
-  } catch (e) {
-    if (btn) btn.textContent = 'Error, prueba otra vez';
-  }
-}
-
 // ── Promociones y campañas ──
 function openMkPromosOverlay() {
   document.getElementById('mk-promos-overlay').classList.add('open');
