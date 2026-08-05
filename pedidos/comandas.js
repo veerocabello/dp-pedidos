@@ -147,6 +147,13 @@ function escapeHtml(str) {
 }
 function fmt(n) { return n.toFixed(2).replace('.', ','); }
 function sortEs(arr) { return [...arr].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })); }
+// Alfabético, pero los quesos siempre van los últimos de la lista.
+function isQuesoIngredient(name) { return /queso/i.test(name); }
+function sortIngredientsQuesoLast(arr) {
+  const normal = arr.filter(n => !isQuesoIngredient(n));
+  const quesos = arr.filter(n => isQuesoIngredient(n));
+  return [...sortEs(normal), ...sortEs(quesos)];
+}
 function toast(msg, ms = 2600) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -685,7 +692,7 @@ function renderCustChips() {
     const label = extra ? n + ' +' + fmt(EXTRAS_SALSA_PRECIO) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
-  iEl.innerHTML = CUST_INGREDIENTS.map(n => {
+  iEl.innerHTML = sortIngredientsQuesoLast(CUST_INGREDIENTS).map(n => {
     const sel = custSelIngredients.includes(n);
     const disabled = !sel && ((cfg.maxIngredients !== null && custSelIngredients.length >= cfg.maxIngredients) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal));
     return `<button class="chip ${sel ? 'selected' : ''} ${disabled ? 'disabled' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${n}</button>`;
@@ -947,7 +954,7 @@ function renderExtrasBody(item) {
           <select id="cambio-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
           <span class="swap-arrow">→</span>
           <select id="cambio-to" class="swap-select">
-            <optgroup label="INGREDIENTES">${CUST_INGREDIENTS.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</optgroup>
+            <optgroup label="INGREDIENTES">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</optgroup>
             <optgroup label="SALSAS">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</optgroup>
           </select>
         </div>
@@ -980,7 +987,7 @@ function renderExtrasBody(item) {
     </label>`;
     if (!soloGratinar) {
       html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
-      sortEs([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
+      sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
         const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
         const on = !!extrasIngredientes[ing];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
