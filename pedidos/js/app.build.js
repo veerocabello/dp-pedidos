@@ -11065,7 +11065,12 @@ function _ptBuildAnulacionBytes(orderNum) {
 }
 
 async function imprimirAnulacion(orderNum) {
-  await _ptEnviarBytes(_ptBuildAnulacionBytes(orderNum));
+  // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
+  // aviso podía intercalarse (o perderse sin más) con el ticket del pedido
+  // nuevo si el cliente modificaba y volvía a mandar el pedido enseguida,
+  // y cocina se quedaba sin enterarse de que tenía que tirar el anterior.
+  const _ptEjecutarAnulacion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  await _ptEjecutarAnulacion(() => _ptEnviarBytes(_ptBuildAnulacionBytes(orderNum)));
 }
 
 async function imprimirTicketPrueba() {
