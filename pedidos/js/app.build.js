@@ -2831,6 +2831,16 @@ function repetirUltimoPedido() {
 }
 
 
+// Orden fijo en el que deben salir las categorías en el ticket impreso —
+// lo que no esté en esta lista (o no se encuentre en MENU) se queda al
+// final, en el orden en que ya estaba.
+const TICKET_CATEGORIA_ORDEN = ['Patatas', 'Boniato', 'Paninis', 'Cookies', 'Tartas', 'Bebidas'];
+function _ticketCategoriaRank(itemName) {
+  const item = MENU.find(m => m.name === itemName);
+  const idx = item ? TICKET_CATEGORIA_ORDEN.indexOf(item.cat) : -1;
+  return idx === -1 ? TICKET_CATEGORIA_ORDEN.length : idx;
+}
+
 // Fetch con límite de tiempo — sin esto, si el servidor va lento o la
 // petición se queda "colgada" (no falla, simplemente nunca responde), el
 // cliente podía quedarse esperando indefinidamente en pantallas como
@@ -4032,7 +4042,13 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: 0
   }] : [];
-  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
+  // El ticket siempre imprime la comida en este orden fijo (patatas primero,
+  // bebidas al final), sin importar en qué orden se fueron añadiendo al
+  // carrito — más fácil de montar en cocina. Los gastos/descuentos/avisos
+  // van siempre después, tal cual ya estaban.
+  const foodItems = [...regularItems, ...custItems, ...extItems];
+  foodItems.sort((a, b) => _ticketCategoriaRank(a.name) - _ticketCategoriaRank(b.name));
+  const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Estadística "¿le metes algo dulce/de beber?": si se llegó a mostrar
