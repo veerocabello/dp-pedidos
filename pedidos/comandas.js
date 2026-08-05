@@ -122,7 +122,8 @@ const CUSTOMIZER_CONFIG = {
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Queso Philadelphia", "Salsa BBQ", "Salsa Brava", "Salsa de Yogur", "Salsa Ranchera", "Salsa Roquefort", "Salsa Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
 
-const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
+const BOLSA_ID = 52;
+const categories = ["Todos", ...new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat))];
 let activeCategory = "Todos";
 
 /* ── Estado del carrito (3 capas, igual que en la web) ── */
@@ -175,11 +176,17 @@ function toast(msg, ms = 2600) {
 const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Extras: '🛍️' };
 
 function initTabs() {
-  document.getElementById('tabs').innerHTML = categories.map(c =>
+  const catTabs = categories.map(c =>
     `<button class="tab ${c === activeCategory ? 'active' : ''}" onclick="setCategory('${c}')"><span class="tab-icon">${CATEGORY_ICONS[c] || '🍽️'}</span>${c}</button>`
   ).join('');
+  document.getElementById('tabs').innerHTML = catTabs
+    + `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`;
 }
 function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
+function addBolsaDirect() {
+  changeQty(BOLSA_ID, 1);
+  toast('🛍️ Bolsa añadida (+0,10 €)');
+}
 
 function renderItemRow(item) {
   const qty = cart[item.id] || 0;
