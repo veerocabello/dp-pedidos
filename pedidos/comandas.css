@@ -902,21 +902,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px; background: var(--white); border-radius: var(--radius-sm);
   margin-bottom: 7px; gap: 10px; box-shadow: var(--shadow-sm);
+  cursor: grab;
 }
-.carta-admin-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.carta-admin-row.dragging { opacity: .4; }
+.carta-drag-handle {
+  color: var(--muted); font-size: 16px; line-height: 1; flex-shrink: 0;
+  cursor: grab; padding: 0 2px; user-select: none;
+}
+.carta-admin-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .carta-admin-name { font-weight: 700; font-size: 13.5px; color: var(--text); }
 .carta-admin-price { font-size: 12px; color: var(--muted); }
 .carta-admin-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-.carta-nuevo-btn, .carta-remove-btn, .carta-move-btn {
+.carta-nuevo-btn, .carta-remove-btn {
   background: var(--warm); border: none; border-radius: var(--radius-xs);
   padding: 7px 9px; cursor: pointer; font-size: 13px; line-height: 1;
   transition: background .15s, filter .15s;
 }
-.carta-nuevo-btn:hover, .carta-move-btn:hover { background: var(--amber); }
+.carta-nuevo-btn:hover { background: var(--amber); }
 .carta-nuevo-btn.on { background: var(--gold); filter: none; }
 .carta-remove-btn:hover { background: var(--error); filter: brightness(1.1); }
-.carta-move-btn:disabled { opacity: .3; cursor: not-allowed; }
-.carta-move-btn:disabled:hover { background: var(--warm); }
 .carta-admin-row.agotado { opacity: .6; }
 .carta-agotado-tag {
   display: inline-block;

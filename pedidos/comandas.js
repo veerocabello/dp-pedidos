@@ -1331,6 +1331,16 @@ function saveToHistorial(order) {
 function getHistorial() {
   try { return JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { return []; }
 }
+function deleteHistorialOrder(index) {
+  const list = getHistorial();
+  const order = list[index];
+  if (!order) return;
+  if (!confirm('¿Borrar el pedido ' + order.num + ' del historial de hoy? No se puede deshacer.')) return;
+  list.splice(index, 1);
+  localStorage.setItem(getHistorialKey(), JSON.stringify(list));
+  openHistorial();
+  toast('🗑️ Pedido borrado del historial');
+}
 function openHistorial() {
   const list = getHistorial();
   const el = document.getElementById('historial-list');
@@ -1343,6 +1353,7 @@ function openHistorial() {
         <div style="display:flex;gap:6px">
           <button onclick="viewHistorialOrder(${i})">👁️ Ver</button>
           <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
+          <button onclick="deleteHistorialOrder(${i})" title="Borrar del historial (pedido colgado/erróneo)">🗑️</button>
         </div>
       </div>`;
       }).join('');
@@ -1392,7 +1403,6 @@ function renderCaja() {
     `<div class="section-label" style="margin-top:4px">Pedidos de hoy: ${nPedidos}</div>`
     + row('💵 Cobrado en efectivo', efectivo)
     + row('💳 Cobrado con tarjeta', tarjeta)
-    + row('⚠️ Pendiente de cobro', pendiente)
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado hoy', facturado, true)
     + row('💰 Efectivo esperado en caja', esperadoCajon, true);
@@ -1555,15 +1565,18 @@ function renderCartaAdminList() {
   const html = categories.filter(c => c !== 'Todos').map(cat => {
     const items = MENU.filter(m => m.cat === cat);
     if (!items.length) return '';
-    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map((item, i) => `
-      <div class="carta-admin-row ${item.hidden ? 'agotado' : ''}">
+    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map(item => `
+      <div class="carta-admin-row ${item.hidden ? 'agotado' : ''}" draggable="true"
+        ondragstart="onCartaDragStart(event, ${item.id})"
+        ondragover="onCartaDragOver(event)"
+        ondrop="onCartaDrop(event, ${item.id})"
+        ondragend="onCartaDragEnd(event)">
+        <span class="carta-drag-handle" title="Arrastrar para mover">⠿</span>
         <div class="carta-admin-info">
           <span class="carta-admin-name">${escapeHtml(item.name)}${item.hidden ? ' <span class="carta-agotado-tag">Agotado</span>' : ''}</span>
           <span class="carta-admin-price">${fmt(item.price)} €</span>
         </div>
         <div class="carta-admin-actions">
-          <button class="carta-move-btn" ${i === 0 ? 'disabled' : ''} onclick="moveCartaProduct(${item.id},'up')" title="Subir">⬆️</button>
-          <button class="carta-move-btn" ${i === items.length - 1 ? 'disabled' : ''} onclick="moveCartaProduct(${item.id},'down')" title="Bajar">⬇️</button>
           <button class="carta-nuevo-btn ${item.hidden ? 'on' : ''}" onclick="toggleCartaHidden(${item.id})" title="Ocultar/mostrar (agotado)">${item.hidden ? '🙈' : '👁️'}</button>
           <button class="carta-nuevo-btn ${item.nuevo ? 'on' : ''}" onclick="toggleCartaNuevo(${item.id})" title="Poner/quitar etiqueta NUEVO">🆕</button>
           <button class="carta-remove-btn" onclick="openCartaEdit(${item.id})" title="Editar nombre/descripción">✏️</button>
@@ -1573,16 +1586,31 @@ function renderCartaAdminList() {
   }).join('');
   document.getElementById('carta-admin-list').innerHTML = html;
 }
-function moveCartaProduct(id, dir) {
-  const item = MENU.find(m => m.id === id);
-  if (!item) return;
-  const catIndices = MENU.map((m, i) => m.cat === item.cat ? i : -1).filter(i => i !== -1);
-  const idx = MENU.findIndex(m => m.id === id);
-  const posInCat = catIndices.indexOf(idx);
-  const swapWith = dir === 'up' ? posInCat - 1 : posInCat + 1;
-  if (swapWith < 0 || swapWith >= catIndices.length) return;
-  const otherIdx = catIndices[swapWith];
-  [MENU[idx], MENU[otherIdx]] = [MENU[otherIdx], MENU[idx]];
+let cartaDragId = null;
+function onCartaDragStart(e, id) {
+  cartaDragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(id));
+  e.currentTarget.classList.add('dragging');
+}
+function onCartaDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+function onCartaDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  cartaDragId = null;
+}
+function onCartaDrop(e, targetId) {
+  e.preventDefault();
+  const dragId = cartaDragId;
+  cartaDragId = null;
+  if (dragId == null || dragId === targetId) return;
+  const dragItem = MENU.find(m => m.id === dragId);
+  const targetItem = MENU.find(m => m.id === targetId);
+  if (!dragItem || !targetItem || dragItem.cat !== targetItem.cat) return;
+  MENU.splice(MENU.indexOf(dragItem), 1);
+  MENU.splice(MENU.indexOf(targetItem), 0, dragItem);
   saveMenuOrder();
   renderMenu();
   renderCartaAdminList();
