@@ -1470,11 +1470,15 @@ function openHistorial() {
         const payBadge = o.paid ? (o.paymentMethod === 'tarjeta' ? '💳' : '💵') : '⚠️';
         return `<div class="historial-item">
         <div><div class="h-num">${o.num}</div><div class="h-meta">${escapeHtml(o.time)} · ${o.name ? escapeHtml(o.name) + ' · ' : ''}${fmt(o.total)} € · ${payBadge}</div></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-          <button onclick="viewHistorialOrder(${i})">👁️ Ver</button>
-          <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
-          ${o.rawState ? `<button onclick="modifyHistorialOrder(${i})" title="Recuperar en la comanda para cambiar algo">✏️ Modificar</button>` : ''}
-          <button onclick="deleteHistorialOrder(${i})" title="Borrar del historial (pedido colgado/erróneo)">🗑️</button>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <div style="display:flex;gap:6px">
+            <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
+            ${o.rawState ? `<button onclick="modifyHistorialOrder(${i})" title="Recuperar en la comanda para cambiar algo">✏️ Modificar</button>` : ''}
+          </div>
+          <div style="display:flex;gap:6px">
+            <button onclick="viewHistorialOrder(${i})" title="Ver ticket">👁️</button>
+            <button onclick="deleteHistorialOrder(${i})" title="Borrar del historial (pedido colgado/erróneo)">🗑️</button>
+          </div>
         </div>
       </div>`;
       }).join('');
