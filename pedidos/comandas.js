@@ -64,6 +64,8 @@ const MENU = [
   { id: 47, cat: "Bebidas", name: "Agua 1,5 litros", desc: "", price: 1.30 },
   { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.20 },
   { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.50 },
+
+  { id: 52, cat: "Extras", name: "Bolsa", desc: "Para llevar", price: 0.10 },
 ];
 
 /* ── Personalización de la carta guardada en este ordenador: productos
@@ -170,7 +172,7 @@ function toast(msg, ms = 2600) {
 /* ══════════════════════════════════════════════════════════════
    RENDER — CARTA
    ══════════════════════════════════════════════════════════════ */
-const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤' };
+const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Extras: '🛍️' };
 
 function initTabs() {
   document.getElementById('tabs').innerHTML = categories.map(c =>
