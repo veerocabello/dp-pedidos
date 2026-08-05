@@ -669,7 +669,20 @@ function updateChange() {
   }
 }
 
+let clearedOrderSnapshot = null;
 function clearOrder(silent) {
+  const hadItems = cartHasAnyItem();
+  if (hadItems && !silent) {
+    clearedOrderSnapshot = {
+      cart: { ...cart },
+      custCart: JSON.parse(JSON.stringify(custCart)),
+      extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+      orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+      name: document.getElementById('order-name').value,
+      paid: orderPaid,
+      paymentMethod,
+    };
+  }
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
   document.getElementById('order-name').value = '';
   document.getElementById('cash-received').value = '';
@@ -678,7 +691,33 @@ function clearOrder(silent) {
   setPaymentMethod('efectivo');
   renderMenu();
   renderCart();
-  if (!silent) toast('Comanda vaciada');
+  if (!silent) {
+    if (hadItems) showUndoClearBar();
+    else toast('Comanda vaciada');
+  }
+}
+function showUndoClearBar() {
+  const bar = document.getElementById('undo-clear-bar');
+  bar.classList.add('show');
+  clearTimeout(bar._timer);
+  bar._timer = setTimeout(() => { bar.classList.remove('show'); clearedOrderSnapshot = null; }, 6000);
+}
+function undoClearOrder() {
+  if (!clearedOrderSnapshot) return;
+  cart = clearedOrderSnapshot.cart;
+  custCart = clearedOrderSnapshot.custCart;
+  extrasCart = clearedOrderSnapshot.extrasCart;
+  orderDiscount = clearedOrderSnapshot.orderDiscount;
+  document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
+  setOrderPaid(!!clearedOrderSnapshot.paid);
+  setPaymentMethod(clearedOrderSnapshot.paymentMethod || 'efectivo');
+  clearedOrderSnapshot = null;
+  const bar = document.getElementById('undo-clear-bar');
+  clearTimeout(bar._timer);
+  bar.classList.remove('show');
+  renderMenu();
+  renderCart();
+  toast('↩️ Comanda restaurada');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1823,6 +1862,7 @@ function openCartaEdit(id) {
   if (!item) return;
   cartaEditingId = id;
   document.getElementById('carta-edit-name').value = item.name;
+  document.getElementById('carta-edit-price').value = item.price;
   document.getElementById('carta-edit-desc').value = item.desc || '';
   document.getElementById('carta-edit-quitar').checked = !isQuitarBlocked(id);
   document.getElementById('carta-edit-modal').classList.add('open');
@@ -1834,17 +1874,20 @@ function saveCartaEdit() {
   const item = MENU.find(m => m.id === id);
   if (!item) return;
   const name = document.getElementById('carta-edit-name').value.trim();
+  const price = parseFloat(document.getElementById('carta-edit-price').value);
   const desc = document.getElementById('carta-edit-desc').value.trim();
   const permitirQuitar = document.getElementById('carta-edit-quitar').checked;
   if (!name) { toast('⚠️ El nombre no puede estar vacío'); return; }
+  if (!(price >= 0)) { toast('⚠️ Introduce un precio válido'); return; }
   item.name = name;
+  item.price = price;
   item.desc = desc;
   const edits = loadMenuEdits();
-  edits[id] = { name, desc };
+  edits[id] = { name, price, desc };
   localStorage.setItem(MENU_EDITS_KEY, JSON.stringify(edits));
   const custom = loadMenuCustom();
   const c = custom.find(i => i.id === id);
-  if (c) { c.name = name; c.desc = desc; localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom)); }
+  if (c) { c.name = name; c.price = price; c.desc = desc; localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom)); }
   const quitarOverrides = loadMenuQuitarOverrides();
   quitarOverrides[id] = !permitirQuitar;
   localStorage.setItem(MENU_QUITAR_OVERRIDES_KEY, JSON.stringify(quitarOverrides));

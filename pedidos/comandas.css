@@ -947,6 +947,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   border: 1px solid rgba(244,196,48,.25);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.undo-bar {
+  display: flex; align-items: center; gap: 14px; pointer-events: none;
+}
+.undo-bar.show { pointer-events: auto; }
+.undo-bar button {
+  background: var(--amber); color: #fff; border: none; border-radius: 8px;
+  padding: 7px 12px; font-weight: 700; font-size: 13px; cursor: pointer;
+  transition: background .15s;
+}
+.undo-bar button:hover { background: var(--amber-dark); }
 
 /* ── Ticket preview (también usado como respaldo del diálogo de impresión) ──
    Mismo ticket que imprime pedidos/js/index.js en la tienda: logo, mismos
