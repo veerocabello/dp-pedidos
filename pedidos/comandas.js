@@ -964,6 +964,10 @@ function renderExtrasBody(item) {
   }
   if (!isBoniato) {
     const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
+    // Las patatas con la mezcla ya preparada (Carbonara, Boloñesa, 4 Quesos)
+    // no admiten nada más que gratinarlas — no tiene sentido añadir
+    // ingredientes o salsas sueltas encima de una receta ya cerrada.
+    const soloGratinar = isQuitarBlocked(item.id) && soloGratinado;
     if (!yaLlevaQueso) {
       html += `<label class="option-row" onclick="toggleExtra('queso')">
         <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
@@ -974,25 +978,27 @@ function renderExtrasBody(item) {
       <div><div class="option-title">🔥 Gratinar${yaLlevaQueso ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${yaLlevaQueso ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
-    html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
-    sortEs([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-      const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
-      const on = !!extrasIngredientes[ing];
-      html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
-    });
-    html += `</div>`;
-    html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
-    CUST_SAUCES.forEach(s => {
-      const on = !!extrasSalsas[s];
-      html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
-    });
-    html += `</div>`;
+    if (!soloGratinar) {
+      html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
+      sortEs([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
+        const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
+        const on = !!extrasIngredientes[ing];
+        html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+        </label>`;
+      });
+      html += `</div>`;
+      html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
+      CUST_SAUCES.forEach(s => {
+        const on = !!extrasSalsas[s];
+        html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+        </label>`;
+      });
+      html += `</div>`;
+    }
   }
   document.getElementById('extras-options').innerHTML = html;
 }
