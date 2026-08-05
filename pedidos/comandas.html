@@ -43,7 +43,7 @@
     </div>
     <div class="form-group">
       <label for="order-name">Nombre para avisar (opcional)</label>
-      <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana">
+      <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana" oninput="if(window.saveCartDraft)saveCartDraft()">
     </div>
     <div id="cart-body" class="cart-body"></div>
     <div class="cart-total-row" id="cart-total-row" style="display:none">
@@ -261,6 +261,18 @@
     </label>
     <div class="settings-actions">
       <button class="btn-secondary" onclick="saveCartaEdit()">💾 Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ¿IMPRIMIR COPIA? (aparece justo después de imprimir) ── -->
+<div id="copy-confirm-modal" class="modal-overlay" onclick="if(event.target===this)closeCopyConfirm()">
+  <div class="modal-box" style="max-width:360px;text-align:center">
+    <div class="modal-title" style="justify-content:center">🖨️ ¿Imprimir copia?</div>
+    <div class="modal-subtitle" id="copy-confirm-sub" style="text-align:center">Comanda</div>
+    <div class="settings-actions" style="justify-content:center;margin-top:18px">
+      <button class="btn-secondary" onclick="closeCopyConfirm()">No, gracias</button>
+      <button class="modal-confirm-btn" style="flex:0 0 auto;width:auto;padding:11px 20px" onclick="printCopyConfirmed()">🖨️ Sí, imprimir copia</button>
     </div>
   </div>
 </div>

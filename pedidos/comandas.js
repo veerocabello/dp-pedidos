@@ -492,6 +492,7 @@ function renderCart() {
     document.getElementById('paid-toggle-row').style.display = 'none';
     document.getElementById('print-btn').disabled = true;
     syncCashTotal(0);
+    clearCartDraft();
     return;
   }
   document.getElementById('paid-toggle-row').style.display = 'flex';
@@ -572,6 +573,45 @@ function renderCart() {
   document.getElementById('cart-total').textContent = fmt(orderTotal) + ' €';
   document.getElementById('print-btn').disabled = false;
   syncCashTotal(orderTotal);
+  saveCartDraft();
+}
+
+/* ── Recuperación automática ante corte de luz/cierre accidental: la
+   comanda en curso (sin imprimir todavía) se guarda sola en este
+   ordenador y se recupera sola al volver a abrir la página. ── */
+const CART_DRAFT_KEY = 'dpf_comandas_draft';
+function saveCartDraft() {
+  try {
+    const draft = {
+      cart: { ...cart },
+      custCart: JSON.parse(JSON.stringify(custCart)),
+      extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+      orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+      name: (document.getElementById('order-name') || {}).value || '',
+      paid: orderPaid,
+      paymentMethod,
+    };
+    localStorage.setItem(CART_DRAFT_KEY, JSON.stringify(draft));
+  } catch (e) { /* si falla el guardado no debe romper la comanda */ }
+}
+function clearCartDraft() { localStorage.removeItem(CART_DRAFT_KEY); }
+function restoreCartDraftIfAny() {
+  let draft;
+  try { draft = JSON.parse(localStorage.getItem(CART_DRAFT_KEY) || 'null'); } catch (e) { return; }
+  if (!draft) return;
+  const hasContent = Object.keys(draft.cart || {}).length || Object.keys(draft.custCart || {}).length || Object.keys(draft.extrasCart || {}).length;
+  if (!hasContent) return;
+  cart = draft.cart || {};
+  custCart = draft.custCart || {};
+  extrasCart = draft.extrasCart || {};
+  orderDiscount = draft.orderDiscount || null;
+  const nameEl = document.getElementById('order-name');
+  if (nameEl) nameEl.value = draft.name || '';
+  setOrderPaid(!!draft.paid);
+  setPaymentMethod(draft.paymentMethod || 'efectivo');
+  renderMenu();
+  renderCart();
+  toast('🔄 Se ha recuperado una comanda sin terminar de antes');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1430,9 +1470,10 @@ function openHistorial() {
         const payBadge = o.paid ? (o.paymentMethod === 'tarjeta' ? '💳 Tarjeta' : '💵 Efectivo') : '⚠️ Pendiente';
         return `<div class="historial-item">
         <div><div class="h-num">${o.num}</div><div class="h-meta">${escapeHtml(o.time)} · ${o.name ? escapeHtml(o.name) + ' · ' : ''}${fmt(o.total)} € · ${payBadge}</div></div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <button onclick="viewHistorialOrder(${i})">👁️ Ver</button>
           <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
+          ${o.rawState ? `<button onclick="modifyHistorialOrder(${i})" title="Recuperar en la comanda para cambiar algo">✏️ Modificar</button>` : ''}
           <button onclick="deleteHistorialOrder(${i})" title="Borrar del historial (pedido colgado/erróneo)">🗑️</button>
         </div>
       </div>`;
@@ -1440,6 +1481,29 @@ function openHistorial() {
   document.getElementById('historial-modal').classList.add('open');
 }
 function closeHistorial() { document.getElementById('historial-modal').classList.remove('open'); }
+// Recupera un pedido ya impreso de vuelta en la comanda en curso, para
+// poder cambiar algo (el cliente pide añadir/quitar algo tras imprimir).
+// Se quita del historial: al reimprimirlo se creará una comanda nueva.
+function modifyHistorialOrder(index) {
+  const list = getHistorial();
+  const order = list[index];
+  if (!order || !order.rawState) { toast('⚠️ Este pedido no se puede recuperar para modificar'); return; }
+  if (cartHasAnyItem() && !confirm('Ya hay productos en la comanda actual. ¿Sustituirlos por el pedido ' + order.num + ' para modificarlo?')) return;
+  else if (!cartHasAnyItem() && !confirm('¿Recuperar el pedido ' + order.num + ' para modificarlo? Se quitará de "Pedidos de hoy" y habrá que volver a imprimirlo.')) return;
+  cart = order.rawState.cart || {};
+  custCart = order.rawState.custCart || {};
+  extrasCart = order.rawState.extrasCart || {};
+  orderDiscount = order.rawState.orderDiscount || null;
+  document.getElementById('order-name').value = order.name || '';
+  setOrderPaid(!!order.paid);
+  setPaymentMethod(order.paymentMethod || 'efectivo');
+  list.splice(index, 1);
+  localStorage.setItem(getHistorialKey(), JSON.stringify(list));
+  closeHistorial();
+  renderMenu();
+  renderCart();
+  toast('✏️ Pedido ' + order.num + ' recuperado — modifícalo y vuelve a imprimir');
+}
 async function reprintOrder(index) {
   const list = getHistorial();
   const order = list[index];
@@ -1615,6 +1679,15 @@ async function handlePrintOrder() {
   const btn = document.getElementById('print-btn');
   btn.disabled = true;
   const order = buildOrderObject();
+  // Guarda el estado "editable" del pedido (no solo las líneas ya
+  // formateadas para el ticket) para poder recuperarlo después con
+  // "✏️ Modificar" desde Pedidos de hoy si hay que cambiar algo.
+  order.rawState = {
+    cart: { ...cart },
+    custCart: JSON.parse(JSON.stringify(custCart)),
+    extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+  };
   let printedViaUsb = false;
   try {
     printedViaUsb = await printOrder(order);
@@ -1624,6 +1697,22 @@ async function handlePrintOrder() {
   saveToHistorial(order);
   if (getTicketConfig().autoImprimir !== false) clearOrder(true);
   toast(printedViaUsb ? '✅ Comanda ' + order.num + ' impresa' : '🖨️ Comanda ' + order.num + ' — abriendo diálogo de impresión…');
+  openCopyConfirm(order);
+}
+
+/* ── ¿Imprimir copia? — aparece justo después de imprimir la comanda ── */
+let copyConfirmOrder = null;
+function openCopyConfirm(order) {
+  copyConfirmOrder = order;
+  document.getElementById('copy-confirm-sub').textContent = 'Comanda ' + order.num;
+  document.getElementById('copy-confirm-modal').classList.add('open');
+}
+function closeCopyConfirm() { document.getElementById('copy-confirm-modal').classList.remove('open'); copyConfirmOrder = null; }
+async function printCopyConfirmed() {
+  if (!copyConfirmOrder) return;
+  await printOrder(copyConfirmOrder);
+  toast('🖨️ Copia de la comanda ' + copyConfirmOrder.num + ' impresa');
+  closeCopyConfirm();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1836,6 +1925,7 @@ function toggleCartaNuevo(id) {
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   renderMenu();
+  restoreCartDraftIfAny();
   renderCart();
   trySilentReconnect();
 });
