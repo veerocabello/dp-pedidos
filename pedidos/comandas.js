@@ -375,8 +375,8 @@ function getExtrasItemTicketExtras(e) {
   // están incluidos en el precio base de la línea — no se cobran aparte,
   // así que se listan sin precio para no descuadrar la suma del ticket.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
-  (e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: upgraded ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
   (e.salsasExtra || []).forEach(s => out.push({ name: s, price: upgraded ? null : EXTRAS_SALSA_PRECIO }));
+  (e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: upgraded ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
   return out;
 }
 function cartHasAnyItem() {
