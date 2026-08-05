@@ -369,14 +369,13 @@ function getExtrasItemTicketExtras(e) {
   const out = [];
   (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q }));
   (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to }));
-  if (e.queso) out.push({ name: 'Queso', price: 1 });
-  if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5 });
-  // Si se aplicó el precio plano Al Gusto/Bomba, los ingredientes/salsas ya
-  // están incluidos en el precio base de la línea — no se cobran aparte,
-  // así que se listan sin precio para no descuadrar la suma del ticket.
+  // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
+  // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   (e.salsasExtra || []).forEach(s => out.push({ name: s, price: upgraded ? null : EXTRAS_SALSA_PRECIO }));
   (e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: upgraded ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
+  if (e.queso) out.push({ name: 'Queso', price: 1 });
+  if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5 });
   return out;
 }
 function cartHasAnyItem() {
@@ -1104,10 +1103,16 @@ function buildOrderObject(preview) {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
     const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
-    const extras = [...c.sauces, ...c.ingredients].map(n => ({ name: n }));
+    // En el ticket el orden es siempre fijo, sin importar en qué momento
+    // se eligió cada cosa: primero todas las salsas (incluidas y extra),
+    // luego los ingredientes, y el queso/gratinado siempre al final.
+    const extras = [
+      ...c.sauces.map(n => ({ name: n })),
+      ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO })),
+      ...c.ingredients.map(n => ({ name: n })),
+    ];
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1 });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5 });
-    (c.extraSauces || []).forEach(s => extras.push({ name: s, price: EXTRAS_SALSA_PRECIO }));
     // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
     // extra van cada uno en su línea con su propio precio.
