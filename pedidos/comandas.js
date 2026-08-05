@@ -542,6 +542,9 @@ function renderCart() {
    puede editar a mano para calcular un cobro suelto.
    ══════════════════════════════════════════════════════════════ */
 let cashTotalEdited = false;
+// El teclado táctil (type="tel") no valida el formato como type="number",
+// así que aquí se admite tanto coma como punto decimal.
+function parseCashNum(str) { return parseFloat(String(str || '').replace(',', '.')) || 0; }
 function syncCashTotal(orderTotal) {
   if (!cashTotalEdited) document.getElementById('cash-total').value = orderTotal > 0 ? orderTotal.toFixed(2) : '';
   updateChange();
@@ -556,7 +559,7 @@ function onCashCalcToggle() {
 }
 function addCashAmount(v) {
   const el = document.getElementById('cash-received');
-  el.value = ((parseFloat(el.value) || 0) + v).toFixed(2);
+  el.value = (parseCashNum(el.value) + v).toFixed(2);
   updateChange();
 }
 function clearCashReceived() {
@@ -569,8 +572,8 @@ function currentOrderTotal() {
   return el ? parseFloat(el.textContent.replace(',', '.')) || 0 : 0;
 }
 function updateChange() {
-  const total = parseFloat(document.getElementById('cash-total').value) || 0;
-  const received = parseFloat(document.getElementById('cash-received').value) || 0;
+  const total = parseCashNum(document.getElementById('cash-total').value);
+  const received = parseCashNum(document.getElementById('cash-received').value);
   const row = document.getElementById('cash-change-row');
   const label = document.getElementById('cash-change-label');
   const amountEl = document.getElementById('cash-change-amount');
