@@ -228,9 +228,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .menu-cat-sep {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: baseline;
+  gap: 8px;
   background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%);
   border-radius: var(--radius-xs);
   padding: 10px 16px;
@@ -238,33 +237,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   box-shadow: var(--shadow-sm);
 }
 .menu-cat-sep:first-child { margin-top: 0; }
-.menu-cat-left { display: flex; flex-direction: column; min-width: 0; }
-.menu-cat-sep .cat-emoji { font-size: 16px; margin-right: 4px; vertical-align: middle; }
+.menu-cat-sep .cat-emoji { font-size: 16px; }
 .menu-cat-sep .cat-name {
   font-family: var(--font-head);
   font-size: 15px;
   font-weight: 700;
   color: var(--gold);
   letter-spacing: .5px;
-}
-.menu-cat-sub {
-  font-family: var(--font-body);
-  font-style: italic;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(245,234,211,.85);
-  margin-top: 2px;
-}
-.menu-cat-badge {
-  background: var(--gold);
-  color: #2B1712;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 99px;
-  white-space: nowrap;
-  font-family: var(--font-head);
-  flex-shrink: 0;
 }
 
 .menu-subcat-sep {

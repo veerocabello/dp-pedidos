@@ -171,15 +171,6 @@ function toast(msg, ms = 2600) {
    RENDER — CARTA
    ══════════════════════════════════════════════════════════════ */
 const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤' };
-// Mismos subtítulos que la web de pedidos (pedidos/src/admin-config.js).
-const CATEGORY_SUBTITLES = {
-  Patatas: 'recién asadas a partir de las 19:30h',
-  Boniato: 'el toque dulce y crujiente · elige tu tarrina',
-  Paninis: 'pan de leña crujiente · ¡medio metro!',
-  Cookies: 'Crumbl Cookies · horneadas cada día',
-  Tartas: 'todas caseras y de elaboración propia',
-  Bebidas: 'para acompañar tu pedido',
-};
 
 function initTabs() {
   document.getElementById('tabs').innerHTML = categories.map(c =>
@@ -232,14 +223,7 @@ function renderMenu() {
     grid.innerHTML = categories.filter(c => c !== 'Todos').map(cat => {
       const items = MENU.filter(m => m.cat === cat && !m.hidden);
       if (!items.length) return '';
-      const sub = CATEGORY_SUBTITLES[cat] || '';
-      return `<div class="menu-cat-sep">
-          <div class="menu-cat-left">
-            <div class="cat-name"><span class="cat-emoji">${CATEGORY_ICONS[cat] || ''}</span>${cat.toUpperCase()}</div>
-            ${sub ? `<div class="menu-cat-sub">${escapeHtml(sub)}</div>` : ''}
-          </div>
-          <div class="menu-cat-badge">${items.length} opciones</div>
-        </div>`
+      return `<div class="menu-cat-sep"><span class="cat-emoji">${CATEGORY_ICONS[cat] || ''}</span><span class="cat-name">${cat.toUpperCase()}</span></div>`
         + renderCategoryItems(cat, items);
     }).join('');
   } else {
