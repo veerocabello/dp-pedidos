@@ -154,6 +154,11 @@ function sortIngredientsQuesoLast(arr) {
   const quesos = arr.filter(n => isQuesoIngredient(n));
   return [...sortEs(normal), ...sortEs(quesos)];
 }
+// Igual, pero sin reordenar alfabéticamente — para el ticket, donde solo
+// importa que el queso (elegido como ingrediente normal) quede el último.
+function quesoLastKeepOrder(arr) {
+  return [...arr.filter(n => !isQuesoIngredient(n)), ...arr.filter(n => isQuesoIngredient(n))];
+}
 function toast(msg, ms = 2600) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -407,7 +412,7 @@ function getExtrasItemTicketExtras(e) {
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
   (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : EXTRAS_SALSA_PRECIO }));
-  (e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
+  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
   if (e.queso) out.push({ name: 'Queso', price: 1 });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5 });
   return out;
@@ -1152,7 +1157,7 @@ function buildOrderObject(preview) {
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
       ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO })),
-      ...c.ingredients.map(n => ({ name: n })),
+      ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
     ];
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1 });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5 });
