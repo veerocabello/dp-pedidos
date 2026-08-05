@@ -820,7 +820,11 @@ function doPrint() {
 
   // Imprimir de verdad en la térmica (WebUSB) — el registro de abajo refleja
   // este resultado (si de verdad salió por la impresora), no el guardado en Firebase.
-  _imprimirConReintentos(ticketData, 3, 1500).then(() => {
+  // Pasa por _ptEnFila() para no intercalarse con otro ticket que se esté
+  // imprimiendo a la vez (auto-imprimir de un pedido nuevo, la cola
+  // pendiente...) — ver el porqué en impresora-termica.js.
+  const _ptEjecutarImpresion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  _ptEjecutarImpresion(() => _imprimirConReintentos(ticketData, 3, 1500)).then(() => {
     _markAsImpreso(orderNum);
     _registrarEnvioTicket(orderNum, true);
   }).catch(e => {
@@ -865,7 +869,14 @@ function _autoImprimirPedido(order) {
 
   // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
   // reintentos automáticos antes de avisar (ver _imprimirConReintentos).
-  _imprimirConReintentos(ticketData, 3, 1500)
+  // Pasa por _ptEnFila() porque si llegan varios pedidos casi a la vez
+  // (varios clientes pidiendo en el mismo minuto), _nuevosPedidos.forEach()
+  // más abajo llama a esta función varias veces seguidas SIN esperar a que
+  // termine la anterior — sin esta fila, los bytes de dos tickets distintos
+  // podían intercalarse a mitad de envío por Bluetooth/USB y la impresora
+  // se quedaba sin imprimir ninguno de los dos ("se volvía loca").
+  const _ptEjecutarImpresionAuto = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  _ptEjecutarImpresionAuto(() => _imprimirConReintentos(ticketData, 3, 1500))
     .then(() => {
       _markAsImpreso(order.num);
       _registrarEnvioTicket(order.num, true);

@@ -299,6 +299,26 @@ function _ptOcultarAvisoDesconexion() {
   if (_ptAvisoEscaladoTimer) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; }
 }
 
+// ── FILA ÚNICA DE IMPRESIÓN ────────────────────────────────────────────
+// Si llegan varios pedidos casi a la vez (varios clientes pidiendo en el
+// mismo minuto), cada uno lanzaba su propio envío a la impresora por su
+// cuenta — como JavaScript no bloquea entre cada "await", los bytes de dos
+// tickets distintos podían intercalarse a mitad de envío en la misma
+// conexión Bluetooth/USB, y la impresora sacaba basura o se quedaba
+// colgada sin imprimir ninguno de los dos ("se volvía loca"). Ahora TODO
+// lo que haya que imprimir (auto-imprimir, reimprimir a mano, la cola
+// pendiente al reconectar) pasa por esta única fila — se imprimen de uno
+// en uno, en el orden en que se pidieron, aunque hayan llegado casi a la
+// vez.
+let _ptColaEjecucion = Promise.resolve();
+function _ptEnFila(fn) {
+  const resultado = _ptColaEjecucion.then(fn, fn);
+  // La cadena sigue aunque este envío falle — si no, un ticket atascado
+  // dejaría a todos los siguientes esperando para siempre.
+  _ptColaEjecucion = resultado.then(() => {}, () => {});
+  return resultado;
+}
+
 // 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
 // solo con cuál de los dos consigue conectar primero (ver _ptReconectar).
 let _ptTransporte = null;
@@ -743,7 +763,7 @@ async function _ptColaProcesar() {
     const cola = _ptColaCargar();
     for (const ticket of cola) {
       try {
-        await imprimirTicketTermico(ticket);
+        await _ptEnFila(() => imprimirTicketTermico(ticket));
         _ptColaQuitar(ticket.orderNum);
         if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
         if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);

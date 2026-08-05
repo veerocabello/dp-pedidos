@@ -10554,6 +10554,26 @@ function _ptOcultarAvisoDesconexion() {
   if (_ptAvisoEscaladoTimer) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; }
 }
 
+// ── FILA ÚNICA DE IMPRESIÓN ────────────────────────────────────────────
+// Si llegan varios pedidos casi a la vez (varios clientes pidiendo en el
+// mismo minuto), cada uno lanzaba su propio envío a la impresora por su
+// cuenta — como JavaScript no bloquea entre cada "await", los bytes de dos
+// tickets distintos podían intercalarse a mitad de envío en la misma
+// conexión Bluetooth/USB, y la impresora sacaba basura o se quedaba
+// colgada sin imprimir ninguno de los dos ("se volvía loca"). Ahora TODO
+// lo que haya que imprimir (auto-imprimir, reimprimir a mano, la cola
+// pendiente al reconectar) pasa por esta única fila — se imprimen de uno
+// en uno, en el orden en que se pidieron, aunque hayan llegado casi a la
+// vez.
+let _ptColaEjecucion = Promise.resolve();
+function _ptEnFila(fn) {
+  const resultado = _ptColaEjecucion.then(fn, fn);
+  // La cadena sigue aunque este envío falle — si no, un ticket atascado
+  // dejaría a todos los siguientes esperando para siempre.
+  _ptColaEjecucion = resultado.then(() => {}, () => {});
+  return resultado;
+}
+
 // 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
 // solo con cuál de los dos consigue conectar primero (ver _ptReconectar).
 let _ptTransporte = null;
@@ -10998,7 +11018,7 @@ async function _ptColaProcesar() {
     const cola = _ptColaCargar();
     for (const ticket of cola) {
       try {
-        await imprimirTicketTermico(ticket);
+        await _ptEnFila(() => imprimirTicketTermico(ticket));
         _ptColaQuitar(ticket.orderNum);
         if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
         if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
@@ -12045,7 +12065,11 @@ function doPrint() {
 
   // Imprimir de verdad en la térmica (WebUSB) — el registro de abajo refleja
   // este resultado (si de verdad salió por la impresora), no el guardado en Firebase.
-  _imprimirConReintentos(ticketData, 3, 1500).then(() => {
+  // Pasa por _ptEnFila() para no intercalarse con otro ticket que se esté
+  // imprimiendo a la vez (auto-imprimir de un pedido nuevo, la cola
+  // pendiente...) — ver el porqué en impresora-termica.js.
+  const _ptEjecutarImpresion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  _ptEjecutarImpresion(() => _imprimirConReintentos(ticketData, 3, 1500)).then(() => {
     _markAsImpreso(orderNum);
     _registrarEnvioTicket(orderNum, true);
   }).catch(e => {
@@ -12090,7 +12114,14 @@ function _autoImprimirPedido(order) {
 
   // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
   // reintentos automáticos antes de avisar (ver _imprimirConReintentos).
-  _imprimirConReintentos(ticketData, 3, 1500)
+  // Pasa por _ptEnFila() porque si llegan varios pedidos casi a la vez
+  // (varios clientes pidiendo en el mismo minuto), _nuevosPedidos.forEach()
+  // más abajo llama a esta función varias veces seguidas SIN esperar a que
+  // termine la anterior — sin esta fila, los bytes de dos tickets distintos
+  // podían intercalarse a mitad de envío por Bluetooth/USB y la impresora
+  // se quedaba sin imprimir ninguno de los dos ("se volvía loca").
+  const _ptEjecutarImpresionAuto = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  _ptEjecutarImpresionAuto(() => _imprimirConReintentos(ticketData, 3, 1500))
     .then(() => {
       _markAsImpreso(order.num);
       _registrarEnvioTicket(order.num, true);
