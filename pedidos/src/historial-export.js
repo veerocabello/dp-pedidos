@@ -1284,6 +1284,16 @@ function initFirebaseListeners() {
       if ((_document$getElementB14 = document.getElementById('admin-stats')) !== null && _document$getElementB14 !== void 0 && _document$getElementB14.classList.contains('active')) {
         loadDayStats();
       }
+      // Modo cocina (pantalla completa #kitchen-mode) — antes solo se
+      // refrescaba con este listener si la pestaña "Pedidos en vivo" del
+      // panel admin estaba abierta, así que un pedido nuevo o uno quitado
+      // (cancelado/modificado) podía tardar hasta 15s en aparecer/
+      // desaparecer aquí (el intervalo de refresco periódico de
+      // openKitchenMode), en vez de al instante como en las otras pestañas.
+      var _kitchenModeEl = document.getElementById('kitchen-mode');
+      if (_kitchenModeEl && _kitchenModeEl.classList.contains('open')) {
+        refreshKitchenGrid();
+      }
     });
   }
 

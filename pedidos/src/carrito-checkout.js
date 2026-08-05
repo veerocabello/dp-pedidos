@@ -461,8 +461,8 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
       return '';
     }
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    const details = [...c.sauces, ...c.ingredients].join(', ');
-    const extrasStr = [c.extraQueso ? 'Queso' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(' + ');
+    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
+    const extrasStr = [c.extraQueso ? 'Extra Queso' : '', c.extraGratinado ? 'Extra Gratinado' : ''].filter(Boolean).join(' + ');
     return c.qty + 'x ' + item.name + ' [' + details + (extrasStr ? ' + ' + extrasStr : '') + '] — ' + (unitPrice * c.qty).toFixed(2) + ' €';
   });
   const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
@@ -1124,11 +1124,11 @@ async function _submitOrderInner() {
     // Queso Mozzarella siempre al final (puede venir de ingredientes o como extra)
     const ingsWithoutQueso = c.ingredients.filter(i => i !== 'Queso Mozzarella' && i !== '4 Quesos');
     const quesosFromIng = c.ingredients.filter(i => i === 'Queso Mozzarella' || i === '4 Quesos');
-    const extras = [...c.sauces, ...ingsWithoutQueso];
+    const extras = [...c.sauces.map(s => 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
     // Añadir quesos al final
-    quesosFromIng.forEach(q => extras.push(q));
-    if (c.extraQueso) extras.push('Queso Mozzarella +1€');
-    if (c.extraGratinado) extras.push('Gratinado +0,50€');
+    quesosFromIng.forEach(q => extras.push('Extra ' + q));
+    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');
+    if (c.extraGratinado) extras.push('Extra Gratinado +0,50€');
     return {
       name: item.name,
       qty: c.qty,
@@ -1147,14 +1147,14 @@ async function _submitOrderInner() {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return null;
     const extras = [];
-    if (c.queso) extras.push({ name: 'Queso', price: 1.00 });
-    if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
+    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.gratinado) extras.push({ name: 'Extra Gratinado', price: 0.50 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
-      extras.push({ name: ing, price: precioIng });
+      extras.push({ name: 'Extra ' + ing, price: precioIng });
     });
     (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: salsa, price: EXTRAS_SALSA_PRECIO });
+      extras.push({ name: 'Extra salsa ' + salsa, price: EXTRAS_SALSA_PRECIO });
     });
     return {
       name: item.name,

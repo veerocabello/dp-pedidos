@@ -470,9 +470,9 @@ function getModifyWindowMs() {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
 }
-async function cancelarPedidoAdmin(orderNum) {
+async function cancelarPedidoAdmin(orderNum, phone) {
   if (!confirm("\xBFCancelar el pedido ".concat(orderNum, "? Se eliminar\xE1 de estad\xEDsticas y cocina."))) return;
-  await _borrarPedidoDeFirebase(orderNum);
+  await _borrarPedidoDeFirebase(orderNum, phone);
   logActivity("\u274C Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function _startModifyTimer() {
@@ -526,7 +526,7 @@ async function modificarPedido() {
   if (!confirmado) return;
 
   // Borrar pedido actual de Firebase y stats
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
 
   // Restaurar carrito con los productos anteriores
   Object.assign(cart, data.cart);
@@ -583,7 +583,7 @@ async function cancelarPedido() {
     };
   });
   if (!confirmado) return;
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
   window._lastOrderData = null;
   try {
     localStorage.removeItem('dpf_active_order');
@@ -641,7 +641,7 @@ async function _revertirVentasProductos(items) {
     console.warn('[ventasProductos] no se pudo revertir', e);
   }
 }
-async function _borrarPedidoDeFirebase(orderNum) {
+async function _borrarPedidoDeFirebase(orderNum, phone) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
   // 0. Si este pedido tenía un ticket esperando en la cola de impresión
@@ -651,41 +651,43 @@ async function _borrarPedidoDeFirebase(orderNum) {
   // sin ningún aviso de que ya no es válido.
   if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
 
-  // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
-  await setOrderStatus(orderNum, 'cancelado');
+  // 1. Marcar como cancelado en memoria y localStorage — inmediato, para que
+  // este mismo dispositivo lo refleje al instante sin esperar al servidor.
+  window._orderStatusCache[_normOrderKey(orderNum)] = 'cancelado';
+  try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
 
   let itemsParaRevertir = null;
-  let telefonoParaRevertirSello = null;
-
-  // 2. Borrar de Firebase stats y liberar slot si tenía uno
+  let telefonoParaRevertirSello = phone || null;
   let slotToFree = null;
-  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
-  // vez que entra un pedido nuevo (con su propia protección de condición de
-  // carrera) — un .set() plano aquí (leer, filtrar en memoria, sobreescribir
-  // el nodo entero) podía perder en silencio un pedido real que llegara
-  // justo mientras se cancelaba otro distinto desde el panel.
-  const mutatorStats = function (current) {
-    const stats = current || { orders: [] };
-    if (!Array.isArray(stats.orders)) stats.orders = [];
-    const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-    if (pedido && pedido.slot) slotToFree = pedido.slot;
-    if (pedido && pedido.items) itemsParaRevertir = pedido.items;
-    if (pedido && pedido.phone) telefonoParaRevertirSello = pedido.phone;
-    stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-    stats.count = Math.max(0, stats.orders.length);
-    stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-    return stats;
-  };
-  if (window.fb_transactNative) {
-    try { await window.fb_transactNative('stats/' + todayKey, mutatorStats); } catch {}
-  } else if (window.fb_getStats && window.fb_saveStats) {
-    try {
-      const stats = await window.fb_getStats(todayKey);
-      if (stats) await window.fb_saveStats(mutatorStats(stats));
-    } catch {}
+
+  // 2. Marcar como cancelado y quitar de stats en Firebase — a través del
+  // servidor (guardar-pedido.php, acción "cancelarPedido"), NO con una
+  // escritura directa del navegador. orderStatus/ y stats/ exigen el UID
+  // exacto del admin en las reglas de seguridad (igual que tickets/, slots/
+  // y usedOrderNums/, ver comentarios en guardar-pedido.php): cuando esta
+  // función la llamaba el propio cliente (auth anónima, p.ej. al pulsar
+  // "Modificar pedido"), la escritura directa fallaba en silencio y el
+  // pedido se quedaba activo para siempre en cocina/estadísticas del resto
+  // de dispositivos, aunque el ticket viejo nunca llegara a anularse allí.
+  try {
+    const resp = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancelarPedido', orderNum, fecha: todayKey, phone: phone || '' })
+    });
+    const data = await resp.json();
+    if (data && data.success) {
+      if (data.items) itemsParaRevertir = data.items;
+      if (data.phone) telefonoParaRevertirSello = data.phone;
+      if (data.slot) slotToFree = data.slot;
+    } else {
+      console.warn('[cancelarPedido] el servidor no pudo anular el pedido:', data && data.error);
+    }
+  } catch (e) {
+    console.warn('[cancelarPedido] fallo de red al anular el pedido:', e);
   }
 
-  // 3. Borrar también de localStorage y liberar slot si no lo encontramos en Firebase
+  // 3. Borrar también de localStorage (caché local de este dispositivo)
   try {
     const local = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
     if (local.orders) {

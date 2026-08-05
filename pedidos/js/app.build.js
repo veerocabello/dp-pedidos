@@ -2572,7 +2572,7 @@ function renderCart() {
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients].join(', ');
+    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
@@ -2586,9 +2586,13 @@ function renderCart() {
     }
     const itemName = _extItem.name;
     const extras = [];
-    if (c.queso) extras.push('+ Queso +1,00€');
-    if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    (c.salsasExtra || []).forEach(salsa => extras.push('+ ' + salsa + ' +0,90€'));
+    if (c.queso) extras.push('+ Extra Queso +1,00€');
+    if (c.gratinado) extras.push('+ Extra Gratinado +0,50€');
+    (c.ingredientesExtra || []).forEach(ing => {
+      const _precioIng = (typeof EXTRAS_ING_PRECIO1 !== 'undefined' && EXTRAS_ING_PRECIO1.includes(ing)) ? '1,00' : '0,70';
+      extras.push('+ Extra ' + ing + ' +' + _precioIng + '€');
+    });
+    (c.salsasExtra || []).forEach(salsa => extras.push('+ Extra salsa ' + salsa + ' +0,90€'));
     return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
@@ -3288,8 +3292,8 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
       return '';
     }
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    const details = [...c.sauces, ...c.ingredients].join(', ');
-    const extrasStr = [c.extraQueso ? 'Queso' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(' + ');
+    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
+    const extrasStr = [c.extraQueso ? 'Extra Queso' : '', c.extraGratinado ? 'Extra Gratinado' : ''].filter(Boolean).join(' + ');
     return c.qty + 'x ' + item.name + ' [' + details + (extrasStr ? ' + ' + extrasStr : '') + '] — ' + (unitPrice * c.qty).toFixed(2) + ' €';
   });
   const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
@@ -3951,11 +3955,11 @@ async function _submitOrderInner() {
     // Queso Mozzarella siempre al final (puede venir de ingredientes o como extra)
     const ingsWithoutQueso = c.ingredients.filter(i => i !== 'Queso Mozzarella' && i !== '4 Quesos');
     const quesosFromIng = c.ingredients.filter(i => i === 'Queso Mozzarella' || i === '4 Quesos');
-    const extras = [...c.sauces, ...ingsWithoutQueso];
+    const extras = [...c.sauces.map(s => 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
     // Añadir quesos al final
-    quesosFromIng.forEach(q => extras.push(q));
-    if (c.extraQueso) extras.push('Queso Mozzarella +1€');
-    if (c.extraGratinado) extras.push('Gratinado +0,50€');
+    quesosFromIng.forEach(q => extras.push('Extra ' + q));
+    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');
+    if (c.extraGratinado) extras.push('Extra Gratinado +0,50€');
     return {
       name: item.name,
       qty: c.qty,
@@ -3974,14 +3978,14 @@ async function _submitOrderInner() {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return null;
     const extras = [];
-    if (c.queso) extras.push({ name: 'Queso', price: 1.00 });
-    if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
+    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.gratinado) extras.push({ name: 'Extra Gratinado', price: 0.50 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
-      extras.push({ name: ing, price: precioIng });
+      extras.push({ name: 'Extra ' + ing, price: precioIng });
     });
     (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: salsa, price: EXTRAS_SALSA_PRECIO });
+      extras.push({ name: 'Extra salsa ' + salsa, price: EXTRAS_SALSA_PRECIO });
     });
     return {
       name: item.name,
@@ -4834,9 +4838,9 @@ function getModifyWindowMs() {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
 }
-async function cancelarPedidoAdmin(orderNum) {
+async function cancelarPedidoAdmin(orderNum, phone) {
   if (!confirm("\xBFCancelar el pedido ".concat(orderNum, "? Se eliminar\xE1 de estad\xEDsticas y cocina."))) return;
-  await _borrarPedidoDeFirebase(orderNum);
+  await _borrarPedidoDeFirebase(orderNum, phone);
   logActivity("\u274C Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function _startModifyTimer() {
@@ -4890,7 +4894,7 @@ async function modificarPedido() {
   if (!confirmado) return;
 
   // Borrar pedido actual de Firebase y stats
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
 
   // Restaurar carrito con los productos anteriores
   Object.assign(cart, data.cart);
@@ -4947,7 +4951,7 @@ async function cancelarPedido() {
     };
   });
   if (!confirmado) return;
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
   window._lastOrderData = null;
   try {
     localStorage.removeItem('dpf_active_order');
@@ -5005,7 +5009,7 @@ async function _revertirVentasProductos(items) {
     console.warn('[ventasProductos] no se pudo revertir', e);
   }
 }
-async function _borrarPedidoDeFirebase(orderNum) {
+async function _borrarPedidoDeFirebase(orderNum, phone) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
   // 0. Si este pedido tenía un ticket esperando en la cola de impresión
@@ -5015,41 +5019,43 @@ async function _borrarPedidoDeFirebase(orderNum) {
   // sin ningún aviso de que ya no es válido.
   if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
 
-  // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
-  await setOrderStatus(orderNum, 'cancelado');
+  // 1. Marcar como cancelado en memoria y localStorage — inmediato, para que
+  // este mismo dispositivo lo refleje al instante sin esperar al servidor.
+  window._orderStatusCache[_normOrderKey(orderNum)] = 'cancelado';
+  try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
 
   let itemsParaRevertir = null;
-  let telefonoParaRevertirSello = null;
-
-  // 2. Borrar de Firebase stats y liberar slot si tenía uno
+  let telefonoParaRevertirSello = phone || null;
   let slotToFree = null;
-  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
-  // vez que entra un pedido nuevo (con su propia protección de condición de
-  // carrera) — un .set() plano aquí (leer, filtrar en memoria, sobreescribir
-  // el nodo entero) podía perder en silencio un pedido real que llegara
-  // justo mientras se cancelaba otro distinto desde el panel.
-  const mutatorStats = function (current) {
-    const stats = current || { orders: [] };
-    if (!Array.isArray(stats.orders)) stats.orders = [];
-    const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-    if (pedido && pedido.slot) slotToFree = pedido.slot;
-    if (pedido && pedido.items) itemsParaRevertir = pedido.items;
-    if (pedido && pedido.phone) telefonoParaRevertirSello = pedido.phone;
-    stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-    stats.count = Math.max(0, stats.orders.length);
-    stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-    return stats;
-  };
-  if (window.fb_transactNative) {
-    try { await window.fb_transactNative('stats/' + todayKey, mutatorStats); } catch {}
-  } else if (window.fb_getStats && window.fb_saveStats) {
-    try {
-      const stats = await window.fb_getStats(todayKey);
-      if (stats) await window.fb_saveStats(mutatorStats(stats));
-    } catch {}
+
+  // 2. Marcar como cancelado y quitar de stats en Firebase — a través del
+  // servidor (guardar-pedido.php, acción "cancelarPedido"), NO con una
+  // escritura directa del navegador. orderStatus/ y stats/ exigen el UID
+  // exacto del admin en las reglas de seguridad (igual que tickets/, slots/
+  // y usedOrderNums/, ver comentarios en guardar-pedido.php): cuando esta
+  // función la llamaba el propio cliente (auth anónima, p.ej. al pulsar
+  // "Modificar pedido"), la escritura directa fallaba en silencio y el
+  // pedido se quedaba activo para siempre en cocina/estadísticas del resto
+  // de dispositivos, aunque el ticket viejo nunca llegara a anularse allí.
+  try {
+    const resp = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancelarPedido', orderNum, fecha: todayKey, phone: phone || '' })
+    });
+    const data = await resp.json();
+    if (data && data.success) {
+      if (data.items) itemsParaRevertir = data.items;
+      if (data.phone) telefonoParaRevertirSello = data.phone;
+      if (data.slot) slotToFree = data.slot;
+    } else {
+      console.warn('[cancelarPedido] el servidor no pudo anular el pedido:', data && data.error);
+    }
+  } catch (e) {
+    console.warn('[cancelarPedido] fallo de red al anular el pedido:', e);
   }
 
-  // 3. Borrar también de localStorage y liberar slot si no lo encontramos en Firebase
+  // 3. Borrar también de localStorage (caché local de este dispositivo)
   try {
     const local = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
     if (local.orders) {
@@ -5676,10 +5682,10 @@ function getExtrasItemLabel(c) {
   }
   if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
   const extras = [];
-  if (c.queso) extras.push('Queso');
-  if (c.gratinado) extras.push('Gratinado');
-  (c.ingredientesExtra || []).forEach(ing => extras.push(ing));
-  (c.salsasExtra || []).forEach(salsa => extras.push(salsa));
+  if (c.queso) extras.push('Extra Queso');
+  if (c.gratinado) extras.push('Extra Gratinado');
+  (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
+  (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
   return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
@@ -12534,6 +12540,16 @@ function initFirebaseListeners() {
       if ((_document$getElementB14 = document.getElementById('admin-stats')) !== null && _document$getElementB14 !== void 0 && _document$getElementB14.classList.contains('active')) {
         loadDayStats();
       }
+      // Modo cocina (pantalla completa #kitchen-mode) — antes solo se
+      // refrescaba con este listener si la pestaña "Pedidos en vivo" del
+      // panel admin estaba abierta, así que un pedido nuevo o uno quitado
+      // (cancelado/modificado) podía tardar hasta 15s en aparecer/
+      // desaparecer aquí (el intervalo de refresco periódico de
+      // openKitchenMode), en vez de al instante como en las otras pestañas.
+      var _kitchenModeEl = document.getElementById('kitchen-mode');
+      if (_kitchenModeEl && _kitchenModeEl.classList.contains('open')) {
+        refreshKitchenGrid();
+      }
     });
   }
 
@@ -12972,10 +12988,10 @@ function _renderLiveOrders(stats, todayKey) {
     const btns = isNuevo
       ? '<button class="kbtn kbtn-delete" data-print-num="' + escapeAttr(o.num) + '" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}">' + (_printedOrders.has(o.num) ? '🖨️ Impreso' : '🖨️ Imprimir') + '</button>'
         + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'recibido\')" style="background:#EFF6FF;color:#1D4ED8;border:0.5px solid #93C5FD">🔵 Recibido</button>'
-        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="cancelarPedidoAdmin(this.dataset.num)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>'
+        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" data-phone="' + escapeAttr(o.phone||'') + '" onclick="cancelarPedidoAdmin(this.dataset.num,this.dataset.phone)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>'
       : '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'entregado\')" style="background:#F0FDF4;color:#166534;border:0.5px solid #86EFAC">✅ Entregado</button>'
         + '<button class="kbtn kbtn-delete" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot)">🖨️</button>'
-        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="cancelarPedidoAdmin(this.dataset.num)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>';
+        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" data-phone="' + escapeAttr(o.phone||'') + '" onclick="cancelarPedidoAdmin(this.dataset.num,this.dataset.phone)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>';
     return '<div class="live-order-card" id="live-card-' + escapeAttr(o.num.replace('#','')) + '" style="border-left:3px solid ' + border + '">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
         + '<div><span style="font-size:22px;font-weight:700;font-family:Georgia,serif;color:#3D1F0D">' + escapeHtml(o.num) + '</span>'
@@ -13261,7 +13277,7 @@ function refreshKitchenGrid() {
     const localBadgeK = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🏪 EN EL LOCAL</span>' : '';
     const estudianteBadgeK = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🪪 VERIFICAR CARNÉ</span>' : '';
     const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : o.esEstudianteJubilado ? cardStyle + 'border-left:4px solid #c2711a;' : cardStyle;
-    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
+    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\',\'' + escapeAttr(o.phone||'') + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
     return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + estudianteBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
   }).join('');
 }

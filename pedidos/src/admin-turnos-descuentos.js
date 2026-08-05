@@ -335,10 +335,10 @@ function getExtrasItemLabel(c) {
   }
   if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
   const extras = [];
-  if (c.queso) extras.push('Queso');
-  if (c.gratinado) extras.push('Gratinado');
-  (c.ingredientesExtra || []).forEach(ing => extras.push(ing));
-  (c.salsasExtra || []).forEach(salsa => extras.push(salsa));
+  if (c.queso) extras.push('Extra Queso');
+  if (c.gratinado) extras.push('Extra Gratinado');
+  (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
+  (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
   return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 

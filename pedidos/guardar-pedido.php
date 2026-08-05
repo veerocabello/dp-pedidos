@@ -770,6 +770,88 @@ try {
         exit;
     }
 
+    // ── Cancelar/anular un pedido (modificar o cancelar del propio cliente,
+    // y también el botón "✕" del panel admin) ──
+    // Mismo motivo que reservarSlot/reservarNumeroPedido arriba: orderStatus/
+    // y stats/ exigen el UID exacto del admin en las reglas de seguridad, así
+    // que cuando el propio cliente (auth anónima) cancelaba o modificaba su
+    // pedido desde _borrarPedidoDeFirebase() escribiendo directo contra
+    // Firebase, esa escritura fallaba en silencio — el pedido se quedaba
+    // "activo" para siempre en cocina y en estadísticas en el resto de
+    // dispositivos, aunque el propio cliente ya lo viera como cancelado en su
+    // móvil. Ahora lo hace este script con la cuenta de servicio. Exige que
+    // el teléfono coincida con el del ticket real (igual que revertirSello en
+    // fidelizacion.php) para que nadie pueda cancelar el pedido de otra
+    // persona solo adivinando el número.
+    if (($payload['action'] ?? '') === 'cancelarPedido') {
+        if (!dpf_check_limit($tmp_dir . '/dpf_cancelarpedido_ip_' . md5($ip) . '.json', 30, $window)) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+            exit;
+        }
+        $cOrderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
+        $cFecha = isset($payload['fecha']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$payload['fecha']) ? (string)$payload['fecha'] : date('Y-m-d');
+        $cPhone = isset($payload['phone']) ? preg_replace('/\D/', '', (string)$payload['phone']) : '';
+        if (!preg_match('/^T\d{3,5}$/', $cOrderNum)) {
+            echo json_encode(['success' => false, 'error' => 'Número de pedido inválido']);
+            exit;
+        }
+        if ($cPhone === '') {
+            echo json_encode(['success' => false, 'error' => 'Falta el teléfono del pedido']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $cKey = normOrderKey($cOrderNum);
+        $cTicketLeido = fbGetConEtag($databaseURL, 'tickets/' . $cFecha . '/' . $cKey, $accessToken);
+        $cTicket = is_array($cTicketLeido['data']) ? $cTicketLeido['data'] : null;
+        if (!$cTicket) {
+            echo json_encode(['success' => false, 'error' => 'No se encontró el pedido']);
+            exit;
+        }
+        $cTicketPhone = preg_replace('/\D/', '', (string)($cTicket['phone'] ?? ''));
+        if ($cTicketPhone === '' || $cPhone !== $cTicketPhone) {
+            echo json_encode(['success' => false, 'error' => 'No autorizado']);
+            exit;
+        }
+        // 1. Marcar como cancelado — escritura directa a la clave del pedido,
+        // no hace falta condicional porque no comparte nodo con otros pedidos.
+        fbPutSiCoincide($databaseURL, 'orderStatus/' . $cFecha . '/' . $cKey, $accessToken, 'cancelado', null);
+
+        // 2. Quitarlo de stats/<fecha> (lectura-modificación-escritura
+        // condicional con reintento, igual que guardarPedidoEnStats).
+        $cSlot = null; $cItems = null; $cPhoneStats = null;
+        for ($intento = 0; $intento < 8; $intento++) {
+            $leido = fbGetConEtag($databaseURL, 'stats/' . $cFecha, $accessToken);
+            $stats = is_array($leido['data']) ? $leido['data'] : null;
+            if (!$stats || ($stats['date'] ?? null) !== $cFecha || !is_array($stats['orders'] ?? null)) {
+                break; // nada que quitar
+            }
+            $pedido = null;
+            foreach ($stats['orders'] as $o) {
+                if (normOrderKey($o['num'] ?? '') === $cKey) { $pedido = $o; break; }
+            }
+            if ($pedido) {
+                $cSlot = $pedido['slot'] ?? null;
+                $cItems = $pedido['items'] ?? null;
+                $cPhoneStats = $pedido['phone'] ?? null;
+            }
+            $stats['orders'] = array_values(array_filter($stats['orders'], function ($o) use ($cKey) {
+                return normOrderKey($o['num'] ?? '') !== $cKey;
+            }));
+            $stats['count'] = max(0, count($stats['orders']));
+            $stats['total'] = round(array_reduce($stats['orders'], function ($acc, $o) { return $acc + (is_numeric($o['total'] ?? null) ? (float)$o['total'] : 0); }, 0), 2);
+            if (fbPutSiCoincide($databaseURL, 'stats/' . $cFecha, $accessToken, $stats, $leido['etag'])) break;
+            usleep(rand(20000, 80000));
+        }
+        echo json_encode([
+            'success' => true,
+            'items'   => $cItems,
+            'phone'   => $cPhoneStats ?: $cTicket['phone'] ?? null,
+            'slot'    => $cSlot,
+        ]);
+        exit;
+    }
+
     $orderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
     if (!preg_match('/^T\d{3,5}$/', $orderNum)) {
         echo json_encode(['success' => false, 'error' => 'Número de pedido inválido']);
