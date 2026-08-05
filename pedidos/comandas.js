@@ -1055,12 +1055,7 @@ function renderExtrasBody(item) {
   document.getElementById('extras-options').innerHTML = html;
 }
 function toggleExtraQuitar(comp) {
-  const turningOn = !extrasQuitados[comp];
-  if (turningOn) {
-    const activos = Object.values(extrasQuitados).filter(Boolean).length;
-    if (activos >= 2) { toast('⚠️ Máximo 2 ingredientes a quitar'); return; }
-  }
-  extrasQuitados[comp] = turningOn;
+  extrasQuitados[comp] = !extrasQuitados[comp];
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
