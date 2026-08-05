@@ -123,7 +123,12 @@ const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Queso Philadelphia", "Sal
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
 
 const BOLSA_ID = 52;
-const categories = ["Todos", ...new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat))];
+// Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
+// sin importar el orden en que estén los productos en MENU).
+const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas"];
+const menuCatsSet = new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat));
+const extraCats = [...menuCatsSet].filter(c => !CATEGORY_ORDER.includes(c));
+const categories = ["Todos", ...CATEGORY_ORDER.filter(c => menuCatsSet.has(c)), ...extraCats];
 let activeCategory = "Todos";
 
 /* ── Estado del carrito (3 capas, igual que en la web) ── */
