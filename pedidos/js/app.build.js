@@ -11181,18 +11181,37 @@ if (navigator.usb || navigator.bluetooth) {
   // se desconectan solos tras un rato sin ningún dato, aunque estén dentro
   // de alcance y con batería; este pulso evita que se les considere
   // "inactivos" entre pedido y pedido.
-  setInterval(() => {
-    if (!_ptIsConnected()) { _ptReconectar(); return; }
-    if (_ptTransporte === 'ble') _ptBlePulso();
-    else _ptComprobarPapel();
-    // La cola pendiente normalmente se vacía sola al detectar una
-    // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
-    // error puntual de escritura SIN que la impresora llegue a desconectarse
-    // de verdad — en ese caso ese flanco nunca se dispara. Este intento
-    // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
-    // ya se protege solo contra solapes (_ptColaProcesando).
-    if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
-  }, 8000);
+  //
+  // Mientras está DESCONECTADA se reintenta cada 2s en vez de 8s — el hueco
+  // más habitual es justo al abrir/recargar la web (la reconexión con un
+  // dispositivo ya emparejado tarda unos segundos), y si un pedido llega
+  // justo en ese hueco se queda en la cola pendiente hasta el siguiente
+  // reintento con éxito. Con 8s de por medio, "el primer pedido no sale
+  // solo" podía tardar bastante en corregirse sin tocar nada; con 2s el
+  // hueco real se reduce mucho. Una vez conectada, vuelve al ritmo normal
+  // de 8s (no hace falta ir más rápido, y así no se satura de tráfico la
+  // conexión Bluetooth sin necesidad).
+  function _ptBucleMantenimiento() {
+    const conectada = _ptIsConnected();
+    setTimeout(() => {
+      if (!_ptIsConnected()) {
+        _ptReconectar();
+      } else if (_ptTransporte === 'ble') {
+        _ptBlePulso();
+      } else {
+        _ptComprobarPapel();
+      }
+      // La cola pendiente normalmente se vacía sola al detectar una
+      // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
+      // error puntual de escritura SIN que la impresora llegue a desconectarse
+      // de verdad — en ese caso ese flanco nunca se dispara. Este intento
+      // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
+      // ya se protege solo contra solapes (_ptColaProcesando).
+      if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
+      _ptBucleMantenimiento();
+    }, conectada ? 8000 : 2000);
+  }
+  _ptBucleMantenimiento();
   // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
   // segundo plano — si la tablet se queda con la pantalla apagada un rato
   // (algo habitual entre pedido y pedido) el reintento de arriba puede no
