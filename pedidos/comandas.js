@@ -629,9 +629,21 @@ function openCustomizer(id, editKey) {
   updateCustExtraUI('queso', custExtraQueso);
   updateCustExtraUI('gratinado', custExtraGratinado);
   renderCustChips();
+  renderCustExtrasSection();
   updateCustBadges();
   updateCustTotalPrice();
   document.getElementById('customizer-modal').classList.add('open');
+}
+// Si "Queso Mozzarella" ya está entre los ingredientes elegidos, no tiene
+// sentido cobrar aparte por añadir queso — solo queda la opción de
+// gratinar (ya tiene queso, solo falta pasarlo por el horno).
+function custHasQuesoIngredient() { return custSelIngredients.includes('Queso Mozzarella'); }
+function renderCustExtrasSection() {
+  const hasQueso = custHasQuesoIngredient();
+  const quesoLabel = document.getElementById('cust-queso-label');
+  const gratinadoSub = document.getElementById('cust-gratinado-label').querySelector('.option-sub');
+  quesoLabel.style.display = hasQueso ? 'none' : '';
+  gratinadoSub.textContent = hasQueso ? '+0,50 €' : '+0,50 € · incluye gratinado del queso';
 }
 function closeCustomizer() { document.getElementById('customizer-modal').classList.remove('open'); custType = null; custEditKey = null; }
 
@@ -674,7 +686,11 @@ function toggleCustIng(n) {
     if ((cfg.maxIngredients !== null && custSelIngredients.length >= cfg.maxIngredients) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal)) return;
     custSelIngredients.push(n);
   }
-  renderCustChips(); updateCustBadges();
+  if (custHasQuesoIngredient() && custExtraQueso) {
+    custExtraQueso = false;
+    updateCustExtraUI('queso', false);
+  }
+  renderCustChips(); renderCustExtrasSection(); updateCustBadges(); updateCustTotalPrice();
 }
 function updateCustBadges() {
   const cfg = CUSTOMIZER_CONFIG[custType];
@@ -693,7 +709,7 @@ function toggleCustExtra(which) {
     if (!custExtraQueso && custExtraGratinado) { custExtraGratinado = false; updateCustExtraUI('gratinado', false); }
   } else {
     custExtraGratinado = !custExtraGratinado;
-    if (custExtraGratinado && !custExtraQueso) { custExtraQueso = true; updateCustExtraUI('queso', true); }
+    if (custExtraGratinado && !custExtraQueso && !custHasQuesoIngredient()) { custExtraQueso = true; updateCustExtraUI('queso', true); }
   }
   updateCustExtraUI(which, which === 'queso' ? custExtraQueso : custExtraGratinado);
   updateCustTotalPrice();
@@ -921,14 +937,15 @@ function renderExtrasBody(item) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
   if (!isBoniato) {
-    if (!soloGratinado) {
+    const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
+    if (!yaLlevaQueso) {
       html += `<label class="option-row" onclick="toggleExtra('queso')">
         <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
         <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
       </label>`;
     }
     html += `<label class="option-row" onclick="toggleExtra('gratinado')">
-      <div><div class="option-title">🔥 Gratinar${soloGratinado ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${soloGratinado ? '' : ' · incluye gratinado del queso'}</div></div>
+      <div><div class="option-title">🔥 Gratinar${yaLlevaQueso ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${yaLlevaQueso ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
     html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
@@ -972,16 +989,17 @@ function removeExtraCambio(i) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+function extrasHasQuesoIngredient() { return !!extrasIngredientes['Queso Mozzarella']; }
 function toggleExtra(which) {
-  const soloGratinado = EXTRAS_SOLO_GRATINADO.has(extrasCurrentId); // ya lleva queso incluido de base
+  const yaLlevaQueso = EXTRAS_SOLO_GRATINADO.has(extrasCurrentId) || extrasHasQuesoIngredient(); // ya lleva queso incluido
   if (which === 'queso') {
     extrasQueso = !extrasQueso;
-    // Sin queso no hay nada que gratinar (salvo que la patata ya lo lleve de base).
-    if (!extrasQueso && !soloGratinado && extrasGratinado) extrasGratinado = false;
+    // Sin queso no hay nada que gratinar (salvo que la patata ya lo lleve de base/ingrediente).
+    if (!extrasQueso && !yaLlevaQueso && extrasGratinado) extrasGratinado = false;
   } else {
     extrasGratinado = !extrasGratinado;
-    // Gratinar necesita queso: si la patata no lo lleva de base, se añade solo.
-    if (extrasGratinado && !soloGratinado && !extrasQueso) extrasQueso = true;
+    // Gratinar necesita queso: si la patata no lo lleva ya, se añade solo.
+    if (extrasGratinado && !yaLlevaQueso && !extrasQueso) extrasQueso = true;
   }
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
@@ -990,6 +1008,7 @@ function toggleExtraIng(ing) {
   const on = !extrasIngredientes[ing];
   extrasIngredientes[ing] = on;
   if (on) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; } else { delete extrasIngOrder[ing]; }
+  if (ing === 'Queso Mozzarella' && on && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
