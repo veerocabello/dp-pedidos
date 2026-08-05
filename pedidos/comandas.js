@@ -1534,10 +1534,42 @@ if (navigator.usb) {
   });
 }
 
+// Aviso sonoro al imprimir (o al fallar), generado con el propio
+// navegador (Web Audio) — no necesita ningún archivo de sonido externo,
+// así que funciona igual sin conexión. Si el navegador bloquea el audio
+// por lo que sea, se ignora en silencio: nunca debe romper la impresión.
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playTone(freq, duration, delay, volume) {
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.value = volume;
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  const t = ctx.currentTime + delay;
+  osc.start(t);
+  osc.stop(t + duration);
+}
+function playPrintSound(ok) {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    if (ok) { playTone(880, 0.11, 0, 0.18); playTone(1320, 0.14, 0.1, 0.18); }
+    else { playTone(220, 0.22, 0, 0.22); playTone(160, 0.28, 0.2, 0.22); }
+  } catch (e) { /* sin sonido, no pasa nada */ }
+}
+
 async function printOrder(order) {
   renderTicketPreview(order);
   const cfg = getTicketConfig();
   let printedViaUsb = false;
+  let usbFailed = false;
   if (cfg.modoImpresion !== 'dialog') {
     try {
       const bytes = buildEscPosBytes(order);
@@ -1546,10 +1578,12 @@ async function printOrder(order) {
       printedViaUsb = true;
     } catch (e) {
       console.warn('[comandas] impresión directa falló, usando diálogo:', e);
+      usbFailed = true;
     }
   }
   if (!printedViaUsb) window.print();
   updatePrinterStatusUI();
+  playPrintSound(!usbFailed);
   return printedViaUsb;
 }
 
