@@ -130,6 +130,13 @@ const menuCatsSet = new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat))
 const extraCats = [...menuCatsSet].filter(c => !CATEGORY_ORDER.includes(c));
 const categories = ["Todos", ...CATEGORY_ORDER.filter(c => menuCatsSet.has(c)), ...extraCats];
 let activeCategory = "Todos";
+// Mismo orden fijo para las líneas de la comanda y del ticket: patatas,
+// boniato, paninis, tartas, cookies, bebidas y la bolsa siempre la última
+// (su categoría "Extras" no está en CATEGORY_ORDER, así que cae al final).
+function categoryRank(cat) {
+  const idx = CATEGORY_ORDER.indexOf(cat);
+  return idx === -1 ? CATEGORY_ORDER.length : idx;
+}
 
 /* ── Estado del carrito (3 capas, igual que en la web) ── */
 let cart = {};        // id -> qty (productos simples, sin personalizar)
@@ -512,14 +519,14 @@ function renderCart() {
   document.getElementById('paid-toggle-row').style.display = 'flex';
 
   let total = 0;
-  let html = '';
+  const rows = []; // { rank, html } — se ordenan por categoría antes de pintar
 
   lines.forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
     const subtotal = item.price * qty;
     total += subtotal;
-    html += `<div class="cart-line">
+    rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeQty(${item.id},-1)">−</button>
@@ -528,7 +535,7 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-remove" onclick="removeItem(${item.id})" title="Quitar">🗑️</button>
-    </div>`;
+    </div>` });
   });
 
   custLines.forEach(c => {
@@ -538,7 +545,7 @@ function renderCart() {
     const subtotal = unitPrice * c.qty;
     total += subtotal;
     const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
-    html += `<div class="cart-line">
+    rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
@@ -549,7 +556,7 @@ function renderCart() {
       <button class="cart-edit" onclick="editCustItem('${c.key}')" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeCustItem('${c.key}')" title="Quitar">🗑️</button>
       <div class="cart-line-extra">${escapeHtml(details)}</div>
-    </div>`;
+    </div>` });
   });
 
   extLines.forEach(c => {
@@ -557,7 +564,8 @@ function renderCart() {
     const subtotal = price * c.qty;
     total += subtotal;
     const details = getExtrasItemDetails(c).join(' · ');
-    html += `<div class="cart-line">
+    const baseItem = MENU.find(m => m.id == c.menuId);
+    rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(getExtrasItemLabel(c))}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',-1)">−</button>
@@ -568,8 +576,11 @@ function renderCart() {
       <button class="cart-edit" onclick="editExtrasItem('${c.key}')" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
-    </div>`;
+    </div>` });
   });
+
+  rows.sort((a, b) => a.rank - b.rank);
+  let html = rows.map(r => r.html).join('');
 
   const discountAmount = computeDiscountAmount(total);
   if (discountAmount > 0) {
@@ -1238,7 +1249,7 @@ function buildOrderObject(preview) {
   Object.entries(cart).forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
-    items.push({ name: item.name, qty, subtotal: item.price * qty, extras: [] });
+    items.push({ name: item.name, qty, subtotal: item.price * qty, extras: [], _rank: categoryRank(item.cat) });
   });
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
@@ -1257,16 +1268,20 @@ function buildOrderObject(preview) {
     // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
     // extra van cada uno en su línea con su propio precio.
-    items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras });
+    items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat) });
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
+    const baseItem = MENU.find(m => m.id == c.menuId);
     items.push({
       name: getExtrasItemLabel(c), qty: c.qty,
       subtotal: getExtrasItemPrice(c) * c.qty,
       displaySubtotal: getExtrasItemBaseSubtotal(c) * c.qty,
       extras: getExtrasItemTicketExtras(c),
+      _rank: categoryRank(baseItem ? baseItem.cat : ''),
     });
   });
+  items.sort((a, b) => a._rank - b._rank);
+  items.forEach(it => delete it._rank);
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
   const discountAmount = computeDiscountAmount(subtotal);
   if (discountAmount > 0) {
