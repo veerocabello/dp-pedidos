@@ -462,7 +462,7 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
     }
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
-    const extrasStr = [c.extraQueso ? 'Extra Queso' : '', c.extraGratinado ? 'Extra Gratinado' : ''].filter(Boolean).join(' + ');
+    const extrasStr = [c.extraQueso ? 'Extra Queso' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(' + ');
     return c.qty + 'x ' + item.name + ' [' + details + (extrasStr ? ' + ' + extrasStr : '') + '] — ' + (unitPrice * c.qty).toFixed(2) + ' €';
   });
   const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
@@ -1128,7 +1128,8 @@ async function _submitOrderInner() {
     // Añadir quesos al final
     quesosFromIng.forEach(q => extras.push('Extra ' + q));
     if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');
-    if (c.extraGratinado) extras.push('Extra Gratinado +0,50€');
+    // El gratinado siempre va el último, sea cual sea el resto de extras.
+    if (c.extraGratinado) extras.push('Gratinado +0,50€');
     return {
       name: item.name,
       qty: c.qty,
@@ -1148,7 +1149,6 @@ async function _submitOrderInner() {
     if (!item) return null;
     const extras = [];
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
-    if (c.gratinado) extras.push({ name: 'Extra Gratinado', price: 0.50 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
       extras.push({ name: 'Extra ' + ing, price: precioIng });
@@ -1156,6 +1156,8 @@ async function _submitOrderInner() {
     (c.salsasExtra || []).forEach(salsa => {
       extras.push({ name: 'Extra salsa ' + salsa, price: EXTRAS_SALSA_PRECIO });
     });
+    // El gratinado siempre va el último, sea cual sea el resto de extras.
+    if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
       name: item.name,
       qty: c.qty,

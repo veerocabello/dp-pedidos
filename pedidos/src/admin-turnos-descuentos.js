@@ -336,9 +336,10 @@ function getExtrasItemLabel(c) {
   if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
   const extras = [];
   if (c.queso) extras.push('Extra Queso');
-  if (c.gratinado) extras.push('Extra Gratinado');
   (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
   (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
+  // El gratinado siempre va el último, sea cual sea el resto de extras.
+  if (c.gratinado) extras.push('Gratinado');
   return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
