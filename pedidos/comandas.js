@@ -1467,7 +1467,7 @@ function openHistorial() {
   el.innerHTML = list.length === 0
     ? `<div class="historial-empty">Todavía no hay comandas impresas hoy.</div>`
     : list.map((o, i) => {
-        const payBadge = o.paid ? (o.paymentMethod === 'tarjeta' ? '💳 Tarjeta' : '💵 Efectivo') : '⚠️ Pendiente';
+        const payBadge = o.paid ? (o.paymentMethod === 'tarjeta' ? '💳' : '💵') : '⚠️';
         return `<div class="historial-item">
         <div><div class="h-num">${o.num}</div><div class="h-meta">${escapeHtml(o.time)} · ${o.name ? escapeHtml(o.name) + ' · ' : ''}${fmt(o.total)} € · ${payBadge}</div></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
