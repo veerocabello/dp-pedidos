@@ -130,22 +130,6 @@ let activeCategory = "Todos";
 let cart = {};        // id -> qty (productos simples, sin personalizar)
 let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
-// Bolsas: se calculan solas (1 bolsa cada 2 productos) salvo que el
-// camarero las toque a mano en la comanda, en cuyo caso dejan de recalcularse.
-let bolsaManual = false;
-function countOrderProducts() {
-  let n = 0;
-  Object.entries(cart).forEach(([id, qty]) => { if (id != BOLSA_ID) n += qty; });
-  Object.values(custCart).forEach(c => n += c.qty);
-  Object.values(extrasCart).forEach(c => n += c.qty);
-  return n;
-}
-function syncBolsaAuto() {
-  if (bolsaManual) return;
-  const n = countOrderProducts();
-  const bags = n > 0 ? Math.ceil(n / 2) : 0;
-  if (bags > 0) cart[BOLSA_ID] = bags; else delete cart[BOLSA_ID];
-}
 let orderPaid = false;
 let paymentMethod = 'efectivo';
 function setOrderPaid(v) {
@@ -192,11 +176,17 @@ function toast(msg, ms = 2600) {
 const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Extras: '🛍️' };
 
 function initTabs() {
-  document.getElementById('tabs').innerHTML = categories.map(c =>
+  const catTabs = categories.map(c =>
     `<button class="tab ${c === activeCategory ? 'active' : ''}" onclick="setCategory('${c}')"><span class="tab-icon">${CATEGORY_ICONS[c] || '🍽️'}</span>${c}</button>`
   ).join('');
+  document.getElementById('tabs').innerHTML = catTabs
+    + `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`;
 }
 function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
+function addBolsaDirect() {
+  changeQty(BOLSA_ID, 1);
+  toast('🛍️ Bolsa añadida (+0,10 €)');
+}
 
 function renderItemRow(item) {
   const qty = cart[item.id] || 0;
@@ -272,7 +262,6 @@ function onAddClick(id) {
 }
 
 function changeQty(id, delta) {
-  if (id == BOLSA_ID) bolsaManual = true;
   const current = cart[id] || 0;
   const next = current + delta;
   if (next <= 0) delete cart[id]; else cart[id] = next;
@@ -280,12 +269,7 @@ function changeQty(id, delta) {
   renderCart();
   if (delta > 0) animateAdd(id);
 }
-function removeItem(id) {
-  if (id == BOLSA_ID) bolsaManual = true;
-  delete cart[id];
-  renderMenu();
-  renderCart();
-}
+function removeItem(id) { delete cart[id]; renderMenu(); renderCart(); }
 function removeCustItem(key) { delete custCart[key]; renderCart(); }
 function removeExtrasItem(key) { delete extrasCart[key]; renderCart(); }
 
@@ -505,7 +489,6 @@ function computeDiscountAmount(subtotal) {
 }
 
 function renderCart() {
-  syncBolsaAuto();
   const bodyEl = document.getElementById('cart-body');
   const totalRowEl = document.getElementById('cart-total-row');
   const lines = Object.entries(cart);
@@ -616,7 +599,6 @@ function saveCartDraft() {
       name: (document.getElementById('order-name') || {}).value || '',
       paid: orderPaid,
       paymentMethod,
-      bolsaManual,
     };
     localStorage.setItem(CART_DRAFT_KEY, JSON.stringify(draft));
   } catch (e) { /* si falla el guardado no debe romper la comanda */ }
@@ -632,7 +614,6 @@ function restoreCartDraftIfAny() {
   custCart = draft.custCart || {};
   extrasCart = draft.extrasCart || {};
   orderDiscount = draft.orderDiscount || null;
-  bolsaManual = !!draft.bolsaManual;
   const nameEl = document.getElementById('order-name');
   if (nameEl) nameEl.value = draft.name || '';
   setOrderPaid(!!draft.paid);
@@ -709,11 +690,9 @@ function clearOrder(silent) {
       name: document.getElementById('order-name').value,
       paid: orderPaid,
       paymentMethod,
-      bolsaManual,
     };
   }
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
-  bolsaManual = false;
   document.getElementById('order-name').value = '';
   document.getElementById('cash-received').value = '';
   cashTotalEdited = false;
@@ -738,7 +717,6 @@ function undoClearOrder() {
   custCart = clearedOrderSnapshot.custCart;
   extrasCart = clearedOrderSnapshot.extrasCart;
   orderDiscount = clearedOrderSnapshot.orderDiscount;
-  bolsaManual = !!clearedOrderSnapshot.bolsaManual;
   document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
   setOrderPaid(!!clearedOrderSnapshot.paid);
   setPaymentMethod(clearedOrderSnapshot.paymentMethod || 'efectivo');
