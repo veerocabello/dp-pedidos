@@ -1211,13 +1211,16 @@ async function _submitOrderInner() {
     : [];
   const upsellAnadido = _upsellIdsOfrecidos.some(id => (cart[id] || 0) > 0);
 
-  // Aviso destacado en el ticket para que se compruebe/recuerde el sello de
-  // fidelización — mismo criterio que decide si el pedido sumará sello de
-  // verdad (_pedidoElegibleFidelizacion, definida más abajo pero disponible
-  // aquí porque las funciones declaradas con "function" se izan).
-  const _fidelizacionElegibleSubmit = (typeof _pedidoElegibleFidelizacion === 'function')
-    ? _pedidoElegibleFidelizacion({ items: orderItems, total: orderTotal })
-    : false;
+  // Aviso destacado en el ticket para que no se olvide entregar/descontar
+  // el premio — solo cuando el cliente YA tenía una patata gratis
+  // pendiente de canjear ANTES de este pedido (window._fidelizacionPremioActivo,
+  // calculado al escribir el teléfono en _comprobarPremioFidelizacion). No
+  // es lo mismo que "este pedido es elegible para sumar sello" (eso pasaba
+  // casi en cada ticket, con patata + 5€ de mínimo, y hacía el aviso inútil
+  // por repetirse siempre). El caso de "este pedido completa el 10º sello
+  // ahora mismo" ya tiene su propio aviso separado más abajo
+  // (fidelizacionAvisoItems, "¡10º SELLO COMPLETADO!").
+  const _fidelizacionElegibleSubmit = !!(window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean);
 
   // Datos estructurados del ticket (para impresión HTML)
   const ticketData = {
