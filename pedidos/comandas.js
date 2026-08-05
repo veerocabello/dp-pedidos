@@ -675,7 +675,7 @@ function openCustomizer(id, editKey) {
 // Si "Queso Mozzarella" ya está entre los ingredientes elegidos, no tiene
 // sentido cobrar aparte por añadir queso — solo queda la opción de
 // gratinar (ya tiene queso, solo falta pasarlo por el horno).
-function custHasQuesoIngredient() { return custSelIngredients.includes('Queso Mozzarella'); }
+function custHasQuesoIngredient() { return custSelIngredients.some(isQuesoIngredient); }
 function renderCustExtrasSection() {
   const hasQueso = custHasQuesoIngredient();
   const quesoLabel = document.getElementById('cust-queso-label');
@@ -1034,7 +1034,7 @@ function removeExtraCambio(i) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-function extrasHasQuesoIngredient() { return !!extrasIngredientes['Queso Mozzarella']; }
+function extrasHasQuesoIngredient() { return Object.entries(extrasIngredientes).some(([name, on]) => on && isQuesoIngredient(name)); }
 function toggleExtra(which) {
   const yaLlevaQueso = EXTRAS_SOLO_GRATINADO.has(extrasCurrentId) || extrasHasQuesoIngredient(); // ya lleva queso incluido
   if (which === 'queso') {
@@ -1053,7 +1053,7 @@ function toggleExtraIng(ing) {
   const on = !extrasIngredientes[ing];
   extrasIngredientes[ing] = on;
   if (on) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; } else { delete extrasIngOrder[ing]; }
-  if (ing === 'Queso Mozzarella' && on && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
+  if (isQuesoIngredient(ing) && on && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
