@@ -220,6 +220,22 @@ function _initFirebase() {
   window.fb_saveFidelizacionCliente = async function(telefono, data) { await jset("fidelizacion/"+telefono, jstr(data)); };
   window.fb_deleteFidelizacionCliente = async function(telefono) { await db.ref("fidelizacion/"+telefono).remove(); };
   window.fb_loadFidelizacionCliente = async function(telefono) { var sn=await jget("fidelizacion/"+telefono); return sn.exists()?jparse(sn.val()):null; };
+  // Lectura + escritura ATÓMICA: si dos pedidos del mismo teléfono se
+  // confirman casi a la vez (dos pestañas, doble pulsación, etc.), un
+  // simple load()+save() puede perder un sello porque el segundo pedido lee
+  // el valor de antes de que el primero termine de guardar. Con
+  // .transaction() Firebase reintenta mutateFn con el valor más reciente
+  // del servidor hasta que la escritura no choca con nadie, así que ningún
+  // sello se pierde por una carrera.
+  window.fb_transactFidelizacionCliente = async function(telefono, mutateFn) {
+    var resultado;
+    await db.ref("fidelizacion/"+telefono).transaction(function(raw) {
+      var cliente = mutateFn(raw ? jparse(raw) : null);
+      resultado = cliente;
+      return jstr(cliente);
+    });
+    return resultado;
+  };
   window.fb_loadFidelizacionAll = async function() {
     var sn = await jget("fidelizacion");
     if (!sn.exists()) return null;

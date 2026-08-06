@@ -2365,10 +2365,13 @@ function renderCart() {
   const grandTotal = feeEnabled ? total + feeAmount : total;
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
-  // Sync mobile FAB and drawer
-  _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
   // Only show total and form if orders are open
+  // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
+  // porque _syncCartDrawer() (a través de _syncDrawerSlotPicker()) copia el
+  // estado visible de #slot-picker-group al drawer móvil. Si se sincroniza
+  // primero, el drawer copia el estado del render ANTERIOR (desactualizado),
+  // provocando que "Hora de recogida" no aparezca en el drawer justo tras
+  // el primer cambio de carrito (bug intermitente en móvil).
   if (getOrdersOpen()) {
     totalRowEl.style.display = "flex";
     formEl.style.display = "block";
@@ -2377,6 +2380,10 @@ function renderCart() {
     totalRowEl.style.display = "none";
     formEl.style.display = "none";
   }
+
+  // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
+  _updateCartFab(totalItems, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal);
 }
 
 
@@ -3351,48 +3358,56 @@ function _ticketTienePatata(ticketData) {
 }
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
   if (!phoneClean || !_ticketTienePatata(ticketData)) return;
-  if (!window.fb_loadFidelizacionCliente || !window.fb_saveFidelizacionCliente) return;
+  if (!window.fb_transactFidelizacionCliente) return;
 
-  let cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-  if (!cliente) {
-    cliente = { nombre: (ticketData && ticketData.name) || '', sellos: 0, premiosPendientes: 0, vecesCompletado: 0, historialCanjes: [] };
-  }
-  // Migración de clientes antiguos (formato con premioDisponible booleano)
-  if (typeof cliente.premiosPendientes !== 'number') {
-    cliente.premiosPendientes = cliente.premioDisponible ? 1 : 0;
-  }
-  if (typeof cliente.vecesCompletado !== 'number') cliente.vecesCompletado = 0;
-  delete cliente.premioDisponible;
+  // IMPORTANTE: esto tiene que ser una transacción atómica (lee y escribe
+  // en un solo paso protegido por el servidor), no un load() + save() por
+  // separado. Con load()+save() dos pedidos del mismo teléfono confirmados
+  // casi a la vez (dos pestañas abiertas, doble toque en el botón, etc.)
+  // podían leer los dos el mismo número de sellos de partida y guardar los
+  // dos el mismo resultado — un pedido "se comía" el sello del otro y el
+  // contador se quedaba parado aunque el cliente siguiera pidiendo.
+  await window.fb_transactFidelizacionCliente(phoneClean, function(cliente) {
+    if (!cliente) {
+      cliente = { nombre: (ticketData && ticketData.name) || '', sellos: 0, premiosPendientes: 0, vecesCompletado: 0, historialCanjes: [] };
+    }
+    // Migración de clientes antiguos (formato con premioDisponible booleano)
+    if (typeof cliente.premiosPendientes !== 'number') {
+      cliente.premiosPendientes = cliente.premioDisponible ? 1 : 0;
+    }
+    if (typeof cliente.vecesCompletado !== 'number') cliente.vecesCompletado = 0;
+    delete cliente.premioDisponible;
 
-  // Mantener actualizado el nombre más reciente con el que pide el cliente
-  if (ticketData && ticketData.name) cliente.nombre = ticketData.name;
+    // Mantener actualizado el nombre más reciente con el que pide el cliente
+    if (ticketData && ticketData.name) cliente.nombre = ticketData.name;
 
-  // Si este pedido consume un premio pendiente (la patata gratis ya se
-  // descontó en el carrito, ver el cálculo de _fidelizacionDescuento en
-  // submitOrder), se resta 1 premio pendiente y se registra en el historial
-  // de canjes. El contador de sellos no se toca aquí porque ya se resetea
-  // solo al llegar a 10.
-  if (consumioPremio && cliente.premiosPendientes > 0) {
-    cliente.premiosPendientes -= 1;
-    cliente.historialCanjes = cliente.historialCanjes || [];
-    cliente.historialCanjes.push({ fecha: new Date().toLocaleString('es-ES'), ticket: (ticketData && ticketData.orderNum) || null });
-  }
+    // Si este pedido consume un premio pendiente (la patata gratis ya se
+    // descontó en el carrito, ver el cálculo de _fidelizacionDescuento en
+    // submitOrder), se resta 1 premio pendiente y se registra en el historial
+    // de canjes. El contador de sellos no se toca aquí porque ya se resetea
+    // solo al llegar a 10.
+    if (consumioPremio && cliente.premiosPendientes > 0) {
+      cliente.premiosPendientes -= 1;
+      cliente.historialCanjes = cliente.historialCanjes || [];
+      cliente.historialCanjes.push({ fecha: new Date().toLocaleString('es-ES'), ticket: (ticketData && ticketData.orderNum) || null });
+    }
 
-  cliente.sellos = (cliente.sellos || 0) + 1;
-  if (cliente.sellos >= FIDELIZACION_META) {
-    cliente.sellos = 0;
-    cliente.premiosPendientes = (cliente.premiosPendientes || 0) + 1;
-    cliente.vecesCompletado = (cliente.vecesCompletado || 0) + 1;
-  }
-  // Registro de cuándo se pone cada sello, para poder detectar ritmos
-  // sospechosos (varios sellos en pocos minutos = posible abuso del
-  // sistema). Solo guardamos los últimos 15 para no hinchar el nodo.
-  cliente.historialSellos = cliente.historialSellos || [];
-  cliente.historialSellos.push({ ts: Date.now(), fecha: new Date().toLocaleString('es-ES') });
-  if (cliente.historialSellos.length > 15) {
-    cliente.historialSellos = cliente.historialSellos.slice(-15);
-  }
-  await window.fb_saveFidelizacionCliente(phoneClean, cliente);
+    cliente.sellos = (cliente.sellos || 0) + 1;
+    if (cliente.sellos >= FIDELIZACION_META) {
+      cliente.sellos = 0;
+      cliente.premiosPendientes = (cliente.premiosPendientes || 0) + 1;
+      cliente.vecesCompletado = (cliente.vecesCompletado || 0) + 1;
+    }
+    // Registro de cuándo se pone cada sello, para poder detectar ritmos
+    // sospechosos (varios sellos en pocos minutos = posible abuso del
+    // sistema). Solo guardamos los últimos 15 para no hinchar el nodo.
+    cliente.historialSellos = cliente.historialSellos || [];
+    cliente.historialSellos.push({ ts: Date.now(), fecha: new Date().toLocaleString('es-ES') });
+    if (cliente.historialSellos.length > 15) {
+      cliente.historialSellos = cliente.historialSellos.slice(-15);
+    }
+    return cliente;
+  });
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.
@@ -4139,7 +4154,7 @@ function updateCustProgress() {
     if (sauceProg) sauceProg.style.display = 'none';
     document.getElementById('cust-sauce-badge').textContent = ns;
     document.getElementById('cust-ing-label').textContent = 'Total: ' + total + '/' + cfg.maxTotal + ' (salsas: ' + ns + ' · ing: ' + ni + ')';
-    document.getElementById('cust-ing-bar').style.width = pct + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pct / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill ' + cls;
     document.getElementById('cust-ing-badge').textContent = total + '/' + cfg.maxTotal;
   } else {
@@ -4148,11 +4163,11 @@ function updateCustProgress() {
     const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(ni / cfg.maxIngredients * 100));
     document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
-    document.getElementById('cust-sauce-bar').style.width = pctS + '%';
+    document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
     document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + ni + '/' + cfg.maxIngredients;
-    document.getElementById('cust-ing-bar').style.width = pctI + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
     document.getElementById('cust-ing-badge').textContent = ni + '/' + cfg.maxIngredients;
   }
@@ -7867,24 +7882,29 @@ function _ejecutarLoadOrdersStatus() {
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe
   checkVacationMode();
+  // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
+  // un cliente anónimo mirando la carta no tiene permiso de escritura en
+  // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
+  // generando avisos de "permission_denied" en la consola sin ningún efecto.
+  const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
       updateOpenBtn(false);
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
       localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
   const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
@@ -8593,9 +8613,12 @@ function scheduleSlotMidnightReset() {
     localStorage.removeItem(OPEN_KEY);
     localStorage.removeItem(ORDERS_KEY);
     localStorage.removeItem('dpf_open_manual_override');
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    const _esAdminAutenticadoReset = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+    if (_esAdminAutenticadoReset) {
+      firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    }
     // También archivar el día anterior en historial
     try {
       const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8623,7 +8646,7 @@ function scheduleSlotMidnightReset() {
           modified = true;
         }
       });
-      if (modified) fichajesSave(fich);
+      if (modified && _esAdminAutenticadoReset) fichajesSave(fich);
     } catch (e) {
       console.warn('Auto-checkout error', e);
     }
