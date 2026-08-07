@@ -15066,7 +15066,7 @@ function _filtrarYPintarFidelizacion() {
     if (c.sospechoso) {
       h += '<button onclick="event.stopPropagation();marcarRitmoRevisado(\'' + telAttr + '\')" style="padding:7px 12px;background:#fff;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Ya lo revisé</button>';
     }
-    h += '<button onclick="event.stopPropagation();cargarFidelizacionParaEditar(\'' + telAttr + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
+    h += '<button onclick="event.stopPropagation();abrirFidelizacionAjustesModal(\'' + telAttr + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⚙️ Ajustes</button>';
     h += '</div>';
     h += '</div>';
     h += '<div id="fidel-detalle-' + telMostrar + '" style="display:none;padding:10px 16px;border-bottom:1.5px solid ' + border + ';font-size:12px;background:#FFFDF8"></div>';
@@ -15197,28 +15197,18 @@ function cargarFidelizacionParaEditar(telefono) {
     document.getElementById('fidel-edit-phone').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 }
-async function guardarFidelizacionManual() {
-  const telInput = document.getElementById('fidel-edit-phone');
-  const telefono = telInput.value.replace(/\D/g, '');
-  if (telefono.length !== 9) {
-    alert('Introduce un teléfono válido de 9 dígitos.');
-    return;
-  }
-  const nombre = document.getElementById('fidel-edit-nombre').value.trim();
-  let sellos = parseInt(document.getElementById('fidel-edit-sellos').value, 10);
-  if (isNaN(sellos) || sellos < 0) sellos = 0;
-  if (sellos >= FIDELIZACION_META_ADMIN) sellos = FIDELIZACION_META_ADMIN - 1;
-  let premiosPendientes = parseInt(document.getElementById('fidel-edit-premios-pendientes').value, 10);
-  if (isNaN(premiosPendientes) || premiosPendientes < 0) premiosPendientes = 0;
-  let vecesCompletado = parseInt(document.getElementById('fidel-edit-veces-completado').value, 10);
-  if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
-
-  // Transacción: nombre/sellos/premiosPendientes/vecesCompletado son lo que
-  // el admin ha editado a propósito en el formulario, pero historialCanjes/
-  // historialSellos deben venir siempre de lo último de verdad en Firebase
-  // (no de una lectura que pudo quedarse desfasada mientras el admin
-  // rellenaba el formulario) — si no, un sello o canje real de ese cliente
-  // llegado justo en medio se perdía sin aviso al guardar.
+// Escritura compartida por el formulario de la pestaña "Editar manualmente"
+// y por el modal de ajustes rápidos (⚙️) de cada tarjeta — los dos ajustan
+// los mismos 4 campos (nombre/sellos/premiosPendientes/vecesCompletado) de
+// la misma forma, así que viven en un único sitio para que no se
+// desincronicen si mañana hay que cambiar algo de esta lógica.
+// Transacción: nombre/sellos/premiosPendientes/vecesCompletado son lo que
+// el admin ha editado a propósito en el formulario, pero historialCanjes/
+// historialSellos deben venir siempre de lo último de verdad en Firebase
+// (no de una lectura que pudo quedarse desfasada mientras el admin
+// rellenaba el formulario) — si no, un sello o canje real de ese cliente
+// llegado justo en medio se perdía sin aviso al guardar.
+async function _guardarFidelizacionValores(telefono, nombre, sellos, premiosPendientes, vecesCompletado) {
   const mutator = function (current) {
     const existente = current || {};
     return {
@@ -15228,9 +15218,9 @@ async function guardarFidelizacionManual() {
       vecesCompletado,
       historialCanjes: existente.historialCanjes || [],
       historialSellos: existente.historialSellos || [],
-      // No pisar esto al editar a mano — si no, "Editar manualmente" borraba
-      // en silencio el "ya lo revisé" de ritmo sospechoso y el historial de
-      // nombres distintos usados con este teléfono.
+      // No pisar esto al editar a mano — si no, se borraba en silencio el
+      // "ya lo revisé" de ritmo sospechoso y el historial de nombres
+      // distintos usados con este teléfono.
       sospechosoRevisadoHastaTs: existente.sospechosoRevisadoHastaTs,
       historialNombres: existente.historialNombres || []
     };
@@ -15242,7 +15232,60 @@ async function guardarFidelizacionManual() {
     try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
     await window.fb_saveFidelizacionCliente(telefono, mutator(existente));
   }
+}
+function _leerValoresFormularioFidelizacion(prefijo) {
+  const telefono = document.getElementById(prefijo + '-phone').value.replace(/\D/g, '');
+  const nombre = document.getElementById(prefijo + '-nombre').value.trim();
+  let sellos = parseInt(document.getElementById(prefijo + '-sellos').value, 10);
+  if (isNaN(sellos) || sellos < 0) sellos = 0;
+  if (sellos >= FIDELIZACION_META_ADMIN) sellos = FIDELIZACION_META_ADMIN - 1;
+  let premiosPendientes = parseInt(document.getElementById(prefijo + '-premios-pendientes').value, 10);
+  if (isNaN(premiosPendientes) || premiosPendientes < 0) premiosPendientes = 0;
+  let vecesCompletado = parseInt(document.getElementById(prefijo + '-veces-completado').value, 10);
+  if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
+  return { telefono, nombre, sellos, premiosPendientes, vecesCompletado };
+}
+async function guardarFidelizacionManual() {
+  const v = _leerValoresFormularioFidelizacion('fidel-edit');
+  if (v.telefono.length !== 9) {
+    alert('Introduce un teléfono válido de 9 dígitos.');
+    return;
+  }
+  await _guardarFidelizacionValores(v.telefono, v.nombre, v.sellos, v.premiosPendientes, v.vecesCompletado);
   showToast('fidel-toast');
+  renderFidelizacionList();
+}
+
+// ── MODAL DE AJUSTES RÁPIDOS (⚙️ desde cada tarjeta de la lista) ──
+// Mismo formulario que "Editar manualmente", pero como ventana emergente
+// sobre la propia lista, ya rellena con los datos del cliente — para
+// corregir algo puntual (o simplemente comprobar qué hay guardado de
+// verdad, como "veces completado", sin confundirlo con un fallo) sin
+// perder de vista la lista ni tener que volver a escribir el teléfono.
+function abrirFidelizacionAjustesModal(telefono) {
+  const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || null;
+  document.getElementById('fidel-ajustes-phone').value = telefono;
+  document.getElementById('fidel-ajustes-nombre').value = (cliente && cliente.nombre) || '';
+  document.getElementById('fidel-ajustes-sellos').value = (cliente && typeof cliente.sellos === 'number') ? cliente.sellos : 0;
+  document.getElementById('fidel-ajustes-premios-pendientes').value = (cliente && typeof cliente.premiosPendientes === 'number') ? cliente.premiosPendientes : ((cliente && cliente.premioDisponible) ? 1 : 0);
+  document.getElementById('fidel-ajustes-veces-completado').value = (cliente && typeof cliente.vecesCompletado === 'number') ? cliente.vecesCompletado : 0;
+  const infoEl = document.getElementById('fidel-ajustes-cliente-info');
+  if (infoEl) infoEl.textContent = ((cliente && cliente.nombre) ? cliente.nombre + ' — ' : '') + telefono;
+  const modal = document.getElementById('fidel-ajustes-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function cerrarFidelizacionAjustesModal() {
+  const modal = document.getElementById('fidel-ajustes-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function guardarFidelizacionAjustesModal() {
+  const v = _leerValoresFormularioFidelizacion('fidel-ajustes');
+  if (v.telefono.length !== 9) {
+    alert('Teléfono inválido — ciérralo y ábrelo de nuevo desde la tarjeta del cliente.');
+    return;
+  }
+  await _guardarFidelizacionValores(v.telefono, v.nombre, v.sellos, v.premiosPendientes, v.vecesCompletado);
+  cerrarFidelizacionAjustesModal();
   renderFidelizacionList();
 }
 

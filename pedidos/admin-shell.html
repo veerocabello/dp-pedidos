@@ -731,6 +731,35 @@
         </div>
       </div>
 
+      <!-- MODAL DE AJUSTES RÁPIDOS DE FIDELIZACIÓN (⚙️ desde cada tarjeta) -->
+      <div id="fidel-ajustes-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:9999;background:rgba(61,31,13,0.7);padding:16px;align-items:center;justify-content:center">
+        <div style="background:var(--cream);border-radius:20px;width:100%;max-width:420px;padding:24px;max-height:90vh;overflow-y:auto">
+          <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:900;color:var(--brown);margin-bottom:4px">⚙️ Ajustar fidelización</div>
+          <div id="fidel-ajustes-cliente-info" style="font-size:13px;color:var(--muted);margin-bottom:16px"></div>
+          <input type="hidden" id="fidel-ajustes-phone">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Nombre del cliente</label>
+          <input type="text" id="fidel-ajustes-nombre" style="width:100%;padding:10px 12px;margin:4px 0 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Sellos del ciclo actual (0-9)</label>
+          <div style="font-size:11px;color:var(--muted);margin:2px 0 4px">Al llegar a 10 se reinicia solo a 0 y se suma 1 a "veces completado" — eso NO es un fallo, no hace falta corregirlo a mano.</div>
+          <input type="number" id="fidel-ajustes-sellos" min="0" max="9" style="width:100%;padding:10px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Premios pendientes de entregar</label>
+          <div style="font-size:11px;color:var(--muted);margin:2px 0 4px">Patatas gratis ya ganadas que todavía no se le han dado.</div>
+          <input type="number" id="fidel-ajustes-premios-pendientes" min="0" style="width:100%;padding:10px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Veces que ha completado el ciclo (histórico)</label>
+          <div style="font-size:11px;color:var(--muted);margin:2px 0 4px">Total de patatas gratis ganadas desde siempre — nunca se resetea, solo sube.</div>
+          <input type="number" id="fidel-ajustes-veces-completado" min="0" style="width:100%;padding:10px 12px;margin-bottom:16px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <div style="display:flex;gap:8px">
+            <button onclick="guardarFidelizacionAjustesModal()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+            <button onclick="cerrarFidelizacionAjustesModal()" style="flex:1;background:var(--warm);color:var(--brown);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
       <div class="admin-section" id="admin-alertas" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:10px 12px;margin-bottom:16px">
           <div style="flex:1">
