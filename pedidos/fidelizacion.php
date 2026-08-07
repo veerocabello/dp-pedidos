@@ -401,7 +401,11 @@ try {
         }
 
         $guardado = null;
-        for ($intento = 0; $intento < 5; $intento++) {
+        // 8 intentos (igual que guardarPedidoEnStats en guardar-pedido.php),
+        // no 5 — un cliente con mucho movimiento (varios pedidos casi
+        // seguidos, admin editando su tarjeta a la vez...) puede chocar más
+        // de 5 veces seguidas contra el ETag antes de que el hueco se libere.
+        for ($intento = 0; $intento < 8; $intento++) {
             $leido = fbGetClienteConEtag($databaseURL, $telefono, $accessToken);
             $cliente = $leido['cliente'];
             if (!$cliente) {
@@ -541,7 +545,7 @@ try {
             exit;
         }
 
-        for ($intento = 0; $intento < 5; $intento++) {
+        for ($intento = 0; $intento < 8; $intento++) {
             $leido = fbGetClienteConEtag($databaseURL, $telefono, $accessToken);
             $cliente = $leido['cliente'];
             if (!$cliente) {

@@ -1482,8 +1482,23 @@ function _ticketTienePatata(ticketData) {
   if (!ticketData || !Array.isArray(ticketData.items)) return false;
   return ticketData.items.some(it => typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata'));
 }
+// El mínimo de 5€ lo decide SIEMPRE el servidor, contra el total real del
+// ticket ya guardado (fidelizacion.php, con FIDELIZACION_PEDIDO_MINIMO) —
+// aquí solo se filtra por "lleva patata" antes de llamar, para no gastar
+// una petición en pedidos que claramente no cuentan. Antes este filtro
+// también comprobaba el total en el propio navegador (con el mismo umbral
+// de 5€ duplicado en dos sitios): si por lo que fuera ese cálculo del
+// cliente no coincidía exactamente con el total ya guardado en el
+// servidor, el pedido ni siquiera llegaba a pedir el sello — y como el
+// filtro corta ANTES de la llamada a fidelizacion.php, no queda ningún
+// aviso en el registro de actividad de ese fallo (a diferencia de un
+// rechazo del servidor, que sí se registra y aparece en Alertas con botón
+// "Reintentar sello"). Quitar la comprobación de aquí cierra ese punto
+// ciego sin cambiar el resultado final, porque el servidor igualmente
+// rechaza (en silencio, sin alerta, es el caso normal y esperado) los
+// pedidos por debajo del mínimo.
 function _pedidoElegibleFidelizacion(ticketData) {
-  return _ticketTienePatata(ticketData) && !!ticketData && typeof ticketData.total === 'number' && ticketData.total >= FIDELIZACION_PEDIDO_MINIMO;
+  return _ticketTienePatata(ticketData);
 }
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
   if (!phoneClean || !_pedidoElegibleFidelizacion(ticketData)) return;
