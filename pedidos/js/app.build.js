@@ -10756,13 +10756,31 @@ async function _ptReconectar() {
   }
 }
 
+// Envuelve una promesa que no tiene por qué llegar a resolverse nunca
+// (transferOut de WebUSB y writeValue/writeValueWithoutResponse de Web
+// Bluetooth no traen ningún timeout de fábrica: si la impresora se queda
+// en un estado raro a media escritura — atasco de papel, un USB que se
+// desconecta sin disparar su evento, Bluetooth fuera de rango justo en
+// ese instante — la promesa puede quedarse colgada para siempre). Sin
+// esto, como TODOS los tickets pasan por la misma fila (_ptEnFila), un
+// solo envío colgado dejaba bloqueados también todos los pedidos
+// siguientes sin ningún aviso ni forma de recuperarse sola. La operación
+// de bajo nivel que se abandona puede seguir viva de fondo, pero ya no
+// bloquea nada: _ptResetConexion() olvida esa conexión y el siguiente
+// intento abre una nueva de cero.
+function _ptConTimeout(promise, ms, mensaje) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(mensaje || 'timeout de impresora')), ms))
+  ]);
+}
 async function _ptEnviarBytesUnaVez(bytes) {
   if (!_ptIsConnected()) {
     const ok = await _ptReconectar();
     if (!ok) throw new Error('Impresora no conectada — pulsa "Conectar impresora" en Configuración del ticket');
   }
   if (_ptTransporte === 'ble') { await _ptBleEnviarBytes(bytes); return; }
-  await _ptDevice.transferOut(_ptEndpointOut, bytes);
+  await _ptConTimeout(_ptDevice.transferOut(_ptEndpointOut, bytes), 8000, 'timeout enviando por USB — la impresora no respondió');
 }
 
 // Reintenta un par de veces (con reconexión de por medio) antes de rendirse —
@@ -10932,9 +10950,9 @@ async function _ptBleEnviarBytes(bytes) {
   for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
     const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
     if (conRespuesta) {
-      await _ptBleCharacteristic.writeValue(trozo);
+      await _ptConTimeout(_ptBleCharacteristic.writeValue(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
     } else {
-      await _ptBleCharacteristic.writeValueWithoutResponse(trozo);
+      await _ptConTimeout(_ptBleCharacteristic.writeValueWithoutResponse(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
       await new Promise(r => setTimeout(r, 45));
     }
   }
