@@ -4283,14 +4283,35 @@ async function _finalizarPedido() {
     console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
   }
 
+  // Programa de fidelización: sumar sello si el pedido incluye al menos 1
+  // patata. Se encadena a partir de que termine el guardado (fidelizacion.php
+  // comprueba contra el ticket ya guardado) y se publica esa promesa YA en
+  // window._selloEnCursoPorPedido — antes incluso de mostrar la pantalla de
+  // éxito, que es cuando los botones "Modificar"/"Cancelar pedido" se
+  // activan. Publicarla más tarde (como antes) dejaba un hueco real: un
+  // cliente que pulsara "Modificar" muy rápido nada más confirmar podía
+  // cancelar el pedido justo en ese hueco — _borrarPedidoDeFirebase()
+  // (antifraude.js) no encontraba ninguna promesa que esperar todavía, así
+  // que pedía revertir el sello antes de que el sello llegara siquiera a
+  // registrarse (no había nada que deshacer), y cuando el registro real
+  // llegaba justo después, se quedaba puesto un sello para un pedido ya
+  // cancelado — el cliente se llevaba un sello de más que no le tocaba.
+  const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
+  const _selloPromise = _pedidoGuardadoPromise
+    .catch(() => {})
+    .then(() => _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion))
+    .catch(e => console.warn('[fidelizacion] error:', e));
+  if (orderNum) {
+    window._selloEnCursoPorPedido[orderNum] = _selloPromise;
+    _selloPromise.then(() => {
+      if (window._selloEnCursoPorPedido[orderNum] === _selloPromise) delete window._selloEnCursoPorPedido[orderNum];
+    });
+  }
+
   await showSuccess(orderNum, slotTime);
   // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
   // guardar-pedido.php al guardar el pedido — hacerlo también aquí
   // contaría cada pedido dos veces.
-  // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
-  const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
-  await _pedidoGuardadoPromise;
-  _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
 }
@@ -4333,6 +4354,13 @@ function _ticketTienePatata(ticketData) {
 function _pedidoElegibleFidelizacion(ticketData) {
   return _ticketTienePatata(ticketData);
 }
+// Pedido → promesa de "todo lo que le falta a este pedido para terminar de
+// asentarse (guardado + intento de sumar sello)" — la publica
+// _finalizarPedido() nada más conocer el orderNum, y _borrarPedidoDeFirebase()
+// (antifraude.js) la espera antes de pedir que se revierta el sello, si el
+// cliente cancela/modifica el pedido justo después de confirmarlo. Ver el
+// comentario en _finalizarPedido de por qué hace falta.
+window._selloEnCursoPorPedido = window._selloEnCursoPorPedido || {};
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
   if (!phoneClean || !_pedidoElegibleFidelizacion(ticketData)) return;
   // El cálculo del sello (sumar, resetear a los 10, descontar premio
@@ -5118,6 +5146,17 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   if (telefonoParaRevertirSello) {
     const _telLimpio = telefonoParaRevertirSello.replace(/\D/g, '');
     if (_telLimpio.length === 9) {
+      // Si el cliente pulsó "Modificar"/"Cancelar" justo después de
+      // confirmar, es posible que la petición que suma el sello de ESTE
+      // mismo pedido todavía esté de camino (se lanza sin esperar, para no
+      // retrasar la pantalla de "pedido confirmado") — si se pide la
+      // reversión antes de que ese sello exista de verdad en el servidor,
+      // no hay nada que revertir, y cuando el registro original llega
+      // justo después, el sello se queda puesto para un pedido ya
+      // cancelado. Esperar aquí a que termine (si la hay) antes de pedir
+      // la reversión evita esa carrera.
+      const _selloPendiente = window._selloEnCursoPorPedido && window._selloEnCursoPorPedido[orderNum];
+      if (_selloPendiente) { try { await _selloPendiente; } catch (e) {} }
       fetch('fidelizacion.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

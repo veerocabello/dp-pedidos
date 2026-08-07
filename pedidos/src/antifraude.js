@@ -712,6 +712,17 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   if (telefonoParaRevertirSello) {
     const _telLimpio = telefonoParaRevertirSello.replace(/\D/g, '');
     if (_telLimpio.length === 9) {
+      // Si el cliente pulsó "Modificar"/"Cancelar" justo después de
+      // confirmar, es posible que la petición que suma el sello de ESTE
+      // mismo pedido todavía esté de camino (se lanza sin esperar, para no
+      // retrasar la pantalla de "pedido confirmado") — si se pide la
+      // reversión antes de que ese sello exista de verdad en el servidor,
+      // no hay nada que revertir, y cuando el registro original llega
+      // justo después, el sello se queda puesto para un pedido ya
+      // cancelado. Esperar aquí a que termine (si la hay) antes de pedir
+      // la reversión evita esa carrera.
+      const _selloPendiente = window._selloEnCursoPorPedido && window._selloEnCursoPorPedido[orderNum];
+      if (_selloPendiente) { try { await _selloPendiente; } catch (e) {} }
       fetch('fidelizacion.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
