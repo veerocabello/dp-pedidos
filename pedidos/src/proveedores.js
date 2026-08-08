@@ -579,12 +579,6 @@ const PP_ITEMS = [
 }];
 let _ppCurrentItem = null; // kept for legacy localStorage compat
 
-document.addEventListener('DOMContentLoaded', () => {
-  if (typeof migrateAdminPwdIfNeeded === 'function') migrateAdminPwdIfNeeded();else window._pendingMigrateAdmin = true;
-});
-document.addEventListener('firebaseReady', () => {
-  if (typeof migrateAdminPwdIfNeeded === 'function') migrateAdminPwdIfNeeded();
-});
 const _origOpenStock = window.openStockConfigSecret;
 window.openStockConfigSecret = function () {
   if (_origOpenStock) _origOpenStock();

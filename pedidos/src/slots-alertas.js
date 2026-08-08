@@ -278,10 +278,10 @@ function importarConfig(input) {
       if (backup.cif !== undefined) {
         localStorage.setItem(EMP_CIF_KEY, backup.cif);
       }
-      if (backup.adminPwd && isHex64(backup.adminPwd)) {
-        localStorage.setItem(ADMIN_PWD_KEY, backup.adminPwd);
-        if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(backup.adminPwd).catch(() => {});
-      }
+      // adminPwd de un backup antiguo se ignora a propósito — el comentario
+      // de arriba ya decía que no se restauraba, y ahora además el sistema
+      // de "contraseña de administración" propio se ha quitado del todo
+      // (no protegía nada real, ver admin-turnos-descuentos.js).
 
       // Refrescar UI
       loadAdminConfig();

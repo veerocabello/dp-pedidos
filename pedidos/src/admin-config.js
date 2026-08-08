@@ -980,35 +980,6 @@ checkAutoCloseWarning();
 // El intervalo de re-chequeo automático se registra en aplicarEstadoInicial (initConHorarioFirebase)
 // para evitar duplicados. No registrar otro aquí.
 
-// ── CONTRASEÑA ──
-async function changePwd() {
-  const old = document.getElementById('pwd-old').value;
-  const n1 = document.getElementById('pwd-new').value;
-  const n2 = document.getElementById('pwd-rep').value;
-  const err = document.getElementById('pwd-error');
-  err.textContent = '';
-  const oldHash = await hashAdminPwd(old);
-  if (oldHash !== getAdminPwd()) {
-    err.textContent = 'La contraseña actual es incorrecta';
-    return;
-  }
-  if (n1.length < 6) {
-    err.textContent = 'La nueva contraseña debe tener al menos 6 caracteres';
-    return;
-  }
-  if (n1 !== n2) {
-    err.textContent = 'Las contraseñas no coinciden';
-    return;
-  }
-  const newHash = await hashAdminPwd(n1);
-  localStorage.setItem(ADMIN_PWD_KEY, newHash);
-  if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(newHash).catch(() => {});
-  document.getElementById('pwd-old').value = '';
-  document.getElementById('pwd-new').value = '';
-  document.getElementById('pwd-rep').value = '';
-  showToast('pwd-toast');
-  logActivity('🔑 Contraseña de administración cambiada');
-}
 const ORDERS_KEY = 'dpf_orders_open';
 const ORDERS_MSG_KEY = 'dpf_orders_msg';
 const STATS_KEY = 'dpf_day_stats';

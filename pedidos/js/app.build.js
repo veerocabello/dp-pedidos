@@ -704,12 +704,6 @@ const PP_ITEMS = [
 }];
 let _ppCurrentItem = null; // kept for legacy localStorage compat
 
-document.addEventListener('DOMContentLoaded', () => {
-  if (typeof migrateAdminPwdIfNeeded === 'function') migrateAdminPwdIfNeeded();else window._pendingMigrateAdmin = true;
-});
-document.addEventListener('firebaseReady', () => {
-  if (typeof migrateAdminPwdIfNeeded === 'function') migrateAdminPwdIfNeeded();
-});
 const _origOpenStock = window.openStockConfigSecret;
 window.openStockConfigSecret = function () {
   if (_origOpenStock) _origOpenStock();
@@ -2239,6 +2233,16 @@ function changeQty(id, delta) {
     openExtrasModal(id);
     return;
   }
+  // Defensa en profundidad: renderMenu() ya oculta los controles +/- de un
+  // producto agotado/oculto, así que hoy esto no es alcanzable desde la UI
+  // normal — pero changeQty() en sí no comprobaba nada, así que cualquier
+  // otra vía de llamarla (consola, un botón que quede con el id viejo tras
+  // marcar el producto agotado mientras la página ya estaba abierta, un
+  // futuro caller) podía seguir añadiendo un producto agotado al carrito.
+  if (delta > 0) {
+    const _item = typeof MENU !== 'undefined' ? MENU.find(m => m.id == id) : null;
+    if (_item && (_item.hidden || _item.soldout)) return;
+  }
   const current = cart[id] || 0;
   const next = current + delta;
   if (next <= 0) delete cart[id];else cart[id] = next;
@@ -3417,14 +3421,32 @@ async function incrementSlot(slotTime) {
   // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
   // slots/ abierto a escritura anónima en las reglas.
   try {
-    await _fetchConTimeout('guardar-pedido.php', {
+    const resp = await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reservarSlot', slotTime })
     }, 8000);
+    // Antes solo se comprobaba que la petición no lanzara una excepción de
+    // red — si el servidor respondía 200 con {"success":false} (turno
+    // lleno, fallo al escribir tras los reintentos...) no se detectaba, y
+    // el incremento optimista de arriba se quedaba puesto para siempre en
+    // este dispositivo aunque la reserva real nunca hubiera cuajado en
+    // Firebase, mostrando el turno más ocupado de lo que está de verdad.
+    const data = await resp.json().catch(() => null);
+    if (!data || !data.success) {
+      _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
+      saveSlotsData(getSlotsData());
+      console.warn('Slot reserve rejected by server', data && data.error);
+    }
   } catch (e) {
-    console.warn('Slot reserve error', e);
+    // Fallo de red/timeout: deshacer el incremento optimista en vez de
+    // dejarlo inflado — no sabemos si la reserva llegó a cuajar en el
+    // servidor, pero es más seguro infravalorar la ocupación local (el
+    // máximo con los pedidos reales en getSlotsData() sigue protegiendo de
+    // mostrar menos ocupación de la real) que sobrevalorarla para siempre.
+    _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
     saveSlotsData(getSlotsData());
+    console.warn('Slot reserve error', e);
   }
 }
 async function decrementSlot(slotTime) {
@@ -5977,53 +5999,19 @@ renderCart();
 //  PANEL DE ADMINISTRACIÓN
 // ═══════════════════════════════════════
 
-const ADMIN_PWD_KEY = 'dpf_admin_pwd';
 const MENU_KEY = 'dpf_menu';
 const CONFIG_KEY = 'dpf_config';
 const OPEN_KEY = 'dpf_open';
 const HORARIO_KEY = 'dpf_horario';
 
-// Hash SHA-256 de la contraseña por defecto: "dulcepatata2024"
-// Para generar el hash de otra contraseña, ejecuta en la consola del navegador:
-//   hashAdminPwd('TuNuevaContraseña').then(h => console.log(h))
-// y pega el resultado en ADMIN_PWD_DEFAULT_HASH
-const ADMIN_PWD_DEFAULT_HASH = '53e3e30b4ba11c28d4c0729bcacbd343a0bef168947da71f90a7c0b06322c277';
-async function hashAdminPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-function isHex64(s) {
-  return typeof s === 'string' && s.length === 64 && /^[0-9a-f]+$/.test(s);
-}
-function getAdminPwd() {
-  // Devuelve el hash guardado en localStorage, o el hash por defecto si no hay ninguno.
-  // NUNCA devuelve null → elimina el flujo de "primera vez" que era el agujero de seguridad.
-  return localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH;
-}
-
-// Migración: si hay una contraseña en texto plano de la versión anterior, la hashea al vuelo.
-async function migrateAdminPwdIfNeeded() {
-  const stored = localStorage.getItem(ADMIN_PWD_KEY);
-  if (stored && !isHex64(stored)) {
-    const h = await hashAdminPwd(stored);
-    localStorage.setItem(ADMIN_PWD_KEY, h);
-    if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(h).catch(() => {});
-  } else if (!stored && window.fb_loadAdminPwd) {
-    // No hay nada en local → intentar cargar desde Firebase
-    try {
-      const fbHash = await window.fb_loadAdminPwd();
-      if (fbHash && isHex64(fbHash)) localStorage.setItem(ADMIN_PWD_KEY, fbHash);
-    } catch {}
-  }
-}
-
-// Flush pending migration if DOMContentLoaded fired before this script ran
-if (window._pendingMigrateAdmin) {
-  window._pendingMigrateAdmin = false;
-  migrateAdminPwdIfNeeded();
-}
-
+// (Antes había aquí un sistema de "contraseña de administración" propio,
+// con su hash en localStorage/Firebase y un botón "Cambiar contraseña" en
+// el panel — se ha quitado por completo: no protegía nada de verdad desde
+// que el acceso admin real pasó a Firebase Auth (checkAdminPwd() en
+// slots-alertas.js, vía window.fb_adminLogin), así que "cambiar" esa
+// contraseña le daba al admin una confirmación falsa de que había
+// cambiado algo, sin tocar su credencial real. Ver también admin-config.js
+// (changePwd) y admin-shell.html (sección #admin-pwd).)
 
 // ── Búsqueda en la carta ──────────────────────────────────
 function filterMenuBySearch(query) {
@@ -7698,10 +7686,10 @@ function importarConfig(input) {
       if (backup.cif !== undefined) {
         localStorage.setItem(EMP_CIF_KEY, backup.cif);
       }
-      if (backup.adminPwd && isHex64(backup.adminPwd)) {
-        localStorage.setItem(ADMIN_PWD_KEY, backup.adminPwd);
-        if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(backup.adminPwd).catch(() => {});
-      }
+      // adminPwd de un backup antiguo se ignora a propósito — el comentario
+      // de arriba ya decía que no se restauraba, y ahora además el sistema
+      // de "contraseña de administración" propio se ha quitado del todo
+      // (no protegía nada real, ver admin-turnos-descuentos.js).
 
       // Refrescar UI
       loadAdminConfig();
@@ -8867,35 +8855,6 @@ checkAutoCloseWarning();
 // El intervalo de re-chequeo automático se registra en aplicarEstadoInicial (initConHorarioFirebase)
 // para evitar duplicados. No registrar otro aquí.
 
-// ── CONTRASEÑA ──
-async function changePwd() {
-  const old = document.getElementById('pwd-old').value;
-  const n1 = document.getElementById('pwd-new').value;
-  const n2 = document.getElementById('pwd-rep').value;
-  const err = document.getElementById('pwd-error');
-  err.textContent = '';
-  const oldHash = await hashAdminPwd(old);
-  if (oldHash !== getAdminPwd()) {
-    err.textContent = 'La contraseña actual es incorrecta';
-    return;
-  }
-  if (n1.length < 6) {
-    err.textContent = 'La nueva contraseña debe tener al menos 6 caracteres';
-    return;
-  }
-  if (n1 !== n2) {
-    err.textContent = 'Las contraseñas no coinciden';
-    return;
-  }
-  const newHash = await hashAdminPwd(n1);
-  localStorage.setItem(ADMIN_PWD_KEY, newHash);
-  if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(newHash).catch(() => {});
-  document.getElementById('pwd-old').value = '';
-  document.getElementById('pwd-new').value = '';
-  document.getElementById('pwd-rep').value = '';
-  showToast('pwd-toast');
-  logActivity('🔑 Contraseña de administración cambiada');
-}
 const ORDERS_KEY = 'dpf_orders_open';
 const ORDERS_MSG_KEY = 'dpf_orders_msg';
 const STATS_KEY = 'dpf_day_stats';
@@ -16589,12 +16548,6 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (d.empresa) localStorage.setItem(EMP_EMPRESA_KEY, d.empresa);
         if (d.cif) localStorage.setItem(EMP_CIF_KEY, d.cif);
         empCargarEmpresaUI();
-      }).catch(() => {});
-    }
-    // CONTRASEÑA ADMIN (sincronizar hash entre dispositivos)
-    if (window.fb_loadAdminPwd) {
-      window.fb_loadAdminPwd().then(hash => {
-        if (hash && isHex64(hash)) localStorage.setItem(ADMIN_PWD_KEY, hash);
       }).catch(() => {});
     }
   }

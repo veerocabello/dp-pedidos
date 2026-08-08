@@ -487,6 +487,16 @@ function changeQty(id, delta) {
     openExtrasModal(id);
     return;
   }
+  // Defensa en profundidad: renderMenu() ya oculta los controles +/- de un
+  // producto agotado/oculto, así que hoy esto no es alcanzable desde la UI
+  // normal — pero changeQty() en sí no comprobaba nada, así que cualquier
+  // otra vía de llamarla (consola, un botón que quede con el id viejo tras
+  // marcar el producto agotado mientras la página ya estaba abierta, un
+  // futuro caller) podía seguir añadiendo un producto agotado al carrito.
+  if (delta > 0) {
+    const _item = typeof MENU !== 'undefined' ? MENU.find(m => m.id == id) : null;
+    if (_item && (_item.hidden || _item.soldout)) return;
+  }
   const current = cart[id] || 0;
   const next = current + delta;
   if (next <= 0) delete cart[id];else cart[id] = next;

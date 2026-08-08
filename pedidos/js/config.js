@@ -304,9 +304,6 @@ function _initFirebase() {
   // STOCK PWD
   window.fb_saveStockPwd = async function(h) { await jset("config/stockPwd",h); };
   window.fb_loadStockPwd = async function() { var sn=await jget("config/stockPwd"); return sn.exists()?sn.val():null; };
-  // ADMIN PWD
-  window.fb_saveAdminPwd = async function(h) { await jset("config/adminPwd",h); };
-  window.fb_loadAdminPwd = async function() { var sn=await jget("config/adminPwd"); return sn.exists()?sn.val():null; };
   // EMPRESA
   window.fb_saveEmpresa = async function(e,c) { await jset("config/empresa",jstr({empresa:e,cif:c})); };
   window.fb_loadEmpresa = async function() { var sn=await jget("config/empresa"); return sn.exists()?jparse(sn.val()):null; };

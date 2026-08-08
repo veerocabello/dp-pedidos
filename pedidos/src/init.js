@@ -299,12 +299,6 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         empCargarEmpresaUI();
       }).catch(() => {});
     }
-    // CONTRASEÑA ADMIN (sincronizar hash entre dispositivos)
-    if (window.fb_loadAdminPwd) {
-      window.fb_loadAdminPwd().then(hash => {
-        if (hash && isHex64(hash)) localStorage.setItem(ADMIN_PWD_KEY, hash);
-      }).catch(() => {});
-    }
   }
   if (window._firebaseReady) {
     _cargarCriticosDesdeFirebase();

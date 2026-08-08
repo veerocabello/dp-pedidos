@@ -630,14 +630,32 @@ async function incrementSlot(slotTime) {
   // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
   // slots/ abierto a escritura anónima en las reglas.
   try {
-    await _fetchConTimeout('guardar-pedido.php', {
+    const resp = await _fetchConTimeout('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reservarSlot', slotTime })
     }, 8000);
+    // Antes solo se comprobaba que la petición no lanzara una excepción de
+    // red — si el servidor respondía 200 con {"success":false} (turno
+    // lleno, fallo al escribir tras los reintentos...) no se detectaba, y
+    // el incremento optimista de arriba se quedaba puesto para siempre en
+    // este dispositivo aunque la reserva real nunca hubiera cuajado en
+    // Firebase, mostrando el turno más ocupado de lo que está de verdad.
+    const data = await resp.json().catch(() => null);
+    if (!data || !data.success) {
+      _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
+      saveSlotsData(getSlotsData());
+      console.warn('Slot reserve rejected by server', data && data.error);
+    }
   } catch (e) {
-    console.warn('Slot reserve error', e);
+    // Fallo de red/timeout: deshacer el incremento optimista en vez de
+    // dejarlo inflado — no sabemos si la reserva llegó a cuajar en el
+    // servidor, pero es más seguro infravalorar la ocupación local (el
+    // máximo con los pedidos reales en getSlotsData() sigue protegiendo de
+    // mostrar menos ocupación de la real) que sobrevalorarla para siempre.
+    _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
     saveSlotsData(getSlotsData());
+    console.warn('Slot reserve error', e);
   }
 }
 async function decrementSlot(slotTime) {

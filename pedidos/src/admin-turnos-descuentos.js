@@ -593,53 +593,19 @@ renderCart();
 //  PANEL DE ADMINISTRACIÓN
 // ═══════════════════════════════════════
 
-const ADMIN_PWD_KEY = 'dpf_admin_pwd';
 const MENU_KEY = 'dpf_menu';
 const CONFIG_KEY = 'dpf_config';
 const OPEN_KEY = 'dpf_open';
 const HORARIO_KEY = 'dpf_horario';
 
-// Hash SHA-256 de la contraseña por defecto: "dulcepatata2024"
-// Para generar el hash de otra contraseña, ejecuta en la consola del navegador:
-//   hashAdminPwd('TuNuevaContraseña').then(h => console.log(h))
-// y pega el resultado en ADMIN_PWD_DEFAULT_HASH
-const ADMIN_PWD_DEFAULT_HASH = '53e3e30b4ba11c28d4c0729bcacbd343a0bef168947da71f90a7c0b06322c277';
-async function hashAdminPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-function isHex64(s) {
-  return typeof s === 'string' && s.length === 64 && /^[0-9a-f]+$/.test(s);
-}
-function getAdminPwd() {
-  // Devuelve el hash guardado en localStorage, o el hash por defecto si no hay ninguno.
-  // NUNCA devuelve null → elimina el flujo de "primera vez" que era el agujero de seguridad.
-  return localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH;
-}
-
-// Migración: si hay una contraseña en texto plano de la versión anterior, la hashea al vuelo.
-async function migrateAdminPwdIfNeeded() {
-  const stored = localStorage.getItem(ADMIN_PWD_KEY);
-  if (stored && !isHex64(stored)) {
-    const h = await hashAdminPwd(stored);
-    localStorage.setItem(ADMIN_PWD_KEY, h);
-    if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(h).catch(() => {});
-  } else if (!stored && window.fb_loadAdminPwd) {
-    // No hay nada en local → intentar cargar desde Firebase
-    try {
-      const fbHash = await window.fb_loadAdminPwd();
-      if (fbHash && isHex64(fbHash)) localStorage.setItem(ADMIN_PWD_KEY, fbHash);
-    } catch {}
-  }
-}
-
-// Flush pending migration if DOMContentLoaded fired before this script ran
-if (window._pendingMigrateAdmin) {
-  window._pendingMigrateAdmin = false;
-  migrateAdminPwdIfNeeded();
-}
-
+// (Antes había aquí un sistema de "contraseña de administración" propio,
+// con su hash en localStorage/Firebase y un botón "Cambiar contraseña" en
+// el panel — se ha quitado por completo: no protegía nada de verdad desde
+// que el acceso admin real pasó a Firebase Auth (checkAdminPwd() en
+// slots-alertas.js, vía window.fb_adminLogin), así que "cambiar" esa
+// contraseña le daba al admin una confirmación falsa de que había
+// cambiado algo, sin tocar su credencial real. Ver también admin-config.js
+// (changePwd) y admin-shell.html (sección #admin-pwd).)
 
 // ── Búsqueda en la carta ──────────────────────────────────
 function filterMenuBySearch(query) {
