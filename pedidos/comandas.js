@@ -1502,19 +1502,28 @@ function getNextOrderNum() {
   return 'C' + String(data.n).padStart(3, '0');
 }
 
-/* ── Historial de hoy (para reimprimir) ── */
-function getHistorialKey() { return 'dpf_comandas_historial_' + new Date().toISOString().slice(0, 10); }
+/* ── Historial (para reimprimir/consultar, hoy y días anteriores) ── */
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+// Cuántas comandas guarda como máximo cada día en "Pedidos de hoy" (para
+// reimprimir/ver/buscar). Con mucho flujo de clientes 100 se quedaba
+// corto; 1000/día da mucho margen y localStorage aguanta de sobra (unos
+// pocos cientos de KB como mucho). Los totales de "Hacer caja" NUNCA
+// dependen de este límite — salen de loadCajaTotales(), un acumulador
+// aparte sin tope, así que aunque algún día se superase este número el
+// arqueo de caja seguiría siendo exacto.
+const HISTORIAL_MAX = 1000;
+function getHistorialKey(fecha) { return 'dpf_comandas_historial_' + (fecha || todayISO()); }
 // Totales de caja del día, ACUMULADOS APARTE del historial de arriba, sin
 // límite de cantidad. El historial de "Pedidos de hoy" solo guarda las
-// últimas 100 comandas (las más viejas se descartan solas para no crecer
-// sin límite) — si "Hacer caja" calculara sus totales a partir de ESE
-// mismo historial recortado, un día con más de 100 comandas daría un
-// arqueo de caja más bajo que el real, sin ningún aviso de que faltaban.
+// últimas HISTORIAL_MAX comandas (las más viejas se descartan solas para
+// no crecer sin límite) — si "Hacer caja" calculara sus totales a partir
+// de ESE mismo historial recortado, un día muy movido daría un arqueo de
+// caja más bajo que el real, sin ningún aviso de que faltaban.
 // Se suma 1 vez por cada comanda guardada (saveToHistorial) y se resta al
 // borrarla o recuperarla para modificarla (deleteHistorialOrder /
 // modifyHistorialOrder), para que nunca se desincronice de lo que de
 // verdad hay en el historial.
-function getCajaTotalesKey() { return 'dpf_comandas_caja_totales_' + new Date().toISOString().slice(0, 10); }
+function getCajaTotalesKey(fecha) { return 'dpf_comandas_caja_totales_' + (fecha || todayISO()); }
 // Suma el efecto de una comanda sobre un objeto de totales, en memoria (sin
 // tocar localStorage) — lo usan tanto _cajaTotalesAplicar() para el ajuste
 // incremental de cada comanda como loadCajaTotales() para reconstruir el
@@ -1536,9 +1545,9 @@ function _acumularEnTotales(t, order, signo) {
   t.tarjeta = Math.max(0, t.tarjeta);
   t.pendiente = Math.max(0, t.pendiente);
 }
-function loadCajaTotales() {
+function loadCajaTotales(fecha) {
   try {
-    const raw = localStorage.getItem(getCajaTotalesKey());
+    const raw = localStorage.getItem(getCajaTotalesKey(fecha));
     if (raw !== null) {
       const t = JSON.parse(raw);
       if (t && typeof t === 'object' && [t.efectivo, t.tarjeta, t.pendiente, t.count].every(n => typeof n === 'number' && isFinite(n))) {
@@ -1546,59 +1555,80 @@ function loadCajaTotales() {
       }
     }
   } catch (e) {}
-  // No hay acumulador guardado todavía para hoy (primer pedido del día,
-  // o se acaba de actualizar la app a mitad de turno con comandas que ya
-  // estaban en "Pedidos de hoy" guardadas por una versión anterior que no
+  // No hay acumulador guardado todavía para ese día (primer pedido del
+  // día, o se acaba de actualizar la app a mitad de turno con comandas que
+  // ya estaban en el historial guardadas por una versión anterior que no
   // escribía aquí) o quedó corrupto (algún NaN colado). En los dos casos
-  // se reconstruye sumando el historial de hoy en vez de arrancar de 0 y
-  // perder de vista lo que ya se ha cobrado.
+  // se reconstruye sumando el historial de ese día en vez de arrancar de 0
+  // y perder de vista lo que ya se ha cobrado.
   const inicial = { efectivo: 0, tarjeta: 0, pendiente: 0, count: 0 };
-  getHistorial().forEach(o => _acumularEnTotales(inicial, o, 1));
-  saveCajaTotales(inicial);
+  const historialDia = getHistorial(fecha);
+  historialDia.forEach(o => _acumularEnTotales(inicial, o, 1));
+  // Solo se persiste si había algo que reconstruir o si ya existía un
+  // valor (corrupto) que sustituir — así un resumen que recorre muchas
+  // fechas no va dejando en localStorage una entrada vacía por cada día
+  // sin ningún pedido.
+  if (historialDia.length > 0 || localStorage.getItem(getCajaTotalesKey(fecha)) !== null) {
+    saveCajaTotales(inicial, fecha);
+  }
   return inicial;
 }
-function saveCajaTotales(t) { localStorage.setItem(getCajaTotalesKey(), JSON.stringify(t)); }
-function _cajaTotalesAplicar(order, signo) {
+function saveCajaTotales(t, fecha) { localStorage.setItem(getCajaTotalesKey(fecha), JSON.stringify(t)); }
+function _cajaTotalesAplicar(order, signo, fecha) {
   if (!order) return;
-  const t = loadCajaTotales();
+  const t = loadCajaTotales(fecha);
   _acumularEnTotales(t, order, signo);
-  saveCajaTotales(t);
+  saveCajaTotales(t, fecha);
 }
 function saveToHistorial(order) {
   let list;
   try { list = JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { list = []; }
   list.unshift(order);
-  if (list.length > 100) list = list.slice(0, 100);
+  if (list.length > HISTORIAL_MAX) list = list.slice(0, HISTORIAL_MAX);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
   _cajaTotalesAplicar(order, 1);
 }
-function getHistorial() {
-  try { return JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { return []; }
+function getHistorial(fecha) {
+  try { return JSON.parse(localStorage.getItem(getHistorialKey(fecha)) || '[]'); } catch (e) { return []; }
 }
-function deleteHistorialOrder(index) {
-  const list = getHistorial();
-  const order = list[index];
-  if (!order) return;
-  if (!confirm('¿Borrar el pedido ' + order.num + ' del historial de hoy? No se puede deshacer.')) return;
-  list.splice(index, 1);
-  localStorage.setItem(getHistorialKey(), JSON.stringify(list));
-  _cajaTotalesAplicar(order, -1);
-  openHistorial();
-  toast('🗑️ Pedido borrado del historial');
-}
+
+/* ── Modal "Pedidos" — hoy por defecto, pero con selector de fecha para
+   consultar días anteriores, y buscador por nombre o número. ── */
+let historialFechaSel = todayISO();
+let historialBusqueda = '';
 function openHistorial() {
-  const list = getHistorial();
+  historialFechaSel = todayISO();
+  historialBusqueda = '';
+  const fechaInput = document.getElementById('historial-fecha');
+  if (fechaInput) fechaInput.value = historialFechaSel;
+  const buscarInput = document.getElementById('historial-search');
+  if (buscarInput) buscarInput.value = '';
+  renderHistorial();
+  document.getElementById('historial-modal').classList.add('open');
+}
+function closeHistorial() { document.getElementById('historial-modal').classList.remove('open'); }
+function setHistorialFecha(fecha) { historialFechaSel = fecha || todayISO(); renderHistorial(); }
+function setHistorialBusqueda(v) { historialBusqueda = v || ''; renderHistorial(); }
+function renderHistorial() {
+  const list = getHistorial(historialFechaSel);
+  const term = historialBusqueda.trim().toLowerCase();
+  const filtrado = term
+    ? list.map((o, i) => [o, i]).filter(([o]) => (o.num || '').toLowerCase().includes(term) || (o.name || '').toLowerCase().includes(term))
+    : list.map((o, i) => [o, i]);
+  const esHoy = historialFechaSel === todayISO();
+  const label = document.getElementById('historial-modal-fecha');
+  if (label) label.textContent = esHoy ? 'hoy' : new Date(historialFechaSel + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
   const el = document.getElementById('historial-list');
-  el.innerHTML = list.length === 0
-    ? `<div class="historial-empty">Todavía no hay comandas impresas hoy.</div>`
-    : list.map((o, i) => {
+  el.innerHTML = filtrado.length === 0
+    ? `<div class="historial-empty">${list.length === 0 ? 'No hay comandas guardadas ese día.' : 'Ningún pedido coincide con la búsqueda.'}</div>`
+    : filtrado.map(([o, i]) => {
         const payBadge = o.paid ? (o.paymentMethod === 'tarjeta' ? '💳' : '💵') : '⚠️';
         return `<div class="historial-item">
-        <div><div class="h-num">${o.num}</div><div class="h-meta">${escapeHtml(o.time)} · ${o.name ? escapeHtml(o.name) + ' · ' : ''}${fmt(o.total)} € · ${payBadge}</div></div>
+        <div><div class="h-num">${escapeHtml(o.num)}</div><div class="h-meta">${escapeHtml(o.time)} · ${o.name ? escapeHtml(o.name) + ' · ' : ''}${fmt(o.total)} € · ${payBadge}</div></div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
           <div style="display:flex;gap:6px">
             <button onclick="reprintOrder(${i})">🖨️ Reimprimir</button>
-            ${o.rawState ? `<button onclick="modifyHistorialOrder(${i})" title="Recuperar en la comanda para cambiar algo">✏️ Modificar</button>` : ''}
+            ${o.rawState && esHoy ? `<button onclick="modifyHistorialOrder(${i})" title="Recuperar en la comanda para cambiar algo">✏️ Modificar</button>` : ''}
           </div>
           <div style="display:flex;gap:6px">
             <button onclick="viewHistorialOrder(${i})" title="Ver ticket">👁️</button>
@@ -1607,16 +1637,29 @@ function openHistorial() {
         </div>
       </div>`;
       }).join('');
-  document.getElementById('historial-modal').classList.add('open');
 }
-function closeHistorial() { document.getElementById('historial-modal').classList.remove('open'); }
+function deleteHistorialOrder(index) {
+  const list = getHistorial(historialFechaSel);
+  const order = list[index];
+  if (!order) return;
+  if (!confirm('¿Borrar el pedido ' + order.num + ' del historial? No se puede deshacer.')) return;
+  list.splice(index, 1);
+  localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
+  _cajaTotalesAplicar(order, -1, historialFechaSel);
+  renderHistorial();
+  toast('🗑️ Pedido borrado del historial');
+}
 // Recupera un pedido ya impreso de vuelta en la comanda en curso, para
 // poder cambiar algo (el cliente pide añadir/quitar algo tras imprimir).
 // Se quita del historial: al reimprimirlo se creará una comanda nueva.
+// Solo disponible para el día de hoy (ver esHoy en renderHistorial): un
+// pedido de un día anterior no tiene sentido "recuperarlo" en la comanda
+// de hoy como si fuera uno sin terminar todavía.
 function modifyHistorialOrder(index) {
-  const list = getHistorial();
+  const list = getHistorial(historialFechaSel);
   const order = list[index];
   if (!order || !order.rawState) { toast('⚠️ Este pedido no se puede recuperar para modificar'); return; }
+  if (historialFechaSel !== todayISO()) { toast('⚠️ Solo se puede modificar un pedido del día de hoy'); return; }
   if (cartHasAnyItem() && !confirm('Ya hay productos en la comanda actual. ¿Sustituirlos por el pedido ' + order.num + ' para modificarlo?')) return;
   else if (!cartHasAnyItem() && !confirm('¿Recuperar el pedido ' + order.num + ' para modificarlo? Se quitará de "Pedidos de hoy" y habrá que volver a imprimirlo.')) return;
   cart = order.rawState.cart || {};
@@ -1627,22 +1670,22 @@ function modifyHistorialOrder(index) {
   setOrderPaid(!!order.paid);
   setPaymentMethod(order.paymentMethod || 'efectivo');
   list.splice(index, 1);
-  localStorage.setItem(getHistorialKey(), JSON.stringify(list));
-  _cajaTotalesAplicar(order, -1);
+  localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
+  _cajaTotalesAplicar(order, -1, historialFechaSel);
   closeHistorial();
   renderMenu();
   renderCart();
   toast('✏️ Pedido ' + order.num + ' recuperado — modifícalo y vuelve a imprimir');
 }
 async function reprintOrder(index) {
-  const list = getHistorial();
+  const list = getHistorial(historialFechaSel);
   const order = list[index];
   if (!order) return;
   await printOrder(order);
   toast('🖨️ Reimprimiendo ' + order.num);
 }
 function viewHistorialOrder(index) {
-  const list = getHistorial();
+  const list = getHistorial(historialFechaSel);
   const order = list[index];
   if (!order) return;
   openTicketView(order);
@@ -1650,47 +1693,66 @@ function viewHistorialOrder(index) {
 
 /* ── Hacer caja: resumen de fin de día (efectivo/tarjeta/pendiente),
    igual que el arqueo de caja que hacía uniCenta. Usa los pedidos ya
-   guardados en "Pedidos de hoy", así que hay que marcar PAGADO/NO
-   PAGADO y el método de cada comanda desde el panel antes de imprimir. ── */
-function getCajaFondoKey() { return 'dpf_comandas_caja_fondo_' + new Date().toISOString().slice(0, 10); }
-function loadCajaFondo() { const v = parseFloat(localStorage.getItem(getCajaFondoKey())); return isNaN(v) ? 0 : v; }
-function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(), document.getElementById('caja-fondo').value || '0'); }
+   guardados en el historial, así que hay que marcar PAGADO/NO PAGADO y el
+   método de cada comanda desde el panel antes de imprimir. Con selector
+   de fecha, para poder cuadrar caja de un día anterior si hizo falta. ── */
+function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || todayISO()); }
+function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? 0 : v; }
+function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
+const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
+function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
+function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX + fecha) === '1'; }
+let cajaFechaSel = todayISO();
 function openCaja() {
-  document.getElementById('caja-fecha').textContent = 'Resumen de hoy · ' + new Date().toLocaleDateString('es-ES');
-  document.getElementById('caja-fondo').value = loadCajaFondo() || '';
+  cajaFechaSel = todayISO();
+  const fechaInput = document.getElementById('caja-fecha-input');
+  if (fechaInput) fechaInput.value = cajaFechaSel;
+  document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
   renderCaja();
   document.getElementById('caja-modal').classList.add('open');
+}
+function setCajaFecha(fecha) {
+  cajaFechaSel = fecha || todayISO();
+  document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
+  renderCaja();
 }
 function closeCaja() { document.getElementById('caja-modal').classList.remove('open'); }
 function renderCaja() {
   // Los totales salen de loadCajaTotales() (acumulados aparte, sin límite
-  // de cantidad) y NO de getHistorial() — el historial de "Pedidos de hoy"
-  // solo guarda las últimas 100 comandas para reimprimir/ver, así que
-  // calcular la caja a partir de ahí daba un total más bajo que el real en
-  // cualquier día con más de 100 comandas.
-  const fondo = loadCajaFondo();
-  const t = loadCajaTotales();
+  // de cantidad) y NO de getHistorial() — el historial de cada día solo
+  // guarda las últimas HISTORIAL_MAX comandas para reimprimir/ver/buscar,
+  // así que calcular la caja a partir de ahí podría dar un total más bajo
+  // que el real en un día muy movido.
+  const fondo = loadCajaFondo(cajaFechaSel);
+  const t = loadCajaTotales(cajaFechaSel);
   const efectivo = t.efectivo, tarjeta = t.tarjeta, pendiente = t.pendiente, nPedidos = t.count;
   const facturado = efectivo + tarjeta + pendiente;
   const esperadoCajon = fondo + efectivo;
+  const esHoy = cajaFechaSel === todayISO();
+  const labelEl = document.getElementById('caja-fecha-label');
+  if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
   const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
-  document.getElementById('caja-summary').innerHTML =
-    `<div class="section-label" style="margin-top:4px">Pedidos de hoy: ${nPedidos}</div>`
+  const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
+    ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
+    : '';
+  document.getElementById('caja-summary').innerHTML = avisoBackup
+    + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + row('💵 Cobrado en efectivo', efectivo)
     + row('💳 Cobrado con tarjeta', tarjeta)
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
-    + row('Total facturado hoy', facturado, true)
+    + row('Total facturado', facturado, true)
     + row('💰 Efectivo esperado en caja', esperadoCajon, true);
 }
 
-/* ── Copia de seguridad / exportación del día ──────────────────────────
-   Todo lo de esta app vive solo en localStorage: si se borra la caché del
-   navegador, se cambia de ordenador o Chrome hace limpieza, se pierde sin
-   aviso. Estos botones dejan un archivo real fuera del navegador. Ojo:
-   "Pedidos de hoy" solo guarda los últimos 100 (ver getHistorialKey más
-   arriba), así que en un día con más de 100 comandas el detalle exportado
-   no las incluye todas — los totales de "Hacer caja" sí son exactos
-   siempre, porque salen del acumulador aparte, no de este historial. ── */
+/* ── Copia de seguridad / exportación (del día seleccionado en "Hacer
+   caja") ── Todo lo de esta app vive solo en localStorage: si se borra la
+   caché del navegador, se cambia de ordenador o Chrome hace limpieza, se
+   pierde sin aviso. Estos botones dejan un archivo real fuera del
+   navegador. Ojo: el historial de cada día solo guarda las últimas
+   HISTORIAL_MAX comandas, así que en un día que las superase el detalle
+   exportado no las incluiría todas — los totales de "Hacer caja" sí son
+   exactos siempre, porque salen del acumulador aparte, no de este
+   historial. ── */
 function _descargarArchivo(nombre, contenido, tipoMime) {
   const blob = new Blob([contenido], { type: tipoMime });
   const url = URL.createObjectURL(blob);
@@ -1703,29 +1765,31 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function exportarCopiaHoyJSON() {
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = cajaFechaSel || todayISO();
   const copia = {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
-    fondoCaja: loadCajaFondo(),
-    totales: loadCajaTotales(),
-    pedidos: getHistorial(),
+    fondoCaja: loadCajaFondo(fecha),
+    totales: loadCajaTotales(fecha),
+    pedidos: getHistorial(fecha),
   };
   _descargarArchivo('dulce-patata-copia-' + fecha + '.json', JSON.stringify(copia, null, 2), 'application/json');
-  toast('📥 Copia de hoy descargada');
+  marcarBackupHecho(fecha);
+  renderCaja();
+  toast('📥 Copia descargada');
 }
 function _csvCelda(v) {
   const s = String(v == null ? '' : v);
   return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function exportarVentasHoyCSV() {
-  const fecha = new Date().toISOString().slice(0, 10);
+  const fecha = cajaFechaSel || todayISO();
   const cols = ['Nº pedido', 'Hora', 'Nombre', 'Pagado', 'Método', 'Total (€)', 'Productos'];
   // Punto y coma como separador (no coma): con la configuración regional
   // española de Excel, que usa la coma como separador decimal, un CSV con
   // comas se abre todo en una sola columna en vez de repartirse en celdas.
   const filas = [cols.join(';')];
-  getHistorial().slice().reverse().forEach(o => {
+  getHistorial(fecha).slice().reverse().forEach(o => {
     const productos = (o.items || []).map(it => it.qty + 'x ' + it.name).join(' · ');
     filas.push([
       _csvCelda(o.num), _csvCelda(o.time), _csvCelda(o.name || ''),
@@ -1736,7 +1800,84 @@ function exportarVentasHoyCSV() {
   // BOM al principio: sin esto, Excel interpreta el UTF-8 como Windows-1252
   // y las tildes/eñes salen como símbolos raros.
   _descargarArchivo('dulce-patata-ventas-' + fecha + '.csv', '﻿' + filas.join('\r\n'), 'text/csv;charset=utf-8');
-  toast('📊 CSV de ventas descargado');
+  marcarBackupHecho(fecha);
+  renderCaja();
+  toast('📊 CSV descargado');
+}
+
+/* ── Resumen por rango de fechas (semanal/mensual): suma los totales de
+   caja (loadCajaTotales, siempre exactos) de cada día del rango — no
+   depende del historial recortado a HISTORIAL_MAX. ── */
+function _rangoFechas(desde, hasta) {
+  const out = [];
+  let d = new Date(desde + 'T00:00:00');
+  const fin = new Date(hasta + 'T00:00:00');
+  let guard = 0;
+  while (d <= fin && guard < 400) {
+    out.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+    guard++;
+  }
+  return out;
+}
+let resumenDesde = null, resumenHasta = null;
+function openResumen() {
+  resumenPreset(7);
+  document.getElementById('resumen-modal').classList.add('open');
+}
+function closeResumen() { document.getElementById('resumen-modal').classList.remove('open'); }
+function setResumenRango() {
+  resumenDesde = document.getElementById('resumen-desde').value || resumenDesde;
+  resumenHasta = document.getElementById('resumen-hasta').value || resumenHasta;
+  renderResumen();
+}
+function resumenPreset(dias) {
+  const hoy = new Date();
+  const desde = new Date(hoy);
+  desde.setDate(hoy.getDate() - (dias - 1));
+  resumenDesde = desde.toISOString().slice(0, 10);
+  resumenHasta = todayISO();
+  document.getElementById('resumen-desde').value = resumenDesde;
+  document.getElementById('resumen-hasta').value = resumenHasta;
+  renderResumen();
+}
+function resumenPresetMesActual() {
+  const hoy = new Date();
+  resumenDesde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10);
+  resumenHasta = todayISO();
+  document.getElementById('resumen-desde').value = resumenDesde;
+  document.getElementById('resumen-hasta').value = resumenHasta;
+  renderResumen();
+}
+function renderResumen() {
+  const body = document.getElementById('resumen-body');
+  if (!resumenDesde || !resumenHasta || resumenDesde > resumenHasta) {
+    body.innerHTML = `<div class="historial-empty">Elige un rango de fechas válido.</div>`;
+    return;
+  }
+  const fechas = _rangoFechas(resumenDesde, resumenHasta);
+  let efectivo = 0, tarjeta = 0, pendiente = 0, count = 0;
+  const dias = fechas.map(f => {
+    const t = loadCajaTotales(f);
+    efectivo += t.efectivo; tarjeta += t.tarjeta; pendiente += t.pendiente; count += t.count;
+    return { fecha: f, ...t };
+  }).filter(d => d.count > 0).reverse();
+  const facturado = efectivo + tarjeta + pendiente;
+  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
+  const tablaDias = dias.length === 0
+    ? `<div class="historial-empty">Sin pedidos en ese rango.</div>`
+    : dias.map(d => `<div class="historial-item">
+        <div><div class="h-num">${new Date(d.fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}</div><div class="h-meta">${d.count} pedido${d.count === 1 ? '' : 's'}</div></div>
+        <div style="align-self:center"><b>${fmt(d.efectivo + d.tarjeta + d.pendiente)} €</b></div>
+      </div>`).join('');
+  body.innerHTML = `<div class="section-label" style="margin-top:4px">Pedidos en el rango: ${count}</div>`
+    + row('💵 Cobrado en efectivo', efectivo)
+    + row('💳 Cobrado con tarjeta', tarjeta)
+    + row('⚠️ Pendiente de cobro', pendiente)
+    + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
+    + row('Total facturado', facturado, true)
+    + `<div class="section-label">Por día</div>`
+    + tablaDias;
 }
 
 /* ══════════════════════════════════════════════════════════════
