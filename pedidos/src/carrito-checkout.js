@@ -1570,11 +1570,11 @@ function _mostrarAvisoFidelizacionCompletada() {
   } catch (e) {}
 }
 
-// ── Tiempo de modificación de pedido ──
+// ── Tiempo de modificación de pedido (en minutos) ──
 function saveModifyWindow() {
   var _document$getElementB2;
-  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '30');
-  const valid = isNaN(v) || v < 1 || v > 300 ? 30 : v;
+  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '1');
+  const valid = isNaN(v) || v < 1 || v > 30 ? 1 : v;
   localStorage.setItem('dpf_modify_window_mins', valid);
   if (window.fb_saveConfig) {
     try {
@@ -1593,7 +1593,7 @@ function saveModifyWindow() {
   showToast('modify-window-toast');
 }
 function loadModifyWindowInput() {
-  const v = localStorage.getItem('dpf_modify_window_mins') || '30';
+  const v = localStorage.getItem('dpf_modify_window_mins') || '1';
   const el = document.getElementById('modify-window-input');
   if (el) el.value = v;
 }

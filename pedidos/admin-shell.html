@@ -878,8 +878,8 @@
           <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">⏱️ Tiempo para modificar pedido</p>
           <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Cuánto tiempo, justo después de confirmar, puede el cliente pulsar "Modificar" o "Cancelar pedido" desde su propia pantalla.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-            <input type="number" id="modify-window-input" min="1" max="300" value="30" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
-            <span style="font-size:12px;color:var(--muted)">segundos</span>
+            <input type="number" id="modify-window-input" min="1" max="30" value="1" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">minutos</span>
           </div>
           <button onclick="saveModifyWindow()" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
           <div class="admin-toast" id="modify-window-toast" style="display:none">✅ Guardado</div>

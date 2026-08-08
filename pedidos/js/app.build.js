@@ -4403,11 +4403,11 @@ function _mostrarAvisoFidelizacionCompletada() {
   } catch (e) {}
 }
 
-// ── Tiempo de modificación de pedido ──
+// ── Tiempo de modificación de pedido (en minutos) ──
 function saveModifyWindow() {
   var _document$getElementB2;
-  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '30');
-  const valid = isNaN(v) || v < 1 || v > 300 ? 30 : v;
+  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '1');
+  const valid = isNaN(v) || v < 1 || v > 30 ? 1 : v;
   localStorage.setItem('dpf_modify_window_mins', valid);
   if (window.fb_saveConfig) {
     try {
@@ -4426,7 +4426,7 @@ function saveModifyWindow() {
   showToast('modify-window-toast');
 }
 function loadModifyWindowInput() {
-  const v = localStorage.getItem('dpf_modify_window_mins') || '30';
+  const v = localStorage.getItem('dpf_modify_window_mins') || '1';
   const el = document.getElementById('modify-window-input');
   if (el) el.value = v;
 }
@@ -4892,14 +4892,14 @@ function resetOrder() {
 }
 
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
-// dpf_modify_window_mins (el nombre de la clave se mantiene por
-// compatibilidad con lo ya guardado) ahora se cuenta en SEGUNDOS, no
-// minutos — a petición expresa: antes 10 segundos, ahora 30.
-const MODIFY_WINDOW_DEFAULT_MS = 30 * 1000;
+// dpf_modify_window_mins vuelve a contarse en MINUTOS (como su propio
+// nombre siempre dijo) — a petición expresa, después de haber estado un
+// tiempo en segundos.
+const MODIFY_WINDOW_DEFAULT_MS = 1 * 60 * 1000;
 function getModifyWindowMs() {
   try {
-    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '30');
-    return (isNaN(v) || v < 1 || v > 300 ? 30 : v) * 1000;
+    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '1');
+    return (isNaN(v) || v < 1 || v > 30 ? 1 : v) * 60 * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
@@ -17474,10 +17474,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         // dpf_modify_window_mins, no CONFIG.modifyWindowMins — sin esto, el
         // tiempo para modificar pedido que se guarda desde el panel admin
         // (Configuración de pedidos) nunca llegaba a los dispositivos de
-        // los clientes: cada uno seguía usando el valor por defecto (30s)
-        // de su propio localStorage, aunque el ajuste sí se hubiera
-        // guardado bien en Firebase.
-        if (typeof c.modifyWindowMins === 'number' && c.modifyWindowMins >= 1 && c.modifyWindowMins <= 300) {
+        // los clientes: cada uno seguía usando el valor por defecto de su
+        // propio localStorage, aunque el ajuste sí se hubiera guardado bien
+        // en Firebase.
+        if (typeof c.modifyWindowMins === 'number' && c.modifyWindowMins >= 1 && c.modifyWindowMins <= 30) {
           localStorage.setItem('dpf_modify_window_mins', c.modifyWindowMins);
         }
         if ((_document$getElementB37 = document.getElementById('admin-local')) !== null && _document$getElementB37 !== void 0 && _document$getElementB37.classList.contains('active')) loadAdminConfig();
