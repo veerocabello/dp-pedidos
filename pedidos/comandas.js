@@ -1504,12 +1504,73 @@ function getNextOrderNum() {
 
 /* ── Historial de hoy (para reimprimir) ── */
 function getHistorialKey() { return 'dpf_comandas_historial_' + new Date().toISOString().slice(0, 10); }
+// Totales de caja del día, ACUMULADOS APARTE del historial de arriba, sin
+// límite de cantidad. El historial de "Pedidos de hoy" solo guarda las
+// últimas 100 comandas (las más viejas se descartan solas para no crecer
+// sin límite) — si "Hacer caja" calculara sus totales a partir de ESE
+// mismo historial recortado, un día con más de 100 comandas daría un
+// arqueo de caja más bajo que el real, sin ningún aviso de que faltaban.
+// Se suma 1 vez por cada comanda guardada (saveToHistorial) y se resta al
+// borrarla o recuperarla para modificarla (deleteHistorialOrder /
+// modifyHistorialOrder), para que nunca se desincronice de lo que de
+// verdad hay en el historial.
+function getCajaTotalesKey() { return 'dpf_comandas_caja_totales_' + new Date().toISOString().slice(0, 10); }
+// Suma el efecto de una comanda sobre un objeto de totales, en memoria (sin
+// tocar localStorage) — lo usan tanto _cajaTotalesAplicar() para el ajuste
+// incremental de cada comanda como loadCajaTotales() para reconstruir el
+// acumulador desde cero cuando hace falta (ver más abajo). total se valida
+// con isFinite además de typeof: un total NaN (p.ej. por un precio mal
+// puesto en la carta) metido sin comprobar deja el acumulador entero en
+// NaN para el resto del día, sin forma de arreglarlo salvo borrando el
+// localStorage a mano.
+function _acumularEnTotales(t, order, signo) {
+  if (!order) return;
+  const total = (typeof order.total === 'number' && isFinite(order.total)) ? order.total : 0;
+  if (order.paid) {
+    if (order.paymentMethod === 'tarjeta') t.tarjeta += signo * total; else t.efectivo += signo * total;
+  } else {
+    t.pendiente += signo * total;
+  }
+  t.count = Math.max(0, t.count + signo);
+  t.efectivo = Math.max(0, t.efectivo);
+  t.tarjeta = Math.max(0, t.tarjeta);
+  t.pendiente = Math.max(0, t.pendiente);
+}
+function loadCajaTotales() {
+  try {
+    const raw = localStorage.getItem(getCajaTotalesKey());
+    if (raw !== null) {
+      const t = JSON.parse(raw);
+      if (t && typeof t === 'object' && [t.efectivo, t.tarjeta, t.pendiente, t.count].every(n => typeof n === 'number' && isFinite(n))) {
+        return { efectivo: t.efectivo, tarjeta: t.tarjeta, pendiente: t.pendiente, count: t.count };
+      }
+    }
+  } catch (e) {}
+  // No hay acumulador guardado todavía para hoy (primer pedido del día,
+  // o se acaba de actualizar la app a mitad de turno con comandas que ya
+  // estaban en "Pedidos de hoy" guardadas por una versión anterior que no
+  // escribía aquí) o quedó corrupto (algún NaN colado). En los dos casos
+  // se reconstruye sumando el historial de hoy en vez de arrancar de 0 y
+  // perder de vista lo que ya se ha cobrado.
+  const inicial = { efectivo: 0, tarjeta: 0, pendiente: 0, count: 0 };
+  getHistorial().forEach(o => _acumularEnTotales(inicial, o, 1));
+  saveCajaTotales(inicial);
+  return inicial;
+}
+function saveCajaTotales(t) { localStorage.setItem(getCajaTotalesKey(), JSON.stringify(t)); }
+function _cajaTotalesAplicar(order, signo) {
+  if (!order) return;
+  const t = loadCajaTotales();
+  _acumularEnTotales(t, order, signo);
+  saveCajaTotales(t);
+}
 function saveToHistorial(order) {
   let list;
   try { list = JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { list = []; }
   list.unshift(order);
   if (list.length > 100) list = list.slice(0, 100);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
+  _cajaTotalesAplicar(order, 1);
 }
 function getHistorial() {
   try { return JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { return []; }
@@ -1521,6 +1582,7 @@ function deleteHistorialOrder(index) {
   if (!confirm('¿Borrar el pedido ' + order.num + ' del historial de hoy? No se puede deshacer.')) return;
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
+  _cajaTotalesAplicar(order, -1);
   openHistorial();
   toast('🗑️ Pedido borrado del historial');
 }
@@ -1566,6 +1628,7 @@ function modifyHistorialOrder(index) {
   setPaymentMethod(order.paymentMethod || 'efectivo');
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
+  _cajaTotalesAplicar(order, -1);
   closeHistorial();
   renderMenu();
   renderCart();
@@ -1600,13 +1663,14 @@ function openCaja() {
 }
 function closeCaja() { document.getElementById('caja-modal').classList.remove('open'); }
 function renderCaja() {
-  const list = getHistorial();
+  // Los totales salen de loadCajaTotales() (acumulados aparte, sin límite
+  // de cantidad) y NO de getHistorial() — el historial de "Pedidos de hoy"
+  // solo guarda las últimas 100 comandas para reimprimir/ver, así que
+  // calcular la caja a partir de ahí daba un total más bajo que el real en
+  // cualquier día con más de 100 comandas.
   const fondo = loadCajaFondo();
-  let efectivo = 0, tarjeta = 0, pendiente = 0, nPedidos = list.length;
-  list.forEach(o => {
-    if (!o.paid) { pendiente += o.total; return; }
-    if (o.paymentMethod === 'tarjeta') tarjeta += o.total; else efectivo += o.total;
-  });
+  const t = loadCajaTotales();
+  const efectivo = t.efectivo, tarjeta = t.tarjeta, pendiente = t.pendiente, nPedidos = t.count;
   const facturado = efectivo + tarjeta + pendiente;
   const esperadoCajon = fondo + efectivo;
   const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
@@ -1672,6 +1736,20 @@ async function trySilentReconnect() {
   updatePrinterStatusUI();
 }
 
+// transferOut() de WebUSB no trae ningún timeout de fábrica: si la
+// impresora se queda en un estado raro a media escritura (atasco de
+// papel, un USB flojo...), esa promesa puede no resolverse nunca — y como
+// nada más espera a que termine, se quedaba todo colgado sin forma de
+// recuperarse sola salvo recargar la página entera.
+function _conTimeout(promise, ms, mensaje) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(mensaje || 'timeout de impresora')), ms); });
+  // Sin el clearTimeout de aquí, cada impresión que sí sale a tiempo deja
+  // igualmente el temporizador de 8s corriendo de fondo hasta que salta
+  // solo — en un turno con muchas comandas se van acumulando temporizadores
+  // colgados sin necesidad.
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 async function sendToPrinter(bytes) {
   if (!printerDevice) {
     if (!navigator.usb) throw new Error('WebUSB no disponible');
@@ -1679,7 +1757,24 @@ async function sendToPrinter(bytes) {
     if (!list.length) throw new Error('No hay impresora emparejada');
     await openAndClaim(list[0]);
   }
-  await printerDevice.transferOut(printerEndpoint, bytes);
+  try {
+    // 15s de margen (no 8s): WebUSB no deja cancelar transferOut() una vez
+    // lanzado, así que si saltamos el timeout con la impresora todavía
+    // viva (solo lenta, no atascada) y cae window.print() como reserva,
+    // corremos el riesgo de que el ticket físico salga dos veces cuando el
+    // transferOut() original termine por su cuenta más tarde. Un margen
+    // más generoso reduce ese falso positivo sin dejar de cortar los
+    // atascos de verdad.
+    await _conTimeout(printerDevice.transferOut(printerEndpoint, bytes), 15000, 'timeout enviando a la impresora — no respondió a tiempo');
+  } catch (e) {
+    // Si falla (incluido el timeout de arriba), se olvida esta conexión —
+    // el próximo intento reclama la impresora de cero en vez de reintentar
+    // sobre una conexión que puede haber quedado en mal estado.
+    printerDevice = null;
+    printerEndpoint = null;
+    updatePrinterStatusUI();
+    throw e;
+  }
 }
 
 if (navigator.usb) {
@@ -1755,13 +1850,18 @@ async function handlePrintOrder() {
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
     orderDiscount: orderDiscount ? { ...orderDiscount } : null,
   };
+  // Se guarda en "Pedidos de hoy" ANTES de intentar imprimir — si el envío
+  // a la impresora se queda colgado o falla del todo, la comanda ya está a
+  // salvo (y su número ya no queda "hueco") y se puede reimprimir después
+  // desde ahí, en vez de perderse por completo si hay que recargar la
+  // página para desatascarse.
+  saveToHistorial(order);
   let printedViaUsb = false;
   try {
     printedViaUsb = await printOrder(order);
   } finally {
     btn.disabled = false;
   }
-  saveToHistorial(order);
   if (getTicketConfig().autoImprimir !== false) clearOrder(true);
   toast(printedViaUsb ? '✅ Comanda ' + order.num + ' impresa' : '🖨️ Comanda ' + order.num + ' — abriendo diálogo de impresión…');
   openCopyConfirm(order);
