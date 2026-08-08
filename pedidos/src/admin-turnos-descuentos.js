@@ -15,31 +15,42 @@ function renderSlotTurnosList(turnos) {
   }
   list.innerHTML = turnos.map((t, i) => "\n    <div style=\"display:flex;align-items:center;flex-wrap:wrap;background:#F4F2EE;border-radius:8px;padding:10px 12px;margin-bottom:8px\">\n      <span style=\"font-size:12px;font-weight:700;color:#8A6A4E;min-width:20px\">".concat(i + 1, ".</span>\n      <label style=\"font-size:12px;color:#8A6A4E\">Desde</label>\n      <input type=\"time\" value=\"").concat(t.start, "\" onchange=\"updateSlotTurno(").concat(i, ",'start',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Hasta</label>\n      <input type=\"time\" value=\"").concat(t.end, "\" onchange=\"updateSlotTurno(").concat(i, ",'end',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Cada</label>\n      <select onchange=\"updateSlotTurno(").concat(i, ",'interval',parseInt(this.value))\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n        <option value=\"15\" ").concat(t.interval === 15 ? 'selected' : '', ">15 min</option>\n        <option value=\"20\" ").concat(t.interval === 20 ? 'selected' : '', ">20 min</option>\n        <option value=\"30\" ").concat(!t.interval || t.interval === 30 ? 'selected' : '', ">30 min</option>\n        <option value=\"45\" ").concat(t.interval === 45 ? 'selected' : '', ">45 min</option>\n        <option value=\"60\" ").concat(t.interval === 60 ? 'selected' : '', ">60 min</option>\n      </select>\n      <button onclick=\"removeSlotTurno(").concat(i, ")\"\n        style=\"margin-left:auto;background:#fff;border:1.5px solid #e74c3c;color:#c0392b;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">&#128465;</button>\n    </div>")).join('');
 }
-function _syncSlotTurnos(turnos) {
+// mutatorFn recibe el array de turnos actual (local o el más reciente de
+// Firebase, según el intento) y lo modifica in-place. Evita que dos
+// ediciones de turnos casi simultáneas (dos dispositivos) se pisen entre
+// sí — igual que el resto de escrituras "leer todo, modificar, guardar
+// todo" arregladas en esta misma pasada.
+function _mutateSlotTurnos(mutatorFn) {
+  const turnos = getSlotTurnos();
+  mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  const max = getSlotMax();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+      mutatorFn(t);
+      return { turnos: t, max: (current && current.max) || getSlotMax() };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
+  }
+  return turnos;
 }
 function addSlotTurno() {
-  const turnos = getSlotTurnos();
-  turnos.push({
-    start: '19:30',
-    end: '23:30',
-    interval: 30
+  const turnos = _mutateSlotTurnos(function (t) {
+    t.push({ start: '19:30', end: '23:30', interval: 30 });
   });
-  _syncSlotTurnos(turnos);
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
-  const turnos = getSlotTurnos();
-  turnos.splice(idx, 1);
-  _syncSlotTurnos(turnos);
+  const turnos = _mutateSlotTurnos(function (t) {
+    if (idx < t.length) t.splice(idx, 1);
+  });
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
-  const turnos = getSlotTurnos();
-  turnos[idx][field] = value;
-  _syncSlotTurnos(turnos);
+  _mutateSlotTurnos(function (t) {
+    if (t[idx]) t[idx][field] = value;
+  });
 }
 function saveSlotConfig() {
   const maxInp = document.getElementById('slot-max-input');
@@ -50,10 +61,23 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
-  const turnos = getSlotTurnos();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  const turnosLocal = getSlotTurnos();
+  // Transacción real en vez de leer-modificar-guardar sin más — antes, si
+  // otro dispositivo acababa de añadir/quitar un turno justo antes de este
+  // guardado (que solo cambia el número máximo por turno), se escribía
+  // encima con la copia de turnos que este dispositivo tenía en caché,
+  // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
+  // patrón para las demás ediciones de turnos.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+      return { turnos: t, max: max };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
+  }
   showToast('slot-config-toast');
-  logActivity('🕐 Turnos actualizados — ' + turnos.length + ' franjas · max ' + max + ' pedidos/turno');
+  logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
 }
 
@@ -77,6 +101,9 @@ let _extrasIngredientes = {}; // { name: true/false }
 
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort'];
+const EXTRAS_SALSA_PRECIO = 0.90;
+let _extrasSalsas = {}; // { nombre: true/false }
 function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
@@ -85,6 +112,7 @@ function openExtrasModal(itemId) {
   _extrasQueso = false;
   _extrasGratinado = false;
   _extrasIngredientes = {};
+  _extrasSalsas = {};
   const item = MENU.find(m => m.id == itemId);
   if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
@@ -109,6 +137,14 @@ function openExtrasModal(itemId) {
   EXTRAS_ING_PRECIO07.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
     optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+0,70 \u20AC</div></div>\n    </label>");
+  });
+  optionsHtml += "</div>";
+  // Salsas extra +0,90€
+  optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">SALSAS EXTRA</div>";
+  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
+  EXTRAS_SALSAS.forEach(salsa => {
+    const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
+    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraSalsa('").concat(salsa.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(salsa, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(EXTRAS_SALSA_PRECIO.toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
@@ -142,6 +178,23 @@ function toggleExtraIng(ing) {
   const el = document.getElementById(eid);
   const lbl = document.getElementById('lbl-' + eid);
   const active = _extrasIngredientes[ing];
+  if (el) {
+    el.style.background = active ? '#3D1F0D' : '#fff';
+    el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
+    el.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
+  }
+  if (lbl) {
+    lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
+    lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
+  }
+  updateExtrasTotal();
+}
+function toggleExtraSalsa(salsa) {
+  _extrasSalsas[salsa] = !_extrasSalsas[salsa];
+  const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
+  const el = document.getElementById(eid);
+  const lbl = document.getElementById('lbl-' + eid);
+  const active = _extrasSalsas[salsa];
   if (el) {
     el.style.background = active ? '#3D1F0D' : '#fff';
     el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
@@ -188,6 +241,7 @@ function updateExtrasTotal() {
     if (!active) return;
     if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 0.70;
   });
+  Object.values(_extrasSalsas).forEach(active => { if (active) total += EXTRAS_SALSA_PRECIO; });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
 }
 function closeExtrasModal() {
@@ -213,7 +267,16 @@ function confirmExtras() {
       k = _ref16[0];
     return k;
   }).sort().join('|');
-  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') || 'BASE';
+  const salsaKeys = Object.entries(_extrasSalsas).filter(_ref17s => {
+    let _ref18s = _slicedToArray(_ref17s, 2),
+      v = _ref18s[1];
+    return v;
+  }).map(_ref19s => {
+    let _ref20s = _slicedToArray(_ref19s, 1),
+      k = _ref20s[0];
+    return k;
+  }).sort().join('|');
+  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') || 'BASE';
   const cartKey = 'ext:' + itemId + ':' + fingerprint;
   if (!extrasCart[cartKey]) {
     extrasCart[cartKey] = {
@@ -228,6 +291,15 @@ function confirmExtras() {
       }).map(_ref19 => {
         let _ref20 = _slicedToArray(_ref19, 1),
           k = _ref20[0];
+        return k;
+      }),
+      salsasExtra: Object.entries(_extrasSalsas).filter(_ref17b => {
+        let _ref18b = _slicedToArray(_ref17b, 2),
+          v = _ref18b[1];
+        return v;
+      }).map(_ref19b => {
+        let _ref20b = _slicedToArray(_ref19b, 1),
+          k = _ref20b[0];
         return k;
       }),
       key: cartKey,
@@ -252,6 +324,7 @@ function getExtrasItemPrice(c) {
   (c.ingredientesExtra || []).forEach(ing => {
     if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
   });
+  (c.salsasExtra || []).forEach(() => { p += EXTRAS_SALSA_PRECIO; });
   return p;
 }
 function getExtrasItemLabel(c) {
@@ -262,9 +335,11 @@ function getExtrasItemLabel(c) {
   }
   if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
   const extras = [];
-  if (c.queso) extras.push('Queso');
+  if (c.queso) extras.push('Extra Queso');
+  (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
+  (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
+  // El gratinado siempre va el último, sea cual sea el resto de extras.
   if (c.gratinado) extras.push('Gratinado');
-  (c.ingredientesExtra || []).forEach(ing => extras.push(ing));
   return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
@@ -407,6 +482,9 @@ async function activarFinDeNoche() {
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
+  // no la "reabra sola" pensando que fue ella quien la puso.
+  if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día
@@ -424,7 +502,19 @@ async function activarFinDeNoche() {
   }
   const pedidos = ((_stats = stats) === null || _stats === void 0 ? void 0 : _stats.count) || 0;
   const total = ((_stats2 = stats) === null || _stats2 === void 0 || (_stats2 = _stats2.total) === null || _stats2 === void 0 ? void 0 : _stats2.toFixed(2)) || '0.00';
+  // Antes esto se quedaba siempre vacío — el HTML de abajo ya estaba
+  // preparado para pintar el top 3 con medallas, pero nadie lo rellenaba.
   const topSorted = [];
+  if (stats && Array.isArray(stats.orders)) {
+    const conteoProductos = {};
+    stats.orders.forEach(o => {
+      (o.items || []).forEach(it => {
+        if (it.isFee || !it.name) return;
+        conteoProductos[it.name] = (conteoProductos[it.name] || 0) + (it.qty || 0);
+      });
+    });
+    topSorted.push(...Object.entries(conteoProductos).sort((a, b) => b[1] - a[1]).slice(0, 3));
+  }
 
   // 3. Resetear turnos
   _slotsCache = {};
@@ -576,16 +666,51 @@ async function dcCargar() {
   if (!el) return;
   if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
   const discounts = await window.fb_loadDiscounts().catch(() => ({}));
-  const keys = Object.keys(discounts || {});
+  // Los códigos RAS-/RUL- los genera juegos.php para cada premio ganado en
+  // la Ruleta o el Rasca (origen: 'ruleta'|'rasca') — de un solo uso y
+  // caducan solos a las 48h. No son códigos que el admin haya creado a
+  // mano, así que no se listan aquí para no ahogar la lista.
+  const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
     const remaining = d.maxUses - (d.uses || 0);
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
+    return '<div id="dc-row-' + escapeAttr(code) + '" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
       + '<div><strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
       + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
       + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes</span></div>'
       + '<button data-code="' + escapeAttr(code) + '" onclick="dcEliminar(this.dataset.code)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Eliminar</button>'
+      + '</div>';
+  }).join('');
+}
+
+// Los premios de la Ruleta/Rasca (RAS-/RUL-) no aparecen en la lista de
+// arriba, pero siguen guardados en discounts/ con el teléfono con el que
+// jugó el cliente — esto permite encontrarlos si el cliente pierde su
+// código y llama pidiéndolo.
+async function dcBuscarPorTelefono() {
+  const el = document.getElementById('dc-buscar-resultado');
+  if (!el) return;
+  const tel = (document.getElementById('dc-buscar-tel').value || '').replace(/\D/g, '');
+  if (!/^\d{9}$/.test(tel)) { el.innerHTML = '<span style="color:#c0392b">Introduce un teléfono válido (9 dígitos)</span>'; return; }
+  if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
+  el.innerHTML = 'Buscando…';
+  const discounts = await window.fb_loadDiscounts().catch(() => ({}));
+  const ahoraMs = Date.now();
+  const codigos = Object.keys(discounts || {}).filter(code => discounts[code].telefono === tel);
+  if (!codigos.length) { el.innerHTML = '<span style="color:#8A6A4E">No se encontró ningún código de premio para ese teléfono</span>'; return; }
+  el.innerHTML = codigos.map(code => {
+    const d = discounts[code];
+    const usado = (d.uses || 0) >= d.maxUses;
+    const caducado = d.expiraEn && ahoraMs > d.expiraEn;
+    let estado = 'disponible', color = '#2e7d32';
+    if (usado) { estado = 'ya usado'; color = '#c0392b'; }
+    else if (caducado) { estado = 'caducado'; color = '#c0392b'; }
+    return '<div style="padding:6px 0;border-bottom:1px solid #F5E6C8">'
+      + '<strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
+      + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
+      + ' <span style="font-size:11px;font-weight:700;color:' + color + '">' + estado + '</span>'
+      + (d.origen ? ' <span style="font-size:11px;color:#8A6A4E">(' + escapeHtml(d.origen) + ')</span>' : '')
       + '</div>';
   }).join('');
 }
@@ -619,6 +744,10 @@ async function dcAplicar(code) {
   if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
   const d = await window.fb_getDiscount(code).catch(() => null);
   if (!d) { showDiscountError('Código no válido'); return; }
+  // Los premios de la ruleta/rasca caducan a las 48h (expiraEn) — los
+  // códigos creados a mano desde el panel no llevan ese campo, así que
+  // esta comprobación no les afecta.
+  if (d.expiraEn && Date.now() > d.expiraEn) { showDiscountError('Este código ha caducado'); return; }
   if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
   _activeDiscount = { code, pct: d.pct };
   showDiscountOk(code, d.pct);

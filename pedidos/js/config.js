@@ -123,6 +123,36 @@ function _initFirebase() {
   var jlisten = function(r,cb) { return db.ref(r).on("value",cb); };
   var jparse = function(v) { try{return JSON.parse(v);}catch(e){return null;} };
   var jstr = function(v) { return JSON.stringify(v); };
+  // Escritura ATÓMICA de un nodo que guarda un objeto/array como STRING JSON
+  // (el mismo formato que jset/jget en toda la web). mutatorFn recibe el
+  // valor YA PARSEADO actual (o null si no existía) y debe devolver el
+  // nuevo valor a guardar. Usa una transacción real de Firebase: si dos
+  // dispositivos escriben casi a la vez, Firebase reintenta automáticamente
+  // con el dato más reciente en vez de que uno pise el cambio del otro.
+  window.fb_transactJsonString = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      var parsed = null;
+      if (typeof current === 'string') {
+        parsed = jparse(current);
+      } else if (current !== null && current !== undefined) {
+        parsed = current;
+      }
+      var updated = mutatorFn(parsed);
+      return jstr(updated);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? jparse(result.snapshot.val()) : null;
+  };
+  // Igual que fb_transactJsonString pero para nodos que guardan el objeto/
+  // array nativo de Firebase directamente (sin pasar por JSON.stringify),
+  // como pp2/*.
+  window.fb_transactNative = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      return mutatorFn(current === undefined ? null : current);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? result.snapshot.val() : null;
+  };
   // SLOTS
   window.fb_incrementSlot = async function(s) { await db.ref("slots/"+tK()+"/"+s).transaction(function(v){return(v||0)+1;}); };
   window.fb_getSlotCount = async function(s) { var sn=await jget("slots/"+tK()+"/"+s); return sn.exists()?sn.val():0; };
@@ -244,13 +274,33 @@ function _initFirebase() {
   // ORDERS
   window.fb_saveOrdersOpen = async function(o) { await jset("config/ordersOpen",o); };
   window.fb_loadOrdersOpen = async function() { var sn=await jget("config/ordersOpen"); return sn.exists()?sn.val():null; };
+  // En tiempo real (no solo al cargar la página) — para que si la
+  // auto-pausa por saturación cierra/reabre los pedidos, un cliente que ya
+  // tenga la web abierta lo vea al momento sin tener que recargar.
+  window.fb_listenOrdersOpen = function(cb) { return jlisten("config/ordersOpen", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   window.fb_saveOrdersMsg = async function(m) { await jset("config/ordersMsg",m); };
   window.fb_loadOrdersMsg = async function() { var sn=await jget("config/ordersMsg"); return sn.exists()?sn.val():null; };
+  window.fb_listenOrdersMsg = function(cb) { return jlisten("config/ordersMsg", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // AUTO-PAUSA POR SATURACIÓN
+  window.fb_saveAutoPausaConfig = async function(enabled, umbral, msg) { await jset("config/autoPausaConfig", {enabled:enabled, umbral:umbral, msg:msg}); };
+  window.fb_listenAutoPausaConfig = function(cb) { return jlisten("config/autoPausaConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Estado compartido entre dispositivos: si la pausa actual la activó el
+  // propio sistema (para saber si puede reabrirla sola) y hasta cuándo no
+  // debe tocar nada tras un toggle manual del admin.
+  window.fb_saveAutoPausaEstado = async function(activa, cooldownUntil) { await jset("config/autoPausaEstado", {activa:activa, cooldownUntil:cooldownUntil||0}); };
+  window.fb_listenAutoPausaEstado = function(cb) { return jlisten("config/autoPausaEstado", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // AVISO SUAVE DE SATURACIÓN (previo a la auto-pausa)
+  window.fb_saveAvisoSaturacionConfig = async function(enabled, umbral, msg, minutosSalto, minPorPedido) { await jset("config/avisoSaturacionConfig", {enabled:enabled, umbral:umbral, msg:msg, minutosSalto:minutosSalto, minPorPedido:minPorPedido}); };
+  window.fb_listenAvisoSaturacionConfig = function(cb) { return jlisten("config/avisoSaturacionConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // PAUSA EXPRÉS (pausa temporal con cuenta atrás, independiente de la auto-pausa)
+  window.fb_savePausaExpresHasta = async function(ts) { await jset("config/pausaExpresHasta", ts||0); };
+  window.fb_listenPausaExpresHasta = function(cb) { return jlisten("config/pausaExpresHasta", function(sn){ cb(sn.exists()?sn.val():0); }); };
   // TOKENS
   window.fb_saveUrlToken = async function(t) { await jset("config/urlToken",t); };
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };
   window.fb_saveBimbaToken = async function(t) { await jset("config/bimbaToken",t); };
   window.fb_loadBimbaToken = async function() { var sn=await jget("config/bimbaToken"); return sn.exists()?sn.val():null; };
+  window.fb_saveBimbaTokenExpiry = async function(ts) { await jset("config/bimbaTokenExpiry",ts); };
   // STOCK PWD
   window.fb_saveStockPwd = async function(h) { await jset("config/stockPwd",h); };
   window.fb_loadStockPwd = async function() { var sn=await jget("config/stockPwd"); return sn.exists()?sn.val():null; };
@@ -276,6 +326,10 @@ function _initFirebase() {
     var sn = await jget("ruleta_giros/" + fecha);
     return sn.exists() ? sn.val() : {};
   };
+  window.fb_loadRascaGiros = async function(fecha) {
+    var sn = await jget("rasca_giros/" + fecha);
+    return sn.exists() ? sn.val() : {};
+  };
   window.fb_saveRuletaConfig = async function(config) {
     await jset("ruleta_config", config);
   };
@@ -283,6 +337,18 @@ function _initFirebase() {
     var sn = await jget("ruleta_config");
     return sn.exists() ? sn.val() : null;
   };
+  window.fb_listenRuletaConfig = function(cb) { return jlisten("ruleta_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // RASCA Y GANA — mismo formato que la ruleta (premios con peso)
+  window.fb_saveRascaConfig = async function(config) { await jset("rasca_config", config); };
+  window.fb_loadRascaConfig = async function() {
+    var sn = await jget("rasca_config");
+    return sn.exists() ? sn.val() : null;
+  };
+  window.fb_listenRascaConfig = function(cb) { return jlisten("rasca_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // JUEGO ACTIVO — qué juego (si alguno) ve el cliente en la carta
+  window.fb_saveJuegoActivo = async function(juego) { await jset("config/juegoActivo", juego); };
+  window.fb_loadJuegoActivo = async function() { var sn=await jget("config/juegoActivo"); return sn.exists()?sn.val():'ninguno'; };
+  window.fb_listenJuegoActivo = function(cb) { return jlisten("config/juegoActivo", function(sn){ cb(sn.exists()?sn.val():'ninguno'); }); };
   // LOGIN LOG (intentos de acceso al panel)
   window.fb_saveLoginLog = async function(entry) {
     var sid = entry.ts || Date.now();
@@ -344,6 +410,40 @@ function _initFirebase() {
   // FEE CONFIG
   window.fb_saveFeeConfig = async function(enabled, amount, label) { await jset("config/feeConfig", {enabled:enabled, amount:amount, label:label}); };
   window.fb_listenFeeConfig = function(cb) { return jlisten("config/feeConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Lectura directa de una sola vez — igual que fb_loadLocalFeeCode: el
+  // listener en tiempo real puede tardar en entregar su primer valor más
+  // de lo que tarda un cliente en rellenar el formulario y confirmar, y
+  // hasta entonces getFeeEnabled()/getFee2Enabled() devuelven el valor por
+  // defecto (desactivado) aunque estén activados de verdad.
+  window.fb_loadFeeConfig = async function() { var sn = await jget("config/feeConfig"); return sn.exists() ? sn.val() : null; };
+  // FEE2 CONFIG (segundo gasto fijo, independiente del anterior)
+  window.fb_saveFee2Config = async function(enabled, amount, label) { await jset("config/fee2Config", {enabled:enabled, amount:amount, label:label}); };
+  window.fb_saveStudentDiscountConfig = async function(enabled, pct) { await jset("config/studentDiscountConfig", {enabled:enabled, pct:pct}); };
+  window.fb_listenStudentDiscountConfig = function(cb) { return jlisten("config/studentDiscountConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  window.fb_loadStudentDiscountConfig = async function() { var sn = await jget("config/studentDiscountConfig"); return sn.exists() ? sn.val() : null; };
+  window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  window.fb_loadFee2Config = async function() { var sn = await jget("config/fee2Config"); return sn.exists() ? sn.val() : null; };
+  // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
+  window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
+  window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
+  // Lectura directa de una sola vez — para cuando hace falta el valor YA
+  // (comprobar el ?local= del QR) y no se puede esperar a que el listener
+  // en tiempo real reciba su primer dato, que en una visita nueva/incógnito
+  // puede tardar más de lo que tarda el cliente en rellenar el formulario.
+  window.fb_loadLocalFeeCode = async function() { var sn = await jget("config/localFeeCode"); return sn.exists() ? sn.val() : ""; };
+  // TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda)
+  window.fb_saveTiendaEsperaMinutos = async function(min) { await jset("config/tiendaEsperaMinutos", min); };
+  window.fb_listenTiendaEsperaMinutos = function(cb) { return jlisten("config/tiendaEsperaMinutos", function(sn){ cb(sn.exists()?sn.val():0); }); };
+  // INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu pedido?",
+  // recibidas y guardadas por webhook-incidencia.php en el nodo "incidencias")
+  window.fb_listenIncidencias = function(cb) { return jlisten("incidencias", function(sn){ cb(sn.exists()?sn.val():{}); }); };
+  window.fb_setIncidenciaEstado = async function(key, estado) { await jset("incidencias/"+key+"/estado", estado); };
+  // ESTADO DE CONEXIÓN — ".info/connected" es la única señal fiable de que
+  // el cliente tiene una conexión REAL con Firebase en cada momento;
+  // _firebaseReady (más abajo) solo confirma que el SDK cargó al principio,
+  // no que los datos en tiempo real sigan llegando después.
+  window.fb_listenConnectionState = function(cb) { return db.ref(".info/connected").on("value", function(sn){ cb(sn.val() === true); }); };
+  window.fb_checkConnection = async function() { var sn = await db.ref(".info/connected").once("value"); return sn.val() === true; };
   // READY
   window._firebaseReady = true;
   document.dispatchEvent(new Event("firebaseReady"));

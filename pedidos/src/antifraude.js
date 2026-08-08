@@ -247,6 +247,23 @@ async function resetDayStats() {
   loadDayStats();
 }
 async function showSuccess(orderNum, slotTime) {
+  // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
+  // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
+  // que rompía el resaltado de campos con error en submitOrderFromDrawer).
+  if (typeof closeCartDrawer === 'function') closeCartDrawer();
+
+  // Restaurar el texto normal de "pedido confirmado" — si el cliente había
+  // cancelado un pedido antes en esta misma visita, cancelarPedido() dejó
+  // este mismo bloque con el texto de "❌ Pedido cancelado" puesto, y sin
+  // esto se quedaba así para siempre aunque el pedido SIGUIENTE sí se
+  // confirmara bien (confundía al cliente, que creía que había fallado y
+  // podía llegar a repetir el pedido).
+  const _icon = document.querySelector('#success-screen .success-icon');
+  const _title = document.querySelector('#success-screen .success-title');
+  const _sub = document.querySelector('#success-screen .success-sub');
+  if (_icon) _icon.textContent = '🥔';
+  if (_title) _title.textContent = '¡Pedido confirmado!';
+  if (_sub) _sub.textContent = 'Te esperamos en el local';
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -254,11 +271,30 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderTotal = 0;
   window.currentOrderItems = [];
   try {
-    window.currentOrderItems = Object.entries(cart).map(([id, qty]) => {
+    // Antes solo se leía `cart` (productos normales del menú) — los
+    // personalizados (Patata Al Gusto, Patata Bomba, vía custCart) y los
+    // complementos sueltos (extrasCart) se quedaban fuera, así que nunca
+    // se contaban en ventasProductos/{fecha}, la analítica que usa
+    // finanzas.js para "Estrellas y perdedores". Si el admin les asigna
+    // coste ahí, aparecían siempre con 0 ventas por mucho que se vendieran.
+    const itemsNormales = Object.entries(cart).map(([id, qty]) => {
       const item = MENU.find(m => m.id == id);
       if (!item) return null;
       return { id: item.id, qty, name: item.name, price: item.price * qty };
     }).filter(Boolean);
+    const itemsCustom = Object.values(custCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    const itemsExtras = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) : item.price;
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    window.currentOrderItems = [...itemsNormales, ...itemsCustom, ...itemsExtras];
     window.currentOrderTotal = window.currentOrderItems.reduce((s, i) => s + i.price, 0);
   } catch(e) {}
   recordProductSales(window.currentOrderItems);
@@ -289,6 +325,33 @@ async function showSuccess(orderNum, slotTime) {
     localStorage.setItem('dpf_active_order', JSON.stringify(window._lastOrderData));
   } catch (e) {}
 
+  // Guardar aparte, sin caducar, para "Repetir mi último pedido" en una
+  // visita futura — a diferencia de dpf_active_order (que se borra en
+  // cuanto se cierra la ventana de modificar/cancelar), esto se queda.
+  // Solo líneas de producto real: sin gastos de gestión (isFee) ni el
+  // descuento/aviso de fidelización (subtotal <= 0).
+  try {
+    const _itemsRepetibles = (_lastTicketData ? _lastTicketData.items || [] : []).filter(i => !i.isFee && i.subtotal > 0);
+    if (_itemsRepetibles.length) {
+      localStorage.setItem('dpf_ultimo_pedido', JSON.stringify({
+        items: _itemsRepetibles,
+        total: orderTotal,
+        cart: JSON.parse(JSON.stringify(cart)),
+        custCart: JSON.parse(JSON.stringify(custCart)),
+        extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+        ts: Date.now()
+      }));
+    }
+  } catch (e) {}
+
+  // Recordar nombre y teléfono para prellenarlos en la próxima visita (ver
+  // _rellenarDatosClienteGuardados en init.js) — se guarda sin caducar,
+  // igual que "dpf_ultimo_pedido"; el cliente puede editarlos igualmente.
+  try {
+    if (name) localStorage.setItem('dpf_cliente_nombre', name);
+    if (phone) localStorage.setItem('dpf_cliente_telefono', phone);
+  } catch (e) {}
+
   // Registrar el slot
   if (slotTime) incrementSlot(slotTime);
 
@@ -307,6 +370,31 @@ async function showSuccess(orderNum, slotTime) {
     slotInfo.style.display = 'none';
   }
 
+  // Estimación de espera según la cola actual — solo si hay bastante
+  // ambiente (mismo umbral que el aviso previo de saturación), para no
+  // asustar al cliente en un día tranquilo con un aviso que no aplica.
+  const tiempoEstEl = document.getElementById('success-tiempo-estimado');
+  if (tiempoEstEl) {
+    let _pendientesAhora = 0;
+    try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+      if (stats && stats.date === todayKey && Array.isArray(stats.orders)) {
+        _pendientesAhora = stats.orders.filter(o => {
+          const s = (typeof getOrderStatus === 'function') ? getOrderStatus(o.num) : 'nuevo';
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+      }
+    } catch (e) {}
+    const minutosExtra = (typeof _estimarMinutosEspera === 'function') ? _estimarMinutosEspera(_pendientesAhora) : 0;
+    if (minutosExtra > 0) {
+      tiempoEstEl.textContent = '⏳ Ahora mismo hay ' + _pendientesAhora + ' pedidos en cola — puede tardar unos ' + minutosExtra + ' min más de lo habitual.';
+      tiempoEstEl.style.display = 'block';
+    } else {
+      tiempoEstEl.style.display = 'none';
+    }
+  }
+
   // Resumen de ítems
   const itemsContainer = document.getElementById('success-items-list');
   if (itemsContainer && _lastTicketData && _lastTicketData.items.length) {
@@ -318,6 +406,14 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
+  // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
+  const saveWarning = document.getElementById('success-save-warning');
+  if (saveWarning) saveWarning.style.display = 'none';
+  if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
+  // Pequeño golpe táctil al confirmar, en móviles que lo soporten — refuerza
+  // la sensación de "hecho" sin tener que mirar la pantalla.
+  if (navigator.vibrate) { try { navigator.vibrate([80, 40, 80]); } catch (e) {} }
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');
@@ -343,6 +439,13 @@ function resetOrder() {
   document.querySelector('.order-panel').style.display = "block";
   document.getElementById("success-screen").style.display = "none";
   window._lastOrderData = null;
+  // Para que la sugerencia "¿algo dulce de postre?" se pueda volver a
+  // mostrar (con opciones nuevas) en el pedido siguiente, en vez de
+  // arrastrar el "ya se mostró"/las mismas opciones del pedido anterior.
+  window._upsellFueMostrado = false;
+  window._upsellOpcionesElegidas = null;
+  window._upsellYaAnimado = false;
+  window._upsellDismissed = { dulce: false, bebida: false };
   try {
     localStorage.removeItem('dpf_active_order');
   } catch (e) {}
@@ -355,18 +458,21 @@ function resetOrder() {
 }
 
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
-const MODIFY_WINDOW_DEFAULT_MS = 5 * 60 * 1000;
+// dpf_modify_window_mins vuelve a contarse en MINUTOS (como su propio
+// nombre siempre dijo) — a petición expresa, después de haber estado un
+// tiempo en segundos.
+const MODIFY_WINDOW_DEFAULT_MS = 1 * 60 * 1000;
 function getModifyWindowMs() {
   try {
-    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '5');
-    return (isNaN(v) || v < 1 || v > 60 ? 5 : v) * 60 * 1000;
+    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '1');
+    return (isNaN(v) || v < 1 || v > 30 ? 1 : v) * 60 * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
 }
-async function cancelarPedidoAdmin(orderNum) {
+async function cancelarPedidoAdmin(orderNum, phone) {
   if (!confirm("\xBFCancelar el pedido ".concat(orderNum, "? Se eliminar\xE1 de estad\xEDsticas y cocina."))) return;
-  await _borrarPedidoDeFirebase(orderNum);
+  await _borrarPedidoDeFirebase(orderNum, phone);
   logActivity("\u274C Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function _startModifyTimer() {
@@ -388,9 +494,11 @@ function _startModifyTimer() {
       zone.style.display = 'none';
       return;
     }
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor(remaining % 60000 / 1000);
-    timerEl.textContent = "\u23F1\uFE0F Puedes modificar o cancelar tu pedido durante ".concat(mins, ":").concat(String(secs).padStart(2, '0'), " min");
+    const totalSecs = Math.ceil(remaining / 1000);
+    const tiempoTxt = totalSecs < 60
+      ? totalSecs + ' s'
+      : Math.floor(totalSecs / 60) + ':' + String(totalSecs % 60).padStart(2, '0') + ' min';
+    timerEl.textContent = "\u23F1\uFE0F Puedes modificar o cancelar tu pedido durante ".concat(tiempoTxt);
     if (btnMod) btnMod.style.display = '';
     if (btnCan) btnCan.style.display = '';
     zone.style.display = 'block';
@@ -418,7 +526,7 @@ async function modificarPedido() {
   if (!confirmado) return;
 
   // Borrar pedido actual de Firebase y stats
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
 
   // Restaurar carrito con los productos anteriores
   Object.assign(cart, data.cart);
@@ -475,7 +583,7 @@ async function cancelarPedido() {
     };
   });
   if (!confirmado) return;
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
   window._lastOrderData = null;
   try {
     localStorage.removeItem('dpf_active_order');
@@ -493,40 +601,135 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
-async function _borrarPedidoDeFirebase(orderNum) {
+// Resta de ventasProductos/{fecha} lo que sumó recordProductSales() para
+// este pedido — antes, cancelar un pedido (admin) o que el cliente lo
+// modificara (que primero lo borra y luego reenvía uno nuevo) dejaba sus
+// productos contados para siempre en la analítica de "Estrellas y
+// perdedores", aunque el pedido ya no existiera o se hubiera duplicado.
+// pedido.items no lleva el id del producto (solo name/qty/subtotal, tal
+// como lo guarda guardar-pedido.php), así que se busca por nombre.
+async function _revertirVentasProductos(items) {
+  if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
+  const fecha = new Date().toISOString().slice(0, 10);
+  const mutator = function (current) {
+    const actual = current || {};
+    items.forEach(it => {
+      if (it.isFee || !it.name) return;
+      const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
+      if (!menuItem) return;
+      const id = String(menuItem.id);
+      if (actual[id] == null) return;
+      actual[id] = Math.max(0, actual[id] - (it.qty || 0));
+      if (actual[id] === 0) delete actual[id];
+    });
+    return actual;
+  };
+  try {
+    // Transacción: este mismo nodo lo escribe también cada pedido real de
+    // un cliente al llegar (recordProductSales) — un .set() plano aquí
+    // podía perder esa cuenta si un pedido nuevo llegaba justo mientras se
+    // revertía otro cancelado.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      if (!sn.exists()) return;
+      await ref.set(mutator(sn.val()));
+    }
+  } catch (e) {
+    console.warn('[ventasProductos] no se pudo revertir', e);
+  }
+}
+async function _borrarPedidoDeFirebase(orderNum, phone) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
-  // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
-  await setOrderStatus(orderNum, 'cancelado');
+  // 0. Si este pedido tenía un ticket esperando en la cola de impresión
+  // pendiente (porque falló al imprimir mientras la impresora estaba
+  // desconectada), quitarlo — si no, en cuanto la impresora reconecte se
+  // imprimiría igualmente el ticket de un pedido ya cancelado/modificado,
+  // sin ningún aviso de que ya no es válido.
+  if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
 
-  // 2. Borrar de Firebase stats y liberar slot si tenía uno
+  // 1. Marcar como cancelado en memoria y localStorage — inmediato, para que
+  // este mismo dispositivo lo refleje al instante sin esperar al servidor.
+  window._orderStatusCache[_normOrderKey(orderNum)] = 'cancelado';
+  try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
+
+  let itemsParaRevertir = null;
+  let telefonoParaRevertirSello = phone || null;
   let slotToFree = null;
-  if (window.fb_getStats && window.fb_saveStats) {
-    try {
-      const stats = await window.fb_getStats(todayKey);
-      if (stats && stats.orders) {
-        const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-        if (pedido && pedido.slot) slotToFree = pedido.slot;
-        stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-        stats.count = Math.max(0, (stats.count || 1) - 1);
-        stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-        await window.fb_saveStats(stats);
-      }
-    } catch {}
+
+  // 2. Marcar como cancelado y quitar de stats en Firebase — a través del
+  // servidor (guardar-pedido.php, acción "cancelarPedido"), NO con una
+  // escritura directa del navegador. orderStatus/ y stats/ exigen el UID
+  // exacto del admin en las reglas de seguridad (igual que tickets/, slots/
+  // y usedOrderNums/, ver comentarios en guardar-pedido.php): cuando esta
+  // función la llamaba el propio cliente (auth anónima, p.ej. al pulsar
+  // "Modificar pedido"), la escritura directa fallaba en silencio y el
+  // pedido se quedaba activo para siempre en cocina/estadísticas del resto
+  // de dispositivos, aunque el ticket viejo nunca llegara a anularse allí.
+  try {
+    const resp = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancelarPedido', orderNum, fecha: todayKey, phone: phone || '' })
+    });
+    const data = await resp.json();
+    if (data && data.success) {
+      if (data.items) itemsParaRevertir = data.items;
+      if (data.phone) telefonoParaRevertirSello = data.phone;
+      if (data.slot) slotToFree = data.slot;
+    } else {
+      console.warn('[cancelarPedido] el servidor no pudo anular el pedido:', data && data.error);
+    }
+  } catch (e) {
+    console.warn('[cancelarPedido] fallo de red al anular el pedido:', e);
   }
 
-  // 3. Borrar también de localStorage y liberar slot si no lo encontramos en Firebase
+  // 3. Borrar también de localStorage (caché local de este dispositivo)
   try {
     const local = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
     if (local.orders) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
+      if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
+      if (pedido && pedido.phone && !telefonoParaRevertirSello) telefonoParaRevertirSello = pedido.phone;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
       local.total = local.orders.reduce((acc, o) => acc + (o.total || 0), 0);
       localStorage.setItem(STATS_KEY, JSON.stringify(local));
     }
   } catch {}
+
+  if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
+
+  // Deshacer el sello de fidelización (y el canje del premio, si lo había
+  // consumido) si este pedido cancelado/modificado había llegado a
+  // sumarlo — si no, se quedaba dado para siempre aunque el pedido nunca
+  // llegara a ser real. Se hace en el servidor (fidelizacion.php), que
+  // valida contra el ticket real antes de tocar nada.
+  if (telefonoParaRevertirSello) {
+    const _telLimpio = telefonoParaRevertirSello.replace(/\D/g, '');
+    if (_telLimpio.length === 9) {
+      // Si el cliente pulsó "Modificar"/"Cancelar" justo después de
+      // confirmar, es posible que la petición que suma el sello de ESTE
+      // mismo pedido todavía esté de camino (se lanza sin esperar, para no
+      // retrasar la pantalla de "pedido confirmado") — si se pide la
+      // reversión antes de que ese sello exista de verdad en el servidor,
+      // no hay nada que revertir, y cuando el registro original llega
+      // justo después, el sello se queda puesto para un pedido ya
+      // cancelado. Esperar aquí a que termine (si la hay) antes de pedir
+      // la reversión evita esa carrera.
+      const _selloPendiente = window._selloEnCursoPorPedido && window._selloEnCursoPorPedido[orderNum];
+      if (_selloPendiente) { try { await _selloPendiente; } catch (e) {} }
+      fetch('fidelizacion.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revertirSello', telefono: _telLimpio, orderNum })
+      }).catch(e => console.warn('[fidelizacion] no se pudo revertir el sello al cancelar el pedido:', e));
+    }
+  }
 
   // 4. El slot NO se libera al cancelar — el turno quedó ocupado
 

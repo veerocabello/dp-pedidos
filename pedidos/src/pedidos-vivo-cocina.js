@@ -57,7 +57,15 @@ async function loadLiveOrders() {
   // Firebase es la fuente de verdad (tiene todos los pedidos de todos los dispositivos)
   if (window.fb_getStats) {
     try {
-      stats = await window.fb_getStats(todayKey);
+      // Si no hay conexión de verdad (wifi del local caído), fb_getStats()
+      // puede quedarse esperando indefinidamente en vez de fallar rápido —
+      // sin este límite, recargar la pantalla de cocina sin internet se
+      // quedaba cargando para siempre en vez de caer en el respaldo de
+      // localStorage de abajo con los últimos pedidos vistos.
+      stats = await Promise.race([
+        window.fb_getStats(todayKey),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout esperando a Firebase')), 4000))
+      ]);
     } catch (e) {
       console.error('[DPF] fb_getStats error', e);
     }
@@ -94,8 +102,20 @@ async function loadLiveOrders() {
   _renderLiveOrders(stats, todayKey);
 }
 function _renderLiveOrders(stats, todayKey) {
-  // Sort by slot time, then by order time for orders without slot
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
+  // Guarda cuándo llegó el pedido más reciente — lo usa el panel "Estado
+  // del sistema" para mostrar "Último pedido: hace X min" de un vistazo.
+  (stats.orders || []).forEach(o => {
+    if (typeof o.ts === 'number' && o.ts > (window._ultimoPedidoTs || 0)) window._ultimoPedidoTs = o.ts;
+  });
+  // Los pedidos "desde el local" (código de cola aplicado) van primero,
+  // porque ese cliente ya está esperando físicamente en el mostrador y no
+  // se puede ir a pedir a otro sitio — luego por turno, y por hora dentro
+  // del mismo turno.
   const orders = (stats.orders || []).slice().sort((a, b) => {
+    const localA = a.esPedidoLocal ? 0 : 1;
+    const localB = b.esPedidoLocal ? 0 : 1;
+    if (localA !== localB) return localA - localB;
     const slotA = a.slot || '99:99';
     const slotB = b.slot || '99:99';
     if (slotA !== slotB) return slotA.localeCompare(slotB);
@@ -149,22 +169,26 @@ function _renderLiveOrders(stats, todayKey) {
   const enPrep = orders.filter(o => getOrderStatus(o.num) === 'recibido');
   const entregados = orders.filter(o => ['entregado','listo','cancelado'].includes(getOrderStatus(o.num)));
   window._activosCache = [...nuevos, ...enPrep];
+  if (typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(activos.length);
+  if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(activos.length);
 
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';
-    const border = isNuevo ? '#3D1F0D' : '#3B82F6';
+    const localBadge = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🏪 En el local</span>' : '';
+    const estudianteBadge = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🪪 Verificar carné</span>' : '';
+    const border = o.esPedidoLocal ? '#166534' : o.esEstudianteJubilado ? '#c2711a' : isNuevo ? '#3D1F0D' : '#3B82F6';
     const btns = isNuevo
       ? '<button class="kbtn kbtn-delete" data-print-num="' + escapeAttr(o.num) + '" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}">' + (_printedOrders.has(o.num) ? '🖨️ Impreso' : '🖨️ Imprimir') + '</button>'
         + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'recibido\')" style="background:#EFF6FF;color:#1D4ED8;border:0.5px solid #93C5FD">🔵 Recibido</button>'
-        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="cancelarPedidoAdmin(this.dataset.num)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>'
+        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" data-phone="' + escapeAttr(o.phone||'') + '" onclick="cancelarPedidoAdmin(this.dataset.num,this.dataset.phone)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>'
       : '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'entregado\')" style="background:#F0FDF4;color:#166534;border:0.5px solid #86EFAC">✅ Entregado</button>'
         + '<button class="kbtn kbtn-delete" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot)">🖨️</button>'
-        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="cancelarPedidoAdmin(this.dataset.num)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>';
+        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" data-phone="' + escapeAttr(o.phone||'') + '" onclick="cancelarPedidoAdmin(this.dataset.num,this.dataset.phone)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>';
     return '<div class="live-order-card" id="live-card-' + escapeAttr(o.num.replace('#','')) + '" style="border-left:3px solid ' + border + '">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
         + '<div><span style="font-size:22px;font-weight:700;font-family:Georgia,serif;color:#3D1F0D">' + escapeHtml(o.num) + '</span>'
         + '<span style="font-size:13px;color:#2A1506;margin-left:6px">' + escapeHtml(o.name) + '</span></div>'
-        + slotBadge
+        + '<div style="display:flex;gap:4px;align-items:center">' + localBadge + estudianteBadge + slotBadge + '</div>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-top:4px">' + escapeHtml(o.time) + ' · <span id="total-display-' + escapeAttr(o.num.replace('#','')) + '" data-num="' + escapeAttr(o.num) + '" onclick="startEditOrderTotal(this.dataset.num)" style="cursor:pointer;text-decoration:underline dotted">' + o.total.toFixed(2).replace('.',',') + ' €</span></div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + btns + '</div>'
@@ -232,24 +256,53 @@ async function emergencySyncFromLocal() {
   }
 }
 function setLiveStatus(num, status) {
-  // Parar el sonido cuando se marca cualquier pedido
+  // Parar el sonido al momento cuando se marca cualquier pedido
   if (status === 'entregado' || status === 'recibido' || status === 'listo') {
     stopAlertLoop();
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-    if (_alertPendingOrders > 0) startAlertLoop && startAlertLoop();
   }
   setOrderStatus(num, status);
-  // Si se acepta un pedido, reducir contador de pendientes
-  if (status === 'preparando' || status === 'listo') {
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 0) - 1);
-    if (_alertPendingOrders === 0) stopAlertLoop();
+  // Cualquiera de estos estados cuenta como "ya visto" — se marca una sola
+  // vez por pedido (_marcarPedidoAtendido no hace nada si ya estaba
+  // marcado), así que da igual si pasa antes por "preparando" y luego por
+  // "listo": solo resta del contador la primera vez.
+  if (status === 'entregado' || status === 'recibido' || status === 'listo' || status === 'preparando') {
+    _marcarPedidoAtendido(num);
   }
+  if (_alertPendingOrders > 0) startAlertLoop();
   loadLiveOrders();
   refreshKitchenGrid();
 }
 
 // ── KITCHEN MODE ──
 let _kitchenInterval = null;
+// ── Wake Lock: evita que la tablet de cocina entre en reposo ─────────────
+// Si la pantalla se apaga sola por inactividad, a veces corta la conexión
+// USB/Bluetooth con la impresora sin avisar. Mientras la pantalla de cocina
+// esté abierta, se le pide al navegador que mantenga la pantalla encendida.
+// No lo soportan todos los navegadores/dispositivos — si falla, se ignora:
+// solo se pierde este extra, no rompe nada más.
+let _kitchenWakeLock = null;
+async function _pedirWakeLockCocina() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _kitchenWakeLock = await navigator.wakeLock.request('screen');
+    _kitchenWakeLock.addEventListener('release', () => { _kitchenWakeLock = null; });
+  } catch (e) {
+    // P.ej. si la pestaña no está visible justo en ese instante — se
+    // reintenta solo en cuanto vuelva a estar visible (ver visibilitychange
+    // más abajo).
+  }
+}
+function _soltarWakeLockCocina() {
+  if (_kitchenWakeLock) { _kitchenWakeLock.release().catch(() => {}); _kitchenWakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  const km = document.getElementById('kitchen-mode');
+  if (document.visibilityState === 'visible' && km && km.classList.contains('open') && !_kitchenWakeLock) {
+    _pedirWakeLockCocina();
+  }
+});
+
 function activarAudioCocina() {
   unlockAudioContext();
   _adminLoggedIn = true;
@@ -268,6 +321,7 @@ function openKitchenMode() {
   const banner = document.getElementById('kitchen-audio-banner');
   if (banner) banner.style.display = _audioCtxUnlocked ? 'none' : 'flex';
   _adminLoggedIn = true; // cocina siempre en modo admin
+  _pedirWakeLockCocina();
   clearUnseenOrders();
   refreshKitchenGrid();
   updateKitchenClock();
@@ -293,6 +347,7 @@ function closeKitchenMode() {
   document.getElementById('kitchen-mode').classList.remove('open');
   clearInterval(_kitchenInterval);
   _kitchenInterval = null;
+  _soltarWakeLockCocina();
   // _adminLoggedIn permanece true — alertas siguen activas en cualquier pantalla
   document.getElementById('admin-overlay').style.display = '';
 }
@@ -304,6 +359,7 @@ function updateKitchenClock() {
   });
 }
 function refreshKitchenGrid() {
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats;
   try {
@@ -318,6 +374,11 @@ function refreshKitchenGrid() {
     orders: []
   };
   const orders = (stats.orders || []).filter(o => getOrderStatus(o.num) !== 'listo' && getOrderStatus(o.num) !== 'cancelado' && getOrderStatus(o.num) !== 'entregado').slice().sort((a, b) => {
+    // Pedidos "desde el local" primero (ese cliente ya está esperando en el
+    // mostrador), luego por cercanía al turno de recogida.
+    const localA = a.esPedidoLocal ? 0 : 1;
+    const localB = b.esPedidoLocal ? 0 : 1;
+    if (localA !== localB) return localA - localB;
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
     const toMins = s => {
@@ -392,6 +453,7 @@ function refreshKitchenGrid() {
     const timeColor = isUrgent ? '#e74c3c' : isWarning ? '#3D1F0D' : '#888';
     const cardStyle = isUrgent ? 'animation:pulse-red 1.2s infinite;' : '';
     const itemsHtml = o.items ? o.items.filter(function(it) {
+      if (it.isFee) return false;
       const n = (it.name || '').toLowerCase();
       return !n.includes('gesti\xF3n') && !n.includes('gestion') && !n.includes('fee') && !n.includes('cargo');
     }).map(function (it) {
@@ -404,8 +466,11 @@ function refreshKitchenGrid() {
     }).join('') : '<div style="font-size:13px;color:#999">Sin detalle</div>';
     const isJustArrived = o.ts && Date.now() - o.ts < 30000;
     const newClass = status === 'nuevo' && isJustArrived ? ' is-new' : '';
-    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
-    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyle + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
+    const localBadgeK = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🏪 EN EL LOCAL</span>' : '';
+    const estudianteBadgeK = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🪪 VERIFICAR CARNÉ</span>' : '';
+    const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : o.esEstudianteJubilado ? cardStyle + 'border-left:4px solid #c2711a;' : cardStyle;
+    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\',\'' + escapeAttr(o.phone||'') + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
+    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + estudianteBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
   }).join('');
 }
 
@@ -430,6 +495,31 @@ function saveSoundConfig() {
   if (window.fb_saveSoundConfig) window.fb_saveSoundConfig(cfg).catch(() => {});
   showToast('local-toast');
   logActivity("\uD83D\uDD14 Sonido configurado: ".concat(type, ", volumen ").concat(volume, "%"));
+}
+// Sonido de "impresora desconectada" — aparte del de nuevo pedido, para
+// que se puedan distinguir a oído. Solo el tipo (mismo volumen que el de
+// nuevo pedido, no hace falta duplicar ese control).
+const SOUND_DESCONEXION_KEY = 'dpf_sound_desconexion_config';
+function getSoundDesconexionType() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SOUND_DESCONEXION_KEY) || '{}');
+    return cfg.type || 'urgente';
+  } catch { return 'urgente'; }
+}
+function saveSoundDesconexionConfig() {
+  const sel = document.getElementById('sound-desconexion-type');
+  const type = (sel && sel.value) || 'urgente';
+  localStorage.setItem(SOUND_DESCONEXION_KEY, JSON.stringify({ type }));
+  showToast('local-toast');
+  logActivity('🔌 Sonido de desconexión configurado: ' + type);
+}
+function loadSoundDesconexionConfigUI() {
+  const sel = document.getElementById('sound-desconexion-type');
+  if (sel) sel.value = getSoundDesconexionType();
+}
+function testSoundDesconexion() {
+  const sel = document.getElementById('sound-desconexion-type');
+  playNotificationSound((sel && sel.value) || 'urgente');
 }
 function loadSoundConfigUI() {
   const cfg = getSoundConfig();
@@ -714,7 +804,8 @@ function checkForNewOrders(statsOverride) {
     _unseenOrders += diff;
     updateTabTitle(_unseenOrders);
     console.log('[DPF] NEW ORDER — calling showNewOrderNotification, diff=' + diff);
-    showNewOrderNotification(diff);
+    // guardar-pedido.php inserta los pedidos nuevos al principio del array (unshift)
+    showNewOrderNotification((stats.orders || []).slice(0, diff).map(o => o.num));
   }
 }
 
@@ -727,6 +818,30 @@ function clearUnseenOrders() {
 // Alert loop state
 let _alertLoopInterval = null;
 let _alertPendingOrders = 0;
+// Antes _alertPendingOrders era un contador suelto que varios sitios subían
+// o bajaban a mano (sobreescribiéndolo entero al detectar pedidos nuevos, o
+// restándole 1 desde tres sitios distintos: imprimir, marcar listo, marcar
+// entregado) — un mismo pedido marcado "listo" restaba dos veces porque
+// 'listo' entraba en dos condiciones distintas seguidas, y dos avisos de
+// "pedido nuevo" casi seguidos podían pisarse el contador en vez de sumar.
+// Ahora se lleva la cuenta por número de pedido concreto: añadir/quitar el
+// mismo pedido dos veces no hace nada la segunda vez.
+let _alertPendingOrderNumsSet = new Set();
+function _marcarPedidoPendienteAlerta(num) {
+  if (!num || _alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.add(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+}
+function _marcarPedidoAtendido(num) {
+  if (!num || !_alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.delete(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+  if (_alertPendingOrders === 0) stopAlertLoop();
+}
+function _resetPedidosPendientesAlerta() {
+  _alertPendingOrderNumsSet.clear();
+  _alertPendingOrders = 0;
+}
 function startAlertLoop() {
   if (_alertLoopInterval) return; // ya está sonando
   playNotificationSound();
@@ -754,11 +869,11 @@ function stopAlertLoop() {
     _alertLoopInterval = null;
   }
 }
-function showNewOrderNotification(count) {
-  console.log('[DPF] showNewOrderNotification: count=' + count + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
+function showNewOrderNotification(nums) {
+  console.log('[DPF] showNewOrderNotification: nums=' + JSON.stringify(nums) + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
   // Solo sonar si hay sesión de admin activa (no al cliente que hace el pedido)
   if (_adminLoggedIn) {
-    _alertPendingOrders = count;
+    (nums || []).forEach(_marcarPedidoPendienteAlerta);
     startAlertLoop();
     const toast = document.getElementById('new-order-toast');
     if (toast) {
@@ -787,19 +902,22 @@ function markAllKitchenReady() {
   const orders = stats.orders || [];
   if (!orders.length) return;
   const statuses = getOrderStatuses();
-  let changed = 0;
-  orders.forEach(o => {
+  const aCambiar = orders.filter(o => {
     const key = _normOrderKey(o.num);
-    if ((statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado') {
-      statuses[key] = 'listo';
-      changed++;
-    }
+    return (statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado';
   });
-  if (!changed) return;
-  localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(statuses));
+  if (!aCambiar.length) return;
+  // setOrderStatus() actualiza localStorage Y Firebase (fb_setOrderStatus)
+  // por pedido \u2014 antes este bot\u00f3n solo tocaba localStorage directamente,
+  // as\u00ed que un pedido marcado "listo" aqu\u00ed pod\u00eda volver a aparecer como
+  // pendiente en cuanto llegara cualquier otro cambio de estado: el
+  // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
+  // window._orderStatusCache entero con lo que haya en Firebase, que nunca
+  // se hab\u00eda enterado de este cambio.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
   refreshKitchenGrid();
   loadLiveOrders();
-  logActivity("\u2705 ".concat(changed, " pedido").concat(changed !== 1 ? 's' : '', " marcado").concat(changed !== 1 ? 's' : '', " como listo desde cocina"));
+  logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
 }
 
 // Polling de fallback: solo actúa si Firebase no está disponible

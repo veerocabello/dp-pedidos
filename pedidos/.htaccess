@@ -14,15 +14,18 @@
     Header set X-Content-Type-Options "nosniff"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(self), magnetometer=(), gyroscope=(), accelerometer=()"
 
-    # CSP activo (ya verificado en modo Report-Only sin romper nada)
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
-
-    # CSP DE PRUEBA (Report-Only, no bloquea nada) — igual que la de arriba pero SIN 'unsafe-eval'
-    # Objetivo: comprobar unos días si salta algún aviso de violación en la consola del navegador.
-    # Si no salta nada, se puede quitar 'unsafe-eval' de la cabecera activa de arriba.
-    Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+    # CSP activo — sin 'unsafe-eval' (comprobado a fondo: revisión de todo el
+    # JS propio y de las librerías de terceros que se cargan self-hosted —
+    # Firebase, html2pdf/html2canvas/jsPDF — sin ningún eval()/new Function(),
+    # y prueba real generando un PDF con esta misma política aplicada, sin
+    # ningún aviso de violación). También se añaden los dominios de
+    # GoatCounter (la analítica del pie de la web: gc.zgo.at sirve el
+    # script, dulcepatata.goatcounter.com recibe la visita) — antes no
+    # estaban en la lista y se bloqueaban solos, sin que se notara en
+    # pantalla ni se contara ninguna visita.
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com https://gc.zgo.at; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org https://dulcepatata.goatcounter.com; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
 </IfModule>
 
 # ── Bloquear acceso directo a archivos PHP sensibles ──
@@ -55,8 +58,21 @@ RewriteRule ^fichar-pin-check\.php$ - [L]
 #    empleado no tenga que leer la lista completa de compañeros para
 #    comprobar su propio PIN) que existe da igual si la web tiene
 #    contraseña o no.
+#
+#    NOTA DE SEGURIDAD: antes esto comprobaba solo que el Referer
+#    CONTUVIERA el texto "fichar=" en cualquier parte — el Referer lo
+#    manda el propio navegador de quien pide la página, así que
+#    cualquiera podía falsificarlo (curl -e, o incluso enlazando desde
+#    una URL propia que también tuviera "fichar=" en la query) y saltarse
+#    el aviso de "cerrado por obras" para TODA la web sin saber nada.
+#    Ahora exige que el Referer sea la URL exacta de fichar-standalone.html
+#    con un token de forma plausible (16+ caracteres) — mucho más difícil
+#    de falsificar a ciegas, aunque un Apache .htaccess no puede comprobar
+#    por sí solo si ese token es EL REAL (eso solo lo sabe Firebase). El
+#    farol solo dura hasta la reapertura, así que no merece la pena montar
+#    algo más elaborado (ej. una cookie firmada por PHP) para esto.
 <IfModule mod_setenvif.c>
-    SetEnvIf Referer "fichar=" allow_fichar
+    SetEnvIf Referer "^https://pedidos\.dulcepatatafood\.es/fichar-standalone\.html\?fichar=[A-Za-z0-9_-]{16,}$" allow_fichar
 </IfModule>
 
 # admin-shell.html: siempre con contraseña, sin excepción de fichar

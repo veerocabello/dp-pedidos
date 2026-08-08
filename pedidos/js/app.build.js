@@ -738,12 +738,28 @@ function pp2LoadState() {
     return {};
   }
 }
-function pp2SaveState(s) {
+// Aplica mutatorFn (que modifica el objeto de estado in-place) de forma
+// atómica: actualiza localStorage al instante para que la UI responda sin
+// esperar, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos tocan
+// cantidades/proveedores a la vez, Firebase reintenta con el dato fresco
+// en vez de que uno pise el cambio del otro.
+function pp2MutateState(mutatorFn) {
+  const s = pp2LoadState();
+  mutatorFn(s);
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
-  if (window.fb_savePP2) {
+  if (window.fb_transactNative) {
+    window._pp2LocalWrite = Date.now();
+    window.fb_transactNative('pp2/state', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
     window.fb_savePP2('state', s).catch(() => {});
   }
+  return s;
 }
 function pp2LoadCustom() {
   try {
@@ -814,6 +830,20 @@ function pp2AllProvs() {
 function pp2AllItems() {
   return pp2AllItemsOrdered();
 }
+// Compara el nombre de un ingrediente con la línea del historial de stock
+// que le corresponde — antes se usaba un .includes() sin límite de
+// palabra en ambos sentidos, así que "Sal" coincidía con cualquier línea
+// que contuviera "sal" en medio de otra palabra (p. ej. "Salsa Ketchup"),
+// mostrando el stock de un producto distinto en la tarjeta equivocada.
+function _stockNombreCoincide(a, b) {
+  if (a === b) return true;
+  const corto = a.length <= b.length ? a : b;
+  const largo = a.length <= b.length ? b : a;
+  if (!corto) return false;
+  const escapado = corto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(^|[^a-zà-ÿ0-9])' + escapado + '($|[^a-zà-ÿ0-9])', 'i');
+  return re.test(largo);
+}
 function pp2GetStockBadge(itemId, nombre) {
   const minimos = pp2LoadMinimos();
   const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
@@ -829,7 +859,7 @@ function pp2GetStockBadge(itemId, nombre) {
           const lineName = text.slice(0, colonIdx).trim().toLowerCase();
           const lineVal = text.slice(colonIdx + 1).trim();
           const itemName = nombre.toLowerCase();
-          if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+          if (_stockNombreCoincide(lineName, itemName)) {
             const m = lineVal.match(/^(\d+)\s*(.*)/);
             const qty = m ? parseInt(m[1]) : null;
             const unit = m ? m[2] || '' : lineVal;
@@ -972,7 +1002,7 @@ function pp2Render() {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName = nombre.toLowerCase();
-      if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
+      if (_stockNombreCoincide(lineName, itemName)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty = m ? parseInt(m[1]) : null;
         const unit = m ? m[2] || '' : lineVal;
@@ -1016,13 +1046,13 @@ function pp2Render() {
       const delCb = _pp2DeleteMode ? "<input type=\"checkbox\" ".concat(_pp2DeleteSel.has(item.id) ? 'checked' : '', " onchange=\"pp2DelToggle('").concat(item.id, "',this.checked)\"\n                   style=\"width:18px;height:18px;accent-color:#c0392b;flex-shrink:0;cursor:pointer;margin-right:2px\">") : '';
 
       // Badge stock con color según mínimo
-      const stockBadge = stock !== null ? "<span data-stock-badge style=\"font-size:13px;font-weight:700;color:".concat(stock.bajo ? '#c0392b' : '#27855a', ";background:").concat(stock.bajo ? '#fdf0ee' : '#eafaf1', ";border:1.5px solid ").concat(stock.bajo ? '#e74c3c' : '#a9dfbf', ";border-radius:8px;padding:2px 10px;white-space:nowrap;flex-shrink:0\">\n                  ").concat(stock.bajo ? '⚠️ ' : '', "En tienda: ").concat(stock.qty).concat(stock.unit ? ' ' + stock.unit : '').concat(stock.min !== null ? ' (mín. ' + stock.min + ')' : '', "\n                 </span>") : '';
+      const stockBadge = stock !== null ? "<span data-stock-badge style=\"font-size:13px;font-weight:700;color:".concat(stock.bajo ? '#c0392b' : '#27855a', ";background:").concat(stock.bajo ? '#fdf0ee' : '#eafaf1', ";border:1.5px solid ").concat(stock.bajo ? '#e74c3c' : '#a9dfbf', ";border-radius:8px;padding:2px 10px;white-space:nowrap;flex-shrink:0\">\n                  ").concat(stock.bajo ? '⚠️ ' : '', "En tienda: ").concat(escapeHtml(stock.qty)).concat(stock.unit ? ' ' + escapeHtml(stock.unit) : '').concat(stock.min !== null ? ' (mín. ' + escapeHtml(String(stock.min)) + ')' : '', "\n                 </span>") : '';
 
       // Botón proveedor: si es habitual lo distinguimos visualmente
       const provBtnStyle = prov ? isHabitual ? "border:1.5px dashed #3D1F0D;background:rgba(244,196,48,0.08);color:#3D1F0D" : "border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D" : "border:1.5px solid #F5E6C8;background:#FFFFFF;color:#8A6A4E";
-      return "<div class=\"pp2-row\" id=\"pp2-row-".concat(item.id, "\" data-id=\"").concat(item.id, "\" data-cat=\"").concat(cat.replace(/"/g, '&quot;'), "\"\n                draggable=\"true\"\n                ondragstart=\"pp2DragStart(event)\"\n                ondragover=\"pp2DragOver(event)\"\n                ondrop=\"pp2Drop(event)\"\n                ondragend=\"pp2DragEnd(event)\"\n                ondragleave=\"this.style.background=''\"\n                style=\"display:flex;align-items:center;background:").concat(bg, ";border:2px solid ").concat(border, ";border-radius:12px;padding:11px 14px;margin-bottom:8px;cursor:default\">\n              ").concat(delCb, "\n              <span style=\"font-size:18px;color:#8A6A4E;cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;touch-action:none\" title=\"Arrastrar\">\u283F</span>\n              <div style=\"flex:1;min-width:0\">\n                <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap\">\n                  <span style=\"font-size:15px;font-weight:600;color:#3D1F0D\">").concat(item.nombre, "</span>\n                  ").concat(stockBadge, "\n                </div>\n                <div style=\"display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap\">\n                  ").concat(fixedUnit ? "<span style=\"padding:3px 9px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif\">".concat(fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1), "</span>") : "<button data-unit=\"cajas\" onclick=\"pp2SetUnit('".concat(item.id, "','cajas')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'cajas' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'cajas' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'cajas' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F4E6; Cajas\n                      </button>\n                      <button data-unit=\"unidades\" onclick=\"pp2SetUnit('").concat(item.id, "','unidades')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'unidades' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'unidades' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'unidades' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F522; Unidades\n                      </button>"), "\n                </div>\n              </div>\n              <div style=\"display:flex;align-items:center;gap:4px;flex-shrink:0\">\n                <button onclick=\"pp2Qty('").concat(item.id, "',-1)\" style=\"width:34px;height:34px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:20px;font-weight:700;cursor:pointer;color:#3D1F0D\">&#x2212;</button>\n                <span data-qty style=\"font-size:18px;font-weight:900;color:#3D1F0D;min-width:24px;text-align:center\">").concat(qty || '', "</span>\n                <button onclick=\"pp2Qty('").concat(item.id, "',1)\" style=\"width:34px;height:34px;border-radius:50%;border:none;background:#3D1F0D;font-size:20px;font-weight:700;cursor:pointer;color:#fff\">+</button>\n              </div>\n              <button data-prov-btn onclick=\"pp2PickerOpen('").concat(item.id, "')\"\n                style=\"flex-shrink:0;padding:5px 10px;border-radius:8px;").concat(provBtnStyle, ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis\">\n                ").concat(prov ? provLabel : '+ Prov.', "\n              </button>\n            </div>");
+      return "<div class=\"pp2-row\" id=\"pp2-row-".concat(item.id, "\" data-id=\"").concat(item.id, "\" data-cat=\"").concat(cat.replace(/"/g, '&quot;'), "\"\n                draggable=\"true\"\n                ondragstart=\"pp2DragStart(event)\"\n                ondragover=\"pp2DragOver(event)\"\n                ondrop=\"pp2Drop(event)\"\n                ondragend=\"pp2DragEnd(event)\"\n                ondragleave=\"this.style.background=''\"\n                style=\"display:flex;align-items:center;background:").concat(bg, ";border:2px solid ").concat(border, ";border-radius:12px;padding:11px 14px;margin-bottom:8px;cursor:default\">\n              ").concat(delCb, "\n              <span style=\"font-size:18px;color:#8A6A4E;cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;touch-action:none\" title=\"Arrastrar\">\u283F</span>\n              <div style=\"flex:1;min-width:0\">\n                <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap\">\n                  <span style=\"font-size:15px;font-weight:600;color:#3D1F0D\">").concat(escapeHtml(item.nombre), "</span>\n                  ").concat(stockBadge, "\n                </div>\n                <div style=\"display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap\">\n                  ").concat(fixedUnit ? "<span style=\"padding:3px 9px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif\">".concat(fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1), "</span>") : "<button data-unit=\"cajas\" onclick=\"pp2SetUnit('".concat(item.id, "','cajas')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'cajas' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'cajas' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'cajas' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F4E6; Cajas\n                      </button>\n                      <button data-unit=\"unidades\" onclick=\"pp2SetUnit('").concat(item.id, "','unidades')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'unidades' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'unidades' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'unidades' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F522; Unidades\n                      </button>"), "\n                </div>\n              </div>\n              <div style=\"display:flex;align-items:center;gap:4px;flex-shrink:0\">\n                <button onclick=\"pp2Qty('").concat(item.id, "',-1)\" style=\"width:34px;height:34px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:20px;font-weight:700;cursor:pointer;color:#3D1F0D\">&#x2212;</button>\n                <span data-qty style=\"font-size:18px;font-weight:900;color:#3D1F0D;min-width:24px;text-align:center\">").concat(qty || '', "</span>\n                <button onclick=\"pp2Qty('").concat(item.id, "',1)\" style=\"width:34px;height:34px;border-radius:50%;border:none;background:#3D1F0D;font-size:20px;font-weight:700;cursor:pointer;color:#fff\">+</button>\n              </div>\n              <button data-prov-btn onclick=\"pp2PickerOpen('").concat(item.id, "')\"\n                style=\"flex-shrink:0;padding:5px 10px;border-radius:8px;").concat(provBtnStyle, ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis\">\n                ").concat(prov ? escapeHtml(provLabel) : '+ Prov.', "\n              </button>\n            </div>");
     }).join('');
-    return "<div style=\"margin-bottom:4px\">\n            <div style=\"font-family:'Anton',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em\">".concat(cat, "</div>\n            ").concat(rows, "\n          </div>");
+    return "<div style=\"margin-bottom:4px\">\n            <div style=\"font-family:'Anton',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em\">".concat(escapeHtml(cat), "</div>\n            ").concat(rows, "\n          </div>");
   }
 
   // Renderizar por chunks usando requestAnimationFrame para no bloquear el hilo principal
@@ -1082,7 +1112,7 @@ function pp2RenderRow(id) {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName2 = nombre2.toLowerCase();
-      if (lineName === itemName2 || itemName2.includes(lineName) || lineName.includes(itemName2)) {
+      if (_stockNombreCoincide(lineName, itemName2)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty2 = m ? parseInt(m[1]) : null;
         const unit2 = m ? m[2] || '' : lineVal;
@@ -1157,17 +1187,17 @@ function pp2RenderRow(id) {
 
 // ── quantity & unit ──────────────────────────────────────
 function pp2Qty(id, delta) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
+  });
   pp2RenderRow(id);
 }
 function pp2SetUnit(id, unit) {
-  const s = pp2LoadState();
-  if (!s[id]) s[id] = {};
-  s[id].unit = unit;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[id]) s[id] = {};
+    s[id].unit = unit;
+  });
   pp2RenderRow(id);
 }
 
@@ -1185,16 +1215,16 @@ function pp2PickerOpen(itemId) {
   btns.innerHTML = pp2AllProvs().map(p => {
     const isSelected = current === p.id;
     const isHab = habitual === p.id && !isSelected;
-    return "<button onclick=\"pp2PickerSelect('".concat(p.id, "')\"\n            style=\"padding:8px 14px;border-radius:10px;border:2px solid ").concat(isSelected ? '#3D1F0D' : isHab ? '#3D1F0D' : '#F5E6C8', ";background:").concat(isSelected ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(isSelected ? '#3D1F0D' : '#2A1506', ";font-size:13px;font-weight:").concat(isSelected ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif;position:relative\">\n            ").concat(p.label).concat(isHab ? ' <span style="font-size:9px;vertical-align:super;color:#3D1F0D">habitual</span>' : '', "\n          </button>");
+    return "<button onclick=\"pp2PickerSelect('".concat(p.id, "')\"\n            style=\"padding:8px 14px;border-radius:10px;border:2px solid ").concat(isSelected ? '#3D1F0D' : isHab ? '#3D1F0D' : '#F5E6C8', ";background:").concat(isSelected ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(isSelected ? '#3D1F0D' : '#2A1506', ";font-size:13px;font-weight:").concat(isSelected ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif;position:relative\">\n            ").concat(escapeHtml(p.label)).concat(isHab ? ' <span style="font-size:9px;vertical-align:super;color:#3D1F0D">habitual</span>' : '', "\n          </button>");
   }).join('') + "<button onclick=\"pp2NuevoProveedorModal()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #27855a;background:#eafaf1;color:#27855a;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x2795; Nuevo proveedor\n        </button>\n        <button onclick=\"pp2EliminarProveedorModal()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #c0392b;background:#fdf0ee;color:#c0392b;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x1F5D1; Eliminar proveedor\n        </button>" + "<button onclick=\"pp2PickerClose()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #ccc;background:#f5f5f5;color:#888;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x2715; Salir\n        </button>";
   const picker = document.getElementById('pp2-picker');
   picker.style.display = 'flex';
 }
 function pp2PickerSelect(provId) {
-  const s = pp2LoadState();
-  if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
-  s[_pp2CurrentItem].prov = provId;
-  pp2SaveState(s);
+  pp2MutateState(function (s) {
+    if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
+    s[_pp2CurrentItem].prov = provId;
+  });
   // Guardar como habitual si se asigna uno (no si se quita)
   if (provId) {
     const hab = pp2LoadProvHab();
@@ -1347,15 +1377,14 @@ function pp2ConfirmDelete() {
 // ── nueva semana ─────────────────────────────────────────
 function pp2NuevaSemana() {
   if (!confirm('¿Nueva semana? Se borran todas las cantidades. Los proveedores habituales se mantienen y se precargarán automáticamente.')) return;
-  const s = pp2LoadState();
-  const hab = pp2LoadProvHab();
   // Limpiar cantidades y proveedores del estado; los habituales se aplican en render
-  Object.keys(s).forEach(id => {
-    s[id].qty = 0;
-    s[id].prov = '';
-    s[id].unit = s[id].unit || 'cajas';
+  pp2MutateState(function (s) {
+    Object.keys(s).forEach(id => {
+      s[id].qty = 0;
+      s[id].prov = '';
+      s[id].unit = s[id].unit || 'cajas';
+    });
   });
-  pp2SaveState(s);
   pp2Render();
   const t = document.getElementById('pp2-toast');
   t.textContent = '🔄 ¡Nueva semana! Proveedores habituales precargados.';
@@ -1366,19 +1395,29 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
-  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  hist.push({
-    fecha,
-    nota
-  }); // más antiguo primero, más reciente al final
-  if (hist.length > 50) hist.shift(); // máximo 50 entradas
-  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
-  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
+  const entrada = { fecha, nota };
+  // Añadir la entrada localmente al instante (UI responde ya)...
+  const histLocal = pp2LoadHistorial();
+  histLocal.push(entrada);
+  if (histLocal.length > 50) histLocal.shift();
+  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(histLocal));
+  // ...y de forma atómica contra Firebase, para no perder el pedido que
+  // otro dispositivo acaba de guardar en el historial casi al mismo tiempo.
+  if (window.fb_transactNative) {
+    window.fb_transactNative('pp2/historial', function (current) {
+      const hist = Array.isArray(current) ? current.slice() : [];
+      hist.push(entrada);
+      if (hist.length > 50) hist.shift();
+      return hist;
+    }).catch(() => {});
+  } else if (window.fb_savePP2) {
+    window.fb_savePP2('historial', histLocal).catch(() => {});
+  }
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();
@@ -1388,7 +1427,7 @@ function pp2VerHistorial() {
     list.innerHTML = '<p style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin historial aún. Los pedidos enviados por WhatsApp se guardan aquí automáticamente.</p>';
   } else {
     // Mostrar de más antiguo (índice 0) a más reciente (último)
-    list.innerHTML = hist.map((h, i) => "\n            <div style=\"border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;margin-bottom:10px;background:#FFFFFF\">\n              <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap\">\n                <span style=\"font-size:17px;font-weight:900;color:#3D1F0D\">\uD83D\uDCE6 ".concat(h.fecha, "</span>\n                <div style=\"display:flex\">\n                  <button onclick=\"pp2HistDescargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 8px;background:#FFFFFF;color:#3D1F0D;border:1.5px solid #F5E6C8;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">\uD83D\uDCBE</button>\n                  <button onclick=\"pp2HistRecargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">Usar de base</button>\n                </div>\n              </div>\n              <pre style=\"font-size:12px;color:#2A1506;white-space:pre-wrap;margin:0;line-height:1.5;font-family:'DM Sans',sans-serif\">").concat(h.nota, "</pre>\n            </div>")).join('');
+    list.innerHTML = hist.map((h, i) => "\n            <div style=\"border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;margin-bottom:10px;background:#FFFFFF\">\n              <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap\">\n                <span style=\"font-size:17px;font-weight:900;color:#3D1F0D\">\uD83D\uDCE6 ".concat(escapeHtml(h.fecha), "</span>\n                <div style=\"display:flex\">\n                  <button onclick=\"pp2HistDescargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 8px;background:#FFFFFF;color:#3D1F0D;border:1.5px solid #F5E6C8;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">\uD83D\uDCBE</button>\n                  <button onclick=\"pp2HistRecargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">Usar de base</button>\n                </div>\n              </div>\n              <pre style=\"font-size:12px;color:#2A1506;white-space:pre-wrap;margin:0;line-height:1.5;font-family:'DM Sans',sans-serif\">").concat(escapeHtml(h.nota), "</pre>\n            </div>")).join('');
   }
   modal.style.display = 'block';
 }
@@ -1443,7 +1482,7 @@ function pp2VerMinimos() {
   const list = document.getElementById('pp2-min-list');
   list.innerHTML = items.map(item => {
     const val = minimos[item.id] !== undefined ? minimos[item.id] : '';
-    return "<div style=\"display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #F5E6C8\">\n            <span style=\"flex:1;font-size:13px;font-weight:600;color:#3D1F0D\">".concat(item.nombre, "</span>\n            <input type=\"number\" min=\"0\" value=\"").concat(val, "\" placeholder=\"\u2014\"\n              onchange=\"pp2SetMinimo('").concat(item.id, "',this.value)\"\n              style=\"width:64px;padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;background:#FFFFFF\">\n          </div>");
+    return "<div style=\"display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #F5E6C8\">\n            <span style=\"flex:1;font-size:13px;font-weight:600;color:#3D1F0D\">".concat(escapeHtml(item.nombre), "</span>\n            <input type=\"number\" min=\"0\" value=\"").concat(val, "\" placeholder=\"\u2014\"\n              onchange=\"pp2SetMinimo('").concat(item.id, "',this.value)\"\n              style=\"width:64px;padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;background:#FFFFFF\">\n          </div>");
   }).join('');
   modal.style.display = 'block';
 }
@@ -1519,12 +1558,19 @@ function pp2BuildNota() {
   const byProv = {};
   items.forEach(item => {
     const s = state[item.id] || {};
-    if (!s.qty || s.qty <= 0 || !s.prov) return;
-    if (!byProv[s.prov]) byProv[s.prov] = [];
-    byProv[s.prov].push(item);
+    if (!s.qty || s.qty <= 0) return;
+    // Antes, si se ponía cantidad pero se olvidaba asignar proveedor, el
+    // ingrediente se omitía en silencio del pedido (aquí y en el enviado
+    // por WhatsApp) sin ningún aviso. Ahora se agrupa bajo "SIN
+    // PROVEEDOR", igual que ya hacía pp2Save() al guardar en el historial.
+    const prov = s.prov || '__sin__';
+    if (!byProv[prov]) byProv[prov] = [];
+    byProv[prov].push(item);
   });
   if (!Object.keys(byProv).length) return null;
   const sortedProvs = Object.keys(byProv).sort((a, b) => {
+    if (a === '__sin__') return 1;
+    if (b === '__sin__') return -1;
     const la = (PP_PROVS.find(p => p.id === a) || {
       label: a
     }).label;
@@ -1536,7 +1582,7 @@ function pp2BuildNota() {
   let txt = '🛒 PEDIDO\n';
   sortedProvs.forEach(provId => {
     const allProvs = pp2AllProvs();
-    const provLabel = (allProvs.find(p => p.id === provId) || {
+    const provLabel = provId === '__sin__' ? 'SIN PROVEEDOR' : (allProvs.find(p => p.id === provId) || {
       label: provId
     }).label.toUpperCase();
     txt += '\n' + provLabel + ':\n';
@@ -1552,7 +1598,7 @@ function pp2BuildNota() {
 function pp2SaveToPad() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   document.getElementById('pp2-pad-text').value = txt;
@@ -1587,7 +1633,7 @@ function pp2PadWA() {
 function pp2ExportWA() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay productos con cantidad puesta');
     return;
   }
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
@@ -2081,9 +2127,13 @@ window._adminLoggedIn = false;
 let _adminLoggedIn = false; // true solo cuando hay sesión de admin activa
 let activeCategory = "Todos";
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
+const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
 function initTabs() {
   const tabsEl = document.getElementById("tabs");
-  tabsEl.innerHTML = categories.map(c => "<button class=\"tab ".concat(c === activeCategory ? 'active' : '', "\" onclick=\"setCategory('").concat(c, "')\">").concat(c, "</button>")).join('');
+  tabsEl.innerHTML = categories.map(c => {
+    const icon = CATEGORY_ICONS[c] || '🍽️';
+    return "<button class=\"tab ".concat(c === activeCategory ? 'active' : '', "\" onclick=\"setCategory('").concat(c, "')\"><span class=\"tab-icon\">").concat(icon, "</span><span>").concat(c, "</span></button>");
+  }).join('');
 }
 function setCategory(cat) {
   activeCategory = cat;
@@ -2107,6 +2157,99 @@ function showClosedToast() {
   t._timer = setTimeout(function () {
     t.style.opacity = "0";
   }, 2800);
+}
+// Toast genérico reutilizable — mismo patrón que showClosedToast(), para
+// confirmar visualmente acciones rápidas (copiar algo al portapapeles, etc.)
+// que antes no daban ningún feedback.
+function showCopyToast(msg) {
+  var t = document.getElementById("copy-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "copy-toast";
+    t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:14px 24px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = msg;
+  clearTimeout(t._timer);
+  t.style.opacity = "1";
+  t._timer = setTimeout(function () {
+    t.style.opacity = "0";
+  }, 1800);
+}
+function copiarTexto(text, mensajeExito) {
+  function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(function () {
+      _copiarConExecCommand(text);
+      onOk();
+    });
+  } else {
+    _copiarConExecCommand(text);
+    onOk();
+  }
+}
+function _copiarConExecCommand(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+// Contador de caracteres restantes para el campo de notas — antes solo se
+// sabía que se había llegado al límite de 300 cuando el textarea dejaba de
+// aceptar más texto, sin ningún aviso previo.
+function _actualizarContadorNotas(textareaId, counterId) {
+  const ta = document.getElementById(textareaId);
+  const counter = document.getElementById(counterId);
+  if (!ta || !counter) return;
+  const max = parseInt(ta.getAttribute('maxlength'), 10) || 300;
+  const restantes = max - ta.value.length;
+  counter.textContent = restantes + ' caracteres restantes';
+  counter.style.color = restantes <= 20 ? '#c0392b' : 'var(--muted, #8A6A4E)';
+}
+// Muestra el aviso de dato que falta/es inválido Y desplaza hasta el campo
+// correspondiente, resaltándolo un instante — antes solo salía la alerta,
+// sin llevar al cliente hasta dónde está el problema (con el formulario
+// largo, tocaba buscarlo a ojo). Detecta si el cliente está en el drawer
+// móvil (donde los campos visibles son drawer-customer-*, no los del
+// formulario de escritorio que solo se sincronizan por debajo) para
+// desplazarse al campo que de verdad se ve en pantalla.
+function _alertaConFoco(msg, fieldIdBase) {
+  showAlert(msg);
+  const drawer = document.getElementById('cart-drawer');
+  const enDrawer = drawer && drawer.classList.contains('open');
+  const fieldId = enDrawer ? ('drawer-' + fieldIdBase) : fieldIdBase;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.add('campo-con-error');
+  setTimeout(() => field.classList.remove('campo-con-error'), 2000);
+  setTimeout(() => { if (typeof field.focus === 'function') field.focus(); }, 350);
+}
+// Un único "ding" suave al confirmar el pedido — mismo patrón (Web Audio,
+// sin archivos externos) que ya usa _sonidoCelebracion() en la ruleta, pero
+// una sola nota discreta en vez del arpegio de premio.
+function _sonidoConfirmacionPedido() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880; // La5
+    const start = ctx.currentTime;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.13, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.55);
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
 }
 function isShopBlocked() {
   var _document$getElementB;
@@ -2160,6 +2303,16 @@ function _animateAddToCart(id) {
       btn.addEventListener('animationend', () => btn.classList.remove('popping'), {
         once: true
       });
+      // Confirmación visual más clara que solo el rebote: el botón muestra
+      // un ✓ un instante y una miniatura "vuela" hasta el carrito/FAB.
+      btn.classList.add('add-check');
+      btn.textContent = '✓';
+      clearTimeout(btn._addCheckTimer);
+      btn._addCheckTimer = setTimeout(() => {
+        btn.classList.remove('add-check');
+        btn.textContent = '+';
+      }, 550);
+      _lanzarFlyGhost(btn);
     }
     card.classList.remove('flashing');
     void card.offsetWidth;
@@ -2187,6 +2340,30 @@ function _animateAddToCart(id) {
     });
   }
 }
+// Crea una miniatura que "vuela" desde el botón pulsado hasta el carrito
+// (el FAB en móvil, o el contador de "Tu pedido" en escritorio, donde no
+// hay FAB) — refuerzo visual de que el producto se ha añadido, más allá
+// del rebote del propio botón.
+function _lanzarFlyGhost(btn) {
+  const fab = document.getElementById('cart-fab');
+  const target = (fab && !fab.classList.contains('hidden')) ? fab : document.getElementById('cart-count');
+  if (!target) return;
+  const btnRect = btn.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  if (!btnRect.width || !targetRect.width) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'fly-ghost';
+  ghost.textContent = '🥔';
+  const size = 26;
+  ghost.style.left = (btnRect.left + btnRect.width / 2 - size / 2) + 'px';
+  ghost.style.top = (btnRect.top + btnRect.height / 2 - size / 2) + 'px';
+  const dx = (targetRect.left + targetRect.width / 2) - (btnRect.left + btnRect.width / 2);
+  const dy = (targetRect.top + targetRect.height / 2) - (btnRect.top + btnRect.height / 2);
+  ghost.style.setProperty('--fly-target', 'translate(' + dx + 'px,' + dy + 'px)');
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => ghost.classList.add('flying'));
+  setTimeout(() => ghost.remove(), 650);
+}
 // ── 🍰 Venta sugerida: dulce de postre ──────────────────────────────────────
 // Siempre sugiere tarta o galleta (nunca bebida). Varía según lo que ya
 // lleve el pedido: cantidad de patatas/boniatos (singular/plural) y, si
@@ -2197,19 +2374,28 @@ const UPSELL_TARTA_IDS = { 34: 'La Viña', 35: 'Tres Chocolates', 36: 'de la Abu
 const UPSELL_GALLETA_IDS = [27, 28, 29, 30, 31, 32, 33]; // Pistacho, Lotus, Oreo, Kit Kat, Nutella, Kinder, Huesitos
 const UPSELL_SABOR_TARTA = { 'lotus': 37, 'pistacho': 38, 'dinosaurio': 39, 'kinder': 40 };
 const UPSELL_PESADAS = ['cheddar-bacon', 'carnívora', '4 quesos'];
+// Solo bebidas individuales sin alcohol para el upsell — nada de cerveza
+// (la web no verifica la edad de quien pide) ni de garrafas de 1,5-2L, que
+// no pegan como "añade algo de beber" de un solo trago.
+const UPSELL_BEBIDA_IDS = [41, 43, 44, 46]; // Refresco lata, Agua pequeña, Refresco 500ml, Monster/Red Bull
 
-function _upsellDismissedThisSession() {
-  try { return sessionStorage.getItem('upsell_dulce_dismissed') === '1'; } catch (e) { return false; }
-}
-function dismissUpsellDulce() {
-  try { sessionStorage.setItem('upsell_dulce_dismissed', '1'); } catch (e) {}
+// "No, gracias" ahora solo vale para ESTE pedido (antes se guardaba en
+// sessionStorage y se recordaba para toda la visita a la web, aunque el
+// cliente hiciera otro pedido justo después) — se guarda por tipo
+// (dulce/bebida) para no descartar los dos a la vez si solo dice que no a
+// uno. Se resetea al confirmar/cancelar el pedido (ver antifraude.js).
+window._upsellDismissed = window._upsellDismissed || { dulce: false, bebida: false };
+function dismissUpsellDulce(tipo) {
+  window._upsellDismissed[tipo || 'dulce'] = true;
   renderCart();
 }
 
-// Devuelve { id, name, price, copy } o null si no toca mostrar sugerencia
-function getUpsellDulce() {
-  if (_upsellDismissedThisSession()) return null;
-
+// Devuelve { tipo, pregunta, opciones: [{id, name, price, emoji}, ...] } o
+// null si no toca mostrar ninguna sugerencia. Primero comprueba el postre;
+// si ya no aplica (porque ya hay uno en el carrito, o el cliente lo
+// descartó), pasa a comprobar la bebida — así solo se ve una tarjeta cada
+// vez, no las dos a la vez.
+function getUpsellCarrito() {
   // Cantidad de patatas/boniatos en el pedido: cart normal + custCart (Al Gusto/Bomba)
   // + extrasCart (patatas con queso/gratinado, como Philadelphia, Carbonara, Carnívora, etc.)
   const papasIdsCart = Object.entries(cart).filter(([id, qty]) => {
@@ -2229,58 +2415,116 @@ function getUpsellDulce() {
 
   const papasQty = papasCartQty + papasCustQty + papasExtrasQty;
 
-  if (papasQty === 0) return null; // sin patatas/boniato, no aplica
+  if (papasQty === 0) return null; // sin patatas/boniato, no aplica ningún upsell
+  const esPlural = papasQty >= 2;
 
-  // Si ya hay tarta o galleta en el carrito, ya está "vendido" → no mostrar
+  // ── 1. ¿Postre? ──
   const yaHayDulce = Object.keys(cart).some(id => {
     const item = MENU.find(m => m.id == id);
     return item && (item.cat === 'Tartas' || item.cat === 'Cookies') && cart[id] > 0;
   });
-  if (yaHayDulce) return null;
+  if (!yaHayDulce && !window._upsellDismissed.dulce) {
+    const pregunta = esPlural ? '¿Le metéis algo dulce de postre?' : '¿Le metes algo dulce de postre?';
 
-  const esPlural = papasQty >= 2;
-  const pregunta = esPlural ? '¿Le metéis algo dulce de postre?' : '¿Le metes algo dulce de postre?';
+    // ¿Algún producto del carrito (cart o extrasCart) tiene sabor con tarta a juego?
+    const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
+    const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
+    const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
+    let tartaSaborId = null;
+    for (const sabor in UPSELL_SABOR_TARTA) {
+      if (nombresEnCarrito.includes(sabor)) {
+        tartaSaborId = UPSELL_SABOR_TARTA[sabor];
+        break;
+      }
+    }
 
-  // ¿Algún producto del carrito (cart o extrasCart) tiene sabor con tarta a juego?
-  const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
-  const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
-  const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
-  let sugerido = null;
-  for (const sabor in UPSELL_SABOR_TARTA) {
-    if (nombresEnCarrito.includes(sabor)) {
-      const tartaId = UPSELL_SABOR_TARTA[sabor];
-      sugerido = MENU.find(m => m.id === tartaId);
-      break;
+    // Se eligen 2-3 opciones (tarta con sabor a juego primero, si aplica) y
+    // se guardan en caché para no volver a sortear otras al repintar el
+    // carrito (p.ej. tras comprobar fidelización mientras el cliente sigue
+    // escribiendo) — eso daba la sensación de que las tarjetas "parpadeaban".
+    // Si cambia de singular a plural (añade una segunda patata) sí se
+    // recalcula, porque el fondo de opciones a elegir es distinto.
+    window._upsellOpcionesElegidas = window._upsellOpcionesElegidas || {};
+    const cacheDulce = window._upsellOpcionesElegidas.dulce;
+    if (!cacheDulce || cacheDulce.esPlural !== esPlural) {
+      const elegidos = [];
+      if (tartaSaborId) elegidos.push(tartaSaborId);
+      const pool = (esPlural ? Object.keys(UPSELL_TARTA_IDS).map(Number) : UPSELL_GALLETA_IDS)
+        .filter(id => !elegidos.includes(id));
+      // Barajar el resto del fondo y completar hasta 3 opciones en total
+      const barajado = pool.slice().sort(() => Math.random() - 0.5);
+      for (const id of barajado) {
+        if (elegidos.length >= 3) break;
+        elegidos.push(id);
+      }
+      window._upsellOpcionesElegidas.dulce = { esPlural, ids: elegidos.slice(0, 3) };
+    }
+
+    const opciones = window._upsellOpcionesElegidas.dulce.ids
+      .map(id => MENU.find(m => m.id === id))
+      .filter(Boolean)
+      .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: it.cat === 'Tartas' ? '🎂' : '🍪' }));
+    if (opciones.length) {
+      // Se usa en submitOrder() para saber si el aviso llegó a mostrarse de
+      // verdad (para las estadísticas de "mostrado vs añadido").
+      window._upsellFueMostrado = true;
+      return { tipo: 'dulce', pregunta, opciones };
     }
   }
 
-  // Sin sabor a juego: galleta si es 1 unidad, tarta clásica si son 2+
-  if (!sugerido) {
-    if (esPlural) {
-      sugerido = MENU.find(m => m.id === 34); // Tarta de Queso La Viña, clásica
-    } else {
-      const galletaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
-      sugerido = MENU.find(m => m.id === galletaId);
+  // ── 2. ¿Bebida? (solo si el postre ya no toca, para no amontonar dos tarjetas a la vez) ──
+  const yaHayBebida = Object.keys(cart).some(id => {
+    const item = MENU.find(m => m.id == id);
+    return item && item.cat === 'Bebidas' && cart[id] > 0;
+  });
+  if (!yaHayBebida && !window._upsellDismissed.bebida) {
+    const pregunta = esPlural ? '¿Le añadís algo de beber?' : '¿Le añades algo de beber?';
+
+    window._upsellOpcionesElegidas = window._upsellOpcionesElegidas || {};
+    if (!window._upsellOpcionesElegidas.bebida) {
+      const barajado = UPSELL_BEBIDA_IDS.slice().sort(() => Math.random() - 0.5);
+      window._upsellOpcionesElegidas.bebida = { ids: barajado.slice(0, 3) };
+    }
+
+    const opciones = window._upsellOpcionesElegidas.bebida.ids
+      .map(id => MENU.find(m => m.id === id))
+      .filter(Boolean)
+      .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: '🥤' }));
+    if (opciones.length) {
+      window._upsellFueMostrado = true;
+      return { tipo: 'bebida', pregunta, opciones };
     }
   }
-  if (!sugerido) return null;
 
-  const esTarta = sugerido.cat === 'Tartas';
-  const emoji = esTarta ? '🎂' : '🍪';
-  return { id: sugerido.id, name: sugerido.name, price: sugerido.price, pregunta, emoji };
+  return null;
 }
 
 function renderUpsellDulce() {
-  const sug = getUpsellDulce();
+  const sug = getUpsellCarrito();
   if (!sug) return '';
-  return '<div class="upsell-dulce">'
-    + '<div class="upsell-dulce-row1">'
-    + '<div class="upsell-dulce-icon">' + sug.emoji + '</div>'
-    + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'
-    + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce()" title="No, gracias">&#10005;</button>'
+  const opcionesHtml = sug.opciones.map(op =>
+    '<div class="upsell-dulce-opcion">'
+    + '<span class="upsell-dulce-opcion-name">' + escapeHtml(op.name) + '</span>'
+    + '<span class="upsell-dulce-opcion-price">' + op.price.toFixed(2).replace('.', ',') + ' €</span>'
+    + '<button class="upsell-dulce-opcion-add" onclick="changeQty(' + op.id + ',1)">+ Añadir</button>'
     + '</div>'
-    + '<div class="upsell-dulce-product">' + escapeHtml(sug.name) + ' · ' + sug.price.toFixed(2).replace('.', ',') + ' €</div>'
-    + '<button class="upsell-dulce-add" onclick="changeQty(' + sug.id + ',1)">+ Añadir</button>'
+  ).join('');
+  // La tarjeta lleva una animación de entrada (CSS), pero el carrito entero
+  // se repinta muchas veces mientras el cliente escribe (teléfono, notas...)
+  // — como renderCart() reconstruye el HTML entero cada vez, sin esto la
+  // tarjeta se recreaba como un elemento nuevo en cada repintado y la
+  // animación volvía a arrancar desde cero, dando la sensación de que
+  // "parpadeaba" sola mientras escribía. Solo se anima la primera vez que
+  // se muestra en este pedido; se resetea al confirmar/cancelar el pedido.
+  const primeraVez = !window._upsellYaAnimado;
+  window._upsellYaAnimado = true;
+  return '<div class="upsell-dulce' + (primeraVez ? '' : ' upsell-dulce-sin-animar') + '">'
+    + '<div class="upsell-dulce-row1">'
+    + '<div class="upsell-dulce-icon">' + sug.opciones[0].emoji + '</div>'
+    + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'
+    + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce(\'' + sug.tipo + '\')" title="No, gracias">&#10005;</button>'
+    + '</div>'
+    + '<div class="upsell-dulce-opciones">' + opcionesHtml + '</div>'
     + '</div>';
 }
 
@@ -2299,9 +2543,10 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div>A\xF1ade productos de la carta</div>";
+    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
+    _updateCartFab(0, 0);
     return;
   }
   let total = 0;
@@ -2327,7 +2572,7 @@ function renderCart() {
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients].join(', ');
+    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
@@ -2341,17 +2586,36 @@ function renderCart() {
     }
     const itemName = _extItem.name;
     const extras = [];
-    if (c.queso) extras.push('+ Queso +1,00€');
+    if (c.queso) extras.push('+ Extra Queso +1,00€');
+    (c.ingredientesExtra || []).forEach(ing => {
+      const _precioIng = (typeof EXTRAS_ING_PRECIO1 !== 'undefined' && EXTRAS_ING_PRECIO1.includes(ing)) ? '1,00' : '0,70';
+      extras.push('+ Extra ' + ing + ' +' + _precioIng + '€');
+    });
+    (c.salsasExtra || []).forEach(salsa => extras.push('+ Extra salsa ' + salsa + ' +0,90€'));
+    // El gratinado siempre va el último de la lista, sea cual sea el
+    // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
 
-  // Mostrar línea de gastos de gestión si está activa
-  const feeEnabled = getFeeEnabled();
-  const feeAmount = getFeeAmount();
+  // Mostrar línea de gastos de gestión si está activa — salvo que el
+  // cliente haya metido el código de "pedido desde el local" (para cuando
+  // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
+  // El código local exime SIEMPRE al gasto fijo que sea "de gestión" —
+  // puede ser el 1º o el 2º según cómo estén configurados ahora mismo, así
+  // que se identifica por su etiqueta, no por su posición. Si ninguno de
+  // los dos menciona "gestión" (p.ej. se renombraron del todo), se exime
+  // el primero por defecto para no perder la exención.
+  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2LabelParaExencion = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(_fee2LabelParaExencion);
+  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
+  const feeAmount = getFeeAmount();
   const feeEl = document.getElementById('cart-fee-row');
   if (feeEl) {
     if (feeEnabled) {
@@ -2362,13 +2626,134 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
-  const grandTotal = feeEnabled ? total + feeAmount : total;
-  document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
+  // El enlace de "código del local" solo tiene sentido si hay algún gasto
+  // de gestión activo que quitar (con el código puesto o sin él) — puede
+  // ser el 1º o el 2º gasto fijo, según cuál esté etiquetado como gestión.
+  const localCodeRowEl = document.getElementById('local-fee-code-row');
+  const _hayGestionQueQuitar = getFeeEnabled() || ((typeof getFee2Enabled === 'function') && getFee2Enabled());
+  if (localCodeRowEl) localCodeRowEl.style.display = (_hayGestionQueQuitar && getLocalFeeCode()) ? 'block' : 'none';
+  // Segundo gasto fijo, independiente del anterior (su propio interruptor) —
+  // también se exime con el código local si es este el que está etiquetado
+  // como "de gestión" (ver arriba).
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee2El = document.getElementById('cart-fee2-row');
+  if (fee2El) {
+    if (fee2Enabled) {
+      fee2El.style.display = 'flex';
+      document.getElementById('cart-fee2-label').textContent = fee2Label;
+      document.getElementById('cart-fee2-amount').textContent = fee2Amount.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fee2El.style.display = 'none';
+    }
+  }
+  // Descuentos que pueden aplicar a la vez: código de descuento (manual o
+  // ganado en la ruleta/rasca) y estudiante/jubilado. A petición expresa,
+  // estos dos NO se combinan entre sí — si ambos aplicarían, se queda solo
+  // el mayor de los dos, nunca la suma. La fidelización (patata gratis) es
+  // aparte y SÍ se sigue sumando siempre, sin entrar en este conflicto.
+  const discountAmtRaw = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
+  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
+  const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
+  const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const studentDiscountAmtRaw = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
 
-  // Sync mobile FAB and drawer
-  _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
+  let discountAmt = discountAmtRaw;
+  let studentDiscountAmt = studentDiscountAmtRaw;
+  let conflictoDescuentosNota = '';
+  if (discountAmtRaw > 0 && studentDiscountAmtRaw > 0) {
+    if (discountAmtRaw >= studentDiscountAmtRaw) {
+      studentDiscountAmt = 0;
+      conflictoDescuentosNota = 'ℹ️ El descuento de estudiante/jubilado no se combina con el código de descuento — se aplica el código "' + discountCode + '" por ser mayor.';
+    } else {
+      discountAmt = 0;
+      conflictoDescuentosNota = 'ℹ️ El código de descuento no se combina con el de estudiante/jubilado — se aplica este último por ser mayor.';
+    }
+  }
+  const conflictoEl = document.getElementById('discount-conflict-notice');
+  if (conflictoEl) {
+    conflictoEl.textContent = conflictoDescuentosNota;
+    conflictoEl.style.display = conflictoDescuentosNota ? 'block' : 'none';
+  }
+
+  // Mostrar línea de descuento si hay un código aplicado (y no ha perdido
+  // el conflicto de arriba) — antes el total mostrado en el carrito nunca
+  // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
+  // que aunque el código sí se aplicaba de verdad, la clienta no veía
+  // ningún cambio en el número y parecía que no había pasado nada.
+  const discountEl = document.getElementById('cart-discount-row');
+  if (discountEl) {
+    if (discountAmt > 0 && discountCode) {
+      discountEl.style.display = 'flex';
+      document.getElementById('cart-discount-label').textContent = 'Descuento (' + discountCode + ')';
+      document.getElementById('cart-discount-amount').textContent = '-' + discountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      discountEl.style.display = 'none';
+    }
+  }
+  // Premio de fidelización (patata gratis) — mismo cálculo que usa
+  // submitOrder() al confirmar (getFidelizacionDescuento en
+  // carrito-checkout.js), para que el total mostrado mientras se compra
+  // ya lo refleje en vez de solo cambiar al confirmar el pedido.
+  const _fidTelInput = document.getElementById('customer-phone');
+  const _fidPhoneClean = _fidTelInput ? _fidTelInput.value.replace(/\D/g, '').slice(0, 9) : '';
+  const fidelizacionAmt = (typeof getFidelizacionDescuento === 'function') ? getFidelizacionDescuento(_fidPhoneClean) : 0;
+  const fidelizacionEl = document.getElementById('cart-fidelizacion-row');
+  if (fidelizacionEl) {
+    if (fidelizacionAmt > 0) {
+      fidelizacionEl.style.display = 'flex';
+      document.getElementById('cart-fidelizacion-amount').textContent = '-' + fidelizacionAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fidelizacionEl.style.display = 'none';
+    }
+  }
+  // Descuento estudiante/jubilado — el cliente lo marca él mismo (se
+  // comprueba el carné al cobrar en caja, ver comentario junto a la
+  // casilla en index.html).
+  const studentDiscountRowEl = document.getElementById('student-discount-row');
+  if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
+  // El aviso de "se comprobará el carné" solo se despliega dentro de la
+  // misma caja al marcar la casilla — compacto (una sola línea) mientras
+  // nadie la usa, en vez de mostrarlo siempre para todo el mundo.
+  const studentDiscountBoxEl = document.getElementById('student-discount-box');
+  const studentDiscountWarnEl = document.getElementById('student-discount-warn');
+  if (studentDiscountBoxEl) studentDiscountBoxEl.style.borderColor = studentDiscountChecked ? 'var(--amber)' : 'var(--warm)';
+  if (studentDiscountWarnEl) studentDiscountWarnEl.style.display = studentDiscountChecked ? 'block' : 'none';
+  const studentDiscountEl = document.getElementById('cart-student-discount-row');
+  if (studentDiscountEl) {
+    if (studentDiscountAmt > 0) {
+      studentDiscountEl.style.display = 'flex';
+      document.getElementById('cart-student-discount-label').textContent = '🪪 Estudiante/jubilado (-' + studentDiscountPctCfg + '%)';
+      document.getElementById('cart-student-discount-amount').textContent = '-' + studentDiscountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      studentDiscountEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt - studentDiscountAmt);
+  document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
+  // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
+  // la línea verde de cada uno ya existía, pero un badge aparte resalta
+  // más el ahorro real que solo ver un número distinto en el total.
+  const totalAhorro = discountAmt + fidelizacionAmt + studentDiscountAmt;
+  const savingsEl = document.getElementById('cart-savings-badge');
+  if (savingsEl) {
+    if (totalAhorro > 0) {
+      savingsEl.style.display = 'block';
+      document.getElementById('cart-savings-amount').textContent = '¡Ahorras ' + totalAhorro.toFixed(2).replace('.', ',') + ' €!';
+    } else {
+      savingsEl.style.display = 'none';
+    }
+  }
+
   // Only show total and form if orders are open
+  // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
+  // porque _syncCartDrawer() (a través de _syncDrawerSlotPicker()) copia el
+  // estado visible de #slot-picker-group al drawer móvil. Si se sincroniza
+  // primero, el drawer copia el estado del render ANTERIOR (desactualizado),
+  // provocando que "Hora de recogida" no aparezca en el drawer justo tras
+  // el primer cambio de carrito (bug intermitente en móvil).
   if (getOrdersOpen()) {
     totalRowEl.style.display = "flex";
     formEl.style.display = "block";
@@ -2377,8 +2762,97 @@ function renderCart() {
     totalRowEl.style.display = "none";
     formEl.style.display = "none";
   }
+
+  // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
+  _updateCartFab(totalItems, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota);
+
+  // Repintar la tarjeta de sellos DESPUÉS de sincronizar el cajón móvil —
+  // _syncCartDrawer() reconstruye todo el HTML del carrito (incluido el
+  // campo de teléfono), lo que borra la tarjeta si se hubiera pintado antes
+  // (se insertó con appendChild, fuera de esa plantilla). Repintarla aquí,
+  // en cada renderCart(), hace que sobreviva a todos los repintados en vez
+  // de desaparecer en el primero que llega después de mostrarse.
+  if (typeof _pintarTarjetaSellos === 'function') {
+    if (window._fidelizacionClienteCache && window._fidelizacionClienteCache.phone === _fidPhoneClean) {
+      _pintarTarjetaSellos(_fidPhoneClean, window._fidelizacionClienteCache.cliente);
+    } else {
+      document.querySelectorAll('.tarjeta-sellos-cliente').forEach(e => e.remove());
+    }
+  }
 }
 
+// ── REPETIR ÚLTIMO PEDIDO ──
+// dpf_ultimo_pedido lo guarda antifraude.js justo después de confirmar un
+// pedido (a diferencia de dpf_active_order, este no caduca) — si existe y
+// el carrito está vacío, se ofrece repetirlo con un toque en vez de
+// obligar a repasar toda la carta otra vez.
+function _bimbaTarjetaRepetirPedido() {
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items) || !data.items.length) return '';
+    const lineas = data.items.map(i => '<b>' + i.qty + '×</b> ' + i.name).join('<br>');
+    return '<div class="repeat-card">' +
+      '<div class="repeat-card__label">🔁 Pediste esto la última vez</div>' +
+      '<div class="repeat-card__items">' + lineas + '</div>' +
+      '<button type="button" class="repeat-card__btn" onclick="repetirUltimoPedido()">Repetir pedido — ' + (data.total || 0).toFixed(2).replace('.', ',') + ' €</button>' +
+      '</div>';
+  } catch (e) { return ''; }
+}
+function repetirUltimoPedido() {
+  if (isShopBlocked()) { showClosedToast(); return; }
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    let algoOmitido = false;
+    const disponible = id => {
+      const item = MENU.find(m => m.id == id);
+      return item && !item.hidden && !item.soldout;
+    };
+    Object.entries(data.cart || {}).forEach(([id, qty]) => {
+      if (!disponible(id)) { algoOmitido = true; return; }
+      cart[id] = (cart[id] || 0) + qty;
+    });
+    Object.entries(data.custCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      custCart[key] = c;
+    });
+    Object.entries(data.extrasCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      extrasCart[key] = c;
+    });
+    renderMenu();
+    renderCart();
+    showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');
+  } catch (e) {}
+}
+
+
+// Orden fijo en el que deben salir las categorías en el ticket impreso —
+// lo que no esté en esta lista (o no se encuentre en MENU) se queda al
+// final, en el orden en que ya estaba.
+const TICKET_CATEGORIA_ORDEN = ['Patatas', 'Boniato', 'Paninis', 'Cookies', 'Tartas', 'Bebidas'];
+function _ticketCategoriaRank(itemName) {
+  const item = MENU.find(m => m.name === itemName);
+  const idx = item ? TICKET_CATEGORIA_ORDEN.indexOf(item.cat) : -1;
+  return idx === -1 ? TICKET_CATEGORIA_ORDEN.length : idx;
+}
+
+// Fetch con límite de tiempo — sin esto, si el servidor va lento o la
+// petición se queda "colgada" (no falla, simplemente nunca responde), el
+// cliente podía quedarse esperando indefinidamente en pantallas como
+// "Enviando pedido…" o "Verificando…" sin ningún mensaje ni forma de saber
+// si va a llegar respuesta alguna vez. Se usa en las peticiones que el
+// cliente ve/espera directamente (guardar pedido, SMS, fidelización).
+function _fetchConTimeout(url, opciones, ms) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms || 12000);
+  return fetch(url, Object.assign({}, opciones, { signal: controller.signal }))
+    .finally(() => clearTimeout(timeoutId));
+}
 
 // ── FAB y DRAWER (solo móvil) ──────────────────────────────────────────────
 function _updateCartFab(count, total) {
@@ -2393,17 +2867,82 @@ function _updateCartFab(count, total) {
     document.getElementById('cart-fab-count').textContent = count;
     document.getElementById('cart-fab-total').textContent = total.toFixed(2).replace('.', ',') + ' €';
   }
+  // Botón "repetir último pedido" (solo móvil): ocupa el mismo hueco que
+  // el FAB del carrito cuando este está vacío — nunca se muestran los dos
+  // a la vez porque uno solo aparece cuando el otro está oculto.
+  const repeatFab = document.getElementById('repeat-order-fab');
+  if (repeatFab) {
+    let hayUltimoPedido = false;
+    try { hayUltimoPedido = !!localStorage.getItem('dpf_ultimo_pedido'); } catch (e) {}
+    repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
+  }
 }
-function _syncCartDrawer(cartHtml, total) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
-  const feeEnabled = getFeeEnabled();
-  const feeAmount = getFeeAmount();
+  // Fuente de verdad de la casilla estudiante/jubilado: la del formulario
+  // de escritorio, igual que el código local — así el drawer siempre
+  // refleja el valor real aunque se marcara desde el otro formulario.
+  const _estudianteCheckedDrawer = !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  // El código local exime al gasto fijo etiquetado como "de gestión", sea
+  // el 1º o el 2º — ver el comentario largo en carta.js/renderCart() para
+  // el porqué (identificarlo por posición se rompía si se configuraban al
+  // revés de lo esperado).
+  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
+  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
+  const feeAmount = getFeeAmount();
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  discountAmt = discountAmt || 0;
+  fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
   if (feeEnabled) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (fee2Enabled) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
+  // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
+  if (getFeeEnabled() && (typeof getLocalFeeCode === 'function') && getLocalFeeCode()) {
+    // Se lee del campo de escritorio (fuente de verdad para _modoLocalActivo,
+    // incluso cuando el código llega por la URL del QR, no solo al escribirlo
+    // aquí en el drawer) para que el móvil siempre refleje el valor real.
+    const _codigoLocalActual = (document.getElementById('local-fee-code-input') || {}).value || '';
+    const _cajaAbierta = !!_codigoLocalActual || (document.getElementById('drawer-local-fee-code-box') && document.getElementById('drawer-local-fee-code-box').style.display !== 'none');
+    html += "<div style=\"padding:4px 0 8px\">"
+      + "<a href=\"#\" onclick=\"event.preventDefault();var b=document.getElementById('drawer-local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';\" style=\"font-size:11.5px;color:#8A6A4E;text-decoration:underline\">\u00BFEst\u00E1s pidiendo desde el local?</a>"
+      + "<div id=\"drawer-local-fee-code-box\" style=\"display:".concat(_cajaAbierta ? 'flex' : 'none', ";gap:6px;margin-top:6px;align-items:center\">")
+      + "<input id=\"drawer-local-fee-code-input\" type=\"text\" maxlength=\"8\" placeholder=\"C\u00F3digo\" value=\"".concat(escapeHtml(_codigoLocalActual), "\" oninput=\"this.value=this.value.toUpperCase();document.getElementById('local-fee-code-input').value=this.value;comprobarCodigoLocal()\" style=\"flex:1;padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none\">")
+      + "</div><div id=\"drawer-local-fee-code-feedback\" style=\"font-size:11.5px;margin-top:4px\"></div>"
+      + "</div>";
+  }
+  // L\u00EDnea de descuento \u2014 mismo dato que ya calcul\u00F3 renderCart() para el
+  // panel de escritorio (#cart-discount-row), para que el drawer m\u00F3vil
+  // tambi\u00E9n deje claro por qu\u00E9 el total baj\u00F3 (c\u00F3digo manual o premio
+  // ganado en la ruleta/rasca).
+  if (discountAmt > 0 && discountCode) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>".concat('Descuento (' + discountCode + ')', "</span><span>-").concat(discountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  if (conflictoDescuentosNota) {
+    html += "<div style=\"font-size:11px;color:#8A6A4E;font-style:italic;padding:2px 0 4px\">".concat(escapeHtml(conflictoDescuentosNota), "</div>");
+  }
+  if (fidelizacionAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83C\uDF81 Patata gratis (fidelizaci\u00F3n)</span><span>-".concat(fidelizacionAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  studentDiscountAmt = studentDiscountAmt || 0;
+  if (studentDiscountAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83E\uDEAA Estudiante/jubilado (-".concat(studentDiscountPctCfg, "%)</span><span>-").concat(studentDiscountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt + studentDiscountAmt;
+  if (_ahorroDrawer > 0) {
+    html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
   html += "<div class=\"cart-total\" style=\"display:flex;margin-top:12px\"><span>Total</span><span>".concat(total.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   if (ordersOpen) {
@@ -2411,22 +2950,58 @@ function _syncCartDrawer(cartHtml, total) {
     // lo incluimos directamente en el HTML generado para que sobreviva a
     // cualquier repintado del drawer (renderCart se llama muy a menudo: cada
     // minuto, al volver de segundo plano, al cambiar el carrito, etc.)
-    const _telActualDrawer = (document.getElementById('drawer-customer-phone') || {}).value || '';
+    // Igual que ya se hacía con el teléfono: leer el valor actual del campo
+    // del nombre ANTES de reconstruir el drawer, para que sobreviva al
+    // repintado (si no, cualquier actualización de fondo mientras el
+    // cliente estaba escribiendo su nombre lo dejaba vacío sin que se
+    // notara, y al confirmar el pedido se borraba y saltaba "escribe tu
+    // nombre" aunque ya lo hubiera escrito).
+    // Si el campo del cajón todavía no existe/está vacío (primer pintado),
+    // se cae al valor del formulario de escritorio — así, si se rellenó
+    // solo con el nombre/teléfono guardados de una visita anterior (ver
+    // init.js), el cajón móvil también sale ya relleno en vez de vacío.
+    const _nombreActualDrawer = (document.getElementById('drawer-customer-name') || {}).value || (document.getElementById('customer-name') || {}).value || '';
+    const _telActualDrawer = (document.getElementById('drawer-customer-phone') || {}).value || (document.getElementById('customer-phone') || {}).value || '';
     const _digitsActualDrawer = _telActualDrawer.replace(/\D/g, '').slice(0, 9);
     const _premioHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div id=\"fidelizacion-premio-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF81 \xA1Tienes una patata gratis disponible! A\xF1ade cualquier patata del men\xFA y se aplicar\xE1 el descuento autom\xE1ticamente al confirmar.</div>"
       : (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === _digitsActualDrawer
         ? "<div id=\"fidelizacion-proximo-sello-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF89 \xA1Este es tu pedido n\xFAmero 10! Al confirmarlo, tu patata gratis estar\xE1 disponible en tu pr\xF3ximo pedido.</div>"
         : '');
+    const _studentDiscountHtmlDrawer = studentDiscountEnabledCfg
+      ? "<div style=\"margin-top:14px\"><div id=\"drawer-student-discount-box\" style=\"background:#fff;border:1.5px solid ".concat(_estudianteCheckedDrawer ? '#E8943A' : '#F5E6C8', ";border-radius:12px;padding:11px 14px\"><label style=\"display:flex;align-items:center;gap:10px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ").concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado</span></label><div style=\"display:").concat(_estudianteCheckedDrawer ? 'block' : 'none', ";font-size:12px;color:#8A6A4E;line-height:1.45;margin-top:8px;padding-left:28px\">\u26A0\uFE0F Se pedir\xE1 el carn\xE9 en el mostrador.<br><b style=\"color:#C2711A\">Si no se presenta, el descuento no se aplicar\xE1</b> y se cobrar\xE1 el precio normal.</div></div></div>")
+      : '';
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"".concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"border:1.5px solid #F5E6C8;background:#FFF8EE;border-radius:10px;padding:10px 12px;margin-top:8px\">\n          <div style=\"display:flex;align-items:center;gap:8px;margin-bottom:4px\">\n            <span>\uD83D\uDCF1</span>\n            <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          </div>\n          <p style=\"font-size:12px;color:#8A6A4E;margin:0 0 4px 4px\">Solo para confirmar el pedido</p>\n          <div style=\"display:flex;align-items:center;gap:6px\">\n            <span>\uD83D\uDD12</span>\n            <p style=\"font-size:12px;color:#8A6A4E;margin:0\">No lo compartimos con nadie</p>\n          </div>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value\"></textarea>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        ").concat(_premioHtml, "\n        <div style=\"background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px\">\n          <div style=\"position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8\">\uD83D\uDCF1</div>\n          <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          <p style=\"font-size:11.5px;color:#8A6A4E;margin:2px 0 0\">Solo para confirmar el pedido</p>\n          <p style=\"font-size:11.5px;color:#8A6A4E;margin:1px 0 0\">\uD83D\uDD12 No lo compartimos con nadie</p>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\"></textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_studentDiscountHtmlDrawer, "\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
   }
+  // El campo de código local (drawer-local-fee-code-input) llama a
+  // comprobarCodigoLocal() en cada tecla para actualizar el desglose de
+  // gastos al momento — pero como innerHTML sustituye TODO el cuerpo del
+  // drawer de golpe, el input con el foco se destruye y se crea uno nuevo
+  // en su lugar, así que el teclado del móvil se cerraba a cada dígito.
+  // Se guarda qué campo tenía el foco (y la posición del cursor) para
+  // devolvérselo al nuevo input justo después de repintar.
+  const _focoPrevioEl = document.activeElement;
+  const _focoPrevioId = (_focoPrevioEl && drawerBody.contains(_focoPrevioEl)) ? _focoPrevioEl.id : null;
+  const _focoPrevioSelStart = (_focoPrevioId && typeof _focoPrevioEl.selectionStart === 'number') ? _focoPrevioEl.selectionStart : null;
+  const _focoPrevioSelEnd = (_focoPrevioId && typeof _focoPrevioEl.selectionEnd === 'number') ? _focoPrevioEl.selectionEnd : null;
+
   drawerBody.innerHTML = html;
+
+  if (_focoPrevioId) {
+    const _nuevoFoco = document.getElementById(_focoPrevioId);
+    if (_nuevoFoco) {
+      _nuevoFoco.focus();
+      if (_focoPrevioSelStart !== null && typeof _nuevoFoco.setSelectionRange === 'function') {
+        try { _nuevoFoco.setSelectionRange(_focoPrevioSelStart, _focoPrevioSelEnd); } catch (e) {}
+      }
+    }
+  }
 
   // Sincronizar slot picker en el drawer
   if (ordersOpen) _syncDrawerSlotPicker();
@@ -2564,11 +3139,9 @@ function submitOrderFromDrawer() {
   if (n) document.getElementById('customer-name').value = n.value;
   if (p) document.getElementById('customer-phone').value = p.value;
   if (t) document.getElementById('customer-notes').value = t.value;
-  // Guardar slot antes de cerrar
-  var slotActual = selectedSlot;
-  closeCartDrawer();
-  // Restaurar slot por si closeCartDrawer lo resetea
-  if (slotActual) selectedSlot = slotActual;
+  // No cerramos el drawer aquí: si falta un dato, _alertaConFoco necesita
+  // que siga abierto para resaltar el campo correcto (drawer-customer-*).
+  // Se cierra solo al confirmar con éxito, desde showSuccess().
   submitOrder();
 }
 function removeItem(id) {
@@ -2576,6 +3149,93 @@ function removeItem(id) {
   renderMenu();
   renderCart();
 }
+
+// Quita del carrito cualquier producto que ya no exista en MENU (borrado o
+// con el id cambiado desde el panel de admin mientras el cliente lo tenía
+// añadido) — devuelve cuántos se han quitado, para que submitOrder() pueda
+// avisar en vez de enviarlos igualmente.
+function _limpiarItemsCarritoInvalidos() {
+  let quitados = 0;
+  Object.keys(cart).forEach(id => {
+    if (!MENU.find(m => m.id == id)) { delete cart[id]; quitados++; }
+  });
+  Object.keys(custCart).forEach(key => {
+    const c = custCart[key];
+    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete custCart[key]; quitados++; }
+  });
+  Object.keys(extrasCart).forEach(key => {
+    const c = extrasCart[key];
+    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete extrasCart[key]; quitados++; }
+  });
+  return quitados;
+}
+
+// ── Recuperar un pedido que se quedó a medio enviar ──────────────────────
+// Si el cliente cierra la pestaña, pierde la conexión o el navegador se
+// bloquea justo después de confirmar (antes de que llegara la respuesta de
+// guardar-pedido.php), el pedido podía perderse sin más rastro que un
+// aviso interno. Ahora, al volver a abrir la web, se comprueba si quedó
+// un pedido a medias y se reenvía solo — es seguro reenviarlo aunque el
+// primer intento sí hubiera llegado a guardarse, porque el servidor
+// responde éxito (no error) si el ticket ya existe con el mismo teléfono.
+async function _recuperarPedidoEnCurso() {
+  let raw;
+  try { raw = localStorage.getItem('dpf_pedido_en_curso'); } catch (e) { return; }
+  if (!raw) return;
+  let marcador;
+  try { marcador = JSON.parse(raw); } catch (e) { try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e2) {} return; }
+  // Margen de seguridad: pasadas 2 horas ya no tiene sentido reintentar
+  // (el cliente hace tiempo que se fue) — se descarta para no reenviar
+  // pedidos viejísimos que ya nadie espera.
+  if (!marcador || !marcador.payload || !marcador.ts || (Date.now() - marcador.ts) > 2 * 60 * 60 * 1000) {
+    try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
+    return;
+  }
+  try {
+    const res = await _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(marcador.payload)
+    }, 10000);
+    const data = await res.json();
+    try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
+    if (data.success) {
+      console.log('[recuperación] Pedido ' + marcador.orderNum + ' recuperado tras un cierre inesperado');
+      _ocultarAvisoFalloGuardado(marcador.orderNum);
+    } else {
+      console.warn('[recuperación] Pedido ' + marcador.orderNum + ' rechazado al reintentar:', data.error);
+    }
+  } catch (e) {
+    // Sigue sin red — se deja el marcador para reintentar la próxima vez
+    // que se abra la web (o en cuanto vuelva la conexión, ver más abajo).
+    console.warn('[recuperación] sin conexión, se reintentará más tarde', e);
+  }
+}
+// Si el pedido no se pudo guardar por falta de conexión (no porque se
+// cerrara la pestaña) y el cliente se queda esperando en la misma pantalla
+// de éxito, antes había que recargar la página para que se reintentara
+// solo. Ahora se reintenta en cuanto el navegador detecta que ha vuelto la
+// conexión — y también cada 20s por si acaso, porque en redes con
+// cobertura intermitente a veces no llega a dispararse el evento 'online'
+// (el navegador nunca se considera del todo "offline", solo dan timeout
+// las peticiones una a una).
+window.addEventListener('online', () => { _recuperarPedidoEnCurso(); });
+setInterval(() => {
+  let hayPendiente;
+  try { hayPendiente = !!localStorage.getItem('dpf_pedido_en_curso'); } catch (e) { return; }
+  if (hayPendiente) _recuperarPedidoEnCurso();
+}, 20000);
+// Complementa a _avisarClienteFalloGuardado (que muestra el aviso) — al
+// recuperarse solo el pedido, si el cliente sigue viendo la pantalla de
+// éxito de ESE mismo pedido, se le quita el aviso de que algo falló.
+function _ocultarAvisoFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'none';
+}
+document.addEventListener('DOMContentLoaded', () => { setTimeout(_recuperarPedidoEnCurso, 1500); });
 
 
 // ── Seguridad: escapar datos de usuario antes de insertar en innerHTML ──
@@ -2602,32 +3262,29 @@ function formatNombreConBadgeNuevo(nombre) {
   return escapeHtml(limpio) + ' <span style="display:inline-block;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:9px;color:#fff;background:#C0392B;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:0.5px;vertical-align:middle">Nuevo</span>';
 }
 
-// Genera número de pedido usando contador atómico en Firebase.
-// El contador se resetea cada día (clave = fecha de hoy).
-// Fallback a aleatorio solo si Firebase no está disponible.
+// Genera número de pedido reservándolo en el servidor (guardar-pedido.php,
+// cuenta de servicio) para evitar colisiones entre pedidos simultáneos.
+// Antes el propio navegador escribía directo en usedOrderNums/ vía la SDK
+// de Firebase, lo que exigía dejar esa escritura abierta a cualquier
+// visitante anónimo en las reglas — cualquiera podía rellenar
+// usedOrderNums/<fecha>/ sin llegar a pedir nada.
+// Fallback a aleatorio solo si el servidor no responde.
 async function generateOrderNumber() {
-  // Transacción atómica: reserva el número en Firebase antes de devolverlo.
-  // Si dos pedidos llegan a la vez, Firebase garantiza que obtienen números distintos.
-  const todayKey = new Date().toISOString().slice(0, 10);
-  if (typeof firebase !== 'undefined' && firebase.database) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const rnd = Math.floor(Math.random() * 9000) + 1000;
-      const ref = firebase.database().ref('usedOrderNums/' + todayKey + '/' + rnd);
-      let reserved = false;
-      try {
-        await ref.transaction(function(current) {
-          if (current === null) { reserved = true; return true; }
-          return undefined; // ya existe, abortar
-        });
-        if (reserved) return 'T' + rnd;
-      } catch (e) {
-        console.warn('[orderNum] transaction error:', e);
-      }
-    }
+  try {
+    const res = await _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarNumeroPedido' })
+    }, 8000);
+    const data = await res.json();
+    if (data.success && data.orderNum) return data.orderNum;
+    console.warn('[orderNum] reserva en servidor falló:', data.error);
+  } catch (e) {
+    console.warn('[orderNum] fetch error:', e);
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime) {
+function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento) {
   const tc = getTicketConfig();
   const lines = Object.entries(cart).map(_ref5 => {
     let _ref6 = _slicedToArray(_ref5, 2),
@@ -2647,15 +3304,20 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
       return '';
     }
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    const details = [...c.sauces, ...c.ingredients].join(', ');
-    const extrasStr = [c.extraQueso ? 'Queso' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(' + ');
+    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
+    const extrasStr = [c.extraQueso ? 'Extra Queso' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(' + ');
     return c.qty + 'x ' + item.name + ' [' + details + (extrasStr ? ' + ' + extrasStr : '') + '] — ' + (unitPrice * c.qty).toFixed(2) + ' €';
   });
   const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
   const allLines = [...lines, ...custLines, ...extLines2];
-  const total = Object.entries(cart).reduce((s, _ref7) => {
+  // El total final se recibe ya calculado desde submitOrder() (orderTotal)
+  // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
+  // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
+  // premio de fidelizaci\u00F3n, as\u00ED que el "TOTAL:" del ticket enviado por
+  // email pod\u00EDa no coincidir con lo que de verdad se cobra.
+  const itemsSubtotal = Object.entries(cart).reduce((s, _ref7) => {
     let _ref8 = _slicedToArray(_ref7, 2),
       id = _ref8[0],
       q = _ref8[1];
@@ -2667,12 +3329,18 @@ function buildTicketText(orderNum, name, phone, notes, slotTime) {
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
   }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
+  const extraLineas = [];
+  if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
+  if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
+  if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
+  const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
   const now = new Date().toLocaleString('es-ES');
   const phoneCleanTxt = (phone || '').replace(/\D/g, '');
   const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
     ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
     : "";
-  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\nTOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
+  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
 }
 
 // ══════════════════════════════════════════
@@ -2791,14 +3459,17 @@ function getSlotCount(slotTime) {
 async function incrementSlot(slotTime) {
   // Update local cache immediately for UI responsiveness
   _slotsCache[slotTime] = (_slotsCache[slotTime] || 0) + 1;
-  // Persist to Firebase (atomic increment)
-  if (window.fb_incrementSlot) {
-    try {
-      await window.fb_incrementSlot(slotTime);
-    } catch (e) {
-      console.warn('Firebase slot error', e);
-    }
-  } else {
+  // Reservar en el servidor (guardar-pedido.php, cuenta de servicio) — antes
+  // se escribía directo en Firebase (fb_incrementSlot), lo que exigía dejar
+  // slots/ abierto a escritura anónima en las reglas.
+  try {
+    await _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reservarSlot', slotTime })
+    }, 8000);
+  } catch (e) {
+    console.warn('Slot reserve error', e);
     saveSlotsData(getSlotsData());
   }
 }
@@ -2869,7 +3540,11 @@ function slotIsPast(slotTime) {
 function renderSlotPicker() {
   const group = document.getElementById('slot-picker-group');
   if (!group) return;
-  const needsSlot = cartHasAnyItem() && isSlotHour();
+  // Con el código local activo (cliente en tienda, llegó por el QR del
+  // mostrador) el pedido se prepara para ahora mismo — no tiene sentido
+  // hacerle elegir un turno futuro, así que se salta el selector entero.
+  const enTienda = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const needsSlot = cartHasAnyItem() && isSlotHour() && !enTienda;
   group.style.display = needsSlot ? 'block' : 'none';
   if (!needsSlot) {
     return;
@@ -2892,6 +3567,23 @@ function renderSlotPicker() {
       if (sobrantes > 0) extraPlazas[slot] = sobrantes;
     }
   });
+  // Aviso de saturación moderada activo: empuja la selección hacia turnos
+  // más tarde (en vez de amontonar todo en el más próximo) tratando como
+  // "saturados" los que caen dentro de los próximos X minutos — pero solo
+  // si queda al menos un turno libre más allá de ese margen, para no dejar
+  // a nadie sin ningún turno donde poder elegir.
+  const _nowMinsGlobal = (() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); })();
+  const _avisoCfg = (typeof getAvisoSaturacionConfig === 'function') ? getAvisoSaturacionConfig() : null;
+  let _saturacionSlotsActiva = !!(window._saturacionAvisoActiva && _avisoCfg && _avisoCfg.minutosSalto > 0);
+  if (_saturacionSlotsActiva) {
+    const hayTurnoLibreTrasSalto = slots.some(slot => {
+      const m = slot.split(':').map(Number);
+      const slotMins = m[0] * 60 + m[1];
+      if (slotMins - _nowMinsGlobal < _avisoCfg.minutosSalto) return false;
+      return !slotIsPast(slot) && (slotsData.slots[slot] || 0) < slotMax;
+    });
+    if (!hayTurnoLibreTrasSalto) _saturacionSlotsActiva = false;
+  }
   slots.forEach(slot => {
     const count = slotsData.slots[slot] || 0;
     const extra = extraPlazas[slot] || 0;
@@ -2899,11 +3591,6 @@ function renderSlotPicker() {
     const full = count >= effectiveMax;
     const almostFull = !full && count === effectiveMax - 1;
     const past = slotIsPast(slot);
-    const disabled = full || past;
-    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
-    const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
-    const libres = effectiveMax - count;
-    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
     const nowMs = new Date();
     const nowMinsSlot = nowMs.getHours() * 60 + nowMs.getMinutes();
     const _slot$split$map = slot.split(':').map(Number),
@@ -2911,9 +3598,15 @@ function renderSlotPicker() {
       slotH = _slot$split$map2[0],
       slotM = _slot$split$map2[1];
     const slotTotalMins = slotH * 60 + slotM;
+    const saturado = !full && !past && _saturacionSlotsActiva && (slotTotalMins - nowMinsSlot) < _avisoCfg.minutosSalto;
+    const disabled = full || past || saturado;
+    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
+    const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
+    const libres = effectiveMax - count;
+    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
     const isLateSlot = !disabled && slotTotalMins - nowMinsSlot <= 5;
     const btnBg = disabled ? 'background:#f5f5f5;border-color:#ccc;' : isLateSlot ? 'background:#fffbe6;border-color:#f0c040;' : full ? 'background:#fff0f0;border-color:#e74c3c;' : pct >= 75 ? 'background:rgba(244,196,48,0.08);border-color:#3D1F0D;' : 'background:#FFF8EE;border-color:#E8D5B0;';
-    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
+    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : saturado ? 'Hay bastante ambiente ahora mismo, elige un turno más tarde' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
   });
   document.getElementById('slot-grid').innerHTML = html;
 }
@@ -2937,14 +3630,96 @@ function selectSlot(slot) {
 
   // Aviso franja poco margen ahora es inline en el botón
 }
+
+// Precio a descontar por el premio de fidelización activo (patata gratis) —
+// la patata más cara del carrito, en beneficio del cliente. Compartida entre
+// el total mostrado mientras se compra (renderCart(), en carta.js) y el del
+// pedido final (submitOrder(), aquí abajo) para que nunca puedan mostrar
+// cifras distintas — antes solo se calculaba aquí, así que el total del
+// carrito no bajaba hasta confirmar el pedido, igual que pasaba con los
+// códigos de descuento manuales antes de arreglarlo.
+function getFidelizacionDescuento(phoneClean) {
+  if (!window._fidelizacionPremioActivo || window._fidelizacionPremioActivo !== phoneClean) return 0;
+  const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
+    const it = MENU.find(m => m.id == id);
+    return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
+  });
+  const preciosPatatasCustom = Object.values(custCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+  });
+  const preciosPatatasExtras = Object.values(extrasCart).map(c => {
+    const it = MENU.find(m => m.id == c.menuId);
+    if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
+    return getExtrasItemPrice(c);
+  });
+  const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
+  return todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
+}
+// Guarda contra doble envío — antes el botón "Confirmar pedido" no se
+// deshabilitaba hasta después de varias llamadas de red seguidas (lista
+// negra, cooldown, turnos, número de pedido), así que un doble-toque en
+// una conexión lenta podía lanzar dos submitOrder() a la vez: dos números
+// de pedido reservados, dos emails de confirmación, y _pendingOrderData/
+// _pendingTicketData del segundo pisando los del primero en mitad del
+// proceso, todo para lo que el cliente vivió como un único clic.
+let _submitOrderEnCurso = false;
 async function submitOrder() {
+  if (_submitOrderEnCurso) return;
+  _submitOrderEnCurso = true;
+  try {
+    await _submitOrderInner();
+  } finally {
+    _submitOrderEnCurso = false;
+  }
+}
+async function _submitOrderInner() {
+  // Gate de config crítica (gastos de gestión, bolsa, código local) — ver
+  // comentario junto a esperarConfigCriticaLista() en admin-config.js. En
+  // el caso normal esta espera ya está resuelta y esto no tarda nada; solo
+  // se nota (y se avisa en el botón) en una visita nueva/muy rápida.
+  if (typeof esperarConfigCriticaLista === 'function' && !(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo)) {
+    const btnGate = document.getElementById('submit-btn');
+    const prevGateText = btnGate ? btnGate.textContent : null;
+    const prevGateDisabled = btnGate ? btnGate.disabled : false;
+    if (btnGate) { btnGate.disabled = true; btnGate.textContent = 'Comprobando datos…'; }
+    await esperarConfigCriticaLista(4000);
+    if (btnGate && prevGateText !== null) { btnGate.disabled = prevGateDisabled; btnGate.textContent = prevGateText; }
+  }
+  // Si el admin borra o renombra un producto justo mientras un cliente lo
+  // tiene en el carrito, antes se descartaba en silencio al enviar el
+  // pedido (solo quedaba un console.error) — el cliente no se enteraba de
+  // que su pedido había cambiado hasta recogerlo. Ahora se detecta antes
+  // de seguir, se quita del carrito y se avisa claramente, dejando el
+  // carrito abierto para que pueda revisar/completar el pedido en vez de
+  // confirmarlo tal cual con algo menos sin saberlo.
+  if (typeof _limpiarItemsCarritoInvalidos === 'function') {
+    const _quitados = _limpiarItemsCarritoInvalidos();
+    if (_quitados > 0) {
+      renderMenu();
+      renderCart();
+      showAlert('Uno de los productos de tu pedido ya no está disponible y se ha quitado del carrito. Revisa tu pedido antes de confirmar.');
+      if (typeof openCartDrawer === 'function') openCartDrawer();
+      return;
+    }
+  }
+  // Igual que ya hace changeQty() al añadir al carrito — antes esta función
+  // nunca comprobaba el horario/vacaciones/pausa al confirmar, así que si
+  // el formulario ya estaba abierto cuando la tienda cerraba, el pedido se
+  // enviaba igual (el servidor ahora también lo rechaza, esto es solo para
+  // avisar al momento sin esperar la respuesta).
+  if (isShopBlocked()) {
+    showClosedToast();
+    return;
+  }
   const name = document.getElementById("customer-name").value.trim();
   if (!name) {
-    showAlert("Por favor escribe tu nombre");
+    _alertaConFoco("Por favor escribe tu nombre", "customer-name");
     return;
   }
   if (name.length > 60) {
-    showAlert("El nombre es demasiado largo (máximo 60 caracteres)");
+    _alertaConFoco("El nombre es demasiado largo (máximo 60 caracteres)", "customer-name");
     return;
   }
   if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0) {
@@ -2956,44 +3731,52 @@ async function submitOrder() {
   const phone = document.getElementById("customer-phone").value.trim();
   const phoneClean = phone.replace(/[\s\-().+]/g, '');
   if (!phone) {
-    showAlert("Por favor escribe tu teléfono");
+    _alertaConFoco("Por favor escribe tu teléfono", "customer-phone");
     return;
   }
   if (!/^\d{9}$/.test(phoneClean)) {
-    showAlert("El teléfono debe tener exactamente 9 dígitos");
+    _alertaConFoco("El teléfono debe tener exactamente 9 dígitos", "customer-phone");
     return;
   }
   // Prefijo válido español: móviles 6/7, fijos 8/9 — excluye 800/900/901/902 y similares
   if (!/^[6789]/.test(phoneClean)) {
-    showAlert("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9");
+    _alertaConFoco("El teléfono no parece válido. Debe empezar por 6, 7, 8 o 9", "customer-phone");
     return;
   }
   // Excluir numeración especial: 800, 900, 901, 902, 803, 806, 807
   if (/^(800|900|901|902|803|806|807)/.test(phoneClean)) {
-    showAlert("No se admiten números de tarificación especial");
+    _alertaConFoco("No se admiten números de tarificación especial", "customer-phone");
     return;
   }
   // Detectar números absurdos: todos iguales, secuencias obvias
   const _absurdos = ['000000000', '111111111', '222222222', '333333333', '444444444', '555555555', '666666666', '777777777', '888888888', '999999999', '123456789', '987654321', '600000000', '700000000', '612345678'];
   if (_absurdos.includes(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
   // Detectar repetición: 7+ dígitos iguales consecutivos (ej. 611111111, 699999999)
   if (/(\d)\1{6,}/.test(phoneClean)) {
-    showAlert("El teléfono introducido no parece real. Por favor usa tu número real");
+    _alertaConFoco("El teléfono introducido no parece real. Por favor usa tu número real", "customer-phone");
     return;
   }
 
   // ── Honeypot anti-bots: si el campo oculto está relleno, es un bot
   const hp = document.getElementById('hp-website');
   if (hp && hp.value.trim()) {
-    btn.disabled = true;
-    btn.textContent = 'Enviando pedido…';
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = 'Confirmar pedido';
-    }, 2000);
+    // `btn` (más abajo, para el resto de la función) todavía no existe en
+    // este punto — usarlo aquí lanzaba un ReferenceError ("Cannot access
+    // 'btn' before initialization") por ser un `const` del mismo scope
+    // referenciado antes de su declaración, así que se busca el elemento
+    // aparte en vez de depender de esa variable.
+    const hpBtn = document.getElementById('submit-btn');
+    if (hpBtn) {
+      hpBtn.disabled = true;
+      hpBtn.textContent = 'Enviando pedido…';
+      setTimeout(() => {
+        hpBtn.disabled = false;
+        hpBtn.textContent = 'Confirmar pedido';
+      }, 2000);
+    }
     return;
   }
 
@@ -3047,8 +3830,10 @@ async function submitOrder() {
     }
   }
 
-  // Validar slot si aplica
-  const needsSlot = cartHasAnyItem() && isSlotHour();
+  // Validar slot si aplica — igual que en renderSlotPicker(), un pedido con
+  // el código local activo (cliente en tienda) no necesita turno.
+  const _enTiendaSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  const needsSlot = cartHasAnyItem() && isSlotHour() && !_enTiendaSubmit;
   if (needsSlot && !selectedSlot) {
     document.getElementById('slot-error').style.display = 'block';
     document.getElementById('slot-picker-group').scrollIntoView({
@@ -3076,10 +3861,19 @@ async function submitOrder() {
   }
   const notes = document.getElementById("customer-notes").value.trim();
   if (notes.length > 300) {
-    showAlert("La nota del pedido es demasiado larga (máximo 300 caracteres)");
+    _alertaConFoco("La nota del pedido es demasiado larga (máximo 300 caracteres)", "customer-notes");
     return;
   }
   const orderNum = await generateOrderNumber();
+  // Si hay un tiempo de espera configurado para los pedidos "desde el
+  // local" (panel > Configuración impresora), aquí se reparte la hora que
+  // saldrá en el ticket para este pedido, en vez de "ahora mismo" — ver
+  // _asignarHoraTiendaQR() en admin-config.js. Se hace aquí (con el número
+  // de pedido ya reservado) y no antes, para no gastar un hueco de la cola
+  // si el pedido se corta por una validación anterior.
+  const _horaTiendaAsignadaSubmit = _enTiendaSubmit && typeof _asignarHoraTiendaQR === 'function'
+    ? await _asignarHoraTiendaQR()
+    : null;
   const regularTotal = Object.entries(cart).reduce((s, _ref9) => {
     let _ref0 = _slicedToArray(_ref9, 2),
       id = _ref0[0],
@@ -3098,33 +3892,56 @@ async function submitOrder() {
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
   const subTotal = regularTotal + custTotal + extTotal;
-  const feeEnabled = getFeeEnabled();
-  const feeAmount = feeEnabled ? getFeeAmount() : 0;
+  const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
-  const _discountAmt = getDiscountAmount(subTotal);
-  // Premio de fidelización: si hay premio activo para este teléfono y el
-  // carrito incluye al menos 1 patata, se descuenta el precio de la patata
-  // más cara del carrito (la de mayor valor, en beneficio del cliente).
-  let _fidelizacionDescuento = 0;
-  if (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean) {
-    const preciosPatatasRegular = Object.entries(cart).map(([id, q]) => {
-      const it = MENU.find(m => m.id == id);
-      return it && typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata') && q > 0 ? it.price : 0;
-    });
-    const preciosPatatasCustom = Object.values(custCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    });
-    const preciosPatatasExtras = Object.values(extrasCart).map(c => {
-      const it = MENU.find(m => m.id == c.menuId);
-      if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-      return getExtrasItemPrice(c);
-    });
-    const todosLosPrecios = [...preciosPatatasRegular, ...preciosPatatasCustom, ...preciosPatatasExtras];
-    _fidelizacionDescuento = todosLosPrecios.length ? Math.max(...todosLosPrecios) : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  // Ver comentario largo en carta.js/renderCart(): el código local exime
+  // al gasto etiquetado como "de gestión", sea el 1º o el 2º.
+  const _fee1EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
+  const _ningunaEsGestionSubmit = !_fee1EsGestionSubmit && !_fee2EsGestionSubmit;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocalSubmit && (_fee1EsGestionSubmit || _ningunaEsGestionSubmit));
+  const feeAmount = feeEnabled ? getFeeAmount() : 0;
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
+  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
+  // terminar de escribir el teléfono (con un pequeño margen + una llamada
+  // al servidor) — si el cliente confirma el pedido muy rápido justo
+  // después, esa comprobación puede no haber terminado todavía, y
+  // getFidelizacionDescuento() de abajo mira window._fidelizacionPremioActivo
+  // tal cual esté en ese momento. Sin esperarla aquí, un cliente con premio
+  // de verdad disponible podía confirmar el pedido sin que se le aplicara,
+  // porque el aviso "aún no había llegado" a tiempo aunque en el servidor
+  // sí lo tuviera. Se vuelve a comprobar (y esperar) justo antes de
+  // calcular el descuento, para no depender de si la comprobación de fondo
+  // llegó a tiempo o no.
+  if (typeof _comprobarPremioFidelizacion === 'function') {
+    await _comprobarPremioFidelizacion(phoneClean);
   }
-  const orderTotal = Math.max(0, subTotal + feeAmount - _discountAmt - _fidelizacionDescuento);
+  const _fidelizacionDescuento = getFidelizacionDescuento(phoneClean);
+  // Descuento estudiante/jubilado — autodeclarado por el cliente; la
+  // verificación real del carné se hace en caja al cobrar, avisado en el
+  // ticket/cocina.
+  const _esEstudianteJubiladoRaw = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled()
+    && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const _studentDiscountPctSubmit = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  // No se combinan estudiante/jubilado con el código de descuento (ni
+  // manual ni de ruleta/rasca) — se aplica solo el mayor de los dos,
+  // nunca la suma, igual que ya decide el carrito en renderCart()
+  // (carta.js). La fidelización no entra en este conflicto: se sigue
+  // sumando siempre, sin condición.
+  let _discountAmt = getDiscountAmount(subTotal);
+  let _studentDiscountAmt = _esEstudianteJubiladoRaw ? Math.round(subTotal * _studentDiscountPctSubmit) / 100 : 0;
+  let _esEstudianteJubiladoSubmit = _esEstudianteJubiladoRaw;
+  if (_discountAmt > 0 && _studentDiscountAmt > 0) {
+    if (_discountAmt >= _studentDiscountAmt) {
+      _studentDiscountAmt = 0;
+      _esEstudianteJubiladoSubmit = false; // no se aplicó de verdad: no se marca el pedido ni se avisa de verificar carné
+    } else {
+      _discountAmt = 0;
+    }
+  }
+  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento - _studentDiscountAmt);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
       id = _ref10[0],
@@ -3150,10 +3967,11 @@ async function submitOrder() {
     // Queso Mozzarella siempre al final (puede venir de ingredientes o como extra)
     const ingsWithoutQueso = c.ingredients.filter(i => i !== 'Queso Mozzarella' && i !== '4 Quesos');
     const quesosFromIng = c.ingredients.filter(i => i === 'Queso Mozzarella' || i === '4 Quesos');
-    const extras = [...c.sauces, ...ingsWithoutQueso];
+    const extras = [...c.sauces.map(s => 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
     // Añadir quesos al final
-    quesosFromIng.forEach(q => extras.push(q));
-    if (c.extraQueso) extras.push('Queso Mozzarella +1€');
+    quesosFromIng.forEach(q => extras.push('Extra ' + q));
+    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');
+    // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.extraGratinado) extras.push('Gratinado +0,50€');
     return {
       name: item.name,
@@ -3162,23 +3980,58 @@ async function submitOrder() {
       extras
     };
   }).filter(Boolean);
+  // Cada patata con extras (queso/gratinado/ingredientes) se desglosa en
+  // el ticket: la línea principal muestra solo el precio de la patata
+  // sola, y cada extra sale debajo con un guión y su propio precio — igual
+  // que ya hacían las Patatas Al Gusto/Bomba (ver "extras" en custItems
+  // más arriba). Antes salía todo junto en una sola línea con el precio ya
+  // sumado ("Patata Carbonara + Gratinado" a 6,30€), sin ver cuánto era la
+  // patata y cuánto el extra.
   const extItems = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
+    const item = MENU.find(m => m.id == c.menuId);
+    if (!item) return null;
+    const extras = [];
+    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    (c.ingredientesExtra || []).forEach(ing => {
+      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
+      extras.push({ name: 'Extra ' + ing, price: precioIng });
+    });
+    (c.salsasExtra || []).forEach(salsa => {
+      extras.push({ name: 'Extra salsa ' + salsa, price: EXTRAS_SALSA_PRECIO });
+    });
+    // El gratinado siempre va el último, sea cual sea el resto de extras.
+    if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
-      name: getExtrasItemLabel(c),
+      name: item.name,
       qty: c.qty,
-      subtotal: getExtrasItemPrice(c) * c.qty
+      subtotal: c.basePrice * c.qty,
+      extras: extras.length ? extras : undefined
     };
-  });
+  }).filter(Boolean);
   const feeItems = feeEnabled ? [{
     name: feeLabel,
     qty: 1,
     subtotal: feeAmount,
     isFee: true
   }] : [];
+  const fee2Items = fee2Enabled ? [{
+    name: fee2Label,
+    qty: 1,
+    subtotal: fee2Amount,
+    isFee: true
+  }] : [];
   const fidelizacionItems = _fidelizacionDescuento > 0 ? [{
     name: '🎁 Premio fidelización (patata gratis)',
     qty: 1,
     subtotal: -_fidelizacionDescuento
+  }] : [];
+  const studentDiscountItems = _studentDiscountAmt > 0 ? [{
+    // Aclaración breve de que el % es solo sobre productos (no sobre bolsa
+    // ni gastos de gestión) — así se ve en el propio ticket sin tener que
+    // explicarlo aparte si alguien pregunta por qué no baja más el total.
+    name: '🪪 Descuento estudiante/jubilado (-' + _studentDiscountPctSubmit + '% en productos)',
+    qty: 1,
+    subtotal: -_studentDiscountAmt
   }] : [];
   // Si este pedido es el que completa el ciclo de 10 sellos, añadimos una
   // línea informativa en el ticket (sin afectar al precio) para que se
@@ -3189,8 +4042,36 @@ async function submitOrder() {
     qty: 1,
     subtotal: 0
   }] : [];
-  const orderItems = [...regularItems, ...custItems, ...extItems, ...feeItems, ...fidelizacionItems, ...fidelizacionAvisoItems];
+  // El ticket siempre imprime la comida en este orden fijo (patatas primero,
+  // bebidas al final), sin importar en qué orden se fueron añadiendo al
+  // carrito — más fácil de montar en cocina. Los gastos/descuentos/avisos
+  // van siempre después, tal cual ya estaban.
+  const foodItems = [...regularItems, ...custItems, ...extItems];
+  foodItems.sort((a, b) => _ticketCategoriaRank(a.name) - _ticketCategoriaRank(b.name));
+  const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
+
+  // Estadística "¿le metes algo dulce/de beber?": si se llegó a mostrar
+  // alguna sugerencia (window._upsellFueMostrado, marcado por
+  // getUpsellCarrito() al ofrecerla, sea de postre o de bebida) y si el
+  // cliente acabó añadiendo alguna de las opciones ofrecidas de cualquiera
+  // de los dos tipos.
+  const upsellMostrado = !!window._upsellFueMostrado;
+  const _upsellIdsOfrecidos = window._upsellOpcionesElegidas
+    ? [].concat((window._upsellOpcionesElegidas.dulce || {}).ids || [], (window._upsellOpcionesElegidas.bebida || {}).ids || [])
+    : [];
+  const upsellAnadido = _upsellIdsOfrecidos.some(id => (cart[id] || 0) > 0);
+
+  // Aviso destacado en el ticket para que no se olvide entregar/descontar
+  // el premio — solo cuando el cliente YA tenía una patata gratis
+  // pendiente de canjear ANTES de este pedido (window._fidelizacionPremioActivo,
+  // calculado al escribir el teléfono en _comprobarPremioFidelizacion). No
+  // es lo mismo que "este pedido es elegible para sumar sello" (eso pasaba
+  // casi en cada ticket, con patata + 5€ de mínimo, y hacía el aviso inútil
+  // por repetirse siempre). El caso de "este pedido completa el 10º sello
+  // ahora mismo" ya tiene su propio aviso separado más abajo
+  // (fidelizacionAvisoItems, "¡10º SELLO COMPLETADO!").
+  const _fidelizacionElegibleSubmit = !!(window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean);
 
   // Datos estructurados del ticket (para impresión HTML)
   const ticketData = {
@@ -3198,16 +4079,29 @@ async function submitOrder() {
     name,
     phone,
     notes,
-    slotTime: selectedSlot || null,
+    // Si el pedido es "desde el local" (QR) y hay un tiempo de espera entre
+    // tickets configurado, _horaTiendaAsignadaSubmit reparte la hora que
+    // sale en el ticket en vez de "ahora mismo" (ver más arriba).
+    slotTime: selectedSlot || _horaTiendaAsignadaSubmit || null,
     items: orderItems,
     total: orderTotal,
-    time: now
+    time: now,
+    upsellMostrado,
+    upsellAnadido,
+    // Pedido "desde el local" (código de cola aplicado): para que en cocina
+    // pueda mostrarse primero, ya que ese cliente está esperando físicamente
+    // en el mostrador y no se puede ir a pedir a otro sitio.
+    esPedidoLocal: _sinGastosPorCodigoLocalSubmit,
+    // Descuento estudiante/jubilado autodeclarado — se imprime destacado en
+    // el ticket y se marca en cocina para que se compruebe el carné al cobrar.
+    esEstudianteJubilado: _esEstudianteJubiladoSubmit,
+    fidelizacionElegible: _fidelizacionElegibleSubmit
   };
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
 
   // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot);
+  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";
@@ -3223,7 +4117,7 @@ async function submitOrder() {
         phone: phone || "–",
         notes: notes || "–",
         ticket: ticketText,
-        pickup_time: needsSlot ? selectedSlot : "–",
+        pickup_time: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || "–"),
         total: orderTotal.toFixed(2) + " €"
       });
     } catch (err) {
@@ -3233,28 +4127,37 @@ async function submitOrder() {
   } else {
     console.warn("EmailJS no cargado — email omitido");
   }
-  // Registrar uso del código de descuento
-  if (_activeDiscount && window.fb_incrementDiscountUse) {
-    window.fb_incrementDiscountUse(_activeDiscount.code).catch(() => {});
-    _activeDiscount = null;
-    const dcInput = document.getElementById('discount-input');
-    const dcFeedback = document.getElementById('discount-feedback');
-    if (dcInput) dcInput.value = '';
-    if (dcFeedback) dcFeedback.textContent = '';
-  }
+  // El uso del código de descuento se registra en el servidor al
+  // finalizar el pedido (ver guardar-pedido.php) — incrementar
+  // discounts/<code>/uses exige el UID de admin en las reglas, así que
+  // el navegador ya no puede hacerlo directamente. Si el código perdió el
+  // conflicto con el descuento de estudiante/jubilado (_discountAmt quedó
+  // en 0 más arriba), no se envía — no se ha llegado a usar de verdad, así
+  // que no debe consumir ningún uso del cupón.
+  const _discountCodeUsado = (_activeDiscount && _discountAmt > 0) ? _activeDiscount.code : null;
+  _activeDiscount = null;
+  const dcInput = document.getElementById('discount-input');
+  const dcFeedback = document.getElementById('discount-feedback');
+  if (dcInput) dcInput.value = '';
+  if (dcFeedback) dcFeedback.textContent = '';
+  // Desmarcar la casilla estudiante/jubilado para el siguiente pedido — no
+  // debe quedar marcada por defecto sin que el cliente vuelva a elegirlo.
+  const _studentCb = document.getElementById('student-discount-checkbox');
+  if (_studentCb) _studentCb.checked = false;
+  const _studentCbDrawer = document.getElementById('drawer-student-discount-checkbox');
+  if (_studentCbDrawer) _studentCbDrawer.checked = false;
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
     orderNum,
-    slotTime: needsSlot ? selectedSlot : null,
+    slotTime: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || null),
     phone,
     phoneClean,
-    ticketData: ticketData
+    ticketData: ticketData,
+    discountCode: _discountCodeUsado
   };
 
-  // Teléfonos de prueba que saltan la verificación SMS
-  const TEST_PHONES = ['635353724'];
-  if (window._skipSmsVerification || TEST_PHONES.includes(phoneClean)) {
+  if (window._skipSmsVerification) {
     btn.disabled = false;
     btn.textContent = 'Confirmar pedido →';
     await _finalizarPedido();
@@ -3264,11 +4167,11 @@ async function submitOrder() {
   // Intentar enviar SMS de verificación
   let smsOk = false;
   try {
-    const smsRes = await fetch('/send-code.php', {
+    const smsRes = await _fetchConTimeout('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: '+34' + phoneClean })
-    });
+    }, 8000);
     const smsData = await smsRes.json();
     if (smsData.success) {
       smsOk = true;
@@ -3310,7 +4213,7 @@ async function submitOrder() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -3318,81 +4221,173 @@ async function _finalizarPedido() {
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
 
-  // Guardar ticket completo en Firebase para impresión
-  if (window.fb_saveTicket && window._pendingTicketData) {
-    console.log('💾 Guardando ticket en Firebase:', orderNum);
-    window.fb_saveTicket(orderNum, window._pendingTicketData)
-      .then(() => { console.log('✅ Ticket guardado'); window._pendingTicketData = null; })
+  // Guardar el pedido en el servidor: ticket completo + estadísticas del
+  // día + uso del código de descuento (si lo hubo). tickets/ y stats/
+  // exigen el UID de admin en las reglas de Firebase, así que un cliente
+  // anónimo (cualquiera que pida sin haber iniciado sesión de admin) no
+  // puede escribir ahí directamente — lo hace guardar-pedido.php con la
+  // cuenta de servicio.
+  // No se espera aquí (para que la pantalla de éxito aparezca al instante),
+  // pero SÍ hay que esperar a que termine antes de pedir el sello de
+  // fidelización más abajo — fidelizacion.php ahora comprueba contra el
+  // ticket ya guardado en Firebase (tickets/<fecha>/<num>), así que si se
+  // llamara antes de que este guardado termine, el sello se rechazaría por
+  // "pedido no encontrado" en pedidos completamente legítimos.
+  let _pedidoGuardadoPromise = Promise.resolve();
+  if (window._pendingTicketData) {
+    const _pedidoPayload = {
+      orderNum,
+      name: window._pendingTicketData.name,
+      phone: window._pendingTicketData.phone,
+      notes: window._pendingTicketData.notes,
+      slotTime: window._pendingTicketData.slotTime,
+      items: window._pendingTicketData.items,
+      total: window._pendingTicketData.total,
+      discountCode: discountCode || null,
+      upsellMostrado: window._pendingTicketData.upsellMostrado || false,
+      upsellAnadido: window._pendingTicketData.upsellAnadido || false,
+      esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,
+      esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false,
+      fidelizacionElegible: window._pendingTicketData.fidelizacionElegible || false
+    };
+    // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
+    // cierra o se pierde la conexión justo después de confirmar (antes de
+    // recibir la respuesta), _recuperarPedidoEnCurso() lo reenvía solo al
+    // volver a abrir la web. Reenviar el mismo pedido es seguro aunque el
+    // primer intento sí hubiera llegado a guardarse: guardar-pedido.php
+    // responde éxito (no error) si el ticket ya existe con el mismo
+    // teléfono, en vez de duplicarlo.
+    try { localStorage.setItem('dpf_pedido_en_curso', JSON.stringify({ orderNum, payload: _pedidoPayload, ts: Date.now() })); } catch (e) {}
+    console.log('💾 Guardando pedido en el servidor:', orderNum);
+    _pedidoGuardadoPromise = _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_pedidoPayload)
+    }, 12000)
+      .then(res => res.json())
+      .then(data => {
+        try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
+        if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
+      })
       .catch((e) => {
-        console.error('❌ Error guardando ticket:', e);
-        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó en Firebase — ' + (e && e.message || 'error desconocido'));
+        // No se borra el marcador aquí: no hubo respuesta del servidor (fallo
+        // de red/pestaña cerrada), así que no se sabe si el pedido llegó a
+        // guardarse — se deja para que _recuperarPedidoEnCurso() lo reintente
+        // en la próxima visita.
+        console.error('❌ Error guardando pedido:', e);
+        logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (e && e.message || 'error de conexión'));
+        _avisarClienteFalloGuardado(orderNum);
       });
   } else {
-    console.warn('⚠️ fb_saveTicket no disponible o _pendingTicketData vacío', !!window.fb_saveTicket, !!window._pendingTicketData);
+    console.warn('⚠️ _pendingTicketData vacío, no se pudo guardar el pedido');
+  }
+
+  // Programa de fidelización: sumar sello si el pedido incluye al menos 1
+  // patata. Se encadena a partir de que termine el guardado (fidelizacion.php
+  // comprueba contra el ticket ya guardado) y se publica esa promesa YA en
+  // window._selloEnCursoPorPedido — antes incluso de mostrar la pantalla de
+  // éxito, que es cuando los botones "Modificar"/"Cancelar pedido" se
+  // activan. Publicarla más tarde (como antes) dejaba un hueco real: un
+  // cliente que pulsara "Modificar" muy rápido nada más confirmar podía
+  // cancelar el pedido justo en ese hueco — _borrarPedidoDeFirebase()
+  // (antifraude.js) no encontraba ninguna promesa que esperar todavía, así
+  // que pedía revertir el sello antes de que el sello llegara siquiera a
+  // registrarse (no había nada que deshacer), y cuando el registro real
+  // llegaba justo después, se quedaba puesto un sello para un pedido ya
+  // cancelado — el cliente se llevaba un sello de más que no le tocaba.
+  const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
+  const _selloPromise = _pedidoGuardadoPromise
+    .catch(() => {})
+    .then(() => _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion))
+    .catch(e => console.warn('[fidelizacion] error:', e));
+  if (orderNum) {
+    window._selloEnCursoPorPedido[orderNum] = _selloPromise;
+    _selloPromise.then(() => {
+      if (window._selloEnCursoPorPedido[orderNum] === _selloPromise) delete window._selloEnCursoPorPedido[orderNum];
+    });
   }
 
   await showSuccess(orderNum, slotTime);
-  // Registrar teléfono en Firebase para cooldown/límite diario server-side
-  if (window.fb_logPhoneOrder && phone) {
-    window.fb_logPhoneOrder(phoneClean, Date.now()).catch(() => {});
-  }
-  // Programa de fidelización: sumar sello si el pedido incluye al menos 1 patata
-  const _consumioPremioFidelizacion = window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === phoneClean;
-  _procesarSelloFidelizacion(phoneClean, _ticketDataParaFidelizacion, _consumioPremioFidelizacion).catch(e => console.warn('[fidelizacion] error:', e));
+  // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
+  // guardar-pedido.php al guardar el pedido — hacerlo también aquí
+  // contaría cada pedido dos veces.
   window._fidelizacionPremioActivo = null;
   _ocultarAvisoPremioFidelizacion();
+}
+// Antes, si guardar-pedido.php fallaba, el cliente veía "pedido confirmado"
+// igual y solo quedaba un aviso en el log de actividad que ve el admin —
+// nadie en cocina se enteraba de que el pedido no había llegado. Ahora, si
+// el cliente sigue en la pantalla de éxito de ESE pedido, se lo decimos.
+function _avisarClienteFalloGuardado(orderNum) {
+  const successVisible = document.getElementById('success-screen')?.style.display === 'block';
+  const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
+  if (!successVisible || !mismoNum) return;
+  const warning = document.getElementById('success-save-warning');
+  if (warning) warning.style.display = 'block';
 }
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
 const FIDELIZACION_META = 10;
+// Pedido mínimo para sumar sello — evita que un pedido mínimo (p.ej. 1
+// patata suelta de 2€) valga igual que uno grande a efectos de fidelización.
+const FIDELIZACION_PEDIDO_MINIMO = 5;
 function _ticketTienePatata(ticketData) {
   if (!ticketData || !Array.isArray(ticketData.items)) return false;
   return ticketData.items.some(it => typeof it.name === 'string' && it.name.trim().toLowerCase().startsWith('patata'));
 }
+// El mínimo de 5€ lo decide SIEMPRE el servidor, contra el total real del
+// ticket ya guardado (fidelizacion.php, con FIDELIZACION_PEDIDO_MINIMO) —
+// aquí solo se filtra por "lleva patata" antes de llamar, para no gastar
+// una petición en pedidos que claramente no cuentan. Antes este filtro
+// también comprobaba el total en el propio navegador (con el mismo umbral
+// de 5€ duplicado en dos sitios): si por lo que fuera ese cálculo del
+// cliente no coincidía exactamente con el total ya guardado en el
+// servidor, el pedido ni siquiera llegaba a pedir el sello — y como el
+// filtro corta ANTES de la llamada a fidelizacion.php, no queda ningún
+// aviso en el registro de actividad de ese fallo (a diferencia de un
+// rechazo del servidor, que sí se registra y aparece en Alertas con botón
+// "Reintentar sello"). Quitar la comprobación de aquí cierra ese punto
+// ciego sin cambiar el resultado final, porque el servidor igualmente
+// rechaza (en silencio, sin alerta, es el caso normal y esperado) los
+// pedidos por debajo del mínimo.
+function _pedidoElegibleFidelizacion(ticketData) {
+  return _ticketTienePatata(ticketData);
+}
+// Pedido → promesa de "todo lo que le falta a este pedido para terminar de
+// asentarse (guardado + intento de sumar sello)" — la publica
+// _finalizarPedido() nada más conocer el orderNum, y _borrarPedidoDeFirebase()
+// (antifraude.js) la espera antes de pedir que se revierta el sello, si el
+// cliente cancela/modifica el pedido justo después de confirmarlo. Ver el
+// comentario en _finalizarPedido de por qué hace falta.
+window._selloEnCursoPorPedido = window._selloEnCursoPorPedido || {};
 async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio) {
-  if (!phoneClean || !_ticketTienePatata(ticketData)) return;
-  if (!window.fb_loadFidelizacionCliente || !window.fb_saveFidelizacionCliente) return;
-
-  let cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-  if (!cliente) {
-    cliente = { nombre: (ticketData && ticketData.name) || '', sellos: 0, premiosPendientes: 0, vecesCompletado: 0, historialCanjes: [] };
-  }
-  // Migración de clientes antiguos (formato con premioDisponible booleano)
-  if (typeof cliente.premiosPendientes !== 'number') {
-    cliente.premiosPendientes = cliente.premioDisponible ? 1 : 0;
-  }
-  if (typeof cliente.vecesCompletado !== 'number') cliente.vecesCompletado = 0;
-  delete cliente.premioDisponible;
-
-  // Mantener actualizado el nombre más reciente con el que pide el cliente
-  if (ticketData && ticketData.name) cliente.nombre = ticketData.name;
-
-  // Si este pedido consume un premio pendiente (la patata gratis ya se
-  // descontó en el carrito, ver el cálculo de _fidelizacionDescuento en
-  // submitOrder), se resta 1 premio pendiente y se registra en el historial
-  // de canjes. El contador de sellos no se toca aquí porque ya se resetea
-  // solo al llegar a 10.
-  if (consumioPremio && cliente.premiosPendientes > 0) {
-    cliente.premiosPendientes -= 1;
-    cliente.historialCanjes = cliente.historialCanjes || [];
-    cliente.historialCanjes.push({ fecha: new Date().toLocaleString('es-ES'), ticket: (ticketData && ticketData.orderNum) || null });
-  }
-
-  cliente.sellos = (cliente.sellos || 0) + 1;
-  if (cliente.sellos >= FIDELIZACION_META) {
-    cliente.sellos = 0;
-    cliente.premiosPendientes = (cliente.premiosPendientes || 0) + 1;
-    cliente.vecesCompletado = (cliente.vecesCompletado || 0) + 1;
-  }
-  // Registro de cuándo se pone cada sello, para poder detectar ritmos
-  // sospechosos (varios sellos en pocos minutos = posible abuso del
-  // sistema). Solo guardamos los últimos 15 para no hinchar el nodo.
-  cliente.historialSellos = cliente.historialSellos || [];
-  cliente.historialSellos.push({ ts: Date.now(), fecha: new Date().toLocaleString('es-ES') });
-  if (cliente.historialSellos.length > 15) {
-    cliente.historialSellos = cliente.historialSellos.slice(-15);
-  }
-  await window.fb_saveFidelizacionCliente(phoneClean, cliente);
+  if (!phoneClean || !_pedidoElegibleFidelizacion(ticketData)) return;
+  // El cálculo del sello (sumar, resetear a los 10, descontar premio
+  // canjeado) se hace en el servidor (fidelizacion.php): el navegador ya
+  // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
+  // pueda regalarse sellos/premios abriendo las devtools.
+  try {
+    const res = await _fetchConTimeout('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'registrarSello',
+        telefono: phoneClean,
+        orderNum: (ticketData && ticketData.orderNum) || '',
+        tienePatata: true,
+        consumioPremio: !!consumioPremio,
+        nombre: (ticketData && ticketData.name) || ''
+      })
+    }, 10000);
+    // Si el servidor rechaza el sello (success:false, no "skipped"), ya lo
+    // registra fidelizacion.php por su cuenta con la cuenta de servicio
+    // (fbAgregarActivityLog) — hacerlo también aquí en el navegador del
+    // cliente no servía de nada en producción (un cliente anónimo real no
+    // tiene permiso para escribir en config/activityLog) y solo duplicaba
+    // el aviso cuando quien probaba era la propia admin con el panel
+    // abierto en el mismo navegador.
+  } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.
@@ -3408,11 +4403,11 @@ function _mostrarAvisoFidelizacionCompletada() {
   } catch (e) {}
 }
 
-// ── Tiempo de modificación de pedido ──
+// ── Tiempo de modificación de pedido (en minutos) ──
 function saveModifyWindow() {
   var _document$getElementB2;
-  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '5');
-  const valid = isNaN(v) || v < 1 || v > 60 ? 5 : v;
+  const v = parseInt(((_document$getElementB2 = document.getElementById('modify-window-input')) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || '1');
+  const valid = isNaN(v) || v < 1 || v > 30 ? 1 : v;
   localStorage.setItem('dpf_modify_window_mins', valid);
   if (window.fb_saveConfig) {
     try {
@@ -3431,7 +4426,7 @@ function saveModifyWindow() {
   showToast('modify-window-toast');
 }
 function loadModifyWindowInput() {
-  const v = localStorage.getItem('dpf_modify_window_mins') || '5';
+  const v = localStorage.getItem('dpf_modify_window_mins') || '1';
   const el = document.getElementById('modify-window-input');
   if (el) el.value = v;
 }
@@ -3686,6 +4681,23 @@ async function resetDayStats() {
   loadDayStats();
 }
 async function showSuccess(orderNum, slotTime) {
+  // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
+  // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
+  // que rompía el resaltado de campos con error en submitOrderFromDrawer).
+  if (typeof closeCartDrawer === 'function') closeCartDrawer();
+
+  // Restaurar el texto normal de "pedido confirmado" — si el cliente había
+  // cancelado un pedido antes en esta misma visita, cancelarPedido() dejó
+  // este mismo bloque con el texto de "❌ Pedido cancelado" puesto, y sin
+  // esto se quedaba así para siempre aunque el pedido SIGUIENTE sí se
+  // confirmara bien (confundía al cliente, que creía que había fallado y
+  // podía llegar a repetir el pedido).
+  const _icon = document.querySelector('#success-screen .success-icon');
+  const _title = document.querySelector('#success-screen .success-title');
+  const _sub = document.querySelector('#success-screen .success-sub');
+  if (_icon) _icon.textContent = '🥔';
+  if (_title) _title.textContent = '¡Pedido confirmado!';
+  if (_sub) _sub.textContent = 'Te esperamos en el local';
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -3693,11 +4705,30 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderTotal = 0;
   window.currentOrderItems = [];
   try {
-    window.currentOrderItems = Object.entries(cart).map(([id, qty]) => {
+    // Antes solo se leía `cart` (productos normales del menú) — los
+    // personalizados (Patata Al Gusto, Patata Bomba, vía custCart) y los
+    // complementos sueltos (extrasCart) se quedaban fuera, así que nunca
+    // se contaban en ventasProductos/{fecha}, la analítica que usa
+    // finanzas.js para "Estrellas y perdedores". Si el admin les asigna
+    // coste ahí, aparecían siempre con 0 ventas por mucho que se vendieran.
+    const itemsNormales = Object.entries(cart).map(([id, qty]) => {
       const item = MENU.find(m => m.id == id);
       if (!item) return null;
       return { id: item.id, qty, name: item.name, price: item.price * qty };
     }).filter(Boolean);
+    const itemsCustom = Object.values(custCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    const itemsExtras = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return null;
+      const unitPrice = typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) : item.price;
+      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
+    }).filter(Boolean);
+    window.currentOrderItems = [...itemsNormales, ...itemsCustom, ...itemsExtras];
     window.currentOrderTotal = window.currentOrderItems.reduce((s, i) => s + i.price, 0);
   } catch(e) {}
   recordProductSales(window.currentOrderItems);
@@ -3728,6 +4759,33 @@ async function showSuccess(orderNum, slotTime) {
     localStorage.setItem('dpf_active_order', JSON.stringify(window._lastOrderData));
   } catch (e) {}
 
+  // Guardar aparte, sin caducar, para "Repetir mi último pedido" en una
+  // visita futura — a diferencia de dpf_active_order (que se borra en
+  // cuanto se cierra la ventana de modificar/cancelar), esto se queda.
+  // Solo líneas de producto real: sin gastos de gestión (isFee) ni el
+  // descuento/aviso de fidelización (subtotal <= 0).
+  try {
+    const _itemsRepetibles = (_lastTicketData ? _lastTicketData.items || [] : []).filter(i => !i.isFee && i.subtotal > 0);
+    if (_itemsRepetibles.length) {
+      localStorage.setItem('dpf_ultimo_pedido', JSON.stringify({
+        items: _itemsRepetibles,
+        total: orderTotal,
+        cart: JSON.parse(JSON.stringify(cart)),
+        custCart: JSON.parse(JSON.stringify(custCart)),
+        extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+        ts: Date.now()
+      }));
+    }
+  } catch (e) {}
+
+  // Recordar nombre y teléfono para prellenarlos en la próxima visita (ver
+  // _rellenarDatosClienteGuardados en init.js) — se guarda sin caducar,
+  // igual que "dpf_ultimo_pedido"; el cliente puede editarlos igualmente.
+  try {
+    if (name) localStorage.setItem('dpf_cliente_nombre', name);
+    if (phone) localStorage.setItem('dpf_cliente_telefono', phone);
+  } catch (e) {}
+
   // Registrar el slot
   if (slotTime) incrementSlot(slotTime);
 
@@ -3746,6 +4804,31 @@ async function showSuccess(orderNum, slotTime) {
     slotInfo.style.display = 'none';
   }
 
+  // Estimación de espera según la cola actual — solo si hay bastante
+  // ambiente (mismo umbral que el aviso previo de saturación), para no
+  // asustar al cliente en un día tranquilo con un aviso que no aplica.
+  const tiempoEstEl = document.getElementById('success-tiempo-estimado');
+  if (tiempoEstEl) {
+    let _pendientesAhora = 0;
+    try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+      if (stats && stats.date === todayKey && Array.isArray(stats.orders)) {
+        _pendientesAhora = stats.orders.filter(o => {
+          const s = (typeof getOrderStatus === 'function') ? getOrderStatus(o.num) : 'nuevo';
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+      }
+    } catch (e) {}
+    const minutosExtra = (typeof _estimarMinutosEspera === 'function') ? _estimarMinutosEspera(_pendientesAhora) : 0;
+    if (minutosExtra > 0) {
+      tiempoEstEl.textContent = '⏳ Ahora mismo hay ' + _pendientesAhora + ' pedidos en cola — puede tardar unos ' + minutosExtra + ' min más de lo habitual.';
+      tiempoEstEl.style.display = 'block';
+    } else {
+      tiempoEstEl.style.display = 'none';
+    }
+  }
+
   // Resumen de ítems
   const itemsContainer = document.getElementById('success-items-list');
   if (itemsContainer && _lastTicketData && _lastTicketData.items.length) {
@@ -3757,6 +4840,14 @@ async function showSuccess(orderNum, slotTime) {
   document.querySelector('.order-panel').style.display = "none";
   document.getElementById("success-screen").style.display = "block";
   document.getElementById("order-num-display").textContent = orderNum;
+  // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
+  // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
+  const saveWarning = document.getElementById('success-save-warning');
+  if (saveWarning) saveWarning.style.display = 'none';
+  if (typeof _sonidoConfirmacionPedido === 'function') _sonidoConfirmacionPedido();
+  // Pequeño golpe táctil al confirmar, en móviles que lo soporten — refuerza
+  // la sensación de "hecho" sin tener que mirar la pantalla.
+  if (navigator.vibrate) { try { navigator.vibrate([80, 40, 80]); } catch (e) {} }
   // Ocultar FAB en pantalla de éxito
   const fab = document.getElementById('cart-fab');
   if (fab) fab.classList.add('hidden');
@@ -3782,6 +4873,13 @@ function resetOrder() {
   document.querySelector('.order-panel').style.display = "block";
   document.getElementById("success-screen").style.display = "none";
   window._lastOrderData = null;
+  // Para que la sugerencia "¿algo dulce de postre?" se pueda volver a
+  // mostrar (con opciones nuevas) en el pedido siguiente, en vez de
+  // arrastrar el "ya se mostró"/las mismas opciones del pedido anterior.
+  window._upsellFueMostrado = false;
+  window._upsellOpcionesElegidas = null;
+  window._upsellYaAnimado = false;
+  window._upsellDismissed = { dulce: false, bebida: false };
   try {
     localStorage.removeItem('dpf_active_order');
   } catch (e) {}
@@ -3794,18 +4892,21 @@ function resetOrder() {
 }
 
 // ── MODIFICAR / CANCELAR PEDIDO ──────────────────────────────────────────────
-const MODIFY_WINDOW_DEFAULT_MS = 5 * 60 * 1000;
+// dpf_modify_window_mins vuelve a contarse en MINUTOS (como su propio
+// nombre siempre dijo) — a petición expresa, después de haber estado un
+// tiempo en segundos.
+const MODIFY_WINDOW_DEFAULT_MS = 1 * 60 * 1000;
 function getModifyWindowMs() {
   try {
-    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '5');
-    return (isNaN(v) || v < 1 || v > 60 ? 5 : v) * 60 * 1000;
+    const v = parseInt(localStorage.getItem('dpf_modify_window_mins') || '1');
+    return (isNaN(v) || v < 1 || v > 30 ? 1 : v) * 60 * 1000;
   } catch (e) {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
 }
-async function cancelarPedidoAdmin(orderNum) {
+async function cancelarPedidoAdmin(orderNum, phone) {
   if (!confirm("\xBFCancelar el pedido ".concat(orderNum, "? Se eliminar\xE1 de estad\xEDsticas y cocina."))) return;
-  await _borrarPedidoDeFirebase(orderNum);
+  await _borrarPedidoDeFirebase(orderNum, phone);
   logActivity("\u274C Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function _startModifyTimer() {
@@ -3827,9 +4928,11 @@ function _startModifyTimer() {
       zone.style.display = 'none';
       return;
     }
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor(remaining % 60000 / 1000);
-    timerEl.textContent = "\u23F1\uFE0F Puedes modificar o cancelar tu pedido durante ".concat(mins, ":").concat(String(secs).padStart(2, '0'), " min");
+    const totalSecs = Math.ceil(remaining / 1000);
+    const tiempoTxt = totalSecs < 60
+      ? totalSecs + ' s'
+      : Math.floor(totalSecs / 60) + ':' + String(totalSecs % 60).padStart(2, '0') + ' min';
+    timerEl.textContent = "\u23F1\uFE0F Puedes modificar o cancelar tu pedido durante ".concat(tiempoTxt);
     if (btnMod) btnMod.style.display = '';
     if (btnCan) btnCan.style.display = '';
     zone.style.display = 'block';
@@ -3857,7 +4960,7 @@ async function modificarPedido() {
   if (!confirmado) return;
 
   // Borrar pedido actual de Firebase y stats
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
 
   // Restaurar carrito con los productos anteriores
   Object.assign(cart, data.cart);
@@ -3914,7 +5017,7 @@ async function cancelarPedido() {
     };
   });
   if (!confirmado) return;
-  await _borrarPedidoDeFirebase(data.num);
+  await _borrarPedidoDeFirebase(data.num, data.phone);
   window._lastOrderData = null;
   try {
     localStorage.removeItem('dpf_active_order');
@@ -3932,40 +5035,135 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
-async function _borrarPedidoDeFirebase(orderNum) {
+// Resta de ventasProductos/{fecha} lo que sumó recordProductSales() para
+// este pedido — antes, cancelar un pedido (admin) o que el cliente lo
+// modificara (que primero lo borra y luego reenvía uno nuevo) dejaba sus
+// productos contados para siempre en la analítica de "Estrellas y
+// perdedores", aunque el pedido ya no existiera o se hubiera duplicado.
+// pedido.items no lleva el id del producto (solo name/qty/subtotal, tal
+// como lo guarda guardar-pedido.php), así que se busca por nombre.
+async function _revertirVentasProductos(items) {
+  if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
+  const fecha = new Date().toISOString().slice(0, 10);
+  const mutator = function (current) {
+    const actual = current || {};
+    items.forEach(it => {
+      if (it.isFee || !it.name) return;
+      const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
+      if (!menuItem) return;
+      const id = String(menuItem.id);
+      if (actual[id] == null) return;
+      actual[id] = Math.max(0, actual[id] - (it.qty || 0));
+      if (actual[id] === 0) delete actual[id];
+    });
+    return actual;
+  };
+  try {
+    // Transacción: este mismo nodo lo escribe también cada pedido real de
+    // un cliente al llegar (recordProductSales) — un .set() plano aquí
+    // podía perder esa cuenta si un pedido nuevo llegaba justo mientras se
+    // revertía otro cancelado.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      if (!sn.exists()) return;
+      await ref.set(mutator(sn.val()));
+    }
+  } catch (e) {
+    console.warn('[ventasProductos] no se pudo revertir', e);
+  }
+}
+async function _borrarPedidoDeFirebase(orderNum, phone) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
-  // 1. Marcar como cancelado en memoria, localStorage y Firebase — inmediato
-  await setOrderStatus(orderNum, 'cancelado');
+  // 0. Si este pedido tenía un ticket esperando en la cola de impresión
+  // pendiente (porque falló al imprimir mientras la impresora estaba
+  // desconectada), quitarlo — si no, en cuanto la impresora reconecte se
+  // imprimiría igualmente el ticket de un pedido ya cancelado/modificado,
+  // sin ningún aviso de que ya no es válido.
+  if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
 
-  // 2. Borrar de Firebase stats y liberar slot si tenía uno
+  // 1. Marcar como cancelado en memoria y localStorage — inmediato, para que
+  // este mismo dispositivo lo refleje al instante sin esperar al servidor.
+  window._orderStatusCache[_normOrderKey(orderNum)] = 'cancelado';
+  try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
+
+  let itemsParaRevertir = null;
+  let telefonoParaRevertirSello = phone || null;
   let slotToFree = null;
-  if (window.fb_getStats && window.fb_saveStats) {
-    try {
-      const stats = await window.fb_getStats(todayKey);
-      if (stats && stats.orders) {
-        const pedido = stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
-        if (pedido && pedido.slot) slotToFree = pedido.slot;
-        stats.orders = stats.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
-        stats.count = Math.max(0, (stats.count || 1) - 1);
-        stats.total = stats.orders.reduce((acc, o) => acc + (o.total || 0), 0);
-        await window.fb_saveStats(stats);
-      }
-    } catch {}
+
+  // 2. Marcar como cancelado y quitar de stats en Firebase — a través del
+  // servidor (guardar-pedido.php, acción "cancelarPedido"), NO con una
+  // escritura directa del navegador. orderStatus/ y stats/ exigen el UID
+  // exacto del admin en las reglas de seguridad (igual que tickets/, slots/
+  // y usedOrderNums/, ver comentarios en guardar-pedido.php): cuando esta
+  // función la llamaba el propio cliente (auth anónima, p.ej. al pulsar
+  // "Modificar pedido"), la escritura directa fallaba en silencio y el
+  // pedido se quedaba activo para siempre en cocina/estadísticas del resto
+  // de dispositivos, aunque el ticket viejo nunca llegara a anularse allí.
+  try {
+    const resp = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancelarPedido', orderNum, fecha: todayKey, phone: phone || '' })
+    });
+    const data = await resp.json();
+    if (data && data.success) {
+      if (data.items) itemsParaRevertir = data.items;
+      if (data.phone) telefonoParaRevertirSello = data.phone;
+      if (data.slot) slotToFree = data.slot;
+    } else {
+      console.warn('[cancelarPedido] el servidor no pudo anular el pedido:', data && data.error);
+    }
+  } catch (e) {
+    console.warn('[cancelarPedido] fallo de red al anular el pedido:', e);
   }
 
-  // 3. Borrar también de localStorage y liberar slot si no lo encontramos en Firebase
+  // 3. Borrar también de localStorage (caché local de este dispositivo)
   try {
     const local = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
     if (local.orders) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
+      if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
+      if (pedido && pedido.phone && !telefonoParaRevertirSello) telefonoParaRevertirSello = pedido.phone;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
       local.total = local.orders.reduce((acc, o) => acc + (o.total || 0), 0);
       localStorage.setItem(STATS_KEY, JSON.stringify(local));
     }
   } catch {}
+
+  if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
+
+  // Deshacer el sello de fidelización (y el canje del premio, si lo había
+  // consumido) si este pedido cancelado/modificado había llegado a
+  // sumarlo — si no, se quedaba dado para siempre aunque el pedido nunca
+  // llegara a ser real. Se hace en el servidor (fidelizacion.php), que
+  // valida contra el ticket real antes de tocar nada.
+  if (telefonoParaRevertirSello) {
+    const _telLimpio = telefonoParaRevertirSello.replace(/\D/g, '');
+    if (_telLimpio.length === 9) {
+      // Si el cliente pulsó "Modificar"/"Cancelar" justo después de
+      // confirmar, es posible que la petición que suma el sello de ESTE
+      // mismo pedido todavía esté de camino (se lanza sin esperar, para no
+      // retrasar la pantalla de "pedido confirmado") — si se pide la
+      // reversión antes de que ese sello exista de verdad en el servidor,
+      // no hay nada que revertir, y cuando el registro original llega
+      // justo después, el sello se queda puesto para un pedido ya
+      // cancelado. Esperar aquí a que termine (si la hay) antes de pedir
+      // la reversión evita esa carrera.
+      const _selloPendiente = window._selloEnCursoPorPedido && window._selloEnCursoPorPedido[orderNum];
+      if (_selloPendiente) { try { await _selloPendiente; } catch (e) {} }
+      fetch('fidelizacion.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revertirSello', telefono: _telLimpio, orderNum })
+      }).catch(e => console.warn('[fidelizacion] no se pudo revertir el sello al cancelar el pedido:', e));
+    }
+  }
 
   // 4. El slot NO se libera al cancelar — el turno quedó ocupado
 
@@ -4139,7 +5337,7 @@ function updateCustProgress() {
     if (sauceProg) sauceProg.style.display = 'none';
     document.getElementById('cust-sauce-badge').textContent = ns;
     document.getElementById('cust-ing-label').textContent = 'Total: ' + total + '/' + cfg.maxTotal + ' (salsas: ' + ns + ' · ing: ' + ni + ')';
-    document.getElementById('cust-ing-bar').style.width = pct + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pct / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill ' + cls;
     document.getElementById('cust-ing-badge').textContent = total + '/' + cfg.maxTotal;
   } else {
@@ -4148,11 +5346,11 @@ function updateCustProgress() {
     const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(ni / cfg.maxIngredients * 100));
     document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
-    document.getElementById('cust-sauce-bar').style.width = pctS + '%';
+    document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
     document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + ni + '/' + cfg.maxIngredients;
-    document.getElementById('cust-ing-bar').style.width = pctI + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
     document.getElementById('cust-ing-badge').textContent = ni + '/' + cfg.maxIngredients;
   }
@@ -4241,31 +5439,42 @@ function renderSlotTurnosList(turnos) {
   }
   list.innerHTML = turnos.map((t, i) => "\n    <div style=\"display:flex;align-items:center;flex-wrap:wrap;background:#F4F2EE;border-radius:8px;padding:10px 12px;margin-bottom:8px\">\n      <span style=\"font-size:12px;font-weight:700;color:#8A6A4E;min-width:20px\">".concat(i + 1, ".</span>\n      <label style=\"font-size:12px;color:#8A6A4E\">Desde</label>\n      <input type=\"time\" value=\"").concat(t.start, "\" onchange=\"updateSlotTurno(").concat(i, ",'start',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Hasta</label>\n      <input type=\"time\" value=\"").concat(t.end, "\" onchange=\"updateSlotTurno(").concat(i, ",'end',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Cada</label>\n      <select onchange=\"updateSlotTurno(").concat(i, ",'interval',parseInt(this.value))\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n        <option value=\"15\" ").concat(t.interval === 15 ? 'selected' : '', ">15 min</option>\n        <option value=\"20\" ").concat(t.interval === 20 ? 'selected' : '', ">20 min</option>\n        <option value=\"30\" ").concat(!t.interval || t.interval === 30 ? 'selected' : '', ">30 min</option>\n        <option value=\"45\" ").concat(t.interval === 45 ? 'selected' : '', ">45 min</option>\n        <option value=\"60\" ").concat(t.interval === 60 ? 'selected' : '', ">60 min</option>\n      </select>\n      <button onclick=\"removeSlotTurno(").concat(i, ")\"\n        style=\"margin-left:auto;background:#fff;border:1.5px solid #e74c3c;color:#c0392b;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">&#128465;</button>\n    </div>")).join('');
 }
-function _syncSlotTurnos(turnos) {
+// mutatorFn recibe el array de turnos actual (local o el más reciente de
+// Firebase, según el intento) y lo modifica in-place. Evita que dos
+// ediciones de turnos casi simultáneas (dos dispositivos) se pisen entre
+// sí — igual que el resto de escrituras "leer todo, modificar, guardar
+// todo" arregladas en esta misma pasada.
+function _mutateSlotTurnos(mutatorFn) {
+  const turnos = getSlotTurnos();
+  mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  const max = getSlotMax();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+      mutatorFn(t);
+      return { turnos: t, max: (current && current.max) || getSlotMax() };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
+  }
+  return turnos;
 }
 function addSlotTurno() {
-  const turnos = getSlotTurnos();
-  turnos.push({
-    start: '19:30',
-    end: '23:30',
-    interval: 30
+  const turnos = _mutateSlotTurnos(function (t) {
+    t.push({ start: '19:30', end: '23:30', interval: 30 });
   });
-  _syncSlotTurnos(turnos);
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
-  const turnos = getSlotTurnos();
-  turnos.splice(idx, 1);
-  _syncSlotTurnos(turnos);
+  const turnos = _mutateSlotTurnos(function (t) {
+    if (idx < t.length) t.splice(idx, 1);
+  });
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
-  const turnos = getSlotTurnos();
-  turnos[idx][field] = value;
-  _syncSlotTurnos(turnos);
+  _mutateSlotTurnos(function (t) {
+    if (t[idx]) t[idx][field] = value;
+  });
 }
 function saveSlotConfig() {
   const maxInp = document.getElementById('slot-max-input');
@@ -4276,10 +5485,23 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
-  const turnos = getSlotTurnos();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  const turnosLocal = getSlotTurnos();
+  // Transacción real en vez de leer-modificar-guardar sin más — antes, si
+  // otro dispositivo acababa de añadir/quitar un turno justo antes de este
+  // guardado (que solo cambia el número máximo por turno), se escribía
+  // encima con la copia de turnos que este dispositivo tenía en caché,
+  // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
+  // patrón para las demás ediciones de turnos.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+      return { turnos: t, max: max };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
+  }
   showToast('slot-config-toast');
-  logActivity('🕐 Turnos actualizados — ' + turnos.length + ' franjas · max ' + max + ' pedidos/turno');
+  logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
 }
 
@@ -4303,6 +5525,9 @@ let _extrasIngredientes = {}; // { name: true/false }
 
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort'];
+const EXTRAS_SALSA_PRECIO = 0.90;
+let _extrasSalsas = {}; // { nombre: true/false }
 function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
@@ -4311,6 +5536,7 @@ function openExtrasModal(itemId) {
   _extrasQueso = false;
   _extrasGratinado = false;
   _extrasIngredientes = {};
+  _extrasSalsas = {};
   const item = MENU.find(m => m.id == itemId);
   if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
@@ -4335,6 +5561,14 @@ function openExtrasModal(itemId) {
   EXTRAS_ING_PRECIO07.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
     optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+0,70 \u20AC</div></div>\n    </label>");
+  });
+  optionsHtml += "</div>";
+  // Salsas extra +0,90€
+  optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">SALSAS EXTRA</div>";
+  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
+  EXTRAS_SALSAS.forEach(salsa => {
+    const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
+    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraSalsa('").concat(salsa.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(salsa, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(EXTRAS_SALSA_PRECIO.toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
@@ -4368,6 +5602,23 @@ function toggleExtraIng(ing) {
   const el = document.getElementById(eid);
   const lbl = document.getElementById('lbl-' + eid);
   const active = _extrasIngredientes[ing];
+  if (el) {
+    el.style.background = active ? '#3D1F0D' : '#fff';
+    el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
+    el.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
+  }
+  if (lbl) {
+    lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
+    lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
+  }
+  updateExtrasTotal();
+}
+function toggleExtraSalsa(salsa) {
+  _extrasSalsas[salsa] = !_extrasSalsas[salsa];
+  const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
+  const el = document.getElementById(eid);
+  const lbl = document.getElementById('lbl-' + eid);
+  const active = _extrasSalsas[salsa];
   if (el) {
     el.style.background = active ? '#3D1F0D' : '#fff';
     el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
@@ -4414,6 +5665,7 @@ function updateExtrasTotal() {
     if (!active) return;
     if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 0.70;
   });
+  Object.values(_extrasSalsas).forEach(active => { if (active) total += EXTRAS_SALSA_PRECIO; });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
 }
 function closeExtrasModal() {
@@ -4439,7 +5691,16 @@ function confirmExtras() {
       k = _ref16[0];
     return k;
   }).sort().join('|');
-  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') || 'BASE';
+  const salsaKeys = Object.entries(_extrasSalsas).filter(_ref17s => {
+    let _ref18s = _slicedToArray(_ref17s, 2),
+      v = _ref18s[1];
+    return v;
+  }).map(_ref19s => {
+    let _ref20s = _slicedToArray(_ref19s, 1),
+      k = _ref20s[0];
+    return k;
+  }).sort().join('|');
+  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') || 'BASE';
   const cartKey = 'ext:' + itemId + ':' + fingerprint;
   if (!extrasCart[cartKey]) {
     extrasCart[cartKey] = {
@@ -4454,6 +5715,15 @@ function confirmExtras() {
       }).map(_ref19 => {
         let _ref20 = _slicedToArray(_ref19, 1),
           k = _ref20[0];
+        return k;
+      }),
+      salsasExtra: Object.entries(_extrasSalsas).filter(_ref17b => {
+        let _ref18b = _slicedToArray(_ref17b, 2),
+          v = _ref18b[1];
+        return v;
+      }).map(_ref19b => {
+        let _ref20b = _slicedToArray(_ref19b, 1),
+          k = _ref20b[0];
         return k;
       }),
       key: cartKey,
@@ -4478,6 +5748,7 @@ function getExtrasItemPrice(c) {
   (c.ingredientesExtra || []).forEach(ing => {
     if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
   });
+  (c.salsasExtra || []).forEach(() => { p += EXTRAS_SALSA_PRECIO; });
   return p;
 }
 function getExtrasItemLabel(c) {
@@ -4488,9 +5759,11 @@ function getExtrasItemLabel(c) {
   }
   if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
   const extras = [];
-  if (c.queso) extras.push('Queso');
+  if (c.queso) extras.push('Extra Queso');
+  (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
+  (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
+  // El gratinado siempre va el último, sea cual sea el resto de extras.
   if (c.gratinado) extras.push('Gratinado');
-  (c.ingredientesExtra || []).forEach(ing => extras.push(ing));
   return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
@@ -4633,6 +5906,9 @@ async function activarFinDeNoche() {
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
+  // no la "reabra sola" pensando que fue ella quien la puso.
+  if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día
@@ -4650,7 +5926,19 @@ async function activarFinDeNoche() {
   }
   const pedidos = ((_stats = stats) === null || _stats === void 0 ? void 0 : _stats.count) || 0;
   const total = ((_stats2 = stats) === null || _stats2 === void 0 || (_stats2 = _stats2.total) === null || _stats2 === void 0 ? void 0 : _stats2.toFixed(2)) || '0.00';
+  // Antes esto se quedaba siempre vacío — el HTML de abajo ya estaba
+  // preparado para pintar el top 3 con medallas, pero nadie lo rellenaba.
   const topSorted = [];
+  if (stats && Array.isArray(stats.orders)) {
+    const conteoProductos = {};
+    stats.orders.forEach(o => {
+      (o.items || []).forEach(it => {
+        if (it.isFee || !it.name) return;
+        conteoProductos[it.name] = (conteoProductos[it.name] || 0) + (it.qty || 0);
+      });
+    });
+    topSorted.push(...Object.entries(conteoProductos).sort((a, b) => b[1] - a[1]).slice(0, 3));
+  }
 
   // 3. Resetear turnos
   _slotsCache = {};
@@ -4802,16 +6090,51 @@ async function dcCargar() {
   if (!el) return;
   if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
   const discounts = await window.fb_loadDiscounts().catch(() => ({}));
-  const keys = Object.keys(discounts || {});
+  // Los códigos RAS-/RUL- los genera juegos.php para cada premio ganado en
+  // la Ruleta o el Rasca (origen: 'ruleta'|'rasca') — de un solo uso y
+  // caducan solos a las 48h. No son códigos que el admin haya creado a
+  // mano, así que no se listan aquí para no ahogar la lista.
+  const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
     const remaining = d.maxUses - (d.uses || 0);
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
+    return '<div id="dc-row-' + escapeAttr(code) + '" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
       + '<div><strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
       + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
       + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes</span></div>'
       + '<button data-code="' + escapeAttr(code) + '" onclick="dcEliminar(this.dataset.code)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Eliminar</button>'
+      + '</div>';
+  }).join('');
+}
+
+// Los premios de la Ruleta/Rasca (RAS-/RUL-) no aparecen en la lista de
+// arriba, pero siguen guardados en discounts/ con el teléfono con el que
+// jugó el cliente — esto permite encontrarlos si el cliente pierde su
+// código y llama pidiéndolo.
+async function dcBuscarPorTelefono() {
+  const el = document.getElementById('dc-buscar-resultado');
+  if (!el) return;
+  const tel = (document.getElementById('dc-buscar-tel').value || '').replace(/\D/g, '');
+  if (!/^\d{9}$/.test(tel)) { el.innerHTML = '<span style="color:#c0392b">Introduce un teléfono válido (9 dígitos)</span>'; return; }
+  if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
+  el.innerHTML = 'Buscando…';
+  const discounts = await window.fb_loadDiscounts().catch(() => ({}));
+  const ahoraMs = Date.now();
+  const codigos = Object.keys(discounts || {}).filter(code => discounts[code].telefono === tel);
+  if (!codigos.length) { el.innerHTML = '<span style="color:#8A6A4E">No se encontró ningún código de premio para ese teléfono</span>'; return; }
+  el.innerHTML = codigos.map(code => {
+    const d = discounts[code];
+    const usado = (d.uses || 0) >= d.maxUses;
+    const caducado = d.expiraEn && ahoraMs > d.expiraEn;
+    let estado = 'disponible', color = '#2e7d32';
+    if (usado) { estado = 'ya usado'; color = '#c0392b'; }
+    else if (caducado) { estado = 'caducado'; color = '#c0392b'; }
+    return '<div style="padding:6px 0;border-bottom:1px solid #F5E6C8">'
+      + '<strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
+      + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
+      + ' <span style="font-size:11px;font-weight:700;color:' + color + '">' + estado + '</span>'
+      + (d.origen ? ' <span style="font-size:11px;color:#8A6A4E">(' + escapeHtml(d.origen) + ')</span>' : '')
       + '</div>';
   }).join('');
 }
@@ -4845,6 +6168,10 @@ async function dcAplicar(code) {
   if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
   const d = await window.fb_getDiscount(code).catch(() => null);
   if (!d) { showDiscountError('Código no válido'); return; }
+  // Los premios de la ruleta/rasca caducan a las 48h (expiraEn) — los
+  // códigos creados a mano desde el panel no llevan ese campo, así que
+  // esta comprobación no les afecta.
+  if (d.expiraEn && Date.now() > d.expiraEn) { showDiscountError('Este código ha caducado'); return; }
   if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
   _activeDiscount = { code, pct: d.pct };
   showDiscountOk(code, d.pct);
@@ -5166,7 +6493,10 @@ function _bimbaPintarConfigEquipo(empleados) {
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
   _equipoPagoConfig[empId].tipoPago = tipo;
-  _bimbaGuardarPagoConfig();
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = {};
+    cfg[empId].tipoPago = tipo;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarCalcEquipo(empleados);
@@ -5174,12 +6504,29 @@ function bimbaSetTipoPago(empId, tipo) {
 function bimbaActualizarPago(empId, campo, valor) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = { tipoPago: 'hora' };
   const val = parseFloat(valor);
-  _equipoPagoConfig[empId][campo] = isNaN(val) ? null : val;
-  _bimbaGuardarPagoConfig();
+  const valorGuardado = isNaN(val) ? null : val;
+  _equipoPagoConfig[empId][campo] = valorGuardado;
+  _bimbaGuardarPagoConfig(function (cfg) {
+    if (!cfg[empId]) cfg[empId] = { tipoPago: 'hora' };
+    cfg[empId][campo] = valorGuardado;
+  });
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarCalcEquipo(empleados);
 }
-function _bimbaGuardarPagoConfig() {
+// mutatorFn modifica in-place la config de pago de UN empleado. Se aplica
+// contra el valor más reciente de Firebase (transacción), no contra la
+// copia en memoria de _equipoPagoConfig, que solo se cargó una vez al abrir
+// el overlay — así dos personas editando el pago de dos empleados distintos
+// a la vez no se pisan la una a la otra.
+function _bimbaGuardarPagoConfig(mutatorFn) {
+  if (window.fb_transactNative) {
+    window.fb_transactNative('config/empleadosPago', function (current) {
+      const cfg = current || {};
+      mutatorFn(cfg);
+      return cfg;
+    }).catch(() => {});
+    return;
+  }
   firebase.database().ref('config/empleadosPago').set(_equipoPagoConfig).catch(() => {});
 }
 function _bimbaCosteEmpleado(emp) {
@@ -5332,6 +6679,45 @@ async function _estrellasObtenerVentas(inicio, fin) {
   }
   return totales;
 }
+async function _estrellasObtenerUpsellPostre(inicio, fin) {
+  let mostrado = 0, anadido = 0;
+  try {
+    const snap = await firebase.database().ref('upsellPostre').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snap.exists()) {
+      snap.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        mostrado += Number(dia.mostrado) || 0;
+        anadido += Number(dia.anadido) || 0;
+      });
+    }
+  } catch (e) {
+    console.warn('[estrellas] error leyendo upsellPostre', e);
+  }
+  return { mostrado, anadido };
+}
+function _renderUpsellPostreStats(mostrado, anadido) {
+  const el = document.getElementById('upsell-postre-contenido');
+  if (!el) return;
+  if (mostrado === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:#8A6A4E">Todavía no se ha mostrado la sugerencia "¿algo dulce de postre?" en este periodo.</div>';
+    return;
+  }
+  const tasa = mostrado > 0 ? (anadido / mostrado) * 100 : 0;
+  el.innerHTML = '<div style="display:flex;gap:8px">'
+    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:800;color:#3D1F0D">' + mostrado + '</div>'
+    + '<div style="font-size:11px;color:#8A6A4E">veces mostrada</div>'
+    + '</div>'
+    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:800;color:#166534">' + anadido + '</div>'
+    + '<div style="font-size:11px;color:#8A6A4E">veces añadida</div>'
+    + '</div>'
+    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:800;color:#B5862C">' + tasa.toFixed(0) + '%</div>'
+    + '<div style="font-size:11px;color:#8A6A4E">tasa de éxito</div>'
+    + '</div>'
+    + '</div>';
+}
 async function bimbaRenderEstrellas() {
   const el = document.getElementById('estrellas-contenido');
   const rangoEl = document.getElementById('estrellas-rango-texto');
@@ -5339,6 +6725,8 @@ async function bimbaRenderEstrellas() {
   el.innerHTML = '<div style="color:#8A6A4E;font-size:13px">Cargando...</div>';
   const { inicio, fin } = _estrellasRangoPeriodo();
   if (rangoEl) rangoEl.textContent = 'Periodo: ' + _fechaCorta(inicio) + ' — ' + _fechaCorta(fin);
+
+  _estrellasObtenerUpsellPostre(inicio, fin).then(({ mostrado, anadido }) => _renderUpsellPostreStats(mostrado, anadido));
 
   const ventas = await _estrellasObtenerVentas(inicio, fin);
   const totalVentas = Object.values(ventas).reduce((s, v) => s + v, 0);
@@ -5478,15 +6866,27 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
-    });
-    await ref.set(actual);
+    // Transacción: ventasProductos/<fecha> también lo escribe cada pedido
+    // real de un cliente (recordProductSales, en antifraude.js) mientras se
+    // puede estar guardando una venta manual aquí — con un .set() plano
+    // (leer, sumar en memoria, sobreescribir todo el nodo) una venta real
+    // que llegara justo en medio se podía perder sin ningún aviso.
+    const mutator = function (current) {
+      const actual = current || {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
+    };
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();
@@ -5526,10 +6926,35 @@ function bimbaPintarTicketConfig() {
   const autoEl = document.getElementById('tc-auto-imprimir');
   autoEl.checked = tc.autoImprimir !== false;
   document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
+  const letraEl = document.getElementById('tc-letra-grande');
+  if (letraEl) letraEl.checked = !!tc.letraGrande;
+  const qrEl = document.getElementById('tc-qr-habilitado');
+  if (qrEl) qrEl.checked = !!tc.qrHabilitado;
+  const qrContenidoEl = document.getElementById('tc-qr-contenido');
+  if (qrContenidoEl) qrContenidoEl.value = tc.qrContenido || '';
+
+  // Gastos fijos (se guardan aparte, no dentro de TICKET_CONFIG_KEY)
+  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
+  if (tcFeeEnabled) {
+    tcFeeEnabled.checked = getFeeEnabled();
+    document.getElementById('tc-fee-amount').value = getFeeAmount();
+    document.getElementById('tc-fee-label').value = getFeeLabel();
+  }
+  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
+  if (tcFee2Enabled && typeof getFee2Enabled === 'function') {
+    tcFee2Enabled.checked = getFee2Enabled();
+    document.getElementById('tc-fee2-amount').value = getFee2Amount();
+    document.getElementById('tc-fee2-label').value = getFee2Label();
+  }
+  const tcLocalCode = document.getElementById('tc-local-fee-code');
+  if (tcLocalCode && typeof getLocalFeeCode === 'function') tcLocalCode.value = getLocalFeeCode();
+  const tcTiendaEspera = document.getElementById('tc-tienda-espera');
+  if (tcTiendaEspera && typeof getTiendaEsperaMinutos === 'function') tcTiendaEspera.value = String(getTiendaEsperaMinutos());
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
   bimbaPintarTicketConfig();
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
 function closeTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.remove('open');
@@ -5544,9 +6969,29 @@ function bimbaGuardarTicketConfig() {
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
-    autoImprimir: document.getElementById('tc-auto-imprimir').checked
+    autoImprimir: document.getElementById('tc-auto-imprimir').checked,
+    letraGrande: document.getElementById('tc-letra-grande') ? document.getElementById('tc-letra-grande').checked : false,
+    qrHabilitado: document.getElementById('tc-qr-habilitado') ? document.getElementById('tc-qr-habilitado').checked : false,
+    qrContenido: document.getElementById('tc-qr-contenido') ? document.getElementById('tc-qr-contenido').value.trim() : ''
   };
   saveTicketConfig(cfg);
+
+  // Gastos fijos — cada uno con su propio guardado/interruptor
+  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
+  if (tcFeeEnabled) {
+    const amt = parseFloat(document.getElementById('tc-fee-amount').value) || 0;
+    const lbl = document.getElementById('tc-fee-label').value.trim() || 'Gastos de gestión online';
+    saveFeeConfig(tcFeeEnabled.checked, amt, lbl);
+  }
+  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
+  if (tcFee2Enabled && typeof saveFee2Config === 'function') {
+    const amt2 = parseFloat(document.getElementById('tc-fee2-amount').value) || 0;
+    const lbl2 = document.getElementById('tc-fee2-label').value.trim() || 'Otro gasto fijo';
+    saveFee2Config(tcFee2Enabled.checked, amt2, lbl2);
+  }
+  const tcLocalCode = document.getElementById('tc-local-fee-code');
+  if (tcLocalCode && typeof saveLocalFeeCode === 'function') saveLocalFeeCode(tcLocalCode.value);
+
   if (msgEl) {
     msgEl.style.color = '#27855a';
     msgEl.textContent = '✅ Guardado';
@@ -5595,9 +7040,9 @@ async function imprimirTodosLosActivos() {
 
 function _markAsImpreso(orderNum) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Idempotente:
+  // reimprimir el mismo pedido no vuelve a restar del contador.
+  _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';
@@ -5631,6 +7076,34 @@ function openEmpleadosWithBimba() {
   secureLockTap();
 }
 
+// ── "HISTORIAL POR DÍAS" (FACTURACIÓN) DENTRO DEL PANEL SECRETO BIMBA ────────
+// A diferencia del historial de clientes (visible para cualquiera con acceso
+// al panel), el resumen por días muestra el total facturado — información
+// que no hace falta que vea el personal, solo la dueña. Vive como una fila
+// más dentro del panel bimba (admin-stock-config, el mismo al que se entra
+// con el candado 👤) — como ya se pasó el PIN para llegar hasta ahí, este
+// salto no vuelve a pedirlo.
+function verHistorialDiasDesdeBimba() {
+  // Solo se alterna la clase .active — la hoja de estilos ya tiene
+  // .admin-section{display:none!important} / .admin-section.active{display:block!important},
+  // con más especificidad la segunda. Fijar un display inline aquí (como
+  // hacía antes el código de "empleados por bimba") deja ese estilo inline
+  // pegado para siempre: ni siquiera quitar .active después lo oculta, así
+  // que "← Volver" dejaría esta sección visible por encima de las demás.
+  document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  const sec = document.getElementById('admin-bimba-historial');
+  if (sec) sec.classList.add('active');
+  if (typeof loadHistorial === 'function') loadHistorial();
+  if (typeof loadAutoDeleteUI === 'function') loadAutoDeleteUI();
+  if (typeof applyAutoDelete === 'function') applyAutoDelete();
+}
+// Botón "← Volver" de las pantallas dentro de bimba (config, contraseña,
+// historial por días...) — vuelve a la pantalla principal del panel secreto.
+function bimbaVolverAlPanel() {
+  openStockConfigSecret();
+}
+
 // ── DISPOSITIVO DE CONFIANZA ──
 // SEGURIDAD: el flag local es solo una preferencia de UX (saltar la pantalla de login).
 
@@ -5649,19 +7122,33 @@ function shareOrderWhatsApp(orderNum, name, slotTime, items, total) {
 }
 
 // ── DISPOSITIVO DE CONFIANZA ─────────────────────────────────────────────────
-// El token almacenado es: sha256(uid_firebase + contraseña_hasheada)
-// Así, aunque alguien acceda al localStorage, el token solo es válido
-// para el UID concreto de esta sesión Firebase — no es un string genérico.
+// El token de confianza es un secreto ALEATORIO generado en el momento de
+// marcar el dispositivo (no una fórmula a partir de datos que ya son
+// públicos o casi — antes era sha256(uid + hash de la contraseña), y el uid
+// y el hash por defecto están en el JS que se manda al navegador, así que
+// cualquiera que supiera el uid del admin podía calcular un token válido
+// sin haber iniciado sesión nunca). Solo se guarda su HASH en Firebase
+// (config/trustedDevices/<deviceId>), y la comprobación la hace el
+// servidor (bimba-verify.php) — así "Expulsar" desde el panel puede borrar
+// ese registro y el dispositivo pierde el acceso de verdad, no solo hasta
+// que recargue la página.
 const TRUSTED_KEY = 'dpf_trusted_device';
 const TRUSTED_NAME_KEY = 'dpf_trusted_device_name';
-const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // hash vinculado al UID
+const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado de nada público
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
+const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
 
-async function _buildTrustedToken(uid) {
-  // Token = SHA-256(uid + ADMIN_PWD_DEFAULT_HASH) — usa la contraseña hasheada como sal
-  const raw = uid + (localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH);
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = 'dev_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -5671,27 +7158,29 @@ function getTrustedExpiryDays() {
 
 async function isTrustedDevice() {
   if (localStorage.getItem(TRUSTED_KEY) !== 'yes') return false;
-  // Comprobar expiración
+  // Comprobar expiración local primero (evita una llamada de red inútil)
   const expiry = parseInt(localStorage.getItem(TRUSTED_EXPIRY_KEY) || '0');
   if (expiry && Date.now() > expiry) {
-    // Sesión expirada — limpiar
-    localStorage.removeItem(TRUSTED_KEY);
-    localStorage.removeItem(TRUSTED_TOKEN_KEY);
-    localStorage.removeItem(TRUSTED_EXPIRY_KEY);
+    await setTrustedDevice(false);
     console.log('[trusted] sesión expirada');
     return false;
   }
-  // Requiere sesión Firebase activa con UID
-  const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
-  if (!user || !user.uid) return false;
-  // Verificar que el token almacenado corresponde al UID actual
-  const storedToken = localStorage.getItem(TRUSTED_TOKEN_KEY);
-  if (!storedToken) return false;
+  const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+  if (!token) return false;
+  // Comprobación real en el servidor: si el admin ha "expulsado" este
+  // dispositivo desde el panel, su registro ya no existe en Firebase y
+  // esto falla aunque el token siga guardado en este navegador.
   try {
-    const expected = await _buildTrustedToken(user.uid);
-    return storedToken === expected;
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkTrustedDevice', deviceId: getDeviceId(), token })
+    });
+    const data = await res.json();
+    if (!data.success) { await setTrustedDevice(false); return false; }
+    return true;
   } catch (e) {
-    return false;
+    return false; // red caída: por seguridad, pedir login en vez de asumir confianza
   }
 }
 
@@ -5699,18 +7188,63 @@ function getTrustedDeviceName() {
   return localStorage.getItem(TRUSTED_NAME_KEY) || 'Sin nombre';
 }
 
+// ── AVISO DE DISPOSITIVO NUEVO EN EL PANEL ADMIN ─────────────────────────────
+// Antes, un acceso correcto solo quedaba en el "Registro de actividad" (había
+// que entrar a mirarlo a propósito para enterarse). Ahora, la PRIMERA vez que
+// este deviceId entra con éxito, además se avisa como Alerta — igual que
+// otros avisos que ya se revisan cada día — para enterarse sin tener que ir
+// a buscarlo. Los accesos siguientes desde el mismo dispositivo no repiten
+// el aviso.
+async function _avisarSiDispositivoAdminNuevo(email) {
+  try {
+    if (typeof firebase === 'undefined' || !firebase.database) return;
+    const deviceId = getDeviceId();
+    const ref = firebase.database().ref('config/dispositivosAdminConocidos/' + deviceId);
+    const snap = await ref.once('value');
+    if (snap.exists()) return; // ya se había visto este dispositivo antes
+    await ref.set({
+      primeraVez: Date.now(),
+      fecha: new Date().toLocaleString('es-ES'),
+      email: email || '',
+      dispositivo: navigator.userAgent.slice(0, 120)
+    });
+    if (typeof logActivity === 'function') {
+      logActivity('🚨 Nuevo dispositivo ha entrado al panel admin (' + (email || 'sin email') + ') — ' + navigator.userAgent.slice(0, 80));
+    }
+  } catch (e) {
+    console.warn('[dispositivos-admin] no se pudo comprobar/registrar:', e);
+  }
+}
+
 async function setTrustedDevice(val, name) {
   if (val) {
     const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
     if (!user || !user.uid) return; // no guardar si no hay sesión real
-    const token = await _buildTrustedToken(user.uid);
+    const token = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '_' + Math.random().toString(36).slice(2));
+    const tokenHash = await _sha256Hex(token);
+    const deviceId = getDeviceId();
     const days = getTrustedExpiryDays();
     const expiry = Date.now() + days * 24 * 60 * 60 * 1000;
+    // Escritura autenticada (ya hay sesión real de admin en este momento) —
+    // el servidor solo guarda el HASH, nunca el token en sí.
+    await firebase.database().ref('config/trustedDevices/' + deviceId).set({
+      tokenHash: tokenHash,
+      name: name || 'Sin nombre',
+      createdAt: Date.now(),
+    });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');
     localStorage.setItem(TRUSTED_TOKEN_KEY, token);
     localStorage.setItem(TRUSTED_EXPIRY_KEY, String(expiry));
   } else {
+    // Si hay sesión real, limpiar también el registro en Firebase — igual
+    // que arriba, si no hay sesión (p.ej. venimos de una comprobación
+    // fallida sin login) esta escritura fallará en silencio y no pasa nada,
+    // el registro se queda pero el token local ya no sirve para nada.
+    try {
+      const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
+      if (user && user.uid) await firebase.database().ref('config/trustedDevices/' + getDeviceId()).remove();
+    } catch (e) {}
     localStorage.removeItem(TRUSTED_KEY);
     localStorage.removeItem(TRUSTED_NAME_KEY);
     localStorage.removeItem(TRUSTED_TOKEN_KEY);
@@ -5832,6 +7366,7 @@ async function openAdmin() {
       window._mySessionId = _SESSION_ID;
       await window.fb_registerSession({
         sid: _SESSION_ID,
+        deviceId: getDeviceId(),
         device: device,
         time: new Date().toLocaleString('es-ES'),
         ts: Date.now(),
@@ -6019,14 +7554,9 @@ async function openAdmin() {
 })();
 
 // ── ACCESO BIMBA POR CANDADO ────────────────────────────────────────────────
-// Contraseña almacenada como hash SHA-256 con sal — nunca en texto plano
-const _BIMBA_SALT = 'dpf_2026_x7q';
-const BIMBA_PWD_HASH = '94817839a2d2ae89cf3c0cd4afdf73526ab401525e7a2e557aadf7a8e4fcb4f8';
-async function hashBimbaPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd + _BIMBA_SALT));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// El PIN se comprueba en el servidor (bimba-verify.php), nunca en el
+// navegador — así no queda ningún hash extraíble en el JS público y el
+// límite de intentos es real (no se puede probar offline sin límite).
 function secureLockTap() {
   document.getElementById('secure-pin-input').value = '';
   document.getElementById('secure-pin-error').style.display = 'none';
@@ -6038,11 +7568,24 @@ function secureLockCerrar() {
 }
 async function secureLockConfirm() {
   const val = document.getElementById('secure-pin-input').value;
-  const hash = await hashBimbaPwd(val);
-  if (hash === BIMBA_PWD_HASH) {
+  let ok = false, errMsg = 'Contraseña incorrecta';
+  try {
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: val })
+    });
+    const data = await res.json();
+    ok = !!data.success;
+    if (data.error) errMsg = data.error;
+  } catch (e) {
+    errMsg = 'Error de conexión. Inténtalo de nuevo.';
+  }
+  if (ok) {
     document.getElementById('secure-pin-modal').style.display = 'none';
     setTimeout(_updateAudioBannerState, 200);
     _adminLoggedIn = true; window._adminLoggedIn = true;
+    _cargarDatosEmpleadosPrivados();
     if (window._bimbaTargetEmpleados) {
       window._bimbaTargetEmpleados = false;
       logActivity('👥 Acceso a empleados por bimba');
@@ -6054,8 +7597,6 @@ async function secureLockConfirm() {
       setTimeout(function(){
         if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
       }, 100);
-      return;
-      showAdminSection('bimba-empleados', null);
     } else {
       logActivity('🔒 Acceso bimba por candado');
       openStockConfigSecret();
@@ -6066,6 +7607,7 @@ async function secureLockConfirm() {
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
   } else {
+    document.getElementById('secure-pin-error').textContent = errMsg;
     document.getElementById('secure-pin-error').style.display = 'block';
     document.getElementById('secure-pin-input').value = '';
     document.getElementById('secure-pin-input').focus();
@@ -6090,27 +7632,6 @@ function toggleAdminPwdVisibility(btn) {
 }
 
 
-// ── Alerta de slot casi lleno ─────────────────────────────
-const _slotAlertSent = {};
-async function _checkSlotAlmostFull(slotTime, count, max) {
-  if (!slotTime || !max) return;
-  const pct = Math.round((count / max) * 100);
-  if (pct < 80) return;
-  const key = slotTime + '_' + count;
-  if (_slotAlertSent[key]) return;
-  _slotAlertSent[key] = true;
-  try {
-    if (typeof emailjs === 'undefined') return;
-    emailjs.init('Euum_k_XJdrejjnKj');
-    await emailjs.send('service_bil4ri5', 'template_ee4f7sp', {
-      slot:  slotTime,
-      count: count,
-      max:   max,
-      pct:   pct
-    });
-  } catch(e) {}
-}
-
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}
@@ -6133,7 +7654,7 @@ async function closeAdmin() {
   if (eyeOpen) eyeOpen.style.display = 'block';
   if (eyeClosed) eyeClosed.style.display = 'none';
   stopAlertLoop();
-  _alertPendingOrders = 0;
+  _resetPedidosPendientesAlerta();
   document.getElementById('admin-overlay').classList.remove('open');
   // Resetear estado login/panel para la próxima apertura
   document.getElementById('admin-login').style.display = 'block';
@@ -6202,8 +7723,13 @@ function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
@@ -6263,6 +7789,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -6272,13 +7805,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -6334,18 +7863,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
@@ -6406,7 +7928,29 @@ function loadUrlTokenUI() {
     }
   }
 }
-let _adminFailedAttempts = 0;
+// Antes _adminFailedAttempts solo vivía en memoria: recargar la pantalla de
+// login (F5) lo volvía a poner a 0 y se saltaba el retraso progresivo
+// entero. Se persiste en localStorage (con la hora del último fallo, para
+// que 30 minutos sin ningún fallo lo reseteen solos y no penalice a un
+// admin de verdad que vuelve más tarde).
+const ADMIN_FAILED_KEY = 'dpf_admin_failed_attempts';
+const ADMIN_FAILED_RESET_MS = 30 * 60 * 1000;
+function _cargarIntentosFallidosAdmin() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ADMIN_FAILED_KEY) || 'null');
+    if (raw && typeof raw.count === 'number' && typeof raw.ts === 'number' && (Date.now() - raw.ts) < ADMIN_FAILED_RESET_MS) {
+      return raw.count;
+    }
+  } catch (e) {}
+  return 0;
+}
+function _guardarIntentosFallidosAdmin(count) {
+  try {
+    if (count > 0) localStorage.setItem(ADMIN_FAILED_KEY, JSON.stringify({ count, ts: Date.now() }));
+    else localStorage.removeItem(ADMIN_FAILED_KEY);
+  } catch (e) {}
+}
+let _adminFailedAttempts = _cargarIntentosFallidosAdmin();
 let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
@@ -6518,11 +8062,13 @@ async function checkAdminPwd() {
   if (result.ok) {
     var _document$getElementB6, _document$getElementB7;
     _adminFailedAttempts = 0;
+    _guardarIntentosFallidosAdmin(0);
     const trustedChecked = (_document$getElementB6 = document.getElementById('trusted-device-check')) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.checked;
     const trustedName = ((_document$getElementB7 = document.getElementById('trusted-device-name')) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value.trim()) || 'Sin nombre';
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();
@@ -6534,8 +8080,10 @@ async function checkAdminPwd() {
     if (audioBanner) audioBanner.style.display = _audioCtxUnlocked ? 'none' : 'block';
     setTimeout(_updateAudioBannerState, 200);
     logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
+    if (typeof _avisarSiDispositivoAdminNuevo === 'function') _avisarSiDispositivoAdminNuevo(email);
   } else {
     _adminFailedAttempts++;
+    _guardarIntentosFallidosAdmin(_adminFailedAttempts);
     const errMsg = result.msg || 'Error al iniciar sesión';
     let errDisplay = errMsg;
     if (_adminFailedAttempts >= 3) {
@@ -6886,11 +8434,11 @@ function renderPromos() {
       '<span style="position:absolute;top:0;left:12px;background:#3D1F0D;color:#FFF8EE;font-size:11px;font-weight:700;padding:3px 12px;border-radius:20px">🔥 Promo</span>' +
       '<div style="background:#fdecd5;border:1.5px solid #3D1F0D;border-radius:12px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:10px">' +
       '<div style="flex:1">' +
-      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + p.nombre + '</div>' +
-      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + (p.descripcion || '') + '</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#3D1F0D;margin-bottom:2px">' + escapeHtml(p.nombre) + '</div>' +
+      '<div style="font-size:12px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(p.descripcion || '') + '</div>' +
       '<div>' + precioTachado + '<span style="font-size:14px;font-weight:700;color:#3D1F0D">' + parseFloat(p.precio).toFixed(2) + ' €</span></div>' +
       '</div>' +
-      '<button onclick="promoAnadir(\'' + p.id + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
+      '<button onclick="promoAnadir(\'' + escapeAttr(p.id) + '\')" style="padding:8px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0">+ Añadir</button>' +
       '</div></div>';
   }).join('');
 }
@@ -6961,7 +8509,7 @@ function promoAbrirModal(p) {
 
   var titleRow = document.createElement('div');
   titleRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px';
-  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + p.nombre + '</div>';
+  titleRow.innerHTML = '<div style="font-size:20px;font-weight:800;color:#3D1F0D;font-family:Playfair Display,serif">' + escapeHtml(p.nombre) + '</div>';
   var closeBtn = document.createElement('button');
   closeBtn.innerHTML = '×';
   closeBtn.style.cssText = 'background:none;border:none;font-size:22px;color:#8A6A4E;cursor:pointer;padding:0;line-height:1';
@@ -7009,6 +8557,17 @@ function promoAddToCart(p, opts) {
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
 
+// Algunas descripciones llevan pegado "· NO se pueden quitar ingredientes"
+// (p.ej. Carbonara, Boloñesa) — se separa en su propia línea y en rojo
+// para que se note de un vistazo, en vez de perderse dentro del texto.
+function _formatDescConAvisoIngredientes(desc) {
+  if (!desc) return '';
+  const marcador = 'NO se pueden quitar ingredientes';
+  const idx = desc.indexOf(marcador);
+  if (idx === -1) return desc;
+  const antes = desc.slice(0, idx).replace(/[\s·]+$/, '');
+  return antes + '<br><span style="color:#c0392b;font-weight:700;font-size:11px">⚠️ ' + marcador + '</span>';
+}
 function renderMenu() {
   window._tartaLastSub = null;
   var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
@@ -7056,8 +8615,9 @@ function renderMenu() {
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
+          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
@@ -7086,7 +8646,7 @@ function renderMenu() {
     sep = sep + tartaSep;
     let controls;
     if (soldout) {
-      controls = '<span style="font-size:12px;color:#c0392b;font-weight:700">AGOTADO</span>';
+      controls = '<span style="background:#c0392b;color:#fff;font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:99px;letter-spacing:.02em;white-space:nowrap">AGOTADO</span>';
     } else if (qty > 0) {
       controls = '<button class="qty-btn" onclick="changeQty(' + item.id + ',-1)">−</button>'
                + '<span class="qty-num">' + qty + '</span>'
@@ -7094,15 +8654,18 @@ function renderMenu() {
     } else {
       controls = '<button class="add-btn" onclick="changeQty(' + item.id + ',+1)" title="Añadir">+</button>';
     }
+    const esTopVentas = item.name && item.name.indexOf('🔥') !== -1;
+    const nombreParaBadge = esTopVentas ? item.name.replace('🔥', '').trim() : item.name;
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
       + ' data-name="' + escapeAttr(item.name) + '"'
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
+      + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
-      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '"><span class="item-name-hl">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</span></div>'
+      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : _formatDescConAvisoIngredientes(item.desc)) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
       + '<div class="item-controls">' + controls + '</div>'
@@ -7289,9 +8852,21 @@ function saveHorario() {
   const manClose = document.getElementById('h-man-close') ? document.getElementById('h-man-close').value : '';
   const tarOpen = document.getElementById('h-tar-open') ? document.getElementById('h-tar-open').value : '';
   const tarClose = document.getElementById('h-tar-close') ? document.getElementById('h-tar-close').value : '';
-  const closedMsgMid = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
-  const closedMsgNight = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
-  const closedMsgDay = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  // Estos 3 campos no tienen valor por defecto en el HTML (solo
+  // placeholder) y solo se rellenan cuando termina de cargar el horario
+  // desde Firebase (loadAdminHorario). Si se guarda en un dispositivo/
+  // sesión nueva antes de que esa carga termine, los campos están vacíos
+  // en pantalla sin que el admin haya tocado nada — así que si están
+  // vacíos aquí, se conserva el mensaje personalizado que ya hubiera
+  // guardado antes, en vez de borrarlo sin querer.
+  let _hPrev = {};
+  try { _hPrev = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}'); } catch {}
+  const closedMsgMidRaw = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
+  const closedMsgNightRaw = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
+  const closedMsgDayRaw = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
+  const closedMsgMid = closedMsgMidRaw || _hPrev.closedMsgMid || '';
+  const closedMsgNight = closedMsgNightRaw || _hPrev.closedMsgNight || '';
+  const closedMsgDay = closedMsgDayRaw || _hPrev.closedMsgDay || '';
   const h = {
     manOpen,
     manClose,
@@ -7415,10 +8990,16 @@ function checkAutoCloseWarning() {
     return;
   }
   const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Mismo criterio de "día de servicio" que isOutsideHours()/isTodayOpen():
+  // antes de las 06:00 se trata como parte del día anterior (y su minuto se
+  // extiende +1440) — sin esto, un cierre después de medianoche (ej. 00:30)
+  // hacía que este punto verde/rojo dijera "cerrado" o "día cerrado"
+  // contradiciendo al formulario de pedido, que con isOutsideHours() ya
+  // corregido seguía activo debajo.
+  const nowMin = (now.getHours() < 6) ? (now.getHours() * 60 + now.getMinutes() + 1440) : (now.getHours() * 60 + now.getMinutes());
 
   // Bloquear pedidos si hoy es día cerrado (independientemente del toggle manual)
-  const todayDay = now.getDay();
+  const todayDay = (now.getHours() < 6) ? (now.getDay() + 6) % 7 : now.getDay();
   const diasAbiertos = (_h$diasAbiertos2 = h.diasAbiertos) !== null && _h$diasAbiertos2 !== void 0 ? _h$diasAbiertos2 : [2, 3, 4, 5, 6, 0];
   if (!diasAbiertos.includes(todayDay)) {
     const dot2 = document.querySelector('.dot');
@@ -7485,7 +9066,13 @@ function checkAutoCloseWarning() {
   // mediodía). manOpen/tarClose siguen editándose por separado en el panel,
   // pero aquí solo se usan los extremos.
   const openStartMin = getMinutes(h.manOpen) ?? getMinutes(h.tarOpen);
-  const closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  let closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
+  // Si cierra después de medianoche, expresarlo en el mismo espacio
+  // extendido que nowMin (ver más arriba) para poder comparar de forma
+  // continua — mismo arreglo que en isOutsideHours().
+  if (openStartMin !== null && closeEndMin !== null && closeEndMin < openStartMin) {
+    closeEndMin += 1440;
+  }
   const sessions = (openStartMin !== null && closeEndMin !== null)
     ? [{ open: openStartMin, close: closeEndMin }]
     : [];
@@ -7582,6 +9169,16 @@ function getFeeAmount() {
 function getFeeLabel() {
   return localStorage.getItem(FEE_LABEL_KEY) || 'Gastos de gestión online';
 }
+// El código de "pedido desde el local" debe librar SIEMPRE del gasto que
+// sea de gestión — pero cuál de los dos gastos fijos (el primero o el
+// segundo) es "el de gestión" depende de cómo los haya nombrado el admin
+// desde el panel, no de en qué orden se crearon. Por eso se identifica por
+// el texto de su etiqueta ("gestión"/"gestion"), no por ser fee1 o fee2 —
+// así funciona bien aunque se hayan configurado al revés de lo esperado.
+function _esEtiquetaDeGestion(label) {
+  const l = (label || '').toLowerCase();
+  return l.includes('gestión') || l.includes('gestion');
+}
 function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE_AMOUNT_KEY, String(amount));
@@ -7591,18 +9188,292 @@ function saveFeeConfig(enabled, amount, label) {
   logActivity((enabled ? '\u2705' : '\u26d4') + ' Gastos de gesti\u00f3n ' + (enabled ? 'activados' : 'desactivados') + ' \u2014 ' + amount.toFixed(2) + '\u20ac');
 }
 function loadFeeFromFirebase() {
-  console.log('[fee] loadFeeFromFirebase called, fb_listenFeeConfig=', typeof window.fb_listenFeeConfig);
-  if (!window.fb_listenFeeConfig) {
-    console.warn('[fee] fb_listenFeeConfig no disponible');
-    return;
+  // Lectura directa de una sola vez, además del listener en tiempo real de
+  // abajo — si no, en una visita nueva getFeeEnabled() podía devolver
+  // "desactivado" (el valor por defecto) durante los primeros segundos,
+  // hasta que el listener recibiera su primer valor real; si el cliente
+  // confirmaba el pedido en ese hueco, se quedaba sin cobrar el gasto fijo
+  // aunque estuviera activado de verdad.
+  if (window.fb_loadFeeConfig) {
+    window.fb_loadFeeConfig().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
+      if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
+      renderCart();
+    }).catch(() => {}).then(() => { window._feeConfigListo = true; });
+  } else {
+    window._feeConfigListo = true;
   }
+  if (!window.fb_listenFeeConfig) return;
   window.fb_listenFeeConfig(function (cfg) {
-    console.log('[fee] listener fired, cfg=', JSON.stringify(cfg));
     if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
     if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
     if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
-    console.log('[fee] after update: enabled=', localStorage.getItem(FEE_ENABLED_KEY));
     renderCart();
+  });
+}
+// ── SEGUNDO GASTO FIJO (independiente del anterior, con su propio interruptor) ──
+const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
+const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
+const FEE2_LABEL_KEY = 'dpf_fee2_label';
+function getFee2Enabled() {
+  return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
+}
+function getFee2Amount() {
+  return parseFloat(localStorage.getItem(FEE2_AMOUNT_KEY) || '0.50');
+}
+function getFee2Label() {
+  return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
+}
+function saveFee2Config(enabled, amount, label) {
+  localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
+  localStorage.setItem(FEE2_LABEL_KEY, label);
+  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' ' + label + ' ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
+}
+function loadFee2FromFirebase() {
+  // Lectura directa de una sola vez — mismo motivo que loadFeeFromFirebase():
+  // sin esto, un cliente que confirmara el pedido muy rápido en una visita
+  // nueva podía quedarse sin cobrar la bolsa (getFee2Enabled() devolvía
+  // "desactivado" por defecto hasta que el listener recibiera el valor real).
+  if (window.fb_loadFee2Config) {
+    window.fb_loadFee2Config().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+      if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+      renderCart();
+    }).catch(() => {}).then(() => { window._fee2ConfigListo = true; });
+  } else {
+    window._fee2ConfigListo = true;
+  }
+  if (!window.fb_listenFee2Config) return;
+  window.fb_listenFee2Config(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+    if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+    renderCart();
+  });
+}
+
+// ── DESCUENTO ESTUDIANTE/JUBILADO (autodeclarado, se comprueba el carné al cobrar) ──
+const STUDENT_DISCOUNT_ENABLED_KEY = 'dpf_student_discount_enabled';
+const STUDENT_DISCOUNT_PCT_KEY = 'dpf_student_discount_pct';
+function getStudentDiscountEnabled() {
+  return localStorage.getItem(STUDENT_DISCOUNT_ENABLED_KEY) === 'true';
+}
+function getStudentDiscountPct() {
+  return parseFloat(localStorage.getItem(STUDENT_DISCOUNT_PCT_KEY) || '10');
+}
+function saveStudentDiscountConfig(enabled, pct) {
+  localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
+  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
+}
+function loadStudentDiscountFromFirebase() {
+  // Mismo motivo que loadFeeFromFirebase()/loadFee2FromFirebase(): lectura
+  // directa de una sola vez además del listener, para que en una visita
+  // nueva la casilla no aparezca oculta/desactivada solo porque el
+  // listener todavía no ha recibido su primer valor.
+  if (window.fb_loadStudentDiscountConfig) {
+    window.fb_loadStudentDiscountConfig().then(cfg => {
+      if (!cfg) return;
+      if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+      if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+      renderCart();
+    }).catch(() => {}).then(() => { window._studentDiscountConfigListo = true; });
+  } else {
+    window._studentDiscountConfigListo = true;
+  }
+  if (!window.fb_listenStudentDiscountConfig) return;
+  window.fb_listenStudentDiscountConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+    renderCart();
+  });
+}
+
+// ── CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión, no el otro gasto fijo) ──
+// Para cuando hay cola y quieres que la gente pida desde el móvil sin que
+// les cobre los gastos de gestión online — cambiable desde el panel en
+// cualquier momento, para que no valga para siempre si alguien lo comparte.
+const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
+function getLocalFeeCode() {
+  return (localStorage.getItem(LOCAL_FEE_CODE_KEY) || '').toUpperCase();
+}
+function saveLocalFeeCode(code) {
+  const c = (code || '').trim().toUpperCase();
+  localStorage.setItem(LOCAL_FEE_CODE_KEY, c);
+  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(c).catch(function () {});
+  logActivity('🏪 Código "pedido desde el local" actualizado: ' + (c || '(vacío)'));
+}
+function loadLocalFeeCodeFromFirebase() {
+  if (!window.fb_listenLocalFeeCode) return;
+  window.fb_listenLocalFeeCode(function (code) {
+    localStorage.setItem(LOCAL_FEE_CODE_KEY, (code || '').toUpperCase());
+    // El código real puede tardar en llegar de Firebase más de lo que
+    // tarda en dispararse _aplicarCodigoLocalDesdeURL() (600ms fijos tras
+    // cargar la página) — con conexión lenta en el local al escanear el
+    // QR, la comprobación llegaba a hacerse ANTES de tener el código real
+    // guardado, así que _modoLocalActivo() la daba por incorrecta y
+    // cobraba de más el resto del pedido sin que el cliente lo notara.
+    // Repetir la comprobación aquí, ahora que ya hay valor real, lo arregla
+    // aunque haya llegado tarde.
+    if (typeof _aplicarCodigoLocalDesdeURL === 'function') _aplicarCodigoLocalDesdeURL();
+  });
+}
+function generarCodigoLocalNuevo() {
+  const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I, para no confundir al leerlo en voz alta
+  let c = '';
+  for (let i = 0; i < 4; i++) c += letras[Math.floor(Math.random() * letras.length)];
+  const el = document.getElementById('tc-local-fee-code');
+  if (el) el.value = c;
+}
+// ── TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda) ──
+// Si llegan varios pedidos "desde el local" seguidos, todos salían con la
+// hora real en que se hicieron ("ahora mismo") — cocina los veía todos
+// como urgentes a la vez. Con esto, cada uno se reparte en el tiempo por
+// el intervalo elegido (15/20/25 min), igual que un turno normal.
+const TIENDA_ESPERA_MINUTOS_KEY = 'dpf_tienda_espera_minutos';
+function getTiendaEsperaMinutos() {
+  return parseInt(localStorage.getItem(TIENDA_ESPERA_MINUTOS_KEY) || '0', 10) || 0;
+}
+function saveTiendaEsperaMinutos(minutos) {
+  const m = parseInt(minutos, 10) || 0;
+  localStorage.setItem(TIENDA_ESPERA_MINUTOS_KEY, m);
+  if (window.fb_saveTiendaEsperaMinutos) window.fb_saveTiendaEsperaMinutos(m).catch(function () {});
+  logActivity('⏱️ Tiempo de espera entre tickets (QR tienda): ' + (m ? m + ' min' : 'desactivado'));
+}
+function loadTiendaEsperaMinutosFromFirebase() {
+  if (!window.fb_listenTiendaEsperaMinutos) return;
+  window.fb_listenTiendaEsperaMinutos(function (minutos) {
+    localStorage.setItem(TIENDA_ESPERA_MINUTOS_KEY, minutos || 0);
+  });
+}
+// Transacción en Firebase (no localStorage): varios clientes pidiendo desde
+// sus propios móviles con el mismo código QR necesitan compartir la misma
+// "cola" para repartirse bien, aunque no sea el mismo dispositivo.
+async function _asignarHoraTiendaQR() {
+  const minutos = getTiendaEsperaMinutos();
+  if (!minutos || typeof firebase === 'undefined' || !firebase.database) return null;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const intervaloMs = minutos * 60000;
+  try {
+    const res = await firebase.database().ref('tiendaColaQR/' + todayKey).transaction(function (current) {
+      const ahora = Date.now();
+      const base = (current && typeof current.proximoTs === 'number' && current.proximoTs > ahora) ? current.proximoTs : ahora;
+      return { proximoTs: base + intervaloMs };
+    });
+    const val = res && res.committed && res.snapshot ? res.snapshot.val() : null;
+    if (!val || !val.proximoTs) return null;
+    return new Date(val.proximoTs).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    console.warn('[tienda-qr] no se pudo asignar hora escalonada:', e);
+    return null;
+  }
+}
+// Comprueba el código que escribió el cliente — sin distinguir mayúsculas/minúsculas
+function _modoLocalActivo() {
+  const input = document.getElementById('local-fee-code-input');
+  const escrito = input ? input.value.trim().toUpperCase() : '';
+  const real = getLocalFeeCode();
+  return !!(real && escrito && escrito === real);
+}
+function comprobarCodigoLocal() {
+  const activo = _modoLocalActivo();
+  const input = document.getElementById('local-fee-code-input');
+  const escrito = input ? input.value.trim() : '';
+  ['local-fee-code-feedback', 'drawer-local-fee-code-feedback'].forEach(id => {
+    const feedback = document.getElementById(id);
+    if (!feedback) return;
+    if (!escrito) {
+      feedback.textContent = '';
+    } else {
+      feedback.textContent = activo ? '✅ Sin gastos de gestión — pedido para ahora mismo, sin turno' : '❌ Código incorrecto';
+      feedback.style.color = activo ? '#27855a' : '#c0392b';
+    }
+  });
+  renderCart();
+}
+// Si se llega con ?local=CODIGO en la URL (el cartel con QR del mostrador
+// lleva a un enlace así), se rellena y se comprueba solo, sin que el
+// cliente tenga que escribir nada — para eso sirve el QR.
+async function _aplicarCodigoLocalDesdeURL() {
+  const params = new URLSearchParams(window.location.search);
+  const codigo = params.get('local');
+  if (!codigo) { window._localCodeListo = true; return; }
+  try {
+    // Esta función se puede volver a llamar sola (cuando el código real
+    // llega de Firebase con retraso) — si para entonces el cliente ya está
+    // escribiendo su nombre/teléfono, no le repintamos el carrito debajo
+    // de los dedos; se reintenta en un momento en vez de perder el aviso
+    // para siempre.
+    const activo = document.activeElement;
+    if (activo && (activo.tagName === 'INPUT' || activo.tagName === 'TEXTAREA') && activo.id !== 'local-fee-code-input' && activo.id !== 'drawer-local-fee-code-input') {
+      setTimeout(_aplicarCodigoLocalDesdeURL, 2000);
+      return; // window._localCodeListo sigue en false: se reintenta en 2s
+    }
+    const upper = codigo.trim().toUpperCase();
+    const input = document.getElementById('local-fee-code-input');
+    if (input) input.value = upper;
+    // Lectura directa a Firebase (no fiarse solo de localStorage/del
+    // listener en tiempo real) — en una visita nueva o en incógnito,
+    // localStorage está vacío y el listener puede tardar más en recibir su
+    // primer valor de lo que tarda el cliente en rellenar el formulario y
+    // pulsar "Confirmar". Con esta lectura directa el dato real está listo
+    // antes de seguir, en vez de esperar a que llegue por su cuenta.
+    if (window.fb_loadLocalFeeCode) {
+      try {
+        const real = await window.fb_loadLocalFeeCode();
+        localStorage.setItem(LOCAL_FEE_CODE_KEY, (real || '').toUpperCase());
+      } catch (e) {
+        console.warn('[local] no se pudo leer el código real de Firebase', e);
+      }
+    }
+    console.log('[local] código desde URL:', upper, '| código guardado:', getLocalFeeCode(), '| ¿coinciden?', upper === getLocalFeeCode());
+    comprobarCodigoLocal();
+  } catch (e) {
+    console.warn('[local] error aplicando código desde URL', e);
+  }
+  window._localCodeListo = true;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  if (new URLSearchParams(window.location.search).get('local')) window._localCodeListo = false;
+  // Con margen, para dar tiempo a que renderCart() haya pintado ya el
+  // carrito al menos una vez (si no, el interruptor de gastos de gestión
+  // podría no estar listo todavía y no se mostraría el aviso de aplicado).
+  setTimeout(_aplicarCodigoLocalDesdeURL, 600);
+});
+
+// ── Gate de config crítica antes de confirmar un pedido ──
+// Antes, cada ajuste que dependía de Firebase (gastos de gestión, bolsa,
+// código local...) se iba parcheando por separado cada vez que aparecía un
+// caso de "a veces no se aplica a tiempo" (ver comentarios de arriba). En
+// vez de seguir cazando estos casos uno a uno, submitOrder() espera a este
+// punto de control único antes de calcular fees/total definitivos. En el
+// caso normal (config ya cargada mucho antes de que el cliente termine de
+// rellenar el formulario) esto no añade ninguna espera perceptible — solo
+// entra en juego en una visita nueva/muy rápida, y como mucho espera
+// maxMs antes de continuar igualmente con los valores que haya, para no
+// dejar al cliente colgado si Firebase estuviera caído de verdad (para eso
+// ya existe el aviso de "Firebase no disponible").
+window._feeConfigListo = window._feeConfigListo || false;
+window._fee2ConfigListo = window._fee2ConfigListo || false;
+window._localCodeListo = window._localCodeListo === undefined ? true : window._localCodeListo;
+window._studentDiscountConfigListo = window._studentDiscountConfigListo || false;
+function esperarConfigCriticaLista(maxMs) {
+  return new Promise(resolve => {
+    const start = Date.now();
+    (function chk() {
+      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo;
+      if (listo || Date.now() - start > maxMs) { resolve(); return; }
+      setTimeout(chk, 80);
+    })();
   });
 }
 const SLOTS_KEY = 'dpf_slots';
@@ -7616,7 +9487,10 @@ const TICKET_CONFIG_DEFAULTS = {
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
   copias: 1,
-  autoImprimir: true
+  autoImprimir: true,
+  letraGrande: false,
+  qrHabilitado: false,
+  qrContenido: ''
 };
 function getTicketConfig() {
   try {
@@ -7649,6 +9523,20 @@ function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(() => {});
+  // Un toggle manual gana siempre sobre la auto-pausa: se marca que este
+  // estado ya NO lo puso el sistema (para que no lo "corrija" solo) y se le
+  // da un margen antes de que la auto-pausa pueda volver a tocar nada \u2014 si
+  // no, un reabrir manual con la cola todav\u00EDa alta se auto-pausar\u00EDa de
+  // nuevo en cuanto entrara el siguiente pedido.
+  _setAutoPausaEstado(false, Date.now() + AUTO_PAUSA_COOLDOWN_MS);
+  // Un toggle manual tambi\u00E9n cancela cualquier pausa expr\u00E9s pendiente \u2014
+  // si no, esta podr\u00EDa reabrir sola pasado su tiempo aunque el admin ya
+  // haya decidido otra cosa en medio.
+  if (_getPausaExpresHasta()) {
+    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
+    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+  }
   updateOrdersUI(next);
   logActivity("\uD83D\uDEA6 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
@@ -7663,6 +9551,316 @@ function savePauseMsg() {
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');
+}
+
+// \u2500\u2500 AUTO-PAUSA POR SATURACI\u00D3N \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Si se acumulan demasiados pedidos pendientes (sin marcar "listo"), la web
+// se pausa sola \u2014reutilizando el mismo mecanismo de "Pedidos pausados" de
+// arriba, banner y candado en el carrito incluidos\u2014 y se reactiva sola en
+// cuanto la cola baja, para que en hora punta no haga falta estar pendiente
+// de pausar/reabrir a mano.
+const AUTO_PAUSA_ENABLED_KEY = 'dpf_auto_pausa_enabled';
+const AUTO_PAUSA_UMBRAL_KEY = 'dpf_auto_pausa_umbral';
+const AUTO_PAUSA_MSG_KEY = 'dpf_auto_pausa_msg';
+const AUTO_PAUSA_DEFAULT_MSG = '\uD83D\uDD25 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.';
+const AUTO_PAUSA_DEFAULT_UMBRAL = 15;
+// Para reabrir hace falta bajar del umbral con margen (no solo tocarlo
+// justo) \u2014 si no, con la cola oscilando alrededor del umbral se abrir\u00EDa y
+// cerrar\u00EDa sola una y otra vez.
+const AUTO_PAUSA_HISTERESIS = 3;
+const AUTO_PAUSA_ACTIVA_KEY = 'dpf_auto_pausa_activa'; // \u00BFla pausa actual la puso el sistema (no el admin)?
+const AUTO_PAUSA_COOLDOWN_KEY = 'dpf_auto_pausa_cooldown';
+const AUTO_PAUSA_COOLDOWN_MS = 3 * 60 * 1000;
+
+function getAutoPausaConfig() {
+  return {
+    enabled: localStorage.getItem(AUTO_PAUSA_ENABLED_KEY) === 'true',
+    umbral: parseInt(localStorage.getItem(AUTO_PAUSA_UMBRAL_KEY) || '', 10) || AUTO_PAUSA_DEFAULT_UMBRAL,
+    msg: localStorage.getItem(AUTO_PAUSA_MSG_KEY) || AUTO_PAUSA_DEFAULT_MSG
+  };
+}
+function saveAutoPausaConfig(enabled, umbral, msg) {
+  localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(umbral));
+  localStorage.setItem(AUTO_PAUSA_MSG_KEY, msg);
+  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(enabled, umbral, msg).catch(() => {});
+  logActivity((enabled ? '\u2705' : '\u26D4') + ' Auto-pausa por saturaci\u00F3n ' + (enabled ? 'activada \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivada'));
+  if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+}
+function loadAutoPausaConfigFromFirebase() {
+  if (!window.fb_listenAutoPausaConfig) return;
+  window.fb_listenAutoPausaConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.umbral !== undefined) localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(cfg.umbral));
+    if (cfg.msg !== undefined) localStorage.setItem(AUTO_PAUSA_MSG_KEY, cfg.msg);
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  });
+}
+function _getAutoPausaEstado() {
+  return {
+    activa: localStorage.getItem(AUTO_PAUSA_ACTIVA_KEY) === 'true',
+    cooldownUntil: parseInt(localStorage.getItem(AUTO_PAUSA_COOLDOWN_KEY) || '', 10) || 0
+  };
+}
+function _setAutoPausaEstado(activa, cooldownUntil) {
+  localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, activa ? 'true' : 'false');
+  localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(cooldownUntil || 0));
+  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(activa, cooldownUntil || 0).catch(() => {});
+}
+function loadAutoPausaEstadoFromFirebase() {
+  if (!window.fb_listenAutoPausaEstado) return;
+  window.fb_listenAutoPausaEstado(function (estado) {
+    if (estado.activa !== undefined) localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, estado.activa ? 'true' : 'false');
+    if (estado.cooldownUntil !== undefined) localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(estado.cooldownUntil || 0));
+  });
+}
+// Se llama cada vez que se repinta "Pedidos en vivo" con el n\u00BA de pedidos
+// pendientes (sin marcar "listo"/"entregado"/"cancelado"). Solo pausa o
+// reactiva pedidos \u2014 nunca toca el horario ni el estado "Local abierto".
+function _comprobarAutoPausaSaturacion(pendientes) {
+  const cfg = getAutoPausaConfig();
+  if (!cfg.enabled) return;
+  // Fuera de horario/d\u00EDa cerrado: eso ya cierra los pedidos por su cuenta
+  // (getOrdersOpen), no hay saturaci\u00F3n que gestionar.
+  if (isOutsideHours() || !isTodayOpen()) return;
+  const estado = _getAutoPausaEstado();
+  if (Date.now() < estado.cooldownUntil) return; // toggle manual reciente, no lo pisamos todav\u00EDa
+
+  const open = getOrdersOpen();
+  if (open && pendientes >= cfg.umbral) {
+    localStorage.setItem(ORDERS_KEY, 'false');
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+    localStorage.setItem(ORDERS_MSG_KEY, cfg.msg);
+    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg).catch(() => {});
+    _setAutoPausaEstado(true, 0);
+    updateOrdersUI(false, cfg.msg);
+    logActivity('\uD83D\uDD25 Pedidos pausados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes (umbral: ' + cfg.umbral + ')');
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  } else if (!open && estado.activa && pendientes <= Math.max(0, cfg.umbral - AUTO_PAUSA_HISTERESIS)) {
+    localStorage.setItem(ORDERS_KEY, 'true');
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    _setAutoPausaEstado(false, 0);
+    updateOrdersUI(true);
+    logActivity('\u2705 Pedidos reactivados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes');
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  } else if (typeof _renderAutoPausaUI === 'function') {
+    _renderAutoPausaUI(pendientes);
+  }
+}
+function toggleAutoPausaEnabled() {
+  const cfg = getAutoPausaConfig();
+  saveAutoPausaConfig(!cfg.enabled, cfg.umbral, cfg.msg);
+}
+function guardarAutoPausaConfig() {
+  const umbralInput = document.getElementById('auto-pausa-umbral');
+  const msgInput = document.getElementById('auto-pausa-msg');
+  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
+  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AUTO_PAUSA_DEFAULT_UMBRAL : parsedUmbral;
+  const msg = (msgInput && msgInput.value.trim()) || AUTO_PAUSA_DEFAULT_MSG;
+  saveAutoPausaConfig(getAutoPausaConfig().enabled, umbral, msg);
+  showToast('local-toast');
+}
+function _renderAutoPausaUI(pendientesActuales) {
+  const cfg = getAutoPausaConfig();
+  const btn = document.getElementById('auto-pausa-toggle-btn');
+  if (btn) {
+    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
+    btn.textContent = cfg.enabled ? '\u2705 Activada' : '\u26D4 Desactivada';
+  }
+  const umbralInput = document.getElementById('auto-pausa-umbral');
+  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
+  const msgInput = document.getElementById('auto-pausa-msg');
+  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
+  const estadoEl = document.getElementById('auto-pausa-estado-texto');
+  if (estadoEl) {
+    if (!cfg.enabled) {
+      estadoEl.textContent = '';
+    } else {
+      const estado = _getAutoPausaEstado();
+      const pendientes = pendientesActuales !== undefined ? pendientesActuales : (window._activosCache || []).length;
+      estadoEl.textContent = estado.activa
+        ? '\uD83D\uDD25 Pausado autom\u00E1ticamente ahora mismo (' + pendientes + ' pedidos pendientes)'
+        : 'Ahora mismo: ' + pendientes + ' / ' + cfg.umbral + ' pedidos pendientes';
+    }
+  }
+}
+
+// \u2500\u2500 PAUSA EXPR\u00C9S (pausa temporal con cuenta atr\u00E1s) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Para cuando sabes que el pico va a durar poco y no quieres tener que
+// acordarte de reactivar los pedidos t\u00FA misma \u2014 se reabre sola pasado el
+// tiempo, sin depender de que baje la cola (a diferencia de la auto-pausa
+// por saturaci\u00F3n, que solo mira el n\u00BA de pedidos pendientes).
+const PAUSA_EXPRES_HASTA_KEY = 'dpf_pausa_expres_hasta';
+function _getPausaExpresHasta() {
+  return parseInt(localStorage.getItem(PAUSA_EXPRES_HASTA_KEY) || '', 10) || 0;
+}
+function pausarExpres(minutos) {
+  const hasta = Date.now() + minutos * 60 * 1000;
+  localStorage.setItem(ORDERS_KEY, 'false');
+  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta));
+  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(() => {});
+  // No debe considerarse una auto-pausa (para que la auto-pausa por
+  // saturaci\u00F3n no la reabra antes de tiempo ni la vuelva a tocar).
+  _setAutoPausaEstado(false, hasta);
+  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const msg = '\u23F1\uFE0F Pausado temporalmente. Volvemos sobre las ' + horaReapertura + '.';
+  localStorage.setItem(ORDERS_MSG_KEY, msg);
+  if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(() => {});
+  updateOrdersUI(false, msg);
+  logActivity('\u23F1\uFE0F Pausa expr\u00E9s activada: ' + minutos + ' min (reabre a las ' + horaReapertura + ')');
+  _renderPausaExpresUI();
+}
+function _comprobarPausaExpres() {
+  const hasta = _getPausaExpresHasta();
+  if (!hasta) return;
+  if (Date.now() >= hasta) {
+    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
+    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+    // Solo reabre si nadie ha vuelto a tocar el toggle manual mientras tanto
+    // (toggleOrdersAccepting ya limpia esta clave al pulsarlo).
+    if (localStorage.getItem(ORDERS_KEY) === 'false') {
+      localStorage.setItem(ORDERS_KEY, 'true');
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      updateOrdersUI(true);
+      logActivity('\u2705 Pausa expr\u00E9s terminada \u2014 pedidos reactivados');
+    }
+    _renderPausaExpresUI();
+  }
+}
+function loadPausaExpresFromFirebase() {
+  if (!window.fb_listenPausaExpresHasta) return;
+  window.fb_listenPausaExpresHasta(function (hasta) {
+    localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta || 0));
+    _renderPausaExpresUI();
+  });
+}
+function _renderPausaExpresUI() {
+  const el = document.getElementById('pausa-expres-estado-texto');
+  if (!el) return;
+  const hasta = _getPausaExpresHasta();
+  if (!hasta || Date.now() >= hasta) {
+    el.textContent = '';
+    return;
+  }
+  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const minutosRestantes = Math.max(1, Math.round((hasta - Date.now()) / 60000));
+  el.textContent = '\u23F1\uFE0F Pausa expr\u00E9s activa \u2014 reabre a las ' + horaReapertura + ' (~' + minutosRestantes + ' min)';
+}
+// Comprobaci\u00F3n peri\u00F3dica: nada m\u00E1s dispara esto si no llega ning\u00FAn pedido
+// nuevo mientras dura la pausa.
+setInterval(() => {
+  if (typeof _comprobarPausaExpres === 'function') _comprobarPausaExpres();
+}, 15000);
+
+// \u2500\u2500 AVISO SUAVE DE SATURACI\u00D3N (previo a la auto-pausa) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Antes de llegar al punto de cerrar los pedidos del todo, avisa (sin
+// bloquear) tanto al cliente ("va a tardar m\u00E1s de lo normal") como a cocina
+// (sonido distinto) y empuja el selector de turno hacia horas m\u00E1s tarde \u2014
+// para repartir mejor la carga en vez de amontonarla toda en el turno m\u00E1s
+// pr\u00F3ximo.
+const AVISO_SAT_ENABLED_KEY = 'dpf_aviso_sat_enabled';
+const AVISO_SAT_UMBRAL_KEY = 'dpf_aviso_sat_umbral';
+const AVISO_SAT_MSG_KEY = 'dpf_aviso_sat_msg';
+const AVISO_SAT_SALTO_KEY = 'dpf_aviso_sat_salto_min';
+const AVISO_SAT_MINPP_KEY = 'dpf_aviso_sat_minpp';
+const AVISO_SAT_DEFAULT_MSG = '\u23F3 Hay bastante ambiente ahora mismo, tu pedido tardar\u00E1 m\u00E1s de lo habitual.';
+const AVISO_SAT_DEFAULT_UMBRAL = 8;
+const AVISO_SAT_DEFAULT_SALTO_MIN = 30;
+const AVISO_SAT_DEFAULT_MINPP = 3;
+function getAvisoSaturacionConfig() {
+  return {
+    enabled: localStorage.getItem(AVISO_SAT_ENABLED_KEY) === 'true',
+    umbral: parseInt(localStorage.getItem(AVISO_SAT_UMBRAL_KEY) || '', 10) || AVISO_SAT_DEFAULT_UMBRAL,
+    msg: localStorage.getItem(AVISO_SAT_MSG_KEY) || AVISO_SAT_DEFAULT_MSG,
+    minutosSalto: parseInt(localStorage.getItem(AVISO_SAT_SALTO_KEY) || '', 10) || AVISO_SAT_DEFAULT_SALTO_MIN,
+    minPorPedido: parseInt(localStorage.getItem(AVISO_SAT_MINPP_KEY) || '', 10) || AVISO_SAT_DEFAULT_MINPP
+  };
+}
+function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido) {
+  localStorage.setItem(AVISO_SAT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(umbral));
+  localStorage.setItem(AVISO_SAT_MSG_KEY, msg);
+  localStorage.setItem(AVISO_SAT_SALTO_KEY, String(minutosSalto));
+  localStorage.setItem(AVISO_SAT_MINPP_KEY, String(minPorPedido));
+  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido).catch(() => {});
+  logActivity((enabled ? '\u2705' : '\u26D4') + ' Aviso previo de saturaci\u00F3n ' + (enabled ? 'activado \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivado'));
+  _renderAvisoSaturacionUI();
+}
+function loadAvisoSaturacionFromFirebase() {
+  if (!window.fb_listenAvisoSaturacionConfig) return;
+  window.fb_listenAvisoSaturacionConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(AVISO_SAT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.umbral !== undefined) localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(cfg.umbral));
+    if (cfg.msg !== undefined) localStorage.setItem(AVISO_SAT_MSG_KEY, cfg.msg);
+    if (cfg.minutosSalto !== undefined) localStorage.setItem(AVISO_SAT_SALTO_KEY, String(cfg.minutosSalto));
+    if (cfg.minPorPedido !== undefined) localStorage.setItem(AVISO_SAT_MINPP_KEY, String(cfg.minPorPedido));
+    _renderAvisoSaturacionUI();
+  });
+}
+function toggleAvisoSaturacionEnabled() {
+  const cfg = getAvisoSaturacionConfig();
+  saveAvisoSaturacionConfig(!cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido);
+}
+function guardarAvisoSaturacionConfig() {
+  const umbralInput = document.getElementById('aviso-sat-umbral');
+  const msgInput = document.getElementById('aviso-sat-msg');
+  const saltoInput = document.getElementById('aviso-sat-salto');
+  const minppInput = document.getElementById('aviso-sat-minpp');
+  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
+  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AVISO_SAT_DEFAULT_UMBRAL : parsedUmbral;
+  const parsedSalto = parseInt(saltoInput && saltoInput.value, 10);
+  const minutosSalto = (isNaN(parsedSalto) || parsedSalto < 0) ? AVISO_SAT_DEFAULT_SALTO_MIN : parsedSalto;
+  const parsedMinpp = parseInt(minppInput && minppInput.value, 10);
+  const minPorPedido = (isNaN(parsedMinpp) || parsedMinpp < 0) ? AVISO_SAT_DEFAULT_MINPP : parsedMinpp;
+  const msg = (msgInput && msgInput.value.trim()) || AVISO_SAT_DEFAULT_MSG;
+  saveAvisoSaturacionConfig(getAvisoSaturacionConfig().enabled, umbral, msg, minutosSalto, minPorPedido);
+  showToast('local-toast');
+}
+// Estimaci\u00F3n de espera para la pantalla de \u00E9xito: pendientes \u00D7 minutos/pedido
+function _estimarMinutosEspera(pendientes) {
+  const cfg = getAvisoSaturacionConfig();
+  if (!cfg.enabled || pendientes < cfg.umbral) return 0;
+  return pendientes * cfg.minPorPedido;
+}
+function _renderAvisoSaturacionUI() {
+  const cfg = getAvisoSaturacionConfig();
+  const btn = document.getElementById('aviso-sat-toggle-btn');
+  if (btn) {
+    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
+    btn.textContent = cfg.enabled ? '\u2705 Activado' : '\u26D4 Desactivado';
+  }
+  const umbralInput = document.getElementById('aviso-sat-umbral');
+  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
+  const msgInput = document.getElementById('aviso-sat-msg');
+  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
+  const saltoInput = document.getElementById('aviso-sat-salto');
+  if (saltoInput && document.activeElement !== saltoInput) saltoInput.value = cfg.minutosSalto;
+  const minppInput = document.getElementById('aviso-sat-minpp');
+  if (minppInput && document.activeElement !== minppInput) minppInput.value = cfg.minPorPedido;
+}
+// \u00BFEst\u00E1 el nivel de "aviso" activo ahora mismo? (por debajo del umbral de
+// auto-pausa \u2014si ya est\u00E1 pausado del todo, el banner de cerrado manda\u2014)
+window._saturacionAvisoActiva = false;
+function _actualizarAvisoSaturacion(pendientes) {
+  const cfg = getAvisoSaturacionConfig();
+  const banner = document.getElementById('aviso-saturacion-banner');
+  const pausaCfg = getAutoPausaConfig();
+  const yaPausado = pausaCfg.enabled && !getOrdersOpen();
+  const activa = cfg.enabled && !yaPausado && pendientes >= cfg.umbral;
+  const eraActiva = window._saturacionAvisoActiva;
+  window._saturacionAvisoActiva = activa;
+  if (banner) {
+    banner.style.display = activa ? 'block' : 'none';
+    banner.textContent = activa ? cfg.msg : '';
+  }
+  if (activa && !eraActiva && _adminLoggedIn && typeof playNotificationSound === 'function') {
+    playNotificationSound('bip');
+  }
+  if (typeof renderSlotPicker === 'function') {
+    const group = document.getElementById('slot-picker-group');
+    if (group && group.style.display !== 'none') renderSlotPicker();
+  }
 }
 function loadFeeUI() {
   const btn = document.getElementById('fee-toggle-btn');
@@ -7682,7 +9880,10 @@ function toggleFeeEnabled() {
   showToast('fee-toast');
 }
 function saveFeeFromPanel() {
-  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
+  // Antes "|| 0.50" trataba un 0 escrito a propósito como si no se hubiera
+  // escrito nada (0 es falsy en JS) y lo sustituía por 0,50€ sin avisar.
+  const parsedAmount = parseFloat(document.getElementById('fee-amount-input').value);
+  const amount = (isNaN(parsedAmount) || parsedAmount < 0) ? 0.50 : parsedAmount;
   const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
   saveFeeConfig(getFeeEnabled(), amount, label);
   loadFeeUI();
@@ -7753,8 +9954,14 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
+    // Si cierra después de medianoche (closeEnd < openStart), hay que expresar
+    // closeEnd en el mismo "espacio extendido" que nowMin (que ya suma 1440
+    // antes de las 06:00) para poder comparar de forma continua — antes
+    // comparaba nowMin extendido contra closeEnd sin extender, así que entre
+    // el cierre real (ej. 00:30) y las 06:00 nunca detectaba que ya había
+    // cerrado (nowMin >= openStart seguía siendo cierto igual).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart || nowMin < closeEnd)
+      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado
@@ -7867,24 +10074,29 @@ function _ejecutarLoadOrdersStatus() {
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe
   checkVacationMode();
+  // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
+  // un cliente anónimo mirando la carta no tiene permiso de escritura en
+  // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
+  // generando avisos de "permission_denied" en la consola sin ningún efecto.
+  const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
       updateOpenBtn(false);
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
       localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
   const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
@@ -7919,19 +10131,33 @@ function formatPhone(input) {
 
 // ── FIDELIZACIÓN: comprobación de premio disponible al introducir teléfono ──
 async function _comprobarPremioFidelizacion(phoneClean) {
-  if (!window.fb_loadFidelizacionCliente) return;
+  // Consulta server-side (fidelizacion.php) en vez de leer Firebase
+  // directamente — así solo se ve lo mínimo (sellos/premios de ESTE
+  // teléfono) y nadie puede fisgonear el nombre/historial de otro cliente.
   try {
-    const cliente = await window.fb_loadFidelizacionCliente(phoneClean);
-    const premiosPendientes = cliente
-      ? (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : (cliente.premioDisponible ? 1 : 0))
-      : 0;
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'consultar', telefono: phoneClean })
+    });
+    const data = await res.json();
+    if (!data.success) return;
+    const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
+    const premiosPendientes = cliente.premiosPendientes;
+    // Se guarda para que renderCart() pueda volver a pintar la tarjeta cada
+    // vez que reconstruye el carrito — en el cajón móvil, _syncCartDrawer()
+    // sustituye TODO el HTML del carrito (incluido el campo de teléfono al
+    // que se había enganchado esta tarjeta con appendChild), así que sin
+    // esto la tarjeta se borraba en el primer repintado después de aparecer
+    // y nunca se volvía a ver.
+    window._fidelizacionClienteCache = { phone: phoneClean, cliente };
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
       window._fidelizacionProximoSelloActivo = null;
       _ocultarAvisoProximoSelloFidelizacion();
       _mostrarAvisoPremioFidelizacion(phoneClean);
-    } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata()) {
+    } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata() && _carritoSubtotalActual() >= FIDELIZACION_PEDIDO_MINIMO) {
       // El cliente está a 1 sello del premio (9/10) y este pedido ya incluye
       // patata: este sería el pedido que completa el sello. Avisamos antes
       // de confirmar, no después.
@@ -7945,6 +10171,16 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
     }
+    // Repintar el carrito para que el total ya refleje el premio (o deje
+    // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
+    // el carrito para que se note el cambio. PERO no si el cliente está
+    // escribiendo en ese momento (nombre/teléfono/notas) — renderCart()
+    // reconstruye esos campos desde cero y le borraría lo que ha escrito.
+    // El descuento se calcula igualmente bien al confirmar el pedido
+    // aunque el carrito no se repinte al instante.
+    const _campoActivo = document.activeElement ? document.activeElement.tagName : '';
+    const _escribiendoAhora = _campoActivo === 'INPUT' || _campoActivo === 'TEXTAREA';
+    if (typeof renderCart === 'function' && !_escribiendoAhora) renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {
@@ -7954,6 +10190,29 @@ function _carritoTienePatata() {
     // por ejemplo "Patata Al Gusto" vive en custCart, no en cart.
     return typeof cartHasPatatas === 'function' ? cartHasPatatas() : false;
   } catch (e) { return false; }
+}
+// Subtotal aproximado del carrito (sin gastos fijos ni descuentos) — solo
+// para el aviso de "este pedido completa tu 10º sello", que debe coincidir
+// con el mismo mínimo de gasto que exige el sello de verdad al confirmar
+// (ver FIDELIZACION_PEDIDO_MINIMO / _pedidoElegibleFidelizacion en
+// carrito-checkout.js). No hace falta ser exacto al céntimo aquí: si al
+// final el pedido no llega al mínimo, simplemente no se le da el sello,
+// esto es solo el aviso previo.
+function _carritoSubtotalActual() {
+  try {
+    const regularTotal = Object.entries(cart).reduce((s, [id, q]) => {
+      const it = MENU.find(m => m.id == id);
+      return s + (it ? it.price * q : 0);
+    }, 0);
+    const custTotal = Object.values(custCart).filter(c => c.qty > 0).reduce((s, c) => {
+      const item = MENU.find(m => m.id == c.menuId);
+      if (!item) return s;
+      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+      return s + unitPrice * c.qty;
+    }, 0);
+    const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + (typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) * c.qty : 0), 0);
+    return regularTotal + custTotal + extTotal;
+  } catch (e) { return 0; }
 }
 function _campoTelefonoVisible(phoneCleanEsperado) {
   // En escritorio el formulario vive en la página principal (customer-phone);
@@ -8032,14 +10291,17 @@ function _pintarTarjetaSellos(phoneClean, cliente) {
 
   const card = document.createElement('div');
   card.className = 'tarjeta-sellos-cliente';
-  card.style.cssText = 'border-radius:12px;padding:12px 14px;margin-top:10px;font-family:\'DM Sans\',sans-serif;' +
-    (premios > 0 ? 'background:#3D1F0D;color:#FFF8EE' : 'background:#FBEFD6;border:1.5px solid #F4C430;color:#3D1F0D');
+  card.style.cssText = 'border-radius:12px;margin-top:10px;font-family:\'DM Sans\',sans-serif;' +
+    (premios > 0
+      ? 'padding:12px 14px;background:#3D1F0D;color:#FFF8EE'
+      : 'padding:11px 13px 11px 44px;position:relative;background:#fff;border:1px solid rgba(61,31,13,.10);box-shadow:0 1px 3px rgba(0,0,0,.06);color:#3D1F0D');
 
   if (premios > 0) {
     card.innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:2px">🎉 ¡Tienes ' + premios + ' patata' + (premios > 1 ? 's' : '') + ' gratis para canjear!</div>' +
       '<div style="font-size:12px;color:#F4C430">Añádela al carrito y se descontará sola al confirmar.</div>';
   } else {
-    card.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">🎁 Tus sellos: ' + sellos + '/10</div>' +
+    card.innerHTML = '<div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F4C430">🎁</div>' +
+      '<div style="font-size:12px;font-weight:700;margin-bottom:6px">Tus sellos: ' + sellos + '/10</div>' +
       '<div>' + dots + '</div>' +
       (veces > 0 ? '<div style="font-size:11px;color:#8A6A4E;margin-top:6px">🏅 Ya van ' + veces + ' patata' + (veces > 1 ? 's' : '') + ' gratis conseguidas</div>' : '');
   }
@@ -8074,6 +10336,1019 @@ function _lanzarConfetiSellos() {
   } catch {}
 }
 
+
+// ── IMPRESORA TÉRMICA (WebUSB) ──
+// Imprime directamente desde el navegador a la impresora térmica UNYKAch POS5 (USB, ESC/POS),
+// sin depender de un PC intermedio: funciona igual en Chrome de escritorio (para probar) que en
+// Chrome de la tablet Android de la tienda (con la impresora conectada por USB-OTG).
+// Requiere Chrome/Edge — Safari y Firefox no soportan WebUSB.
+
+const PRINTER_LOGO_W = 384;
+const PRINTER_LOGO_H = 384;
+const PRINTER_LOGO_DATA = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 128, 0, 0, 31, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 128, 0, 0, 127, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 254, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 252, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 248, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 248, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 240, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 240, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 224, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 224, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 192, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 192, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 192, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 128, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 128, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 128, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 252, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 252, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 1, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 31, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 199, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 159, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 127, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 248, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 128, 1, 255, 252, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 254, 0, 0, 127, 224, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 248, 0, 0, 63, 128, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 240, 31, 192, 15, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 225, 255, 248, 4, 3, 255, 192, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 199, 255, 255, 0, 31, 255, 248, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 159, 255, 255, 128, 127, 255, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 127, 255, 255, 225, 255, 255, 255, 143, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 243, 255, 255, 255, 207, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 247, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 231, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 227, 255, 255, 255, 191, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 129, 255, 255, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 127, 255, 252, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 252, 0, 63, 255, 240, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 240, 0, 7, 255, 192, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 128, 0, 0, 120, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 7, 255, 131, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 254, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 1, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 7, 252, 0, 0, 0, 0, 0, 3, 248, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 15, 254, 0, 0, 0, 0, 0, 7, 254, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 31, 255, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 224, 0, 31, 255, 0, 0, 0, 0, 0, 31, 255, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 224, 0, 63, 255, 128, 0, 0, 0, 0, 31, 255, 128, 0, 0, 0, 7, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 192, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 128, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 7, 255, 255, 224, 31, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 255, 128, 7, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 31, 255, 0, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 255, 0, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 31, 254, 0, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 254, 0, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 15, 254, 0, 0, 0, 0, 0, 31, 255, 0, 0, 0, 0, 7, 255, 252, 0, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 7, 252, 0, 0, 0, 0, 0, 15, 254, 0, 0, 0, 0, 15, 255, 248, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 1, 240, 0, 0, 0, 0, 0, 7, 252, 0, 0, 0, 0, 15, 255, 240, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 3, 248, 0, 0, 0, 0, 15, 255, 240, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 240, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 0, 0, 127, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 56, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 126, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 254, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 127, 224, 0, 63, 252, 0, 0, 0, 0, 0, 0, 31, 255, 128, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 3, 255, 248, 1, 255, 255, 0, 0, 0, 0, 0, 0, 31, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 15, 255, 254, 3, 255, 255, 192, 0, 0, 0, 0, 0, 31, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 63, 255, 255, 15, 255, 255, 240, 0, 0, 0, 0, 0, 63, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 127, 255, 255, 159, 255, 255, 252, 0, 0, 0, 0, 0, 63, 255, 129, 255, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 1, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 63, 255, 129, 255, 1, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 63, 255, 128, 254, 1, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 63, 255, 128, 254, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 127, 255, 0, 124, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 0, 127, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 127, 255, 0, 0, 7, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 195, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 24, 0, 0, 127, 255, 0, 0, 7, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 252, 0, 0, 127, 255, 0, 0, 15, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 127, 255, 0, 0, 31, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 255, 255, 0, 0, 63, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 255, 255, 0, 0, 127, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 255, 255, 0, 0, 127, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 255, 255, 0, 1, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 1, 255, 254, 0, 3, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 1, 255, 254, 0, 7, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 1, 255, 254, 0, 31, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 1, 255, 255, 129, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 1, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 3, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 3, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 3, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 7, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 7, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 7, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 15, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 15, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 15, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 31, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 31, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 251, 248, 0, 0, 0, 31, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 247, 255, 255, 255, 255, 187, 248, 0, 0, 0, 63, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 3, 255, 255, 252, 253, 255, 255, 251, 248, 0, 0, 0, 63, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 3, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 63, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 3, 255, 255, 255, 251, 255, 255, 255, 240, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 1, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 1, 255, 255, 254, 247, 255, 255, 239, 224, 0, 0, 0, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 0, 255, 223, 254, 255, 255, 255, 255, 192, 0, 0, 0, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 255, 255, 254, 239, 255, 255, 255, 192, 0, 0, 1, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 127, 255, 254, 223, 255, 255, 255, 128, 0, 0, 1, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 127, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 240, 0, 0, 63, 239, 255, 255, 255, 255, 255, 0, 0, 0, 3, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 7, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 15, 255, 255, 255, 255, 255, 252, 0, 0, 0, 7, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 15, 255, 255, 255, 255, 255, 248, 0, 0, 0, 15, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 7, 255, 255, 255, 255, 223, 240, 0, 0, 0, 31, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 252, 0, 0, 3, 255, 63, 255, 255, 127, 224, 0, 0, 0, 31, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 252, 0, 0, 1, 255, 239, 255, 253, 255, 192, 0, 0, 0, 63, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 254, 0, 0, 0, 255, 251, 255, 207, 255, 128, 0, 0, 0, 127, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 127, 255, 193, 255, 255, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 63, 255, 255, 255, 252, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 128, 0, 0, 15, 255, 255, 255, 248, 0, 0, 0, 1, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 192, 0, 0, 7, 255, 255, 255, 224, 0, 0, 0, 3, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 192, 0, 0, 1, 255, 255, 255, 128, 0, 0, 0, 7, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 224, 0, 0, 0, 63, 255, 254, 0, 0, 0, 0, 15, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 240, 0, 0, 0, 7, 255, 224, 0, 0, 0, 0, 31, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 252, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 254, 0, 0, 7, 0, 0, 8, 0, 0, 0, 1, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 0, 0, 7, 240, 0, 56, 0, 0, 0, 3, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 192, 0, 7, 255, 255, 248, 0, 0, 0, 7, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 224, 0, 7, 255, 255, 240, 0, 0, 0, 31, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 248, 0, 7, 255, 255, 240, 0, 0, 0, 63, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 252, 0, 7, 255, 255, 240, 0, 0, 0, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 0, 7, 255, 255, 224, 0, 0, 3, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 192, 7, 255, 255, 224, 0, 0, 15, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 240, 3, 255, 255, 192, 0, 0, 63, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 254, 3, 255, 255, 192, 0, 0, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 195, 255, 255, 128, 0, 7, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 0, 0, 63, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 254, 0, 7, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 254, 3, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+// Sustituye acentos/ñ por su equivalente ASCII — la mayoría de estas impresoras
+// clon no traen bien configurada la página de códigos y los acentos salen mal;
+// es más fiable no depender de ninguna tabla de códigos.
+function _ptEncodeStr(str) {
+  const map = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?' };
+  return (str || '').split('').map(c => map[c] || c).join('');
+}
+
+// El campo "time" del ticket normalmente ya viene como "HH:MM" (así lo
+// guarda el servidor en stats/<fecha>), pero algún camino interno todavía
+// puede traer la fecha completa (toLocaleString) — esto se queda solo con
+// la hora corta en cualquiera de los dos casos, para imprimirla en grande.
+function _ptHoraCorta(t) {
+  if (!t) return '';
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  return m ? m[0] : String(t);
+}
+
+// Construye los bytes ESC/POS de un ticket (mismo formato que usaba el bridge Node.js
+// en pedidos/js/index.js, incluyendo el logo). Devuelve un Uint8Array listo para USB.
+function _ptBuildTicketBytes(ticket, omitirLogo) {
+  const tc = getTicketConfig();
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const left = () => d.push(ESC, 0x61, 0x00);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  // Altura doble opcional (ajustable en Configuración del ticket) — 0x00
+  // tamaño normal 1x1, 0x10 altura doble/ancho normal. No afecta al ajuste
+  // de columnas de los productos (el ancho del carácter no cambia).
+  const normal = () => d.push(ESC, 0x21, tc.letraGrande ? 0x10 : 0x00);
+  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+
+  // Inicializar
+  d.push(ESC, 0x40);
+
+  // Logo centrado — son ~18 KB de datos, sin problema por USB pero
+  // demasiado para Bluetooth (varios segundos de más, y más trozos con
+  // los que se puede perder algo por el camino), así que se omite en esa
+  // vía (ver imprimirTicketTermico, que decide omitirLogo según el
+  // transporte activo).
+  if (!omitirLogo) {
+    center();
+    const bpr = (PRINTER_LOGO_W + 7) >> 3;
+    d.push(GS, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, PRINTER_LOGO_H & 0xFF, (PRINTER_LOGO_H >> 8) & 0xFF);
+    PRINTER_LOGO_DATA.forEach(b => d.push(b));
+  }
+
+  // Nombre del negocio
+  center();
+  big();
+  push(tc.nombre + '\n');
+  normal();
+  push(tc.direccion + '\n');
+  push(tc.telefono + '\n');
+  push('------------------------------------------------\n');
+
+  // Hora de recogida si tiene turno — si no lo tiene (pedido con código
+  // local, sin turno porque es para ahora mismo desde el mostrador), se
+  // imprime en su lugar la hora a la que se hizo el pedido, igual de
+  // grande, para que en cocina quede claro en el propio papel sin depender
+  // de la etiqueta "🏪 En el local" que solo se ve en pantalla. Si hay un
+  // tiempo de espera configurado para pedidos de tienda (panel >
+  // Configuración impresora), slotTime SÍ viene relleno también para estos
+  // pedidos (con la hora ya repartida, ver _asignarHoraTiendaQR en
+  // admin-config.js) — se etiqueta distinto ("HORA ESTIMADA") para no
+  // confundirlo con un turno elegido de verdad por el cliente.
+  if (ticket.slotTime) {
+    center();
+    push(ticket.esPedidoLocal ? 'HORA ESTIMADA\n' : 'HORA RECOGIDA\n');
+    big();
+    push(ticket.slotTime + '\n');
+    normal();
+    if (ticket.esPedidoLocal) push('(pedido hecho en tienda)\n');
+  } else if (ticket.time) {
+    center();
+    push('HORA DEL PEDIDO\n');
+    big();
+    push(_ptHoraCorta(ticket.time) + '\n');
+    normal();
+    push('(pedido hecho en tienda)\n');
+  }
+
+  // Nombre del cliente
+  center();
+  big();
+  push((ticket.name || '').toUpperCase() + '\n');
+  normal();
+  if (ticket.phone) push('Tlfno. ' + ticket.phone + '\n');
+  push('------------------------------------------------\n');
+
+  // Número de pedido
+  center();
+  big();
+  push('PEDIDO ' + ticket.orderNum + '\n');
+  normal();
+  push((ticket.time || '') + '\n');
+  push('------------------------------------------------\n');
+
+  // Productos
+  left();
+  (ticket.items || []).forEach(item => {
+    const partes = _ptEncodeStr(item.name || '').split(' + ');
+    const nombrePrincipal = partes[0].toUpperCase();
+    const extrasNombre = partes.slice(1);
+    const extrasArr = item.extras || [];
+    const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
+    const W = tc.anchoPapel === 58 ? 32 : 48;
+    const prefix = item.qty + 'x ';
+    const spaces = W - prefix.length - nombrePrincipal.length - precio.length;
+    if (spaces >= 0) {
+      push(prefix + nombrePrincipal + ' '.repeat(spaces) + precio + '\n');
+    } else {
+      push(prefix + nombrePrincipal.substring(0, W - prefix.length) + '\n');
+      push(' '.repeat(Math.max(0, W - precio.length)) + precio + '\n');
+    }
+    extrasNombre.forEach(extra => {
+      const conParentesis = extra.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/, ' (+$1 EUR)').trim();
+      push('     - ' + _ptEncodeStr(conParentesis).toUpperCase() + '\n');
+    });
+    if (Array.isArray(extrasArr)) {
+      extrasArr.forEach(extra => {
+        const nombreExtra = _ptEncodeStr(((extra && extra.name) ? extra.name : extra) + '').toUpperCase();
+        const precioExtraTxt = (extra && extra.price) ? '+' + parseFloat(extra.price).toFixed(2) + ' EUR' : '';
+        const prefixExtra = '  - ';
+        if (!precioExtraTxt) {
+          push(prefixExtra + nombreExtra + '\n');
+          return;
+        }
+        // Precio del extra alineado a la misma columna derecha que el
+        // precio de la línea principal (misma W), no pegado al nombre.
+        const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
+        if (spacesExtra >= 1) {
+          push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
+        } else {
+          push(prefixExtra + nombreExtra + '\n');
+          push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
+        }
+      });
+    }
+  });
+
+  push('------------------------------------------------\n');
+
+  // Pedido que cumple los requisitos del sello de fidelización (patata +
+  // pedido mínimo) — aviso destacado para que se compruebe/aplique el
+  // sello al cobrar, igual que el de estudiante/jubilado justo debajo.
+  if (ticket.fidelizacionElegible) {
+    center();
+    bold(true);
+    big();
+    push('*** COMPROBAR SELLOS ***\n');
+    normal();
+    bold(false);
+    push('------------------------------------------------\n');
+  }
+
+  // Descuento estudiante/jubilado autodeclarado — aviso destacado justo
+  // antes del total, para que se compruebe el carné en el momento de cobrar.
+  if (ticket.esEstudianteJubilado) {
+    center();
+    bold(true);
+    big();
+    push('*** VERIFICAR CARNET ***\n');
+    normal();
+    push('ESTUDIANTE / JUBILADO\n');
+    bold(false);
+    push('------------------------------------------------\n');
+  }
+
+  // Total
+  center();
+  big();
+  push((ticket.total || 0).toFixed(2) + ' EUR\n');
+  normal();
+  push(tc.textoPago + '\n');
+
+  if (ticket.notes) {
+    left();
+    push('------------------------------------------------\n');
+    bold(true); push('NOTAS: '); bold(false);
+    push(ticket.notes + '\n');
+  }
+
+  center();
+  push('------------------------------------------------\n');
+  push(tc.despedida + '\n');
+
+  // Código QR opcional (configurable en Configuración del ticket) — lo genera
+  // la propia impresora a partir del texto/URL, no hace falta ninguna imagen.
+  if (tc.qrHabilitado && tc.qrContenido) {
+    push('\n');
+    _ptPushQR(d, GS, tc.qrContenido, 6);
+  }
+
+  push('\n\n\n');
+
+  // Cortar papel
+  d.push(GS, 0x56, 0x42, 0x00);
+
+  return new Uint8Array(d);
+}
+
+// Manda a la impresora el comando ESC/POS estándar de código QR (GS ( k,
+// "Modelo 2") — la impresora lo dibuja ella sola a partir del texto, sin
+// necesidad de generar ninguna imagen desde el navegador.
+function _ptPushQR(d, GS, contenido, tamañoModulo) {
+  const tam = tamañoModulo || 6; // 1-16; 6-8 suele leerse bien en 80mm
+  const bytes = Array.from(new TextEncoder().encode(contenido));
+  const storeLen = bytes.length + 3;
+  const pL = storeLen & 0xFF, pH = (storeLen >> 8) & 0xFF;
+  // Seleccionar modelo 2
+  d.push(GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+  // Tamaño del módulo
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, tam);
+  // Nivel de corrección de errores (48=L 49=M 50=Q 51=H)
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 48);
+  // Guardar los datos del QR
+  d.push(GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30);
+  bytes.forEach(b => d.push(b));
+  // Imprimir el QR guardado
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
+}
+
+// ── CONEXIÓN USB ──
+let _ptDevice = null;
+let _ptEndpointOut = null;
+let _ptEndpointIn = null;
+let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir último")
+
+// Puede haber varias copias del indicador de estado en distintas pantallas
+// (Configuración del ticket, Pedidos en vivo, Panel bimba) — se actualizan todas
+// a la vez porque comparten la misma conexión USB (misma pestaña del navegador).
+// Recuerda si estaba conectada la última vez que se llamó a _ptStatusUI,
+// para poder distinguir "se acaba de desconectar ahora mismo" (dispara
+// sonido + banner) de "sigue sin estar conectada" (cada reintento fallido
+// vuelve a llamar con connected=false, y no queremos repetir la alerta
+// cada 8 segundos mientras tanto).
+let _ptEstabaConectada = false;
+function _ptStatusUI(connected, msg) {
+  if (_ptEstabaConectada && !connected) _ptAvisoDesconexionImpresora();
+  if (!_ptEstabaConectada && connected) {
+    // Se acaba de reconectar: vacía sola la cola de tickets que se quedaron
+    // pendientes mientras estuvo desconectada (ver _ptColaProcesar). Un
+    // pequeño margen antes de empezar a imprimir, para que la conexión
+    // recién hecha se asiente (sobre todo por Bluetooth).
+    setTimeout(_ptColaProcesar, 800);
+  }
+  if (connected) _ptOcultarAvisoDesconexion();
+  _ptEstabaConectada = connected;
+  const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
+  document.querySelectorAll('.pt-conn-status').forEach(el => {
+    el.textContent = texto;
+    el.style.color = connected ? '#166534' : '#991B1B';
+  });
+}
+
+// Aviso de que la impresora se acaba de desconectar — sonido distinto al
+// de "nuevo pedido" (para no confundirlos) y un banner visible tanto en
+// la pantalla de cocina como en el panel de admin. Vale igual para USB
+// que para Bluetooth, ya que _ptStatusUI es la única función de estado
+// que comparten ambos transportes.
+//
+// Si sigue sin reconectar pasado un rato, el aviso se repite solo — un
+// sonido único al desconectarse es fácil de dar por "ya lo he visto" y
+// olvidarlo de fondo mientras siguen llegando pedidos que no se imprimen.
+let _ptAvisoEscaladoTimer = null;
+const PT_AVISO_ESCALADO_MS = 3 * 60 * 1000;
+function _ptAvisoDesconexionImpresora() {
+  _ptSonarAvisoDesconexion();
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
+    el.style.display = el.dataset.showDisplay || 'block';
+  });
+  if (_ptAvisoEscaladoTimer) clearInterval(_ptAvisoEscaladoTimer);
+  _ptAvisoEscaladoTimer = setInterval(() => {
+    if (_ptIsConnected()) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; return; }
+    _ptSonarAvisoDesconexion();
+  }, PT_AVISO_ESCALADO_MS);
+}
+function _ptSonarAvisoDesconexion() {
+  if (typeof playNotificationSound === 'function') {
+    const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
+    playNotificationSound(tipo);
+  }
+}
+function _ptOcultarAvisoDesconexion() {
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => { el.style.display = 'none'; });
+  if (_ptAvisoEscaladoTimer) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; }
+}
+
+// ── FILA ÚNICA DE IMPRESIÓN ────────────────────────────────────────────
+// Si llegan varios pedidos casi a la vez (varios clientes pidiendo en el
+// mismo minuto), cada uno lanzaba su propio envío a la impresora por su
+// cuenta — como JavaScript no bloquea entre cada "await", los bytes de dos
+// tickets distintos podían intercalarse a mitad de envío en la misma
+// conexión Bluetooth/USB, y la impresora sacaba basura o se quedaba
+// colgada sin imprimir ninguno de los dos ("se volvía loca"). Ahora TODO
+// lo que haya que imprimir (auto-imprimir, reimprimir a mano, la cola
+// pendiente al reconectar) pasa por esta única fila — se imprimen de uno
+// en uno, en el orden en que se pidieron, aunque hayan llegado casi a la
+// vez.
+let _ptColaEjecucion = Promise.resolve();
+function _ptEnFila(fn) {
+  const resultado = _ptColaEjecucion.then(fn, fn);
+  // La cadena sigue aunque este envío falle — si no, un ticket atascado
+  // dejaría a todos los siguientes esperando para siempre.
+  _ptColaEjecucion = resultado.then(() => {}, () => {});
+  return resultado;
+}
+
+// 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
+// solo con cuál de los dos consigue conectar primero (ver _ptReconectar).
+let _ptTransporte = null;
+
+function _ptIsConnected() {
+  if (_ptTransporte === 'ble') return !!(_ptBleDevice && _ptBleDevice.gatt && _ptBleDevice.gatt.connected && _ptBleCharacteristic);
+  if (_ptTransporte === 'usb') return !!(_ptDevice && _ptEndpointOut !== null);
+  return false;
+}
+
+function _ptResetConexion() {
+  _ptDevice = null; _ptEndpointOut = null; _ptEndpointIn = null;
+  _ptBleDevice = null; _ptBleCharacteristic = null;
+  _ptTransporte = null;
+}
+
+// Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
+// para diagnosticar por qué no imprime sola: si el admin no está "activo" en este
+// dispositivo, o el auto-imprimir está apagado, aquí sale sin tener que adivinar.
+function _ptUpdateDebugStatus() {
+  const el = document.getElementById('pt-debug-status');
+  const elKitchen = document.getElementById('pt-debug-status-kitchen');
+  if (!el && !elKitchen) return;
+  const admin = window._adminLoggedIn ? '🟢 Admin activo' : '🔴 Admin NO activo';
+  const auto = (typeof getTicketConfig === 'function' && getTicketConfig().autoImprimir) ? '🟢 Auto-imprimir ON' : '🔴 Auto-imprimir OFF';
+  const conexion = _ptIsConnected() ? '🟢 ' + (_ptTransporte === 'ble' ? 'Bluetooth' : 'USB') + ' conectada' : '🔴 Impresora no conectada';
+  const texto = admin + ' · ' + auto + ' · ' + conexion;
+  if (el) el.textContent = texto;
+  if (elKitchen) elKitchen.textContent = texto;
+}
+
+// Busca en el dispositivo USB la interfaz que tenga endpoints de salida (bulk OUT,
+// para imprimir) y de entrada (bulk IN, para leer el estado de papel) y la reclama.
+// Es genérico: no depende de conocer de antemano el vendor/product ID.
+async function _ptClaimInterface(device) {
+  await device.open();
+  if (device.configuration === null) await device.selectConfiguration(1);
+  let ifaceNumber = null, epOut = null, epIn = null;
+  for (const iface of device.configuration.interfaces) {
+    const alt = iface.alternates[0];
+    const out = alt.endpoints.find(e => e.direction === 'out');
+    if (out) {
+      ifaceNumber = iface.interfaceNumber;
+      epOut = out.endpointNumber;
+      const inEp = alt.endpoints.find(e => e.direction === 'in');
+      epIn = inEp ? inEp.endpointNumber : null;
+      break;
+    }
+  }
+  if (ifaceNumber === null) throw new Error('No se encontró un endpoint de salida USB en este dispositivo');
+  await device.claimInterface(ifaceNumber);
+  return { epOut, epIn };
+}
+
+// Pide permiso al navegador para acceder a la impresora — debe llamarse desde
+// un click (gesto del usuario), el navegador no deja hacerlo en segundo plano.
+async function conectarImpresoraTermica() {
+  if (!navigator.usb) {
+    alert('Este navegador no soporta impresión USB. Usa Chrome o Edge (no funciona en Safari ni Firefox).');
+    return false;
+  }
+  try {
+    // Sin filtros: no sabemos con certeza el vendor/product ID de esta impresora,
+    // así que mostramos todos los dispositivos USB conectados y que el usuario
+    // elija el suyo de la lista (evita listas vacías por un filtro equivocado).
+    const device = await navigator.usb.requestDevice({ filters: [] });
+    const { epOut, epIn } = await _ptClaimInterface(device);
+    _ptDevice = device;
+    _ptEndpointOut = epOut;
+    _ptEndpointIn = epIn;
+    _ptTransporte = 'usb';
+    _ptStatusUI(true);
+    return true;
+  } catch (e) {
+    console.warn('[Impresora] conexión cancelada o fallida', e);
+    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora: ' + e.message);
+    return false;
+  }
+}
+
+// Reconecta en silencio (sin pedir permiso) a un dispositivo ya autorizado antes —
+// se llama sola al cargar la página, y también sola cada pocos segundos si se
+// pierde la conexión (cable desenchufado, tablet que se durmió...), para no
+// tener que ir a pulsar "Conectar impresora" a mano cada vez.
+// Hay hasta 4 disparadores distintos que pueden llamar a esta función casi a
+// la vez (al cargar la página, el evento "connect" de WebUSB, el intervalo
+// de 8s, y el aviso al volver a la pestaña/pantalla) — sin este candado,
+// dos llamadas simultáneas podían pasar ambas la comprobación de "no
+// conectada" antes de que ninguna terminara, e intentar reclamar la
+// interfaz USB a la vez: la segunda fallaba con "Unable to claim interface"
+// aunque la primera sí lo hubiera conseguido bien.
+let _ptReconectando = false;
+// Prueba USB primero (dispositivo ya autorizado antes) y, si no hay nada
+// por ahí, prueba Bluetooth (también ya autorizado antes) — cualquiera de
+// los 4 disparadores de siempre (carga de página, evento "connect" USB,
+// intervalo de 8s, volver a la pestaña) sirve igual para las dos vías,
+// así que basta con ampliar esta única función en vez de duplicar toda
+// la maquinaria de candado/timeout para Bluetooth aparte.
+async function _ptReconectar() {
+  if (_ptIsConnected()) return true;
+  if (_ptReconectando) return false;
+  _ptReconectando = true;
+  try {
+    if (navigator.usb) {
+      // Límite de tiempo de seguridad — si getDevices()/claimInterface() se
+      // quedaran colgados sin resolver ni rechazar nunca (un fallo raro del
+      // driver USB del sistema), sin esto el candado de arriba se quedaría
+      // en true para siempre y ningún disparador podría volver a intentar
+      // reconectar hasta recargar la página entera.
+      const resultado = await Promise.race([
+        (async () => {
+          const devices = await navigator.usb.getDevices();
+          if (!devices.length) return null;
+          const device = devices[0];
+          const { epOut, epIn } = await _ptClaimInterface(device);
+          return { device, epOut, epIn };
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando con la impresora')), 6000))
+      ]).catch((e) => { console.warn('[Impresora] reconexión USB fallida', e); return null; });
+      if (resultado) {
+        _ptDevice = resultado.device;
+        _ptEndpointOut = resultado.epOut;
+        _ptEndpointIn = resultado.epIn;
+        _ptTransporte = 'usb';
+        _ptStatusUI(true);
+        return true;
+      }
+    }
+    const okBle = await _ptBleReconectar();
+    if (okBle) return true;
+    _ptStatusUI(false);
+    return false;
+  } finally {
+    _ptReconectando = false;
+  }
+}
+
+// Envuelve una promesa que no tiene por qué llegar a resolverse nunca
+// (transferOut de WebUSB y writeValue/writeValueWithoutResponse de Web
+// Bluetooth no traen ningún timeout de fábrica: si la impresora se queda
+// en un estado raro a media escritura — atasco de papel, un USB que se
+// desconecta sin disparar su evento, Bluetooth fuera de rango justo en
+// ese instante — la promesa puede quedarse colgada para siempre). Sin
+// esto, como TODOS los tickets pasan por la misma fila (_ptEnFila), un
+// solo envío colgado dejaba bloqueados también todos los pedidos
+// siguientes sin ningún aviso ni forma de recuperarse sola. La operación
+// de bajo nivel que se abandona puede seguir viva de fondo, pero ya no
+// bloquea nada: _ptResetConexion() olvida esa conexión y el siguiente
+// intento abre una nueva de cero.
+function _ptConTimeout(promise, ms, mensaje) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(mensaje || 'timeout de impresora')), ms))
+  ]);
+}
+async function _ptEnviarBytesUnaVez(bytes) {
+  if (!_ptIsConnected()) {
+    const ok = await _ptReconectar();
+    if (!ok) throw new Error('Impresora no conectada — pulsa "Conectar impresora" en Configuración del ticket');
+  }
+  if (_ptTransporte === 'ble') { await _ptBleEnviarBytes(bytes); return; }
+  await _ptConTimeout(_ptDevice.transferOut(_ptEndpointOut, bytes), 8000, 'timeout enviando por USB — la impresora no respondió');
+}
+
+// Reintenta un par de veces (con reconexión de por medio) antes de rendirse —
+// un fallo puntual (impresora ocupada, un instante de corte USB) ya no se
+// queda directamente como "Falló" sin que nadie lo intente de nuevo.
+async function _ptEnviarBytes(bytes, intentos) {
+  intentos = intentos || 3;
+  let ultimoError = null;
+  for (let i = 0; i < intentos; i++) {
+    try {
+      await _ptEnviarBytesUnaVez(bytes);
+      return;
+    } catch (e) {
+      ultimoError = e;
+      console.warn('[Impresora] intento ' + (i + 1) + '/' + intentos + ' falló', e);
+      if (i < intentos - 1) {
+        _ptResetConexion(); // forzar reconexión limpia en el siguiente intento
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+  }
+  throw ultimoError;
+}
+
+// ── IMPRESORA TÉRMICA — BLUETOOTH (BLE) ──────────────────────────────
+// Vía alternativa a USB. Solo vale para impresoras Bluetooth de BAJO
+// CONSUMO (BLE) — compruébalo antes con "Probar Bluetooth" en
+// Configuración del ticket. La mayoría de impresoras térmicas baratas
+// llevan Bluetooth "clásico" (SPP), que ningún navegador puede usar; eso
+// no tiene arreglo por código.
+//
+// A diferencia de USB (donde pedimos la lista completa de dispositivos
+// y el vendor ID no importa), en Bluetooth hay que declarar de antemano
+// qué "servicios" GATT se van a usar. No hay un ID de fabricante fijo
+// que buscar, así que se prueban los UUID de servicio más habituales
+// entre impresoras térmicas ESC/POS BLE genéricas (muchas comparten el
+// mismo firmware de fábrica aunque se vendan con marcas distintas), y se
+// usa la primera característica que permita escribir que se encuentre.
+const PT_BLE_SERVICIOS_CANDIDATOS = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // el más habitual en clones ESC/POS BLE
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'  // Nordic UART Service (otro habitual)
+];
+
+let _ptBleDevice = null;
+let _ptBleCharacteristic = null;
+
+async function _ptBleBuscarCaracteristicaEscritura(server) {
+  for (const uuidServicio of PT_BLE_SERVICIOS_CANDIDATOS) {
+    try {
+      const servicio = await server.getPrimaryService(uuidServicio);
+      const caracteristicas = await servicio.getCharacteristics();
+      const escribible = caracteristicas.find(c => c.properties.write || c.properties.writeWithoutResponse);
+      if (escribible) return escribible;
+    } catch (e) {
+      // Este servicio candidato no existe en el dispositivo — se prueba el siguiente.
+    }
+  }
+  return null;
+}
+
+async function _ptBleConectarDispositivo(device) {
+  const server = await device.gatt.connect();
+  const characteristic = await _ptBleBuscarCaracteristicaEscritura(server);
+  if (!characteristic) {
+    server.disconnect();
+    throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
+  }
+  _ptBleDevice = device;
+  _ptBleCharacteristic = characteristic;
+  _ptTransporte = 'ble';
+  // Muchas impresoras Bluetooth baratas todavía no están listas para
+  // recibir datos de verdad justo al terminar de conectar — el primer envío
+  // en ese instante se puede perder en silencio (writeValueWithoutResponse
+  // no avisa de ningún fallo), así que la web lo daba por impreso pero no
+  // salía nada en papel. Antes solo había una espera fija de 0,5s, pero
+  // seguía perdiéndose el primer ticket real en algunos módulos — ahora,
+  // ANTES de esperar, se manda primero un "pulso" inofensivo (el mismo
+  // comando de estado que ya se usa para mantener viva la conexión, no
+  // imprime nada en el papel): si algo se pierde por este motivo de
+  // arranque, se pierde ese envío de prueba y no el ticket real del
+  // cliente. Después se espera un margen mayor (0,8s) antes de marcar la
+  // impresora como lista.
+  try { await _ptBlePulso(); } catch (e) {}
+  await new Promise(r => setTimeout(r, 800));
+  device.addEventListener('gattserverdisconnected', () => {
+    if (_ptTransporte === 'ble') _ptResetConexion();
+    _ptStatusUI(false);
+    _ptReconectar();
+  });
+  _ptStatusUI(true, '🟢 Impresora conectada (Bluetooth)');
+}
+
+// Pide permiso al navegador — debe llamarse desde un click (gesto del
+// usuario), el navegador no deja hacerlo en segundo plano.
+async function conectarImpresoraBluetooth() {
+  if (!navigator.bluetooth) {
+    alert('Este navegador no soporta impresión por Bluetooth. Usa Chrome o Edge (no funciona en Safari ni en iPhone/iPad).');
+    return false;
+  }
+  try {
+    // Si ya sabemos el nombre de la impresora de una conexión anterior, se
+    // filtra la ventana de selección para que solo aparezca ella (en vez
+    // de la lista completa de aparatos Bluetooth cercanos) — más rápido
+    // de encontrar cada vez que haga falta reconectar a mano. Si por lo
+    // que sea no aparece con ese filtro (nombre cambiado, etc.), se
+    // reintenta mostrando la lista completa antes de rendirse.
+    let nombreGuardado = null;
+    try { nombreGuardado = localStorage.getItem('dpf_bt_printer_name') || null; } catch (e) {}
+    let device;
+    if (nombreGuardado) {
+      try {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ name: nombreGuardado }], optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+      } catch (e) {
+        device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+      }
+    } else {
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+    }
+    await _ptBleConectarDispositivo(device);
+    try { localStorage.setItem('dpf_bt_printer_name', device.name || ''); } catch (e) {}
+    // Diagnóstico: si este navegador no soporta navigator.bluetooth.getDevices()
+    // (API de permisos Bluetooth persistentes), no hay forma de reconectar sola
+    // tras recargar la página — habrá que pulsar este botón cada vez que se
+    // recargue o se abra de nuevo. No es un fallo del código: es un límite de
+    // seguridad del propio navegador/plataforma, sin alternativa posible.
+    if (!navigator.bluetooth.getDevices) {
+      console.warn('[Impresora BLE] Este navegador no soporta navigator.bluetooth.getDevices() — no podrá reconectar sola tras recargar la página, solo mientras esta pestaña siga abierta.');
+    }
+    return true;
+  } catch (e) {
+    console.warn('[Impresora BLE] conexión cancelada o fallida', e);
+    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora por Bluetooth: ' + e.message);
+    return false;
+  }
+}
+
+// Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
+// espejo de la reconexión USB, usando navigator.bluetooth.getDevices()
+// (API de permisos persistentes; no está en todas las versiones de Chrome,
+// de ahí la comprobación).
+async function _ptBleReconectar() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
+  try {
+    const dispositivos = await navigator.bluetooth.getDevices();
+    if (!dispositivos.length) return false;
+    await Promise.race([
+      _ptBleConectarDispositivo(dispositivos[0]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando Bluetooth')), 6000))
+    ]);
+    return true;
+  } catch (e) {
+    console.warn('[Impresora BLE] reconexión fallida', e);
+    return false;
+  }
+}
+
+// Se prefiere "con respuesta" (writeValue): cada trozo espera la
+// confirmación real de la impresora antes de mandar el siguiente, así que
+// el ritmo lo marca la propia impresora en vez de un tiempo de espera fijo
+// adivinado — no hace falta añadir ningún retraso extra encima. Solo si
+// la característica no soporta escritura con respuesta se usa
+// writeValueWithoutResponse con una pequeña espera manual de por medio.
+async function _ptBleEnviarBytes(bytes) {
+  const TAMANO_TROZO = 100;
+  const conRespuesta = !!_ptBleCharacteristic.properties.write;
+  for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
+    const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
+    if (conRespuesta) {
+      await _ptConTimeout(_ptBleCharacteristic.writeValue(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
+    } else {
+      await _ptConTimeout(_ptBleCharacteristic.writeValueWithoutResponse(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
+      await new Promise(r => setTimeout(r, 45));
+    }
+  }
+}
+
+// "Pulso" de mantenimiento — un comando de estado en tiempo real (no
+// imprime nada en el papel) para generar tráfico en la conexión Bluetooth
+// mientras no hay ningún pedido que imprimir. Si falla, no pasa nada
+// grave: el intervalo que lo llama ya comprueba _ptIsConnected() cada
+// pocos segundos y dispara la reconexión si de verdad se ha caído.
+async function _ptBlePulso() {
+  if (_ptTransporte !== 'ble' || !_ptBleCharacteristic) return;
+  try {
+    const bytes = new Uint8Array([0x10, 0x04, 0x01]);
+    if (_ptBleCharacteristic.properties.writeWithoutResponse) {
+      await _ptBleCharacteristic.writeValueWithoutResponse(bytes);
+    } else if (_ptBleCharacteristic.properties.write) {
+      await _ptBleCharacteristic.writeValue(bytes);
+    }
+  } catch (e) {
+    // Se ignora — si de verdad se cayó la conexión, el siguiente chequeo
+    // de _ptIsConnected() lo detectará y disparará la reconexión.
+  }
+}
+
+// Imprime un ticket, repitiendo tantas copias como esté configurado.
+async function imprimirTicketTermico(ticket) {
+  const tc = getTicketConfig();
+  const bytes = _ptBuildTicketBytes(ticket);
+  _ptUltimoTicket = ticket;
+  const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
+  for (let i = 0; i < copias; i++) {
+    await _ptEnviarBytes(bytes);
+    _ptPapelRegistrarTicketImpreso();
+    if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
+  }
+}
+
+// ── Contador de papel restante estimado ──────────────────────────────
+// Por Bluetooth no se puede leer el sensor de papel de la impresora (y por
+// USB tampoco todos los modelos lo soportan), así que en vez de depender
+// de eso se lleva la cuenta de cuántos tickets se han impreso desde el
+// último cambio de rollo, y se compara contra una capacidad aproximada
+// (cuántos tickets suele dar un rollo nuevo) que la usuaria calibra a ojo
+// la primera vez y ajusta si hace falta — no es una medida exacta en
+// milímetros, pero avisa con margen suficiente antes de quedarse sin papel.
+const PT_PAPEL_TICKETS_KEY = 'dpf_papel_tickets_desde_rollo';
+const PT_PAPEL_CAPACIDAD_KEY = 'dpf_papel_rollo_capacidad';
+function _ptPapelTicketsUsados() {
+  return parseInt(localStorage.getItem(PT_PAPEL_TICKETS_KEY) || '0', 10);
+}
+function _ptPapelCapacidad() {
+  return parseInt(localStorage.getItem(PT_PAPEL_CAPACIDAD_KEY) || '150', 10);
+}
+function _ptPapelRegistrarTicketImpreso() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, String(_ptPapelTicketsUsados() + 1));
+  _ptPapelActualizarUI();
+}
+function _ptPapelNuevoRollo() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, '0');
+  _ptPapelActualizarUI();
+  if (typeof logActivity === 'function') logActivity('🧻 Rollo de papel reiniciado (contador a 0)');
+}
+function guardarCapacidadRollo(valor) {
+  const n = Math.max(1, parseInt(valor, 10) || 150);
+  localStorage.setItem(PT_PAPEL_CAPACIDAD_KEY, String(n));
+  _ptPapelActualizarUI();
+}
+function _ptPapelActualizarUI() {
+  const usados = _ptPapelTicketsUsados();
+  const capacidad = _ptPapelCapacidad();
+  const restantes = Math.max(0, capacidad - usados);
+  const pct = capacidad > 0 ? Math.max(0, Math.min(100, Math.round((restantes / capacidad) * 100))) : 100;
+  document.querySelectorAll('.pt-papel-contador').forEach(el => {
+    el.textContent = '🧻 ~' + pct + '% de papel restante (' + restantes + ' de ' + capacidad + ' tickets aprox.)';
+    el.style.color = pct <= 15 ? '#c0392b' : '';
+  });
+  const inputCap = document.getElementById('tc-papel-capacidad');
+  if (inputCap && document.activeElement !== inputCap) inputCap.value = capacidad;
+}
+document.addEventListener('DOMContentLoaded', () => { _ptPapelActualizarUI(); });
+
+// ── Cola de impresión pendiente ──────────────────────────────────────
+// Si un ticket no consigue imprimirse ni tras los reintentos normales
+// (la impresora estaba desconectada en ese momento), antes se quedaba solo
+// en un aviso que había que atender a mano ("🔧 Reintentar impresión" en
+// Alertas). Ahora, además, se guarda aquí — y en cuanto la impresora
+// vuelva a conectar (ver _ptStatusUI) se reimprime sola, en el mismo orden
+// en que llegaron, sin que nadie tenga que darle a ese botón.
+const PT_COLA_KEY = 'dpf_cola_impresion_pendiente';
+function _ptColaCargar() {
+  try { return JSON.parse(localStorage.getItem(PT_COLA_KEY) || '[]'); } catch (e) { return []; }
+}
+function _ptColaGuardar(cola) {
+  try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
+  _ptColaActualizarUI();
+}
+function _ptColaAgregar(ticket) {
+  if (!ticket || !ticket.orderNum) return;
+  const cola = _ptColaCargar();
+  if (cola.some(t => t.orderNum === ticket.orderNum)) return;
+  cola.push(ticket);
+  _ptColaGuardar(cola);
+}
+function _ptColaQuitar(orderNum) {
+  _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
+}
+function _ptColaActualizarUI() {
+  const n = _ptColaCargar().length;
+  document.querySelectorAll('.pt-cola-contador').forEach(el => {
+    el.style.display = n > 0 ? (el.dataset.showDisplay || 'block') : 'none';
+    el.textContent = '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
+  });
+}
+document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
+
+// Vacía la cola cuando la impresora reconecta — de una en una y en orden;
+// si alguna vuelve a fallar (se ha caído otra vez a media cola), se para
+// ahí y se deja para el próximo reconectar, en vez de perder el orden o
+// darlas por perdidas.
+let _ptColaProcesando = false;
+async function _ptColaProcesar() {
+  if (_ptColaProcesando || !_ptIsConnected()) return;
+  _ptColaProcesando = true;
+  try {
+    const cola = _ptColaCargar();
+    for (const ticket of cola) {
+      try {
+        await _ptEnFila(() => imprimirTicketTermico(ticket));
+        _ptColaQuitar(ticket.orderNum);
+        if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
+        if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
+        if (typeof logActivity === 'function') logActivity('🖨️ Ticket #' + ticket.orderNum + ' impreso solo desde la cola pendiente, al reconectar la impresora');
+        if (typeof getOrderStatus === 'function' && typeof setOrderStatus === 'function' && getOrderStatus(ticket.orderNum) === 'nuevo') {
+          setOrderStatus(ticket.orderNum, 'recibido').catch(() => {});
+        }
+      } catch (e) {
+        break;
+      }
+    }
+  } finally {
+    _ptColaProcesando = false;
+  }
+}
+
+// Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
+// y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede
+// borrar, así que se imprime este aviso para que en cocina sepan que ese
+// número de pedido ya NO es válido y hay que tirar el ticket anterior.
+function _ptBuildAnulacionBytes(orderNum) {
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('X X X X X\n');
+  push('ANULADO\n');
+  normal();
+  push('------------------------------------------------\n');
+  big();
+  push('PEDIDO ' + orderNum + '\n');
+  normal();
+  push('Tira el ticket anterior\n');
+  push('de este pedido\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  return new Uint8Array(d);
+}
+
+async function imprimirAnulacion(orderNum) {
+  // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
+  // aviso podía intercalarse (o perderse sin más) con el ticket del pedido
+  // nuevo si el cliente modificaba y volvía a mandar el pedido enseguida,
+  // y cocina se quedaba sin enterarse de que tenía que tirar el anterior.
+  const _ptEjecutarAnulacion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  await _ptEjecutarAnulacion(() => _ptEnviarBytes(_ptBuildAnulacionBytes(orderNum)));
+}
+
+async function imprimirTicketPrueba() {
+  try {
+    await imprimirTicketTermico({
+      orderNum: 'PRUEBA',
+      name: 'Ticket de prueba',
+      phone: '',
+      notes: '',
+      slotTime: null,
+      items: [{ name: 'Impresora configurada correctamente', qty: 1, subtotal: 0 }],
+      total: 0,
+      time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+    });
+  } catch (e) {
+    alert('⚠️ ' + e.message);
+  }
+}
+
+// Reimprime el último ticket normal enviado (no el de prueba, ni una
+// anulación) — para el caso de que se atasque el papel a mitad de
+// impresión, sin tener que ir a buscar el pedido en la lista.
+async function reimprimirUltimoTicketTermico() {
+  if (!_ptUltimoTicket) {
+    alert('Todavía no se ha impreso ningún ticket en este dispositivo.');
+    return;
+  }
+  try {
+    await imprimirTicketTermico(_ptUltimoTicket);
+  } catch (e) {
+    alert('⚠️ No se pudo reimprimir: ' + e.message);
+  }
+}
+
+// Cartel con QR para el mostrador: al escanearlo se abre la web ya con el
+// código de "pedido desde el local" puesto (sin gastos de gestión), sin que
+// el cliente tenga que escribir nada — para pegar en el mostrador cuando
+// hay cola. Se imprime tal cual, en un ticket corto aparte.
+async function imprimirCartelQRLocal() {
+  const code = (typeof getLocalFeeCode === 'function') ? getLocalFeeCode() : '';
+  if (!code) {
+    alert('Primero pon y guarda un código en "Código pedido desde el local".');
+    return;
+  }
+  const url = window.location.origin + '/?local=' + encodeURIComponent(code);
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('PIDE DESDE\n');
+  push('EL MOVIL\n');
+  normal();
+  push('sin gastos de gestion\n');
+  push('\n');
+  _ptPushQR(d, GS, url, 8);
+  push('\n');
+  push('Escanea el codigo\n');
+  push('o escribe el codigo:\n');
+  big();
+  push(code + '\n');
+  normal();
+  push('\n');
+  push(window.location.origin + '/\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  try {
+    await _ptEnviarBytes(new Uint8Array(d));
+  } catch (e) {
+    alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
+  }
+}
+
+// ── AVISO DE PAPEL ──
+// Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
+// de papel). La interpretación exacta de los bits varía algo según el
+// fabricante — esta es la más habitual en clones compatibles con Epson.
+// Si en esta impresora en concreto no coincidiera al probarlo con el rollo
+// realmente vacío, hay que ajustar las máscaras (0x0C / 0x60) de aquí abajo.
+async function _ptComprobarPapel() {
+  // Solo USB expone este comando de estado de papel de forma fiable — para
+  // Bluetooth dependería de que cada modelo tenga su propia característica
+  // de notificación, algo que varía demasiado entre clones como para
+  // adivinarlo sin poder probarlo en la impresora real.
+  if (_ptTransporte !== 'usb' || !_ptIsConnected() || _ptEndpointIn === null) return;
+  try {
+    await _ptDevice.transferOut(_ptEndpointOut, new Uint8Array([0x10, 0x04, 0x04]));
+    const res = await _ptDevice.transferIn(_ptEndpointIn, 8);
+    if (!res.data || res.data.byteLength === 0) return;
+    const status = res.data.getUint8(0);
+    const sinPapel = (status & 0x60) !== 0;
+    _ptPapelUI(sinPapel);
+  } catch (e) {
+    // No pasa nada si esta impresora no responde a este comando — simplemente
+    // no se muestra el aviso de papel, el resto sigue funcionando igual.
+  }
+}
+function _ptPapelUI(sinPapel) {
+  document.querySelectorAll('.pt-papel-aviso').forEach(el => {
+    // El banner grande de la pantalla de cocina necesita "flex" (para
+    // colocar el texto centrado verticalmente como el de "activa el
+    // audio"); los avisos pequeños del panel de admin usan "block" por
+    // defecto — cada elemento indica el suyo con data-show-display.
+    el.style.display = sinPapel ? (el.dataset.showDisplay || 'block') : 'none';
+  });
+}
+
+if (navigator.usb) {
+  document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
+  navigator.usb.addEventListener('disconnect', (e) => {
+    if (_ptDevice && e.device === _ptDevice) { _ptResetConexion(); _ptStatusUI(false); }
+  });
+  // Si Chrome detecta que se ha enchufado algún dispositivo USB, probamos a
+  // reconectar por si es la impresora (p.ej. se desenchufó el cable y se
+  // volvió a meter) — sin esto había que pulsar "Conectar impresora" a mano.
+  navigator.usb.addEventListener('connect', () => {
+    if (!_ptIsConnected()) _ptReconectar();
+  });
+}
+
+if (navigator.usb || navigator.bluetooth) {
+  if (!navigator.usb) document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
+  // Reintento periódico de reconexión mientras no esté conectada — cubre el
+  // caso de que la tablet se haya quedado en reposo o no se dispare ningún
+  // evento de conexión a tiempo. Si SÍ está conectada por Bluetooth, se
+  // manda además un "pulso" (comando de estado en tiempo real, no imprime
+  // nada) para generar tráfico en la conexión — muchos módulos BLE baratos
+  // se desconectan solos tras un rato sin ningún dato, aunque estén dentro
+  // de alcance y con batería; este pulso evita que se les considere
+  // "inactivos" entre pedido y pedido.
+  //
+  // Mientras está DESCONECTADA se reintenta cada 2s en vez de 8s — el hueco
+  // más habitual es justo al abrir/recargar la web (la reconexión con un
+  // dispositivo ya emparejado tarda unos segundos), y si un pedido llega
+  // justo en ese hueco se queda en la cola pendiente hasta el siguiente
+  // reintento con éxito. Con 8s de por medio, "el primer pedido no sale
+  // solo" podía tardar bastante en corregirse sin tocar nada; con 2s el
+  // hueco real se reduce mucho. Una vez conectada, vuelve al ritmo normal
+  // de 8s (no hace falta ir más rápido, y así no se satura de tráfico la
+  // conexión Bluetooth sin necesidad).
+  function _ptBucleMantenimiento() {
+    const conectada = _ptIsConnected();
+    setTimeout(() => {
+      if (!_ptIsConnected()) {
+        _ptReconectar();
+      } else if (_ptTransporte === 'ble') {
+        _ptBlePulso();
+      } else {
+        _ptComprobarPapel();
+      }
+      // La cola pendiente normalmente se vacía sola al detectar una
+      // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
+      // error puntual de escritura SIN que la impresora llegue a desconectarse
+      // de verdad — en ese caso ese flanco nunca se dispara. Este intento
+      // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
+      // ya se protege solo contra solapes (_ptColaProcesando).
+      if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
+      _ptBucleMantenimiento();
+    }, conectada ? 8000 : 2000);
+  }
+  _ptBucleMantenimiento();
+  // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
+  // segundo plano — si la tablet se queda con la pantalla apagada un rato
+  // (algo habitual entre pedido y pedido) el reintento de arriba puede no
+  // llegar a ejecutarse a tiempo. En cuanto la pantalla se enciende o se
+  // vuelve a esta pestaña, se reintenta al momento en vez de esperar al
+  // siguiente tick de los 8s.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !_ptIsConnected()) _ptReconectar();
+  });
+}
 
 // ── HISTORIAL (últimos 30 días) ──
 const HISTORIAL_KEY = 'dpf_historial';
@@ -8114,20 +11389,33 @@ function getUrlToken() {
 function getBimbaToken() {
   return localStorage.getItem(BIMBA_TOKEN_KEY) || '';
 }
-(function checkUrlToken() {
+(async function checkUrlToken() {
   const params = new URLSearchParams(window.location.search);
+
+  // Ambos tokens (?key= y ?bimba=) se comprueban en el servidor
+  // (bimba-verify.php) con límite de intentos — antes se comparaban aquí
+  // contra un valor precargado en localStorage para TODO visitante, lo
+  // que permitía a cualquier cliente leer su propio localStorage y
+  // auto-concederse acceso sin conocer el token real.
 
   // Token admin normal
   const key = params.get('key');
   if (key) {
-    const saved = getUrlToken();
-    if (saved && key === saved) {
-      setTimeout(() => {
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('🔗 Acceso por URL token');
-        openAdmin();
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkAdminUrlToken', token: key })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => {
+          setTimeout(_updateAudioBannerState, 200);
+          logActivity('🔗 Acceso por URL token');
+          openAdmin();
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 
   // Token bimba — abre directamente el panel sin contraseña.
@@ -8136,17 +11424,32 @@ function getBimbaToken() {
   // tickets, gastos, fichajes, etc. Solo sirve para ver la interfaz.
   const bimbaKey = params.get('bimba');
   if (bimbaKey) {
-    const saved = getBimbaToken();
-    if (saved && bimbaKey === saved) {
-      setTimeout(() => {
-        logActivity('🔗 Acceso bimba por URL token');
-        _adminLoggedIn = true; window._adminLoggedIn = true;
-        openStockConfigSecret();
-        document.getElementById('admin-overlay').classList.add('open');
-        document.getElementById('admin-login').style.display = 'none';
-        document.getElementById('admin-panel').style.display = 'block';
-      }, 300);
-    }
+    try {
+      const res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkBimbaToken', token: bimbaKey })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // admin-shell.html se inyecta de forma diferida (carga eager a los
+        // 2s, o al vuelo desde openAdmin()) — este acceso directo por URL
+        // puede llegar antes de que exista, así que hay que esperar a que
+        // esté listo antes de tocar sus elementos (si no, "#admin-overlay"
+        // aún no existe y todo esto revienta con un error silencioso).
+        if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
+          await new Promise(resolve => loadAdminShell(resolve));
+        }
+        setTimeout(() => {
+          logActivity('🔗 Acceso bimba por URL token');
+          _adminLoggedIn = true; window._adminLoggedIn = true;
+          openStockConfigSecret();
+          document.getElementById('admin-overlay').classList.add('open');
+          document.getElementById('admin-login').style.display = 'none';
+          document.getElementById('admin-panel').style.display = 'block';
+        }, 300);
+      }
+    } catch (e) { /* red caída: simplemente no se concede acceso */ }
   }
 })();
 
@@ -8202,18 +11505,10 @@ document.addEventListener('keydown', function (e) {
     var _document$getElementB9;
     window._secretKeyBuf += e.key.toLowerCase();
     if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    {
-      const _last5 = window._secretKeyBuf.slice(-5);
-      if (_last5.length === 5) {
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(_last5 + _BIMBA_SALT)).then(buf => {
-          const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-          if (h === BIMBA_PWD_HASH) {
-            window._secretKeyBuf = '';
-            openStockConfigSecret();
-          }
-        });
-      }
-    }
+    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
+    // en cualquier parte de la página se ha quitado — comprobaba el hash en
+    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
+    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
     if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
       const inp = document.getElementById('log-secret-input');
       if (inp) {
@@ -8239,10 +11534,14 @@ function getActivityLog() {
     return [];
   }
 }
-function logActivity(action) {
+function logActivity(action, extra) {
   const log = getActivityLog();
   const now = new Date();
-  const entry = {
+  // "extra" permite adjuntar datos estructurados (tipo, orderNum, fecha...)
+  // a una alerta, para que renderAlertas() pueda ofrecer un botón de
+  // "reintentar" en vez de solo "descartar" — igual que ya hacía
+  // fbAgregarActivityLog() en el servidor para "pedido_no_guardado".
+  const entry = Object.assign({}, extra, {
     ts: now.toISOString(),
     time: now.toLocaleString('es-ES', {
       day: '2-digit',
@@ -8253,7 +11552,7 @@ function logActivity(action) {
       second: '2-digit'
     }),
     action
-  };
+  });
   log.unshift(entry);
   const trimmed = log.slice(0, 200);
   localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(trimmed));
@@ -8261,6 +11560,7 @@ function logActivity(action) {
   if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
     window.fb_saveActivityLog(trimmed).catch(() => {});
   }
+  if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 function renderActivityLog() {
   const log = getActivityLog();
@@ -8270,7 +11570,327 @@ function renderActivityLog() {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin actividad registrada</div>';
     return;
   }
-  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(e.time, "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(e.action, "</span>\n    </div>")).join('');
+  // e.action pasa por logActivity() desde toda la app y a menudo lleva
+  // texto libre interpolado (nombres de ingredientes, proveedores,
+  // empleados, categorías...) — hay que escapar aquí, en el único sitio
+  // donde se renderiza, en vez de perseguir cada origen por separado.
+  el.innerHTML = log.map(e => "\n    <div style=\"display:flex;align-items:flex-start;padding:8px 10px;background:#FFFFFF;border:1px solid #F5E6C8;border-radius:8px\">\n      <span style=\"font-size:11px;color:#8A6A4E;white-space:nowrap;min-width:130px\">".concat(escapeHtml(e.time), "</span>\n      <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n    </div>")).join('');
+}
+
+// ══════════════════════════════════════════════
+//  ALERTAS (subconjunto del registro de actividad: fallos silenciosos
+//  al guardar pedidos/sellos y precios que no cuadran con la carta)
+// ══════════════════════════════════════════════
+const ALERTAS_SEEN_KEY = 'dpf_alertas_last_seen_ts';
+function isAlertEntry(action) {
+  // 🎁 también cuenta como alerta: aviso de "cliente completó sus 10
+  // sellos" (fidelizacion.php) — no es un fallo, pero igual necesita que
+  // caja se entere y lo marque como visto/entregado.
+  return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0 || action.indexOf('🎁') === 0);
+}
+function getAlertEntries() {
+  return getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
+}
+function updateAlertBadge() {
+  const badge = document.getElementById('alertas-tab-badge');
+  if (!badge) return;
+  const lastSeen = localStorage.getItem(ALERTAS_SEEN_KEY) || '';
+  const unseen = getAlertEntries().filter(e => (e.ts || '') > lastSeen).length;
+  const incidenciasNuevas = (typeof _incidenciasNuevasCount === 'function') ? _incidenciasNuevasCount() : 0;
+  const total = unseen + incidenciasNuevas;
+  if (total > 0) {
+    badge.textContent = total > 99 ? '99+' : String(total);
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════
+//  INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu
+//  pedido?", enlazado en el pie de la web — webhook-incidencia.php las
+//  guarda en Firebase en el nodo "incidencias")
+// ══════════════════════════════════════════════
+window._incidenciasCache = window._incidenciasCache || {};
+function _incidenciasNuevasCount() {
+  return Object.values(window._incidenciasCache).filter(i => (i.estado || 'nueva') === 'nueva').length;
+}
+function _formatearFechaIncidencia(fecha) {
+  if (!fecha) return '';
+  try {
+    const d = new Date(fecha);
+    if (isNaN(d.getTime())) return escapeHtml(String(fecha));
+    return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return escapeHtml(String(fecha)); }
+}
+function toggleIncidenciasPanel() {
+  const body = document.getElementById('incidencias-panel-body');
+  const chevron = document.getElementById('incidencias-chevron');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+function renderIncidencias() {
+  const countEl = document.getElementById('incidencias-count-header');
+  if (countEl) {
+    const n = _incidenciasNuevasCount();
+    countEl.textContent = n > 0 ? ' (' + n + ')' : '';
+  }
+  const el = document.getElementById('incidencias-list');
+  if (!el) return;
+  function _tarjetaIncidencia([key, inc]) {
+    const nueva = (inc.estado || 'nueva') === 'nueva';
+    const bg = nueva ? '#FBEAE7' : '#F7F3EC';
+    const border = nueva ? '#F0CFC8' : '#EEE3D0';
+    const fecha = _formatearFechaIncidencia(inc.fecha);
+    const camposHtml = Object.entries(inc.respuestas || {}).map(([label, valor]) =>
+      '<div style="margin-bottom:4px"><span style="font-size:11px;color:#8A6A4E;font-weight:700">' + escapeHtml(label) + ':</span> <span style="font-size:13px;color:#2A1506">' + escapeHtml(String(valor)) + '</span></div>'
+    ).join('');
+    return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;background:' + bg + ';border:1px solid ' + border + '">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center">'
+      + '<span style="font-size:11px;font-weight:700;color:' + (nueva ? '#c0392b' : '#8A6A4E') + '">' + (nueva ? '🚩 NUEVA' : '✅ Resuelta') + '</span>'
+      + '<span style="font-size:10.5px;color:#8A6A4E">' + fecha + '</span>'
+      + '</div>'
+      + (camposHtml || '<div style="font-size:12px;color:#8A6A4E">Sin detalle</div>')
+      + (nueva ? '<div style="display:flex;justify-content:flex-end"><button onclick="marcarIncidenciaResuelta(\'' + escapeAttr(key) + '\')" style="padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Marcar resuelta</button></div>' : '')
+      + '</div>';
+  }
+  const entries = Object.entries(window._incidenciasCache)
+    .sort((a, b) => (b[1].fecha || '').localeCompare(a[1].fecha || ''));
+  const nuevas = entries.filter(([, inc]) => (inc.estado || 'nueva') === 'nueva');
+  const resueltas = entries.filter(([, inc]) => (inc.estado || 'nueva') !== 'nueva');
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin incidencias</div>';
+  } else {
+    // Las resueltas van plegadas detrás de un botón, igual que "Ver
+    // pedidos entregados" en Pedidos en vivo — solo las nuevas se ven de
+    // primeras.
+    const nuevasHtml = nuevas.map(_tarjetaIncidencia).join('');
+    const resueltasHtml = resueltas.length
+      ? '<button onclick="var d=this.nextElementSibling;d.style.display=d.style.display===\'none\'?\'flex\':\'none\';this.textContent=d.style.display===\'none\'?\'Ver incidencias resueltas (' + resueltas.length + ')\':\'Ocultar resueltas\'" style="width:100%;background:none;border:0.5px solid #e0e0e0;border-radius:8px;padding:8px 16px;font-size:13px;color:#8A6A4E;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:6px">Ver incidencias resueltas (' + resueltas.length + ')</button><div style="display:none;flex-direction:column;gap:10px;margin-top:10px">' + resueltas.map(_tarjetaIncidencia).join('') + '</div>'
+      : '';
+    el.innerHTML = (nuevasHtml || (resueltas.length ? '' : '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin incidencias nuevas</div>')) + resueltasHtml;
+  }
+  updateAlertBadge();
+}
+async function marcarIncidenciaResuelta(key) {
+  if (window._incidenciasCache[key]) window._incidenciasCache[key].estado = 'resuelta';
+  renderIncidencias();
+  if (window.fb_setIncidenciaEstado) {
+    try { await window.fb_setIncidenciaEstado(key, 'resuelta'); }
+    catch (e) { console.warn('[incidencias] error al marcar resuelta', e); }
+  }
+}
+// Persiste el log completo (local + Firebase si hay sesión) — usado tanto
+// por logActivity() como por resolverAlerta() al marcar una entrada.
+function _persistActivityLog(log) {
+  localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+  if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_saveActivityLog(log).catch(() => {});
+  }
+}
+// Marca una alerta como resuelta (desaparece de la lista y del badge, pero
+// sigue existiendo en el registro de actividad completo). Se usa tanto al
+// pulsar "Descartar" como automáticamente tras un "Reintentar" con éxito.
+function resolverAlerta(ts) {
+  const log = getActivityLog();
+  const entry = log.find(e => e.ts === ts);
+  if (!entry) return;
+  entry.resolved = true;
+  _persistActivityLog(log);
+  renderAlertas();
+}
+function _alertaDomId(ts) {
+  return 'alerta-' + String(ts).replace(/[^a-zA-Z0-9]/g, '');
+}
+async function reintentarGuardadoPedido(ts, orderNum, fecha) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reintentarStats', orderNum, fecha })
+    });
+    const data = await res.json();
+    if (data.success) {
+      resolverAlerta(ts); // vuelve a pintar la lista sin esta tarjeta
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+      if (statusEl) { statusEl.textContent = '❌ ' + (data.error || 'No se pudo recuperar.'); statusEl.style.display = 'block'; }
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🔧 Reintentar guardado'; }
+    if (statusEl) { statusEl.textContent = '❌ Error de conexión, inténtalo de nuevo.'; statusEl.style.display = 'block'; }
+  }
+}
+// Reimprime un ticket que falló al enviarse a la térmica — recupera los
+// datos del pedido de las estadísticas de hoy (ya en localStorage/Firebase,
+// no hace falta pedirlos otra vez) y vuelve a intentar el envío por USB.
+async function reintentarImpresionTicket(ts, orderNum, fecha) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    let stats;
+    try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) { stats = {}; }
+    const order = (stats && stats.date === fecha && Array.isArray(stats.orders)) ? stats.orders.find(o => o.num === orderNum) : null;
+    if (!order) throw new Error('No se encontró el pedido (¿es de otro día? solo se guarda el de hoy)');
+    const ticketData = {
+      orderNum: order.num,
+      name: order.name,
+      phone: order.phone || '',
+      notes: order.notes || '',
+      slotTime: order.slot || null,
+      items: order.items || [],
+      total: order.total,
+      time: order.time
+    };
+    await imprimirTicketTermico(ticketData);
+    if (typeof _markAsImpreso === 'function') _markAsImpreso(order.num);
+    if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(order.num, true);
+    resolverAlerta(ts);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🖨️ Reintentar impresión'; }
+    if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'No se pudo imprimir.'); statusEl.style.display = 'block'; }
+  }
+}
+// Reintenta sumar un sello de fidelización que falló (p.ej. por el límite
+// de intentos, que se resuelve solo pasados unos minutos). No se conserva
+// si el pedido original consumía un premio — eso es poco frecuente y, si
+// pasara, se ajusta a mano desde el panel de Fidelización.
+async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'registrarSello', telefono, orderNum, tienePatata: true, consumioPremio: false, nombre: nombre || '' })
+    });
+    const data = await res.json();
+    if (data.success || data.skipped) {
+      resolverAlerta(ts);
+    } else {
+      throw new Error(data.error || 'El servidor rechazó el sello');
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🎁 Reintentar sello'; }
+    if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
+  }
+}
+// ── ESTADO DEL SISTEMA ── Chequeo rápido de las 3 piezas de las que
+// depende un pedido: Firebase, el servidor (guardar-pedido.php) y la
+// impresora de este dispositivo — para enterarse de un problema mirando
+// el panel, en vez de solo cuando ya ha fallado un pedido real.
+let _estadoSistemaUltimoCheck = 0;
+async function comprobarEstadoSistema(forzar) {
+  const el = document.getElementById('estado-sistema-list');
+  if (!el) return;
+  // Throttle: si ya se comprobó hace menos de un minuto y no se ha pedido
+  // a la fuerza (botón "Comprobar ahora"), no repetir en cada re-render.
+  if (!forzar && Date.now() - _estadoSistemaUltimoCheck < 60000) return;
+  _estadoSistemaUltimoCheck = Date.now();
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Comprobando…</div>';
+
+  let fbOk = false;
+  try {
+    if (window.fb_checkConnection) fbOk = await window.fb_checkConnection();
+  } catch (e) {}
+
+  let servidorOk = false;
+  try {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'ping' })
+    }, 6000);
+    const data = await res.json();
+    servidorOk = !!data.success;
+  } catch (e) {}
+
+  // La impresora es "opcional" (ok:null) si esta pantalla nunca ha llegado
+  // a intentar conectar con ninguna — no es un fallo, solo no aplica aquí.
+  const impresoraConectada = typeof _ptIsConnected === 'function' ? _ptIsConnected() : null;
+
+  const resultados = [
+    { nombre: 'Firebase (base de datos)', ok: fbOk },
+    { nombre: 'Servidor de pedidos', ok: servidorOk },
+    { nombre: 'Impresora térmica (este dispositivo)', ok: impresoraConectada }
+  ];
+  // "Último pedido recibido" no es un ✅/❌ (no siempre tiene por qué haber
+  // pedidos recientes, p.ej. fuera de horario) — es solo informativo, para
+  // ver de un vistazo si la web sigue "viva" de verdad. window._ultimoPedidoTs
+  // lo actualiza _renderLiveOrders() cada vez que llega la lista de pedidos
+  // del día por el listener en tiempo real.
+  let ultimoPedidoTexto = 'Sin pedidos recibidos hoy en este dispositivo';
+  if (window._ultimoPedidoTs) {
+    const minsAtras = Math.max(0, Math.round((Date.now() - window._ultimoPedidoTs) / 60000));
+    ultimoPedidoTexto = minsAtras < 1 ? 'Hace menos de 1 minuto' : minsAtras === 1 ? 'Hace 1 minuto' : 'Hace ' + minsAtras + ' minutos';
+  }
+  el.innerHTML = resultados.map(r => {
+    const icono = r.ok === null ? '⚪' : r.ok ? '✅' : '❌';
+    const color = r.ok === null ? 'var(--muted)' : r.ok ? '#166534' : '#c0392b';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">' + r.nombre + '</span><span style="font-weight:700;color:' + color + '">' + icono + '</span></div>';
+  }).join('')
+    + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">🕓 Último pedido recibido</span><span style="font-weight:700;color:var(--muted)">' + ultimoPedidoTexto + '</span></div>'
+    + '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Última comprobación: ' + new Date().toLocaleTimeString('es-ES') + '</div>';
+}
+
+// Botón "🖨️ Probar todo" del panel de Alertas — pensado para pasarlo antes
+// de abrir el local: comprueba Firebase/servidor/impresora (como
+// comprobarEstadoSistema) y, si la impresora está conectada, imprime además
+// un ticket de prueba de verdad, para saber que todo funciona antes de que
+// llegue el primer pedido real del día.
+async function comprobarTodoAntesDeAbrir() {
+  const btn = document.getElementById('btn-comprobar-todo');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Comprobando…'; }
+  try {
+    await comprobarEstadoSistema(true);
+    const impresoraConectada = typeof _ptIsConnected === 'function' && _ptIsConnected();
+    if (impresoraConectada && typeof imprimirTicketPrueba === 'function') {
+      await imprimirTicketPrueba();
+      alert('✅ Comprobación completa. Revisa el panel de estado del sistema — y si ha salido un ticket de prueba de la impresora, todo listo para abrir.');
+    } else {
+      alert('✅ Firebase y servidor comprobados (mira el panel de arriba). ⚠️ La impresora no está conectada ahora mismo — conéctala primero para poder probarla también.');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🖨️ Probar todo'; }
+  }
+}
+function renderAlertas() {
+  const entries = getAlertEntries();
+  const el = document.getElementById('alertas-list');
+  if (!el) return;
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos pendientes</div>';
+  } else {
+    el.innerHTML = entries.map(e => {
+      const critico = e.action.indexOf('🚨') === 0;
+      const bg = critico ? '#FBEAE7' : '#FDECD5';
+      const border = critico ? '#F0CFC8' : '#EFD6A9';
+      let retryBtn = '';
+      if (e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>");
+      } else if (e.tipo === 'ticket_no_impreso' && e.orderNum && e.fecha) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarImpresionTicket('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🖨️ Reintentar impresión</button>");
+      } else if (e.tipo === 'sello_no_registrado' && e.orderNum && e.telefono) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
+      }
+      return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+    }).join('');
+  }
+  // Marcar como vistos: la próxima vez que se recalcule el badge, estos
+  // avisos ya no cuentan como nuevos.
+  if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
+  updateAlertBadge();
+  if (typeof comprobarEstadoSistema === 'function') comprobarEstadoSistema();
 }
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
@@ -8303,17 +11923,22 @@ function applyAutoDelete() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  let hist = getHistorial();
-  const before = hist.length;
+  const original = getHistorial();
+  const before = original.length;
   // Cap de seguridad: nunca más de 365 entradas independientemente del filtro de fecha
-  hist = hist.filter(d => d.date >= cutoffStr).slice(0, 365);
+  const hist = original.filter(d => d.date >= cutoffStr).slice(0, 365);
   if (hist.length !== before) {
+    // Las fechas borradas se calculan ANTES de sobrescribir localStorage —
+    // antes se recalculaban leyendo getHistorial() DESPUÉS del
+    // localStorage.setItem() de abajo, así que siempre salía una lista
+    // vacía (ya no quedaba ninguna fecha antigua que leer) y stats/{fecha}
+    // nunca llegaba a borrarse de Firebase, solo de localStorage.
+    const deletedDates = original
+      .filter(d => d.date < cutoffStr)
+      .map(d => d.date);
     localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist));
     // Borrar también los días eliminados de Firebase (stats/{fecha})
     if (typeof firebase !== 'undefined' && firebase.database) {
-      const deletedDates = getHistorial()
-        .filter(d => d.date < cutoffStr)
-        .map(d => d.date);
       deletedDates.forEach(date => {
         firebase.database().ref('stats/' + date).remove().catch(() => {});
       });
@@ -8418,6 +12043,14 @@ function exportTodayCSV() {
   }
   downloadCSV(stats, "pedidos_".concat(todayKey, ".csv"));
 }
+// El nombre del cliente es texto libre sin restricción de caracteres — una
+// comilla suelta dentro de un campo entrecomillado corta el campo antes de
+// tiempo y desplaza el resto de comas de esa fila a las columnas
+// equivocadas al abrirlo en Excel/Sheets. Se duplica cada comilla interna,
+// que es como CSV espera que se escapen ("" dentro de un campo "...").
+function _csvEscape(str) {
+  return String(str == null ? '' : str).replace(/"/g, '""');
+}
 function exportHistorialCSV() {
   const hist = getHistorial();
   if (!hist.length) {
@@ -8427,7 +12060,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -8443,7 +12076,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(o.name, "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'
@@ -8472,8 +12105,12 @@ function buildTicketHTML(data) {
   const tc = getTicketConfig();
   const sep = '─'.repeat(32);
   const sep2 = '═'.repeat(32);
+  // Los nombres de producto/extras vienen de lo que el navegador mand\u00F3 a
+  // guardar-pedido.php \u2014 pueden manipularse con una petici\u00F3n directa al
+  // servidor (sin pasar por la web), as\u00ED que hay que escaparlos igual que
+  // nombre/tel\u00E9fono/notas de abajo, no son m\u00E1s de fiar que esos.
   let itemsHTML = items.map(_ref21 => {
-    let n = _ref21.name,
+    let n = escapeHtml(_ref21.name),
       qty = _ref21.qty,
       subtotal = _ref21.subtotal,
       extras = _ref21.extras;
@@ -8481,7 +12118,7 @@ function buildTicketHTML(data) {
     const label = qty + 'x ' + n;
     if (extras && extras.length > 0) {
       const extrasList = extras.map(function(e) {
-        const extraName = (e && e.name) ? e.name : e;
+        const extraName = escapeHtml((e && e.name) ? e.name : e);
         const extraPrice = (e && e.price) ? '+' + parseFloat(e.price).toFixed(2).replace('.', ',') + ' \u20AC' : '';
         return '<div style="display:flex;justify-content:space-between"><span>&nbsp;&nbsp;&nbsp;\xB7 ' + extraName + '</span>' + (extraPrice ? '<span style="color:#aaa">' + extraPrice + '</span>' : '') + '</div>';
       }).join('');
@@ -8493,11 +12130,20 @@ function buildTicketHTML(data) {
     }
   }).join('');
 
-  const headerRow = slotTime
-    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + name.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
-    : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + name.toUpperCase() + '</div>';
+  // El nombre/tel\u00E9fono/notas los escribe el propio cliente en el checkout
+  // (solo se les limita la longitud, no los caracteres) y este HTML se
+  // inyecta luego con innerHTML en el panel de admin al ver/imprimir el
+  // ticket \u2014 sin escapar, un nombre o nota con <script> o <img onerror=...>
+  // se ejecutar\u00EDa en el navegador de quien lo abra con su sesi\u00F3n de admin.
+  const nameSafe = escapeHtml(name || '');
+  const notesSafe = escapeHtml(notes || '');
+  const phoneSafe = escapeHtml(phone || '');
 
-  return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phone ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phone + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " \u20AC</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notes ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notes, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
+  const headerRow = slotTime
+    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
+    : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + nameSafe.toUpperCase() + '</div>';
+
+  return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phoneSafe ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phoneSafe + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " \u20AC</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notesSafe ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notesSafe, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
 }
 function openPrintModal(ticketData) {
   currentTicketData = ticketData;
@@ -8508,22 +12154,151 @@ function openPrintModal(ticketData) {
 function closePrintModal() {
   document.getElementById('print-modal').style.display = 'none';
 }
+// Reintenta imprimir varias veces con un pequeño margen entre intentos antes
+// de darse por vencido — un corte momentáneo de USB (la impresora a veces se
+// desconecta sola) ya no genera una alerta a la primera; solo si de verdad
+// fallan todos los intentos se avisa.
+function _imprimirConReintentos(ticketData, intentosRestantes, esperaMs) {
+  return imprimirTicketTermico(ticketData).catch(e => {
+    if (intentosRestantes <= 1) throw e;
+    return new Promise(resolve => setTimeout(resolve, esperaMs))
+      .then(() => _imprimirConReintentos(ticketData, intentosRestantes - 1, esperaMs));
+  });
+}
 function doPrint() {
   if (!currentTicketData) return;
+  const orderNum = currentTicketData.orderNum;
+  const ticketData = currentTicketData;
 
-  // Mandar a impresora térmica via Firebase
+  // Imprimir de verdad en la térmica (WebUSB) — el registro de abajo refleja
+  // este resultado (si de verdad salió por la impresora), no el guardado en Firebase.
+  // Pasa por _ptEnFila() para no intercalarse con otro ticket que se esté
+  // imprimiendo a la vez (auto-imprimir de un pedido nuevo, la cola
+  // pendiente...) — ver el porqué en impresora-termica.js.
+  const _ptEjecutarImpresion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  _ptEjecutarImpresion(() => _imprimirConReintentos(ticketData, 3, 1500)).then(() => {
+    _markAsImpreso(orderNum);
+    _registrarEnvioTicket(orderNum, true);
+  }).catch(e => {
+    console.warn('[Impresora] error al imprimir tras varios intentos', e);
+    _registrarEnvioTicket(orderNum, false);
+    _avisarFalloEnvioTicket(orderNum);
+    if (typeof _ptColaAgregar === 'function') _ptColaAgregar(ticketData);
+    alert('⚠️ No se pudo imprimir en la térmica (' + e.message + '). Se abrirá el diálogo de impresión del navegador como alternativa. En cuanto la impresora vuelva a conectar, este ticket se reimprimirá solo.');
+    window.print();
+  });
+
+  // Guardar también en Firebase (histórico de reimpresiones, usado también por fidelización)
   if (window.fb_saveTicket) {
     const reimprKey = 'R' + Date.now();
-    const ticketParaImpresora = Object.assign({}, currentTicketData, { _reimprimir: true });
-    window.fb_saveTicket(reimprKey, ticketParaImpresora)
-      .then(() => { closePrintModal(); })
-      .catch(() => { closePrintModal(); });
-  } else {
-    closePrintModal();
+    const ticketParaImpresora = Object.assign({}, ticketData, { _reimprimir: true });
+    window.fb_saveTicket(reimprKey, ticketParaImpresora).catch(() => {});
   }
+  closePrintModal();
 }
 function printLastTicket() {
   if (_lastTicketData) openPrintModal(_lastTicketData);
+}
+// Envía un pedido nuevo directo a la impresora térmica sin pasar por el
+// modal de vista previa — lo dispara el listener de fb_listenStats cuando
+// getTicketConfig().autoImprimir está activo. Sin el flag _reimprimir de
+// doPrint(): este es el print "original" del sistema, no una reimpresión
+// manual desde el panel.
+function _autoImprimirPedido(order) {
+  const ticketData = {
+    orderNum: order.num,
+    name: order.name,
+    phone: order.phone || '',
+    notes: order.notes || '',
+    slotTime: order.slot || null,
+    items: order.items || [],
+    total: order.total,
+    time: order.time,
+    esPedidoLocal: order.esPedidoLocal || false,
+    esEstudianteJubilado: order.esEstudianteJubilado || false,
+    fidelizacionElegible: order.fidelizacionElegible || false
+  };
+
+  // Imprimir de verdad en la térmica (WebUSB) en esta tablet — con
+  // reintentos automáticos antes de avisar (ver _imprimirConReintentos).
+  // Pasa por _ptEnFila() porque si llegan varios pedidos casi a la vez
+  // (varios clientes pidiendo en el mismo minuto), _nuevosPedidos.forEach()
+  // más abajo llama a esta función varias veces seguidas SIN esperar a que
+  // termine la anterior — sin esta fila, los bytes de dos tickets distintos
+  // podían intercalarse a mitad de envío por Bluetooth/USB y la impresora
+  // se quedaba sin imprimir ninguno de los dos ("se volvía loca").
+  const _ptEjecutarImpresionAuto = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  _ptEjecutarImpresionAuto(() => _imprimirConReintentos(ticketData, 3, 1500))
+    .then(() => {
+      _markAsImpreso(order.num);
+      _registrarEnvioTicket(order.num, true);
+      // Al imprimirse solo (auto-imprimir), pasa a "En preparación" — igual
+      // que ya hacía el botón de imprimir manual, pero esto faltaba aquí.
+      if (typeof getOrderStatus === 'function' && getOrderStatus(order.num) === 'nuevo') {
+        setOrderStatus(order.num, 'recibido').catch(() => {});
+      }
+    })
+    .catch(e => {
+      console.warn('[Impresora] auto-imprimir falló para ' + order.num + ' tras varios intentos', e);
+      _registrarEnvioTicket(order.num, false);
+      _avisarFalloEnvioTicket(order.num);
+      if (typeof _ptColaAgregar === 'function') _ptColaAgregar(ticketData);
+    });
+
+  // Guardar también en Firebase (histórico, usado por fidelización)
+  if (window.fb_saveTicket) {
+    const key = 'A' + Date.now() + '_' + order.num;
+    window.fb_saveTicket(key, ticketData).catch(() => {});
+  }
+}
+// Aviso real cuando el envío del ticket a Firebase falla (offline, permisos...).
+// No sabemos si la impresora física llegó a sacar el papel — de eso se encarga
+// el programa que la conecta, fuera de esta web — pero al menos esto ya no se
+// queda callado como antes.
+function _avisarFalloEnvioTicket(orderNum) {
+  logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión', {
+    tipo: 'ticket_no_impreso',
+    orderNum,
+    fecha: new Date().toISOString().slice(0, 10)
+  });
+}
+const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
+function _registrarEnvioTicket(orderNum, ok) {
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  const todayKey = new Date().toISOString().slice(0, 10);
+  log.unshift({ num: orderNum, date: todayKey, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
+  // Guarda hasta 300 entradas (varios días de margen) — el panel solo
+  // enseña las de hoy, esto es solo para no dejar crecer localStorage sin límite.
+  localStorage.setItem(TICKET_SEND_LOG_KEY, JSON.stringify(log.slice(0, 300)));
+  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
+}
+// Panel de "trabajos de impresión de hoy": antes solo se veían los últimos
+// 15 tickets enviados (de cualquier día mezclados) — ahora se ven TODOS los
+// de hoy en este dispositivo, con un resumen de cuántos salieron bien/mal.
+function _renderTicketSendLog() {
+  const el = document.getElementById('tc-envios-log');
+  if (!el) return;
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const logHoy = log.filter(e => (e.date || todayKey) === todayKey);
+  const resumenEl = document.getElementById('tc-envios-resumen');
+  if (resumenEl) {
+    if (logHoy.length) {
+      const ok = logHoy.filter(e => e.ok).length;
+      const fallos = logHoy.length - ok;
+      resumenEl.textContent = logHoy.length + ' hoy · ✅ ' + ok + (fallos ? ' · ❌ ' + fallos : '');
+    } else {
+      resumenEl.textContent = '';
+    }
+  }
+  el.innerHTML = logHoy.length ? logHoy.map(e =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:12px">'
+    + '<span>Pedido #' + escapeHtml(String(e.num)) + '</span>'
+    + '<span style="color:' + (e.ok ? '#27855a' : '#c0392b') + ';font-weight:700">' + (e.ok ? '✅ Enviado · ' : '❌ Falló · ') + e.time + '</span>'
+    + '</div>'
+  ).join('') : '<div style="font-size:12px;color:var(--muted)">Todavía no se ha enviado ningún ticket hoy en este dispositivo</div>';
 }
 let _lastTicketData = null;
 async function printOrderFromStats(num, name, time, total, slot) {
@@ -8593,9 +12368,12 @@ function scheduleSlotMidnightReset() {
     localStorage.removeItem(OPEN_KEY);
     localStorage.removeItem(ORDERS_KEY);
     localStorage.removeItem('dpf_open_manual_override');
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    const _esAdminAutenticadoReset = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+    if (_esAdminAutenticadoReset) {
+      firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    }
     // También archivar el día anterior en historial
     try {
       const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8623,7 +12401,7 @@ function scheduleSlotMidnightReset() {
           modified = true;
         }
       });
-      if (modified) fichajesSave(fich);
+      if (modified && _esAdminAutenticadoReset) fichajesSave(fich);
     } catch (e) {
       console.warn('Auto-checkout error', e);
     }
@@ -8647,8 +12425,72 @@ function initFirebaseListeners() {
 
   // Cargar config de gastos de gestión desde Firebase
   loadFeeFromFirebase();
+  if (typeof loadFee2FromFirebase === 'function') loadFee2FromFirebase();
+  if (typeof loadLocalFeeCodeFromFirebase === 'function') loadLocalFeeCodeFromFirebase();
+  if (typeof loadTiendaEsperaMinutosFromFirebase === 'function') loadTiendaEsperaMinutosFromFirebase();
+  if (typeof loadStudentDiscountFromFirebase === 'function') loadStudentDiscountFromFirebase();
   // Cargar configuración del ticket desde Firebase
   loadTicketConfigFromFirebase();
+  // Auto-pausa por saturación: configuración (umbral/mensaje/on-off) y
+  // estado compartido entre dispositivos (¿está pausado por el sistema?)
+  if (typeof loadAutoPausaConfigFromFirebase === 'function') loadAutoPausaConfigFromFirebase();
+  if (typeof loadAutoPausaEstadoFromFirebase === 'function') loadAutoPausaEstadoFromFirebase();
+  // Pausa exprés (cuenta atrás) y aviso suave previo a la auto-pausa
+  if (typeof loadPausaExpresFromFirebase === 'function') loadPausaExpresFromFirebase();
+  if (typeof loadAvisoSaturacionFromFirebase === 'function') loadAvisoSaturacionFromFirebase();
+
+  // Aviso de "sin conexión" en la pantalla de cocina — la lista de pedidos
+  // ya sigue mostrando lo último que se vio (localStorage/último render) si
+  // se corta el wifi, pero sin este aviso nadie en cocina se entera de que
+  // los pedidos nuevos podrían no estar llegando. Mismo margen de 6s que el
+  // banner del cliente, para no alarmar por un corte breve al cambiar de red.
+  if (window.fb_listenConnectionState) {
+    let _kitchenOfflineTimeout = null;
+    window.fb_listenConnectionState(connected => {
+      const badge = document.getElementById('kitchen-offline-badge');
+      if (!badge) return;
+      if (connected) {
+        if (_kitchenOfflineTimeout) { clearTimeout(_kitchenOfflineTimeout); _kitchenOfflineTimeout = null; }
+        badge.style.display = 'none';
+      } else if (!_kitchenOfflineTimeout) {
+        _kitchenOfflineTimeout = setTimeout(() => {
+          _kitchenOfflineTimeout = null;
+          badge.style.display = 'block';
+        }, 6000);
+      }
+    });
+  }
+
+  // Incidencias de clientes (formulario Tally) — en tiempo real, para que
+  // el badge de la pestaña Alertas se actualice sin recargar.
+  if (window.fb_listenIncidencias) {
+    window.fb_listenIncidencias(incidencias => {
+      window._incidenciasCache = incidencias || {};
+      var _alertasSection = document.getElementById('admin-alertas');
+      if (_alertasSection && _alertasSection.classList.contains('active')) renderIncidencias();
+      updateAlertBadge();
+    });
+  }
+
+  // Pedidos abiertos/cerrados y su mensaje, en tiempo real — antes solo se
+  // cargaban una vez al abrir la página (init.js). Si la auto-pausa por
+  // saturación cierra o reabre los pedidos mientras un cliente ya tiene la
+  // web abierta, esto hace que vea el cambio al momento sin recargar.
+  if (window.fb_listenOrdersOpen) {
+    window.fb_listenOrdersOpen(val => {
+      localStorage.setItem(ORDERS_KEY, val);
+      updateOrdersUI(getOrdersOpen());
+      if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    });
+  }
+  if (window.fb_listenOrdersMsg) {
+    window.fb_listenOrdersMsg(msg => {
+      localStorage.setItem(ORDERS_MSG_KEY, msg);
+      const inp = document.getElementById('orders-pause-msg');
+      if (inp) inp.value = msg;
+      updateOrdersUI(getOrdersOpen());
+    });
+  }
 
   // 1. Slots — sync counter across all devices in real time
   if (window.fb_listenSlots) {
@@ -8674,11 +12516,6 @@ function initFirebaseListeners() {
           }
         }
       }
-      // Comprobar si algún slot está casi lleno
-      const slotMax = getSlotMax();
-      Object.entries(slots || {}).forEach(([slot, count]) => {
-        _checkSlotAlmostFull(slot, count, slotMax);
-      });
       var _document$getElementB0;
       _slotsCache = slots || {};
       // Forzar que getSlotsData use _slotsCache en vez de stats locales
@@ -8710,6 +12547,24 @@ function initFirebaseListeners() {
       const newCount = stats.count || 0;
       // Update localStorage cache
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+
+      // Auto-pausa por saturación: se comprueba aquí (no solo dentro de
+      // _renderLiveOrders) para que funcione siempre que este dispositivo
+      // esté conectado como admin, sin depender de que la pestaña "Pedidos
+      // en vivo" esté abierta en pantalla — en "Modo cocina" también debe
+      // poder pausar/reactivar sola.
+      if (typeof getOrderStatus === 'function') {
+        const _pendientes = (stats.orders || []).filter(o => {
+          const s = getOrderStatus(o.num);
+          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+        }).length;
+        if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(_pendientes);
+        // El aviso suave (banner + sonido previo) se calcula en cualquier
+        // dispositivo — incluidos los clientes pidiendo, que necesitan ver
+        // el aviso aunque no estén logueados como admin.
+        if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientes);
+      }
+
       // First call — set baseline, don't alert, but refresh UI
       if (_fbLastCount === null) {
         var _document$getElementB1, _document$getElementB10;
@@ -8727,15 +12582,39 @@ function initFirebaseListeners() {
         _unseenOrders += diff;
         updateTabTitle(_unseenOrders);
         console.log('[DPF] NEW ORDER via Firebase! diff=' + diff + ' adminLoggedIn=' + _adminLoggedIn);
-        // Si el panel está abierto pero _adminLoggedIn no se puso, forzarlo
+        // Si el panel está abierto pero _adminLoggedIn no se puso, forzarlo.
+        // Antes solo se comprobaba si #admin-panel estaba visible — si el
+        // pedido llegaba mientras la tablet estaba en "Modo cocina" (una
+        // pantalla distinta, #kitchen-mode) o justo durante el auto-login
+        // por "dispositivo de confianza" (que tarda un momento en
+        // confirmarse tras cargar la página), esta comprobación no lo
+        // detectaba y ese pedido se perdía entero — sin imprimir Y sin
+        // sonido, porque los dos dependen de _adminLoggedIn. Ahora también
+        // se comprueba #kitchen-mode y si ya hay sesión real de Firebase
+        // Auth (la señal más fiable, vale para cualquier pantalla).
         if (!_adminLoggedIn) {
           var adminPanel = document.getElementById('admin-panel');
-          if (adminPanel && adminPanel.style.display !== 'none') {
+          var kitchenMode = document.getElementById('kitchen-mode');
+          var yaAutenticado = window.fb && window.fb.getAdminUser && window.fb.getAdminUser();
+          if ((adminPanel && adminPanel.style.display !== 'none')
+            || (kitchenMode && kitchenMode.classList.contains('open'))
+            || yaAutenticado) {
             _adminLoggedIn = true; window._adminLoggedIn = true;
           }
         }
         if (_adminLoggedIn) {
-          _alertPendingOrders = diff;
+          // guardar-pedido.php inserta los pedidos nuevos al PRINCIPIO del array
+          // (array_unshift), no al final — por eso se cogen los primeros "diff"
+          // elementos, no los últimos (si no, siempre se coge el pedido más viejo).
+          const _nuevosPedidos = (stats.orders || []).slice(0, diff);
+          if (getTicketConfig().autoImprimir) {
+            _nuevosPedidos.forEach(_autoImprimirPedido);
+          }
+          // Se SUMA cada pedido nuevo al contador (por número, no se puede
+          // duplicar) en vez de sobreescribirlo — antes, si llegaban dos
+          // avisos de "pedido nuevo" seguidos antes de atender el primero,
+          // el segundo pisaba el contador entero en vez de sumarse.
+          _nuevosPedidos.forEach(o => _marcarPedidoPendienteAlerta(o.num));
           startAlertLoop();
           const toast = document.getElementById('new-order-toast');
           if (toast) {
@@ -8757,15 +12636,62 @@ function initFirebaseListeners() {
       if ((_document$getElementB14 = document.getElementById('admin-stats')) !== null && _document$getElementB14 !== void 0 && _document$getElementB14.classList.contains('active')) {
         loadDayStats();
       }
+      // Modo cocina (pantalla completa #kitchen-mode) — antes solo se
+      // refrescaba con este listener si la pestaña "Pedidos en vivo" del
+      // panel admin estaba abierta, así que un pedido nuevo o uno quitado
+      // (cancelado/modificado) podía tardar hasta 15s en aparecer/
+      // desaparecer aquí (el intervalo de refresco periódico de
+      // openKitchenMode), en vez de al instante como en las otras pestañas.
+      var _kitchenModeEl = document.getElementById('kitchen-mode');
+      if (_kitchenModeEl && _kitchenModeEl.classList.contains('open')) {
+        refreshKitchenGrid();
+      }
     });
   }
 
   // 3. Order statuses — sync kitchen status across devices
   if (window.fb_listenOrderStatuses) {
+    let _prevOrderStatuses = null; // null hasta el primer snapshot: evita avisar de cancelaciones ya existentes al abrir
     window.fb_listenOrderStatuses(statuses => {
       var _document$getElementB15, _document$getElementB16;
-      window._orderStatusCache = statuses || {};
+      const nuevos = statuses || {};
+
+      // Aviso de cancelación/modificación: sonido distinto + ticket de anulación
+      // en esta tablet, para pedidos que ACABAN de pasar a "cancelado"
+      // (cancelarPedidoAdmin, y también cuando el cliente cancela o modifica
+      // su propio pedido — todo pasa por el mismo _borrarPedidoDeFirebase).
+      if (_prevOrderStatuses === null) {
+        _prevOrderStatuses = nuevos;
+      } else {
+        Object.keys(nuevos).forEach(num => {
+          if (nuevos[num] === 'cancelado' && _prevOrderStatuses[num] !== 'cancelado') {
+            if (_adminLoggedIn) {
+              playNotificationSound('urgente');
+              if (getTicketConfig().autoImprimir) {
+                imprimirAnulacion(num).catch(e => console.warn('[Impresora] fallo al imprimir anulación', e));
+              }
+            }
+          }
+        });
+        _prevOrderStatuses = nuevos;
+      }
+
+      window._orderStatusCache = nuevos;
       localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
+      // Un cambio de estado (p.ej. marcar "listo") también puede bajar el
+      // nº de pendientes sin que cambie el nº total de pedidos — recalcular
+      // la auto-pausa/aviso aquí también, no solo cuando llega un pedido nuevo.
+      try {
+        const _statsAhora = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+        if (_statsAhora && Array.isArray(_statsAhora.orders)) {
+          const _pendientesAhora = _statsAhora.orders.filter(o => {
+            const s = getOrderStatus(o.num);
+            return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+          }).length;
+          if (_adminLoggedIn && typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(_pendientesAhora);
+          if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientesAhora);
+        }
+      } catch (e) {}
       if ((_document$getElementB15 = document.getElementById('admin-pedidos')) !== null && _document$getElementB15 !== void 0 && _document$getElementB15.classList.contains('active')) {
         loadLiveOrders();
       }
@@ -8899,57 +12825,73 @@ function initFirebaseListeners() {
 
   // Menu prices/names sync across devices
   if (window.fb_listenMenu) {
-    window.fb_listenMenu(data => {
-      // data can be {items, ts} or plain array (legacy)
-      const savedMenu = Array.isArray(data) ? data : data && data.items ? data.items : null;
-      const fbTs = data && data.ts ? data.ts : 0;
-      const localTs = parseInt(localStorage.getItem(MENU_KEY + '_ts') || '0', 10);
-      // Only apply Firebase version if it's newer than local
-      if (!savedMenu || !savedMenu.length) return;
-      if (fbTs > 0 && fbTs < localTs) return; // local is newer, skip
-      // Primero resetear hidden para no acumular flags de runs anteriores
-      MENU.forEach(item => {
-        item.hidden = false;
-      });
-      savedMenu.forEach(saved => {
-        const item = MENU.find(m => m.id == saved.id);
-        if (item) {
-          if (saved.price !== undefined) item.price = saved.price;
-          if (saved.name) item.name = saved.name;
-          if (saved.desc !== undefined) item.desc = saved.desc;
-          item.hidden = saved.hidden || false;
-          item.soldout = saved.soldout || false;
-        } else {
-          // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
-          // junto a los de su misma categoría, no suelto al final
-          const nuevo = Object.assign({}, saved);
-          let lastIdx = -1;
-          for (let i = 0; i < MENU.length; i++) {
-            if (MENU[i].cat === nuevo.cat) lastIdx = i;
-          }
-          if (lastIdx === -1) {
-            MENU.push(nuevo);
-          } else {
-            MENU.splice(lastIdx + 1, 0, nuevo);
-          }
-        }
-      });
-      // Reaplicar categorías bloqueadas encima de los datos de Firebase
-      initCatBlocks();
-      // Protección: si Firebase ocultaría más del 80% de la carta, ignorar hidden flags
-      const hiddenCount = MENU.filter(m => m.hidden).length;
-      if (hiddenCount > MENU.length * 0.8) {
-        console.warn('[DPF] Firebase menu: demasiados items ocultos, reseteando');
-        MENU.forEach(m => {
-          m.hidden = false;
-        });
-        localStorage.removeItem(CAT_BLOCK_KEY);
-      }
-      localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
-      if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
-      renderMenu();
+    window.fb_listenMenu(_aplicarMenuDesdeFirebase);
+  }
+  // Refresco periódico de la carta, además del listener en tiempo real de
+  // arriba — si un cliente deja la pestaña abierta mucho rato (o el
+  // navegador móvil suspende la conexión en segundo plano y no la
+  // restablece del todo al volver), el listener podría no haber recibido
+  // el último cambio de precio/producto. Cada 10 minutos, y también en
+  // cuanto se vuelve a esta pestaña tras tenerla en segundo plano, se
+  // vuelve a comprobar contra Firebase directamente para no dejar pedir
+  // nunca con una carta desactualizada.
+  if (window.fb_loadMenu) {
+    const _refrescarMenu = () => { window.fb_loadMenu().then(data => { if (data) _aplicarMenuDesdeFirebase(data); }).catch(() => {}); };
+    setInterval(_refrescarMenu, 10 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _refrescarMenu();
     });
   }
+}
+function _aplicarMenuDesdeFirebase(data) {
+  // data can be {items, ts} or plain array (legacy)
+  const savedMenu = Array.isArray(data) ? data : data && data.items ? data.items : null;
+  const fbTs = data && data.ts ? data.ts : 0;
+  const localTs = parseInt(localStorage.getItem(MENU_KEY + '_ts') || '0', 10);
+  // Only apply Firebase version if it's newer than local
+  if (!savedMenu || !savedMenu.length) return;
+  if (fbTs > 0 && fbTs < localTs) return; // local is newer, skip
+  // Primero resetear hidden para no acumular flags de runs anteriores
+  MENU.forEach(item => {
+    item.hidden = false;
+  });
+  savedMenu.forEach(saved => {
+    const item = MENU.find(m => m.id == saved.id);
+    if (item) {
+      if (saved.price !== undefined) item.price = saved.price;
+      if (saved.name) item.name = saved.name;
+      if (saved.desc !== undefined) item.desc = saved.desc;
+      item.hidden = saved.hidden || false;
+      item.soldout = saved.soldout || false;
+    } else {
+      // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
+      // junto a los de su misma categoría, no suelto al final
+      const nuevo = Object.assign({}, saved);
+      let lastIdx = -1;
+      for (let i = 0; i < MENU.length; i++) {
+        if (MENU[i].cat === nuevo.cat) lastIdx = i;
+      }
+      if (lastIdx === -1) {
+        MENU.push(nuevo);
+      } else {
+        MENU.splice(lastIdx + 1, 0, nuevo);
+      }
+    }
+  });
+  // Reaplicar categorías bloqueadas encima de los datos de Firebase
+  initCatBlocks();
+  // Protección: si Firebase ocultaría más del 80% de la carta, ignorar hidden flags
+  const hiddenCount = MENU.filter(m => m.hidden).length;
+  if (hiddenCount > MENU.length * 0.8) {
+    console.warn('[DPF] Firebase menu: demasiados items ocultos, reseteando');
+    MENU.forEach(m => {
+      m.hidden = false;
+    });
+    localStorage.removeItem(CAT_BLOCK_KEY);
+  }
+  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
+  if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
+  renderMenu();
 }
 
 // Wait for Firebase to be ready, then init listeners
@@ -9019,7 +12961,15 @@ async function loadLiveOrders() {
   // Firebase es la fuente de verdad (tiene todos los pedidos de todos los dispositivos)
   if (window.fb_getStats) {
     try {
-      stats = await window.fb_getStats(todayKey);
+      // Si no hay conexión de verdad (wifi del local caído), fb_getStats()
+      // puede quedarse esperando indefinidamente en vez de fallar rápido —
+      // sin este límite, recargar la pantalla de cocina sin internet se
+      // quedaba cargando para siempre en vez de caer en el respaldo de
+      // localStorage de abajo con los últimos pedidos vistos.
+      stats = await Promise.race([
+        window.fb_getStats(todayKey),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout esperando a Firebase')), 4000))
+      ]);
     } catch (e) {
       console.error('[DPF] fb_getStats error', e);
     }
@@ -9056,8 +13006,20 @@ async function loadLiveOrders() {
   _renderLiveOrders(stats, todayKey);
 }
 function _renderLiveOrders(stats, todayKey) {
-  // Sort by slot time, then by order time for orders without slot
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
+  // Guarda cuándo llegó el pedido más reciente — lo usa el panel "Estado
+  // del sistema" para mostrar "Último pedido: hace X min" de un vistazo.
+  (stats.orders || []).forEach(o => {
+    if (typeof o.ts === 'number' && o.ts > (window._ultimoPedidoTs || 0)) window._ultimoPedidoTs = o.ts;
+  });
+  // Los pedidos "desde el local" (código de cola aplicado) van primero,
+  // porque ese cliente ya está esperando físicamente en el mostrador y no
+  // se puede ir a pedir a otro sitio — luego por turno, y por hora dentro
+  // del mismo turno.
   const orders = (stats.orders || []).slice().sort((a, b) => {
+    const localA = a.esPedidoLocal ? 0 : 1;
+    const localB = b.esPedidoLocal ? 0 : 1;
+    if (localA !== localB) return localA - localB;
     const slotA = a.slot || '99:99';
     const slotB = b.slot || '99:99';
     if (slotA !== slotB) return slotA.localeCompare(slotB);
@@ -9111,22 +13073,26 @@ function _renderLiveOrders(stats, todayKey) {
   const enPrep = orders.filter(o => getOrderStatus(o.num) === 'recibido');
   const entregados = orders.filter(o => ['entregado','listo','cancelado'].includes(getOrderStatus(o.num)));
   window._activosCache = [...nuevos, ...enPrep];
+  if (typeof _comprobarAutoPausaSaturacion === 'function') _comprobarAutoPausaSaturacion(activos.length);
+  if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(activos.length);
 
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';
-    const border = isNuevo ? '#3D1F0D' : '#3B82F6';
+    const localBadge = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🏪 En el local</span>' : '';
+    const estudianteBadge = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;border-radius:99px;padding:2px 8px;font-size:11px;font-weight:700">🪪 Verificar carné</span>' : '';
+    const border = o.esPedidoLocal ? '#166534' : o.esEstudianteJubilado ? '#c2711a' : isNuevo ? '#3D1F0D' : '#3B82F6';
     const btns = isNuevo
       ? '<button class="kbtn kbtn-delete" data-print-num="' + escapeAttr(o.num) + '" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}">' + (_printedOrders.has(o.num) ? '🖨️ Impreso' : '🖨️ Imprimir') + '</button>'
         + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'recibido\')" style="background:#EFF6FF;color:#1D4ED8;border:0.5px solid #93C5FD">🔵 Recibido</button>'
-        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="cancelarPedidoAdmin(this.dataset.num)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>'
+        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" data-phone="' + escapeAttr(o.phone||'') + '" onclick="cancelarPedidoAdmin(this.dataset.num,this.dataset.phone)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>'
       : '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="setLiveStatus(this.dataset.num,\'entregado\')" style="background:#F0FDF4;color:#166534;border:0.5px solid #86EFAC">✅ Entregado</button>'
         + '<button class="kbtn kbtn-delete" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot)">🖨️</button>'
-        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" onclick="cancelarPedidoAdmin(this.dataset.num)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>';
+        + '<button class="kbtn" data-num="' + escapeAttr(o.num) + '" data-phone="' + escapeAttr(o.phone||'') + '" onclick="cancelarPedidoAdmin(this.dataset.num,this.dataset.phone)" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5">✕</button>';
     return '<div class="live-order-card" id="live-card-' + escapeAttr(o.num.replace('#','')) + '" style="border-left:3px solid ' + border + '">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
         + '<div><span style="font-size:22px;font-weight:700;font-family:Georgia,serif;color:#3D1F0D">' + escapeHtml(o.num) + '</span>'
         + '<span style="font-size:13px;color:#2A1506;margin-left:6px">' + escapeHtml(o.name) + '</span></div>'
-        + slotBadge
+        + '<div style="display:flex;gap:4px;align-items:center">' + localBadge + estudianteBadge + slotBadge + '</div>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-top:4px">' + escapeHtml(o.time) + ' · <span id="total-display-' + escapeAttr(o.num.replace('#','')) + '" data-num="' + escapeAttr(o.num) + '" onclick="startEditOrderTotal(this.dataset.num)" style="cursor:pointer;text-decoration:underline dotted">' + o.total.toFixed(2).replace('.',',') + ' €</span></div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + btns + '</div>'
@@ -9194,24 +13160,53 @@ async function emergencySyncFromLocal() {
   }
 }
 function setLiveStatus(num, status) {
-  // Parar el sonido cuando se marca cualquier pedido
+  // Parar el sonido al momento cuando se marca cualquier pedido
   if (status === 'entregado' || status === 'recibido' || status === 'listo') {
     stopAlertLoop();
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-    if (_alertPendingOrders > 0) startAlertLoop && startAlertLoop();
   }
   setOrderStatus(num, status);
-  // Si se acepta un pedido, reducir contador de pendientes
-  if (status === 'preparando' || status === 'listo') {
-    _alertPendingOrders = Math.max(0, (_alertPendingOrders || 0) - 1);
-    if (_alertPendingOrders === 0) stopAlertLoop();
+  // Cualquiera de estos estados cuenta como "ya visto" — se marca una sola
+  // vez por pedido (_marcarPedidoAtendido no hace nada si ya estaba
+  // marcado), así que da igual si pasa antes por "preparando" y luego por
+  // "listo": solo resta del contador la primera vez.
+  if (status === 'entregado' || status === 'recibido' || status === 'listo' || status === 'preparando') {
+    _marcarPedidoAtendido(num);
   }
+  if (_alertPendingOrders > 0) startAlertLoop();
   loadLiveOrders();
   refreshKitchenGrid();
 }
 
 // ── KITCHEN MODE ──
 let _kitchenInterval = null;
+// ── Wake Lock: evita que la tablet de cocina entre en reposo ─────────────
+// Si la pantalla se apaga sola por inactividad, a veces corta la conexión
+// USB/Bluetooth con la impresora sin avisar. Mientras la pantalla de cocina
+// esté abierta, se le pide al navegador que mantenga la pantalla encendida.
+// No lo soportan todos los navegadores/dispositivos — si falla, se ignora:
+// solo se pierde este extra, no rompe nada más.
+let _kitchenWakeLock = null;
+async function _pedirWakeLockCocina() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _kitchenWakeLock = await navigator.wakeLock.request('screen');
+    _kitchenWakeLock.addEventListener('release', () => { _kitchenWakeLock = null; });
+  } catch (e) {
+    // P.ej. si la pestaña no está visible justo en ese instante — se
+    // reintenta solo en cuanto vuelva a estar visible (ver visibilitychange
+    // más abajo).
+  }
+}
+function _soltarWakeLockCocina() {
+  if (_kitchenWakeLock) { _kitchenWakeLock.release().catch(() => {}); _kitchenWakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  const km = document.getElementById('kitchen-mode');
+  if (document.visibilityState === 'visible' && km && km.classList.contains('open') && !_kitchenWakeLock) {
+    _pedirWakeLockCocina();
+  }
+});
+
 function activarAudioCocina() {
   unlockAudioContext();
   _adminLoggedIn = true;
@@ -9230,6 +13225,7 @@ function openKitchenMode() {
   const banner = document.getElementById('kitchen-audio-banner');
   if (banner) banner.style.display = _audioCtxUnlocked ? 'none' : 'flex';
   _adminLoggedIn = true; // cocina siempre en modo admin
+  _pedirWakeLockCocina();
   clearUnseenOrders();
   refreshKitchenGrid();
   updateKitchenClock();
@@ -9255,6 +13251,7 @@ function closeKitchenMode() {
   document.getElementById('kitchen-mode').classList.remove('open');
   clearInterval(_kitchenInterval);
   _kitchenInterval = null;
+  _soltarWakeLockCocina();
   // _adminLoggedIn permanece true — alertas siguen activas en cualquier pantalla
   document.getElementById('admin-overlay').style.display = '';
 }
@@ -9266,6 +13263,7 @@ function updateKitchenClock() {
   });
 }
 function refreshKitchenGrid() {
+  if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats;
   try {
@@ -9280,6 +13278,11 @@ function refreshKitchenGrid() {
     orders: []
   };
   const orders = (stats.orders || []).filter(o => getOrderStatus(o.num) !== 'listo' && getOrderStatus(o.num) !== 'cancelado' && getOrderStatus(o.num) !== 'entregado').slice().sort((a, b) => {
+    // Pedidos "desde el local" primero (ese cliente ya está esperando en el
+    // mostrador), luego por cercanía al turno de recogida.
+    const localA = a.esPedidoLocal ? 0 : 1;
+    const localB = b.esPedidoLocal ? 0 : 1;
+    if (localA !== localB) return localA - localB;
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
     const toMins = s => {
@@ -9354,6 +13357,7 @@ function refreshKitchenGrid() {
     const timeColor = isUrgent ? '#e74c3c' : isWarning ? '#3D1F0D' : '#888';
     const cardStyle = isUrgent ? 'animation:pulse-red 1.2s infinite;' : '';
     const itemsHtml = o.items ? o.items.filter(function(it) {
+      if (it.isFee) return false;
       const n = (it.name || '').toLowerCase();
       return !n.includes('gesti\xF3n') && !n.includes('gestion') && !n.includes('fee') && !n.includes('cargo');
     }).map(function (it) {
@@ -9366,8 +13370,11 @@ function refreshKitchenGrid() {
     }).join('') : '<div style="font-size:13px;color:#999">Sin detalle</div>';
     const isJustArrived = o.ts && Date.now() - o.ts < 30000;
     const newClass = status === 'nuevo' && isJustArrived ? ' is-new' : '';
-    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
-    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyle + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
+    const localBadgeK = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🏪 EN EL LOCAL</span>' : '';
+    const estudianteBadgeK = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🪪 VERIFICAR CARNÉ</span>' : '';
+    const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : o.esEstudianteJubilado ? cardStyle + 'border-left:4px solid #c2711a;' : cardStyle;
+    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\',\'' + escapeAttr(o.phone||'') + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
+    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + estudianteBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
   }).join('');
 }
 
@@ -9392,6 +13399,31 @@ function saveSoundConfig() {
   if (window.fb_saveSoundConfig) window.fb_saveSoundConfig(cfg).catch(() => {});
   showToast('local-toast');
   logActivity("\uD83D\uDD14 Sonido configurado: ".concat(type, ", volumen ").concat(volume, "%"));
+}
+// Sonido de "impresora desconectada" — aparte del de nuevo pedido, para
+// que se puedan distinguir a oído. Solo el tipo (mismo volumen que el de
+// nuevo pedido, no hace falta duplicar ese control).
+const SOUND_DESCONEXION_KEY = 'dpf_sound_desconexion_config';
+function getSoundDesconexionType() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SOUND_DESCONEXION_KEY) || '{}');
+    return cfg.type || 'urgente';
+  } catch { return 'urgente'; }
+}
+function saveSoundDesconexionConfig() {
+  const sel = document.getElementById('sound-desconexion-type');
+  const type = (sel && sel.value) || 'urgente';
+  localStorage.setItem(SOUND_DESCONEXION_KEY, JSON.stringify({ type }));
+  showToast('local-toast');
+  logActivity('🔌 Sonido de desconexión configurado: ' + type);
+}
+function loadSoundDesconexionConfigUI() {
+  const sel = document.getElementById('sound-desconexion-type');
+  if (sel) sel.value = getSoundDesconexionType();
+}
+function testSoundDesconexion() {
+  const sel = document.getElementById('sound-desconexion-type');
+  playNotificationSound((sel && sel.value) || 'urgente');
 }
 function loadSoundConfigUI() {
   const cfg = getSoundConfig();
@@ -9676,7 +13708,8 @@ function checkForNewOrders(statsOverride) {
     _unseenOrders += diff;
     updateTabTitle(_unseenOrders);
     console.log('[DPF] NEW ORDER — calling showNewOrderNotification, diff=' + diff);
-    showNewOrderNotification(diff);
+    // guardar-pedido.php inserta los pedidos nuevos al principio del array (unshift)
+    showNewOrderNotification((stats.orders || []).slice(0, diff).map(o => o.num));
   }
 }
 
@@ -9689,6 +13722,30 @@ function clearUnseenOrders() {
 // Alert loop state
 let _alertLoopInterval = null;
 let _alertPendingOrders = 0;
+// Antes _alertPendingOrders era un contador suelto que varios sitios subían
+// o bajaban a mano (sobreescribiéndolo entero al detectar pedidos nuevos, o
+// restándole 1 desde tres sitios distintos: imprimir, marcar listo, marcar
+// entregado) — un mismo pedido marcado "listo" restaba dos veces porque
+// 'listo' entraba en dos condiciones distintas seguidas, y dos avisos de
+// "pedido nuevo" casi seguidos podían pisarse el contador en vez de sumar.
+// Ahora se lleva la cuenta por número de pedido concreto: añadir/quitar el
+// mismo pedido dos veces no hace nada la segunda vez.
+let _alertPendingOrderNumsSet = new Set();
+function _marcarPedidoPendienteAlerta(num) {
+  if (!num || _alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.add(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+}
+function _marcarPedidoAtendido(num) {
+  if (!num || !_alertPendingOrderNumsSet.has(num)) return;
+  _alertPendingOrderNumsSet.delete(num);
+  _alertPendingOrders = _alertPendingOrderNumsSet.size;
+  if (_alertPendingOrders === 0) stopAlertLoop();
+}
+function _resetPedidosPendientesAlerta() {
+  _alertPendingOrderNumsSet.clear();
+  _alertPendingOrders = 0;
+}
 function startAlertLoop() {
   if (_alertLoopInterval) return; // ya está sonando
   playNotificationSound();
@@ -9716,11 +13773,11 @@ function stopAlertLoop() {
     _alertLoopInterval = null;
   }
 }
-function showNewOrderNotification(count) {
-  console.log('[DPF] showNewOrderNotification: count=' + count + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
+function showNewOrderNotification(nums) {
+  console.log('[DPF] showNewOrderNotification: nums=' + JSON.stringify(nums) + ' adminLoggedIn=' + _adminLoggedIn + ' audioUnlocked=' + _audioCtxUnlocked);
   // Solo sonar si hay sesión de admin activa (no al cliente que hace el pedido)
   if (_adminLoggedIn) {
-    _alertPendingOrders = count;
+    (nums || []).forEach(_marcarPedidoPendienteAlerta);
     startAlertLoop();
     const toast = document.getElementById('new-order-toast');
     if (toast) {
@@ -9749,19 +13806,22 @@ function markAllKitchenReady() {
   const orders = stats.orders || [];
   if (!orders.length) return;
   const statuses = getOrderStatuses();
-  let changed = 0;
-  orders.forEach(o => {
+  const aCambiar = orders.filter(o => {
     const key = _normOrderKey(o.num);
-    if ((statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado') {
-      statuses[key] = 'listo';
-      changed++;
-    }
+    return (statuses[key] || 'nuevo') !== 'listo' && statuses[key] !== 'cancelado' && statuses[key] !== 'entregado';
   });
-  if (!changed) return;
-  localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(statuses));
+  if (!aCambiar.length) return;
+  // setOrderStatus() actualiza localStorage Y Firebase (fb_setOrderStatus)
+  // por pedido \u2014 antes este bot\u00f3n solo tocaba localStorage directamente,
+  // as\u00ed que un pedido marcado "listo" aqu\u00ed pod\u00eda volver a aparecer como
+  // pendiente en cuanto llegara cualquier otro cambio de estado: el
+  // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
+  // window._orderStatusCache entero con lo que haya en Firebase, que nunca
+  // se hab\u00eda enterado de este cambio.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
   refreshKitchenGrid();
   loadLiveOrders();
-  logActivity("\u2705 ".concat(changed, " pedido").concat(changed !== 1 ? 's' : '', " marcado").concat(changed !== 1 ? 's' : '', " como listo desde cocina"));
+  logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
 }
 
 // Polling de fallback: solo actúa si Firebase no está disponible
@@ -9935,7 +13995,54 @@ function loadBannerDia() {
 // ── EXPORTAR PDF ─────────────────────────────────────────────────────────────
 
 function _pdfStyles() {
-  return "\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: Arial, sans-serif; color: #2A1506; background: #fff; }\n    .header { background: #3D1F0D; color: #FFF8EE; padding: 20px 28px; }\n    .header h1 { font-size: 22px; font-weight: 900; margin-bottom: 2px; }\n    .header p  { font-size: 12px; opacity: .7; }\n    .content { padding: 24px 28px; }\n    .order-card { border: 1.5px solid #F5E6C8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }\n    .order-num  { font-size: 18px; font-weight: 900; color: #3D1F0D; }\n    .order-meta { font-size: 12px; color: #8A6A4E; margin: 4px 0 10px; }\n    .order-items { font-size: 13px; color: #2A1506; border-top: 1px solid #F5E6C8; padding-top: 8px; }\n    .order-item { display: flex; justify-content: space-between; padding: 3px 0; }\n    .order-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #3D1F0D; border-top: 1.5px solid #F5E6C8; margin-top: 8px; padding-top: 8px; }\n    .summary { background: #FFF8EE; border: 1.5px solid #3D1F0D; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap; }\n    .summary-item { text-align: center; }\n    .summary-item .val { font-size: 24px; font-weight: 900; color: #3D1F0D; }\n    .summary-item .lbl { font-size: 11px; color: #8A6A4E; text-transform: uppercase; letter-spacing: .05em; }\n    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n  ";
+  return "\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: Arial, sans-serif; color: #2A1506; background: #fff; }\n    .header { background: #3D1F0D; color: #FFF8EE; padding: 20px 28px; }\n    .header h1 { font-size: 22px; font-weight: 900; margin-bottom: 2px; }\n    .header p  { font-size: 12px; opacity: .7; }\n    .content { padding: 24px 28px; }\n    .order-card { border: 1.5px solid #F5E6C8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }\n    .order-num  { font-size: 18px; font-weight: 900; color: #3D1F0D; }\n    .order-meta { font-size: 12px; color: #8A6A4E; margin: 4px 0 10px; }\n    .order-items { font-size: 13px; color: #2A1506; border-top: 1px solid #F5E6C8; padding-top: 8px; }\n    .order-item { display: flex; justify-content: space-between; padding: 3px 0; }\n    .order-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #3D1F0D; border-top: 1.5px solid #F5E6C8; margin-top: 8px; padding-top: 8px; }\n    .summary { background: #FFF8EE; border: 1.5px solid #3D1F0D; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap; }\n    .summary-item { text-align: center; }\n    .summary-item .val { font-size: 24px; font-weight: 900; color: #3D1F0D; }\n    .summary-item .lbl { font-size: 11px; color: #8A6A4E; text-transform: uppercase; letter-spacing: .05em; }\n    .ticket-box { border: 2px solid #3D1F0D; border-radius: 14px; padding: 24px; margin: 24px; }\n    .ticket-title { font-size: 13px; color: #8A6A4E; text-align:center; margin-bottom: 4px; }\n    .ticket-num { font-size: 36px; font-weight: 900; color: #3D1F0D; text-align:center; margin-bottom: 16px; }\n    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n  ";
+}
+// Convierte un fragmento de HTML en un PDF de verdad que se descarga solo
+// — antes, tanto exportTicketPDF() como exportHistorialPDF() abrian una
+// ventana nueva y llamaban a window.print(), que abre el dialogo de
+// impresion del navegador (habia que elegir "Guardar como PDF" a mano, y a
+// veces se manda directo a una impresora fisica en vez de guardarlo).
+// html2pdf.js (cargado por CDN en index.html/fichar-publico.html) genera
+// el archivo .pdf directamente, sin pasar por ningun dialogo de impresion.
+function _descargarHtmlComoPDF(bodyHtml, filename) {
+  if (typeof html2pdf === 'undefined') {
+    alert('No se pudo generar el PDF (no cargó la librería). Comprueba tu conexión y recarga la página.');
+    return;
+  }
+  const styleEl = document.createElement('style');
+  styleEl.textContent = _pdfStyles();
+  document.head.appendChild(styleEl);
+  // OJO — causa real del PDF en blanco, confirmada probándolo en un
+  // navegador real: si el contenedor lleva position:fixed o
+  // position:absolute, html2canvas (la parte de html2pdf.js que "fotografía"
+  // el HTML) le calcula 0px de alto al clonar el documento para capturarlo,
+  // aunque el navegador normal sí lo mida bien — y un lienzo de 0px de alto
+  // es un PDF en blanco. Quitando el position por completo (queda como un
+  // bloque normal, al final de la página) html2canvas lo mide y lo captura
+  // bien, comprobado con varias pruebas. Como ya no se puede tapar con
+  // z-index/posición, se añade y se quita tan rápido que en la práctica no
+  // se llega a ver.
+  const container = document.createElement('div');
+  container.style.cssText = 'background:#fff;width:210mm';
+  container.innerHTML = bodyHtml;
+  document.body.appendChild(container);
+  const limpiar = () => {
+    container.remove();
+    styleEl.remove();
+  };
+  // Un frame de margen para que el navegador termine de pintar el
+  // contenedor recién insertado antes de que html2canvas lo capture.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    html2pdf().from(container).set({
+      margin: 0,
+      filename,
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).save().then(limpiar).catch((err) => {
+      limpiar();
+      alert('⚠️ No se pudo generar el PDF: ' + (err && err.message || 'error desconocido'));
+    });
+  }));
 }
 function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
   const fecha = new Date().toLocaleDateString('es-ES', {
@@ -9944,41 +14051,26 @@ function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
     month: 'long',
     day: 'numeric'
   });
-  const itemsHtml = (items || []).map(it => "<div class=\"order-item\"><span>".concat(it.qty, "x ").concat(escapeHtml(it.name || ''), "</span><span>").concat((it.subtotal || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Ticket ".concat(escapeHtml(num || ''), "</title>\n  <style>").concat(_pdfStyles(), "\n    body { max-width: 400px; margin: 0 auto; }\n    .ticket-box { border: 2px solid #3D1F0D; border-radius: 14px; padding: 24px; margin: 24px; }\n    .ticket-title { font-size: 13px; color: #8A6A4E; text-align:center; margin-bottom: 4px; }\n    .ticket-num { font-size: 36px; font-weight: 900; color: #3D1F0D; text-align:center; margin-bottom: 16px; }\n  </style></head><body>\n  <div class=\"header\" style=\"text-align:center\">\n    <h1>\uD83E\uDD54 Dulce Patata Food</h1>\n    <p>").concat(fecha, "</p>\n  </div>\n  <div class=\"ticket-box\">\n    <div class=\"ticket-title\">N\xFAmero de pedido</div>\n    <div class=\"ticket-num\">").concat(escapeHtml(num || ''), "</div>\n    <div class=\"order-meta\" style=\"text-align:center;margin-bottom:14px\">\n      \uD83D\uDC64 ").concat(escapeHtml(name || '—'), "\n      ").concat(phone ? "&nbsp;\xB7&nbsp; \uD83D\uDCDE ".concat(escapeHtml(phone)) : '', "\n      ").concat(time ? "&nbsp;\xB7&nbsp; \uD83D\uDD50 ".concat(escapeHtml(time)) : '', "\n      ").concat(slot ? "<br>\uD83D\uDCE6 Recogida de patata a las ".concat(escapeHtml(slot), "h") : '', "\n    </div>\n    ").concat(itemsHtml ? "<div class=\"order-items\">".concat(itemsHtml, "<div class=\"order-total\"><span>Total a pagar</span><span>").concat(parseFloat(total).toFixed(2).replace('.', ','), " \u20AC</span></div></div>") : '', "\n    ").concat(notes ? "<div style=\"font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic\">\uD83D\uDCDD ".concat(escapeHtml(notes), "</div>") : '', "\n    <div style=\"text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E\">Paga en caja cuando recojas \uD83D\uDC9B</div>\n  </div>\n  </body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
-}
-function switchHistorialTab(tab) {
-  const diasBtn = document.getElementById('htab-dias');
-  const clientesBtn = document.getElementById('htab-clientes');
-  const diasView = document.getElementById('historial-tab-dias');
-  const clientesView = document.getElementById('historial-tab-clientes');
-  if (!diasBtn) return;
-  if (tab === 'dias') {
-    diasBtn.style.borderBottomColor = '#3D1F0D';
-    diasBtn.style.color = '#3D1F0D';
-    diasBtn.style.fontWeight = '700';
-    clientesBtn.style.borderBottomColor = 'transparent';
-    clientesBtn.style.color = '#8A6A4E';
-    clientesBtn.style.fontWeight = '600';
-    diasView.style.display = 'block';
-    clientesView.style.display = 'none';
-  } else {
-    clientesBtn.style.borderBottomColor = '#3D1F0D';
-    clientesBtn.style.color = '#3D1F0D';
-    clientesBtn.style.fontWeight = '700';
-    diasBtn.style.borderBottomColor = 'transparent';
-    diasBtn.style.color = '#8A6A4E';
-    diasBtn.style.fontWeight = '600';
-    diasView.style.display = 'none';
-    clientesView.style.display = 'block';
-    renderClientes();
-  }
+  const itemsHtml = (items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+  const body = `
+    <div class="header" style="text-align:center">
+      <h1>🥔 Dulce Patata Food</h1>
+      <p>${fecha}</p>
+    </div>
+    <div class="ticket-box">
+      <div class="ticket-title">Número de pedido</div>
+      <div class="ticket-num">${escapeHtml(num || '')}</div>
+      <div class="order-meta" style="text-align:center;margin-bottom:14px">
+        👤 ${escapeHtml(name || '—')}
+        ${phone ? `&nbsp;·&nbsp; 📞 ${escapeHtml(phone)}` : ''}
+        ${time ? `&nbsp;·&nbsp; 🕐 ${escapeHtml(time)}` : ''}
+        ${slot ? `<br>📦 Recogida de patata a las ${escapeHtml(slot)}h` : ''}
+      </div>
+      ${itemsHtml ? `<div class="order-items">${itemsHtml}<div class="order-total"><span>Total a pagar</span><span>${parseFloat(total).toFixed(2).replace('.', ',')} €</span></div></div>` : ''}
+      ${notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic">📝 ${escapeHtml(notes)}</div>` : ''}
+      <div style="text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E">Paga en caja cuando recojas 💛</div>
+    </div>`;
+  _descargarHtmlComoPDF(body, 'ticket-' + (num || 'pedido') + '.pdf');
 }
 function _buildClientesMap() {
   const hist = getHistorial();
@@ -10238,7 +14330,10 @@ function exportClientesCSV() {
   clientes.forEach(c => {
     rows.push([c.phone, [...c.names].join(' / '), c.count, c.total.toFixed(2).replace('.', ','), c.lastDate]);
   });
-  const csv = rows.map(r => r.map(v => "\"".concat(v, "\"")).join(',')).join('\n');
+  // _csvEscape (historial-export.js) dobla las comillas internas — sin
+  // esto, un nombre de cliente con una " cortaba la fila antes de tiempo y
+  // desplazaba las columnas siguientes al abrir el CSV en Excel/Sheets.
+  const csv = rows.map(r => r.map(v => "\"".concat(_csvEscape(v), "\"")).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], {
     type: 'text/csv;charset=utf-8;'
   });
@@ -10249,8 +14344,15 @@ function exportClientesCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
-function loadHistorial() {
-  // Cargar historial completo desde Firebase (fuente de verdad entre dispositivos)
+function loadHistorial(despues) {
+  // Cargar historial completo desde Firebase (fuente de verdad entre
+  // dispositivos) — sin esto, un dispositivo que nunca lo haya sincronizado
+  // antes (p.ej. la tablet de cocina, si solo se usó para pedidos en vivo)
+  // solo tiene lo que haya en su propio localStorage, que puede estar vacío
+  // aunque en otro dispositivo (el PC donde sí se ha abierto esta vista)
+  // haya historial de sobra — tanto la vista "Por días" como la lista de
+  // Clientes dependen de esto, por eso admite un callback opcional para
+  // repintar lo que corresponda en cada caso.
   if (window.fb_loadHistorial) {
     window.fb_loadHistorial(30).then(fbHist => {
       if (fbHist && fbHist.length > 0) {
@@ -10258,12 +14360,14 @@ function loadHistorial() {
         fbHist.forEach(d => saveToHistorial(d));
       }
       _renderHistorial();
-    }).catch(() => _renderHistorial());
+      if (despues) despues();
+    }).catch(() => { _renderHistorial(); if (despues) despues(); });
     // Mostrar localStorage mientras llega Firebase
-    if (getHistorial().length > 0) _renderHistorial();
+    if (getHistorial().length > 0) { _renderHistorial(); if (despues) despues(); }
     return;
   }
   _renderHistorial();
+  if (despues) despues();
 }
 function _renderHistorial() {
   const hist = getHistorial();
@@ -10349,16 +14453,30 @@ async function exportDayPDF() {
 function _exportDayDataPDF(orders, total, fecha, dateKey) {
   const t = total || orders.reduce((a, o) => a + (o.total || 0), 0);
   const ordersHtml = orders.map(o => {
-    const itemsHtml = (o.items || []).map(it => "<div class=\"order-item\"><span>".concat(it.qty, "x ").concat(escapeHtml(it.name || ''), "</span><span>").concat((it.subtotal || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-    return "<div class=\"order-card\">\n      <div style=\"display:flex;justify-content:space-between;align-items:flex-start\">\n        <div>\n          <div class=\"order-num\">".concat(escapeHtml(o.num || ''), "</div>\n          <div class=\"order-meta\">\uD83D\uDC64 ").concat(escapeHtml(o.name || '—'), " &nbsp;\xB7&nbsp; \uD83D\uDD50 ").concat(escapeHtml(o.time || '—')).concat(o.slot ? " &nbsp;\xB7&nbsp; \uD83D\uDCE6 ".concat(escapeHtml(o.slot)) : '').concat(o.phone ? " &nbsp;\xB7&nbsp; \uD83D\uDCDE ".concat(escapeHtml(o.phone)) : '', "</div>\n        </div>\n        <div style=\"font-size:18px;font-weight:900;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</div>\n      </div>\n      ").concat(itemsHtml ? "<div class=\"order-items\">".concat(itemsHtml, "</div>") : '', "\n      ").concat(o.notes ? "<div style=\"font-size:12px;color:#8A6A4E;margin-top:6px;font-style:italic\">\uD83D\uDCDD ".concat(escapeHtml(o.notes), "</div>") : '', "\n    </div>");
+    const itemsHtml = (o.items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+    return `<div class="order-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="order-num">${escapeHtml(o.num || '')}</div>
+          <div class="order-meta">👤 ${escapeHtml(o.name || '—')} &nbsp;·&nbsp; 🕐 ${escapeHtml(o.time || '—')}${o.slot ? ` &nbsp;·&nbsp; 📦 ${escapeHtml(o.slot)}` : ''}${o.phone ? ` &nbsp;·&nbsp; 📞 ${escapeHtml(o.phone)}` : ''}</div>
+        </div>
+        <div style="font-size:18px;font-weight:900;color:#3D1F0D">${(o.total || 0).toFixed(2).replace('.', ',')} €</div>
+      </div>
+      ${itemsHtml ? `<div class="order-items">${itemsHtml}</div>` : ''}
+      ${o.notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:6px;font-style:italic">📝 ${escapeHtml(o.notes)}</div>` : ''}
+    </div>`;
   }).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Pedidos ".concat(dateKey, "</title>\n  <style>").concat(_pdfStyles(), "</style></head><body>\n  <div class=\"header\"><h1>\uD83E\uDD54 Dulce Patata Food</h1><p>Resumen de pedidos \xB7 ").concat(fecha, "</p></div>\n  <div class=\"content\">\n    <div class=\"summary\">\n      <div class=\"summary-item\"><div class=\"val\">").concat(orders.length, "</div><div class=\"lbl\">Pedidos</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(t.toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Total</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat((t / orders.length).toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Ticket medio</div></div>\n    </div>\n    ").concat(ordersHtml, "\n  </div></body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+  const body = `
+    <div class="header"><h1>🥔 Dulce Patata Food</h1><p>Resumen de pedidos · ${fecha}</p></div>
+    <div class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="val">${orders.length}</div><div class="lbl">Pedidos</div></div>
+        <div class="summary-item"><div class="val">${t.toFixed(2).replace('.', ',')} €</div><div class="lbl">Total</div></div>
+        <div class="summary-item"><div class="val">${(t / orders.length).toFixed(2).replace('.', ',')} €</div><div class="lbl">Ticket medio</div></div>
+      </div>
+      ${ordersHtml}
+    </div>`;
+  _descargarHtmlComoPDF(body, 'pedidos-' + dateKey + '.pdf');
 }
 function exportHistorialPDF() {
   const hist = getHistorial();
@@ -10375,16 +14493,27 @@ function exportHistorialPDF() {
       month: 'short',
       year: 'numeric'
     });
-    const ordersHtml = (d.orders || []).map(o => "<div class=\"order-item\" style=\"font-size:12px\"><span>".concat(escapeHtml(o.num || ''), " \xB7 ").concat(escapeHtml(o.name || '—'), " ").concat(o.time ? '· ' + escapeHtml(o.time) : '', "</span><span>").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-    return "<div class=\"order-card\">\n      <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">\n        <div class=\"order-num\" style=\"font-size:15px\">".concat(fecha, "</div>\n        <div style=\"font-size:14px;font-weight:700;color:#3D1F0D\">").concat(d.count, " pedidos \xB7 ").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</div>\n      </div>\n      ").concat(ordersHtml, "\n    </div>");
+    const ordersHtml = (d.orders || []).map(o => `<div class="order-item" style="font-size:12px"><span>${escapeHtml(o.num || '')} · ${escapeHtml(o.name || '—')} ${o.time ? '· ' + escapeHtml(o.time) : ''}</span><span>${(o.total || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+    return `<div class="order-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="order-num" style="font-size:15px">${fecha}</div>
+        <div style="font-size:14px;font-weight:700;color:#3D1F0D">${d.count} pedidos · ${d.total.toFixed(2).replace('.', ',')} €</div>
+      </div>
+      ${ordersHtml}
+    </div>`;
   }).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Historial Dulce Patata</title>\n  <style>".concat(_pdfStyles(), "</style></head><body>\n  <div class=\"header\"><h1>\uD83E\uDD54 Dulce Patata Food</h1><p>Historial completo \xB7 ").concat(hist.length, " d\xEDas</p></div>\n  <div class=\"content\">\n    <div class=\"summary\">\n      <div class=\"summary-item\"><div class=\"val\">").concat(hist.length, "</div><div class=\"lbl\">D\xEDas</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalOrders, "</div><div class=\"lbl\">Pedidos</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalMoney.toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Total</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalOrders ? (totalMoney / totalOrders).toFixed(2).replace('.', ',') : '0,00', " \u20AC</div><div class=\"lbl\">Ticket medio</div></div>\n    </div>\n    ").concat(daysHtml, "\n  </div></body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+  const body = `
+    <div class="header"><h1>🥔 Dulce Patata Food</h1><p>Historial completo · ${hist.length} días</p></div>
+    <div class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="val">${hist.length}</div><div class="lbl">Días</div></div>
+        <div class="summary-item"><div class="val">${totalOrders}</div><div class="lbl">Pedidos</div></div>
+        <div class="summary-item"><div class="val">${totalMoney.toFixed(2).replace('.', ',')} €</div><div class="lbl">Total</div></div>
+        <div class="summary-item"><div class="val">${totalOrders ? (totalMoney / totalOrders).toFixed(2).replace('.', ',') : '0,00'} €</div><div class="lbl">Ticket medio</div></div>
+      </div>
+      ${daysHtml}
+    </div>`;
+  _descargarHtmlComoPDF(body, 'historial-dulce-patata.pdf');
 }
 function expandHistorialDay(date) {
   const hist = getHistorial();
@@ -10411,7 +14540,7 @@ function expandHistorialDay(date) {
       let _ref24 = _slicedToArray(_ref23, 2),
         name = _ref24[0],
         qty = _ref24[1];
-      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(name, "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
+      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(escapeHtml(name), "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
     }).join('');
   }
   html += "<div style=\"font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px\">\uD83E\uDDFE Pedidos</div>";
@@ -10475,15 +14604,20 @@ function showAdminSection(id, btn) {
   _sec.style.display = 'block';
   if (btn) btn.classList.add('active');
   if (id === 'stats') loadDayStats();
-  if (id === 'historial') {
-    loadHistorial();
-    loadAutoDeleteUI();
-    applyAutoDelete();
-  }
+  // La pestaña "Historial" del panel normal solo muestra la lista de
+  // clientes ahora — el resumen por días (con la facturación) se movió al
+  // acceso restringido (ver abrirHistorialDiasBimba en admin-accesos.js),
+  // porque no es algo que necesite ver el personal.
+  // loadHistorial() sincroniza primero con Firebase (ver comentario en su
+  // definición) — sin esto, un dispositivo que nunca haya abierto el
+  // historial por días (p.ej. una tablet usada solo para pedidos en vivo)
+  // mostraría la lista de Clientes vacía, con solo lo que hubiera quedado
+  // en su localStorage local.
+  if (id === 'historial') loadHistorial(renderClientes);
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
-    _alertPendingOrders = 0;
+    _resetPedidosPendientesAlerta();
     loadLiveOrdersWithLocalFirst();
     _lastKnownOrderCount = null;
     checkForNewOrders();
@@ -10491,6 +14625,10 @@ function showAdminSection(id, btn) {
     loadCatBlockUI();
   }
   if (id === 'log') renderActivityLog();
+  if (id === 'alertas') {
+    renderAlertas();
+    if (typeof renderIncidencias === 'function') renderIncidencias();
+  }
   if (id === 'pwd') loadUrlTokenUI();
   if (id === 'stock-config') {
     loadStockAdminList();
@@ -10498,10 +14636,14 @@ function showAdminSection(id, btn) {
   }
   if (id === 'local') {
     loadSoundConfigUI();
+    loadSoundDesconexionConfigUI();
     updateForceSlotsBtn();
     loadSlotTurnosUI();
     loadFeeUI();
     loadModifyWindowInput();
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+    if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
   }
   if (id === 'accesos') {
     renderAccesosLog();
@@ -10539,6 +14681,19 @@ function showAdminSection(id, btn) {
     // Inicializar slot max
     var slotMaxEl = document.getElementById('slot-max-input-cfg') || document.getElementById('slot-max-input');
     if (slotMaxEl) slotMaxEl.value = getSlotMax();
+    // Inicializar tiempo para modificar pedido
+    if (typeof loadModifyWindowInput === 'function') loadModifyWindowInput();
+    // Inicializar descuento estudiante/jubilado
+    if (typeof getStudentDiscountEnabled === 'function') {
+      var sdEn = getStudentDiscountEnabled();
+      var sdPct = getStudentDiscountPct();
+      var sdPctEl = document.getElementById('cfg-student-discount-pct');
+      var sdToggle = document.getElementById('student-discount-toggle');
+      var sdToggleDot = document.getElementById('student-discount-toggle-dot');
+      if (sdPctEl) sdPctEl.value = sdPct;
+      if (sdToggle) sdToggle.style.background = sdEn ? '#27855a' : '#ccc';
+      if (sdToggleDot) sdToggleDot.style.transform = sdEn ? 'translateX(20px)' : 'translateX(0)';
+    }
   }
 }
 async function renderActiveSessionsList() {
@@ -10575,6 +14730,16 @@ async function renderActiveSessionsList() {
 async function killSession(sid) {
   try {
     await firebase.database().ref('activeSessions/' + sid + '/killed').set(true);
+    // Si esa sesión ya no está conectada para pillar el aviso en directo,
+    // "killed" por sí solo no basta: el dispositivo seguiría entrando sin
+    // pedir contraseña la próxima vez gracias a "dispositivo de confianza".
+    // Por eso también se borra aquí su registro de confianza — así deja
+    // de valer de verdad, lo esté escuchando en ese momento o no.
+    try {
+      const snap = await firebase.database().ref('activeSessions/' + sid + '/deviceId').get();
+      const deviceId = snap.val();
+      if (deviceId) await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+    } catch (e) {}
     renderActiveSessionsList();
   } catch(e) {
     alert('Error al expulsar la sesión: ' + e.message);
@@ -10594,7 +14759,10 @@ async function killAllSessions() {
     );
     if (!ok) return;
     const updates = {};
-    otras.forEach(s => { updates['activeSessions/' + s.sid + '/killed'] = true; });
+    otras.forEach(s => {
+      updates['activeSessions/' + s.sid + '/killed'] = true;
+      if (s.deviceId) updates['config/trustedDevices/' + s.deviceId] = null; // revoca también la confianza, no solo la sesión en directo
+    });
     await firebase.database().ref().update(updates);
     logActivity('🚫 Expulsadas ' + otras.length + ' sesión' + (otras.length !== 1 ? 'es' : '') + ' a la vez');
     renderActiveSessionsList();
@@ -10609,19 +14777,127 @@ const FIDELIZACION_META_ADMIN = 10;
 // Umbral para marcar ritmo sospechoso: 2+ sellos separados por menos de
 // esto se considera posible abuso (pedidos reales no suelen ir tan seguidos).
 const FIDELIZACION_MINUTOS_SOSPECHOSO = 10;
+// Con 3 o más premios pendientes sin canjear, algo raro pasa (lo normal es
+// canjear pronto) — merece revisarse antes de que se acumule más.
+const FIDELIZACION_TOPE_PREMIOS_PENDIENTES = 3;
+// Con 3 o más nombres distintos usados por el mismo teléfono, puede que se
+// esté compartiendo/reutilizando el número entre varias personas para
+// sumar sellos más rápido de lo normal.
+const FIDELIZACION_TOPE_NOMBRES_DISTINTOS = 3;
 let _fidelizacionDataCache = null;
 
+// Comprueba que "veces que ha completado el ciclo" cuadra con "premios ya
+// canjeados + premios todavía pendientes de entregar" — si no cuadra, es
+// señal de que se ha tocado algo a mano de forma rara (o hay un fallo),
+// no solo de un ritmo de pedidos sospechoso.
+function _clienteConNumerosQueNoCuadran(c) {
+  const vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
+  const canjes = Array.isArray(c.historialCanjes) ? c.historialCanjes.length : 0;
+  const premiosPendientes = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+  return (canjes + premiosPendientes) !== vecesCompletado;
+}
+
 // Devuelve true si el cliente tiene 2 o más sellos consecutivos separados
-// por menos de FIDELIZACION_MINUTOS_SOSPECHOSO minutos.
-function _clienteConRitmoSospechoso(historialSellos) {
+// por menos de FIDELIZACION_MINUTOS_SOSPECHOSO minutos. Si el admin ya
+// revisó y descartó un ritmo sospechoso (marcarRitmoRevisado), solo se
+// tienen en cuenta los sellos posteriores a esa revisión — así un patrón
+// ya comprobado como legítimo no se queda marcado en rojo para siempre,
+// pero si vuelve a pasar algo raro DESPUÉS, sí se vuelve a avisar.
+function _clienteConRitmoSospechoso(historialSellos, revisadoHastaTs) {
   if (!historialSellos || historialSellos.length < 2) return false;
   const umbralMs = FIDELIZACION_MINUTOS_SOSPECHOSO * 60 * 1000;
-  for (let i = 1; i < historialSellos.length; i++) {
-    const prev = historialSellos[i - 1] && historialSellos[i - 1].ts;
-    const curr = historialSellos[i] && historialSellos[i].ts;
+  const desde = revisadoHastaTs || 0;
+  const relevantes = historialSellos.filter(h => h && h.ts > desde);
+  if (relevantes.length < 2) return false;
+  for (let i = 1; i < relevantes.length; i++) {
+    const prev = relevantes[i - 1] && relevantes[i - 1].ts;
+    const curr = relevantes[i] && relevantes[i].ts;
     if (prev && curr && (curr - prev) < umbralMs) return true;
   }
   return false;
+}
+async function marcarRitmoRevisado(telefono) {
+  try {
+    const mutator = function (current) {
+      const c = current || {};
+      const historialSellos = Array.isArray(c.historialSellos) ? c.historialSellos : [];
+      const ultimoTs = historialSellos.length ? historialSellos[historialSellos.length - 1].ts : Date.now();
+      c.sospechosoRevisadoHastaTs = ultimoTs;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      const cliente = await window.fb_loadFidelizacionCliente(telefono);
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
+    renderFidelizacionList();
+  } catch (e) {
+    alert('Error al marcar como revisado: ' + e.message);
+  }
+}
+async function sumarSelloFidelizacionRapido(telefono) {
+  try {
+    const mutator = function (current) {
+      const c = current || {};
+      let sellos = typeof c.sellos === 'number' ? c.sellos : 0;
+      let premiosPendientes = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+      let vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
+      sellos += 1;
+      if (sellos >= FIDELIZACION_META_ADMIN) {
+        sellos = 0;
+        premiosPendientes += 1;
+        vecesCompletado += 1;
+      }
+      c.sellos = sellos;
+      c.premiosPendientes = premiosPendientes;
+      c.vecesCompletado = vecesCompletado;
+      delete c.premioDisponible;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      const cliente = await window.fb_loadFidelizacionCliente(telefono);
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
+    renderFidelizacionList();
+  } catch (e) {
+    alert('Error al sumar el sello: ' + e.message);
+  }
+}
+async function entregarPremioFidelizacionRapido(telefono) {
+  const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || {};
+  const premiosPendientes = typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : (cliente.premioDisponible ? 1 : 0);
+  if (premiosPendientes <= 0) {
+    alert('Este cliente no tiene premios pendientes.');
+    return;
+  }
+  if (!confirm('¿Marcar 1 premio como entregado a ' + (cliente.nombre || telefono) + '?')) return;
+  try {
+    const mutator = function (current) {
+      const c = current || {};
+      let premios = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+      if (premios > 0) {
+        premios -= 1;
+        const historialCanjes = Array.isArray(c.historialCanjes) ? c.historialCanjes : [];
+        historialCanjes.push({ fecha: new Date().toISOString(), ticket: null });
+        c.historialCanjes = historialCanjes;
+      }
+      c.premiosPendientes = premios;
+      delete c.premioDisponible;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      const cliente2 = await window.fb_loadFidelizacionCliente(telefono);
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente2));
+    }
+    renderFidelizacionList();
+  } catch (e) {
+    alert('Error al marcar el premio como entregado: ' + e.message);
+  }
 }
 async function renderFidelizacionList() {
   const el = document.getElementById('fidelizacion-list');
@@ -10651,8 +14927,6 @@ function filtrarFidelizacionPorTipo(tipo) {
   _filtrarYPintarFidelizacion();
 }
 function mostrarFidelizacionCanjes() {
-  const data = _fidelizacionDataCache;
-  if (!data) return;
   const listEl = document.getElementById('fidelizacion-list');
   const iconEl = document.getElementById('fidelizacion-lista-toggle-icon');
   if (!listEl) return;
@@ -10662,6 +14936,14 @@ function mostrarFidelizacionCanjes() {
   window._fidelizacionFiltroTipo = null;
   const searchEl = document.getElementById('fidelizacion-search');
   if (searchEl) searchEl.value = '';
+  window._fidelizacionCanjesDesde = '';
+  window._fidelizacionCanjesHasta = '';
+  _pintarFidelizacionCanjes();
+}
+function _pintarFidelizacionCanjes() {
+  const data = _fidelizacionDataCache;
+  const listEl = document.getElementById('fidelizacion-list');
+  if (!data || !listEl) return;
 
   let eventos = [];
   Object.entries(data).forEach(([telefono, c]) => {
@@ -10669,12 +14951,24 @@ function mostrarFidelizacionCanjes() {
       eventos.push({ telefono, nombre: c.nombre || 'Sin nombre', fecha: canje.fecha || '-', ticket: canje.ticket || null });
     });
   });
+
+  const desde = window._fidelizacionCanjesDesde || '';
+  const hasta = window._fidelizacionCanjesHasta || '';
+  if (desde) eventos = eventos.filter(ev => (ev.fecha || '').slice(0, 10) >= desde);
+  if (hasta) eventos = eventos.filter(ev => (ev.fecha || '').slice(0, 10) <= hasta);
+  eventos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+  const filtroHtml = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;font-size:12px;color:#8A6A4E">'
+    + '<span>Desde</span><input type="date" value="' + escapeAttr(desde) + '" onchange="window._fidelizacionCanjesDesde=this.value;_pintarFidelizacionCanjes()" style="padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px">'
+    + '<span>Hasta</span><input type="date" value="' + escapeAttr(hasta) + '" onchange="window._fidelizacionCanjesHasta=this.value;_pintarFidelizacionCanjes()" style="padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px">'
+    + ((desde || hasta) ? '<span onclick="window._fidelizacionCanjesDesde=\'\';window._fidelizacionCanjesHasta=\'\';_pintarFidelizacionCanjes()" style="cursor:pointer;color:#c0392b;font-weight:700">✕ Quitar filtro</span>' : '')
+    + '</div>';
+
   if (!eventos.length) {
-    listEl.innerHTML = '<div style="font-size:13px;color:#8A6A4E">Sin premios canjeados todavía.</div>';
+    listEl.innerHTML = filtroHtml + '<div style="font-size:13px;color:#8A6A4E">Sin premios canjeados' + ((desde || hasta) ? ' en ese rango de fechas.' : ' todavía.') + '</div>';
     return;
   }
-  eventos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-  listEl.innerHTML = '<div style="font-weight:700;color:#3D1F0D;margin-bottom:8px;font-size:13px">🎁 Historial de premios canjeados (' + eventos.length + ')</div>' +
+  listEl.innerHTML = filtroHtml + '<div style="font-weight:700;color:#3D1F0D;margin-bottom:8px;font-size:13px">🎁 Historial de premios canjeados (' + eventos.length + ')</div>' +
     eventos.map(ev => {
       const nombreMostrar = escapeHtml(ev.nombre);
       const telMostrar = escapeHtml(ev.telefono);
@@ -10751,7 +15045,9 @@ function _filtrarYPintarFidelizacion() {
     premiosPendientes: typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0),
     vecesCompletado: typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0,
     historialCanjes: c.historialCanjes || [],
-    sospechoso: _clienteConRitmoSospechoso(c.historialSellos)
+    historialNombres: Array.isArray(c.historialNombres) ? c.historialNombres : [],
+    sospechoso: _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs),
+    noCuadra: _clienteConNumerosQueNoCuadran(c)
   }));
 
   // Filtro de búsqueda por nombre o teléfono
@@ -10765,19 +15061,31 @@ function _filtrarYPintarFidelizacion() {
     clientes = clientes.filter(c => c.premiosPendientes > 0);
   } else if (window._fidelizacionFiltroTipo === 'sospechoso') {
     clientes = clientes.filter(c => c.sospechoso);
+  } else if (window._fidelizacionFiltroTipo === 'noCuadra') {
+    clientes = clientes.filter(c => c.noCuadra);
+  } else if (window._fidelizacionFiltroTipo === 'topePremios') {
+    clientes = clientes.filter(c => c.premiosPendientes >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES);
+  } else if (window._fidelizacionFiltroTipo === 'nombresDistintos') {
+    clientes = clientes.filter(c => c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS);
   }
 
-  // Resumen: total clientes, con premio pendiente, total canjes, sospechosos
+  // Resumen: total clientes, con premio pendiente, total canjes, sospechosos...
   const totalClientes = Object.keys(data).length;
   const conPremio = Object.values(data).filter(c => (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0)) > 0).length;
   const totalCanjes = Object.values(data).reduce((s, c) => s + ((c.historialCanjes || []).length), 0);
-  const totalSospechosos = Object.values(data).filter(c => _clienteConRitmoSospechoso(c.historialSellos)).length;
+  const totalSospechosos = Object.values(data).filter(c => _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs)).length;
+  const totalNoCuadran = Object.values(data).filter(c => _clienteConNumerosQueNoCuadran(c)).length;
+  const totalTopePremios = Object.values(data).filter(c => (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0)) >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES).length;
+  const totalNombresDistintos = Object.values(data).filter(c => Array.isArray(c.historialNombres) && c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS).length;
   if (resumenEl) {
     const chip = (label, val, color, onclickAttr) => "<div onclick=\"".concat(onclickAttr, "\" style=\"flex:1;min-width:110px;cursor:pointer;background:#fff;border:1.5px solid ").concat(color, ";border-radius:10px;padding:10px 16px;font-size:12px;color:#3D1F0D;text-align:center\"><div style=\"font-weight:900;font-size:18px\">").concat(val, "</div><div style=\"color:#8A6A4E\">").concat(label, "</div></div>");
     resumenEl.innerHTML = chip('Clientes en el programa', totalClientes, '#F5E6C8', "filtrarFidelizacionPorTipo('todos')")
       + chip('Con premio pendiente', conPremio, '#D9A441', "filtrarFidelizacionPorTipo('premio')")
       + chip('Premios canjeados', totalCanjes, '#F5E6C8', "mostrarFidelizacionCanjes()")
-      + (totalSospechosos > 0 ? chip('🚨 Ritmo sospechoso', totalSospechosos, '#c0392b', "filtrarFidelizacionPorTipo('sospechoso')") : '');
+      + (totalSospechosos > 0 ? chip('🚨 Ritmo sospechoso', totalSospechosos, '#c0392b', "filtrarFidelizacionPorTipo('sospechoso')") : '')
+      + (totalNoCuadran > 0 ? chip('🔍 Números que no cuadran', totalNoCuadran, '#8e44ad', "filtrarFidelizacionPorTipo('noCuadra')") : '')
+      + (totalTopePremios > 0 ? chip('📦 Muchos premios sin canjear', totalTopePremios, '#c0392b', "filtrarFidelizacionPorTipo('topePremios')") : '')
+      + (totalNombresDistintos > 0 ? chip('👥 Varios nombres, mismo tel.', totalNombresDistintos, '#c0392b', "filtrarFidelizacionPorTipo('nombresDistintos')") : '');
   }
 
   // Ordenar: primero los que tienen premio pendiente, luego por sellos descendente
@@ -10793,24 +15101,48 @@ function _filtrarYPintarFidelizacion() {
 
   el.innerHTML = clientes.map(c => {
     const destacado = c.premiosPendientes > 0;
-    const bg = c.sospechoso ? '#FDEDEC' : (destacado ? '#FFF3CD' : '#fff');
-    const border = c.sospechoso ? '#c0392b' : (destacado ? '#D9A441' : '#F5E6C8');
+    const tienePremiosDeSobra = c.premiosPendientes >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES;
+    const tieneNombresDistintos = c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS;
+    const conAviso = c.sospechoso || c.noCuadra || tienePremiosDeSobra || tieneNombresDistintos;
+    const bg = conAviso ? '#FDEDEC' : (destacado ? '#FFF3CD' : '#fff');
+    const border = conAviso ? '#c0392b' : (destacado ? '#D9A441' : '#F5E6C8');
     const sellosTexto = c.sellos + '/' + FIDELIZACION_META_ADMIN;
     const premioTexto = destacado
       ? '🎁 ' + c.premiosPendientes + (c.premiosPendientes > 1 ? ' premios pendientes' : ' premio pendiente')
       : (c.sellos === FIDELIZACION_META_ADMIN - 1 ? '🎉 1 sello para el premio' : '');
     const vecesTexto = c.vecesCompletado > 0 ? ' · 🏅 ha completado el ciclo ' + c.vecesCompletado + (c.vecesCompletado > 1 ? ' veces' : ' vez') : '';
     const sospechosoTexto = c.sospechoso ? ' · 🚨 ritmo sospechoso (sellos muy seguidos)' : '';
+    const noCuadraTexto = c.noCuadra ? ' · 🔍 números que no cuadran' : '';
+    const topePremiosTexto = tienePremiosDeSobra ? ' · 📦 muchos premios sin canjear' : '';
+    const nombresDistintosTexto = tieneNombresDistintos ? ' · 👥 ' + c.historialNombres.length + ' nombres distintos' : '';
     const nombreMostrar = escapeHtml(c.nombre || 'Sin nombre');
     const telMostrar = escapeHtml(c.telefono);
+    // escapeHtml no basta dentro de un onclick="fn('...')": el navegador
+    // decodifica las entidades HTML (incluida &#39;) ANTES de ejecutar el
+    // JS del atributo, así que una comilla simple sobrevivía y rompía la
+    // llamada — escapeAttr la escapa también para el propio string de JS.
+    const telAttr = escapeAttr(c.telefono);
     let h = '<div style="background:' + bg + ';border:1.5px solid ' + border + ';border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
-    h += '<div>';
+    // Tocar el nombre/sellos del cliente despliega directamente sus canjes Y
+    // sus pedidos (fecha + número) — antes había que abrir el detalle y
+    // encima pulsar otro botón aparte para ver los pedidos, dos pasos para
+    // algo que se usa sobre todo para comprobar ritmos sospechosos.
+    h += '<div onclick="toggleFidelizacionDetalle(\'' + telAttr + '\')" style="cursor:pointer;flex:1;min-width:160px">';
     h += '<div style="font-weight:700;color:#3D1F0D;font-size:14px">' + nombreMostrar + ' <span style="color:#8A6A4E;font-weight:500">(' + telMostrar + ')</span></div>';
-    h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + '</div>';
+    h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + noCuadraTexto + topePremiosTexto + nombresDistintosTexto + '</div>';
+    h += '<div style="font-size:11px;color:#8A6A4E;margin-top:2px">👇 Toca para ver sus pedidos y canjes</div>';
     h += '</div>';
-    h += '<button onclick="cargarFidelizacionParaEditar(\'' + telMostrar + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">';
+    h += '<button onclick="event.stopPropagation();sumarSelloFidelizacionRapido(\'' + telAttr + '\')" style="padding:7px 12px;background:#fff;color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">➕ Sello</button>';
+    if (destacado) {
+      h += '<button onclick="event.stopPropagation();entregarPremioFidelizacionRapido(\'' + telAttr + '\')" style="padding:7px 12px;background:#D9A441;color:#3D1F0D;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎁 Entregar premio</button>';
+    }
+    if (c.sospechoso) {
+      h += '<button onclick="event.stopPropagation();marcarRitmoRevisado(\'' + telAttr + '\')" style="padding:7px 12px;background:#fff;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Ya lo revisé</button>';
+    }
+    h += '<button onclick="event.stopPropagation();abrirFidelizacionAjustesModal(\'' + telAttr + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⚙️ Ajustes</button>';
     h += '</div>';
-    h += '<div onclick="toggleFidelizacionDetalle(\'' + telMostrar + '\')" style="cursor:pointer;font-size:12px;color:#8A6A4E;padding:4px 16px 8px;border-bottom:1.5px solid ' + border + '">👇 Ver canjes y pedidos</div>';
+    h += '</div>';
     h += '<div id="fidel-detalle-' + telMostrar + '" style="display:none;padding:10px 16px;border-bottom:1.5px solid ' + border + ';font-size:12px;background:#FFFDF8"></div>';
     return h;
   }).join('<div style="height:2px"></div>');
@@ -10825,17 +15157,21 @@ function toggleFidelizacionDetalle(telefono) {
   el.style.display = 'block';
   const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || {};
   const canjes = cliente.historialCanjes || [];
+  const telAttr = escapeAttr(telefono);
   let h = '';
   if (canjes.length) {
     h += '<div style="font-weight:700;color:#3D1F0D;margin-bottom:6px">🎁 Premios canjeados (' + canjes.length + ')</div>';
-    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telefono + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
+    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telAttr + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
   } else {
     h += '<div style="color:#8A6A4E;margin-bottom:8px">Sin premios canjeados todavía.</div>';
   }
-  h += '<button onclick="cargarPedidosClienteFidelizacion(\'' + telefono + '\')" style="margin-top:8px;padding:6px 14px;background:#fff;border:1.5px solid #3D1F0D;color:#3D1F0D;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Ver todos sus pedidos</button>';
   h += '<div id="fidel-pedidos-' + telefono + '" style="margin-top:8px"></div>';
-  h += '<button onclick="borrarClienteFidelizacion(\'' + telefono + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
+  h += '<button onclick="borrarClienteFidelizacion(\'' + telAttr + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
   el.innerHTML = h;
+  // Se cargan solos al desplegar, sin necesitar un botón aparte — para
+  // comprobar rápido si un ritmo de sellos "sospechoso" se corresponde con
+  // pedidos reales o no.
+  cargarPedidosClienteFidelizacion(telefono);
 }
 async function anularCanjeFidelizacion(telefono, indice) {
   if (!confirm('¿Anular este canje?\n\nSe quitará del historial y se le devolverá el premio como pendiente de entregar (por si se marcó por error).')) return;
@@ -10845,9 +15181,23 @@ async function anularCanjeFidelizacion(telefono, indice) {
       alert('No se ha encontrado ese canje (puede que la lista esté desactualizada). Pulsa Actualizar e inténtalo de nuevo.');
       return;
     }
-    cliente.historialCanjes.splice(indice, 1);
-    cliente.premiosPendientes = (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : 0) + 1;
-    await window.fb_saveFidelizacionCliente(telefono, cliente);
+    // Transacción: fidelizacion/<telefono> también lo escribe fidelizacion.php
+    // cada vez que ese cliente gana un sello o canjea un premio de verdad —
+    // un .set() plano aquí podía perder ese cambio si pasaba justo mientras
+    // el admin anulaba este canje.
+    const mutator = function (current) {
+      const c = current || {};
+      if (Array.isArray(c.historialCanjes) && c.historialCanjes[indice]) {
+        c.historialCanjes.splice(indice, 1);
+      }
+      c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
     renderFidelizacionList();
   } catch (e) {
     alert('Error al anular el canje: ' + e.message);
@@ -10921,33 +15271,95 @@ function cargarFidelizacionParaEditar(telefono) {
     document.getElementById('fidel-edit-phone').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 }
+// Escritura compartida por el formulario de la pestaña "Editar manualmente"
+// y por el modal de ajustes rápidos (⚙️) de cada tarjeta — los dos ajustan
+// los mismos 4 campos (nombre/sellos/premiosPendientes/vecesCompletado) de
+// la misma forma, así que viven en un único sitio para que no se
+// desincronicen si mañana hay que cambiar algo de esta lógica.
+// Transacción: nombre/sellos/premiosPendientes/vecesCompletado son lo que
+// el admin ha editado a propósito en el formulario, pero historialCanjes/
+// historialSellos deben venir siempre de lo último de verdad en Firebase
+// (no de una lectura que pudo quedarse desfasada mientras el admin
+// rellenaba el formulario) — si no, un sello o canje real de ese cliente
+// llegado justo en medio se perdía sin aviso al guardar.
+async function _guardarFidelizacionValores(telefono, nombre, sellos, premiosPendientes, vecesCompletado) {
+  const mutator = function (current) {
+    const existente = current || {};
+    return {
+      nombre: nombre || existente.nombre || '',
+      sellos,
+      premiosPendientes,
+      vecesCompletado,
+      historialCanjes: existente.historialCanjes || [],
+      historialSellos: existente.historialSellos || [],
+      // No pisar esto al editar a mano — si no, se borraba en silencio el
+      // "ya lo revisé" de ritmo sospechoso y el historial de nombres
+      // distintos usados con este teléfono.
+      sospechosoRevisadoHastaTs: existente.sospechosoRevisadoHastaTs,
+      historialNombres: existente.historialNombres || []
+    };
+  };
+  if (window.fb_transactJsonString) {
+    await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+  } else {
+    let existente = null;
+    try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
+    await window.fb_saveFidelizacionCliente(telefono, mutator(existente));
+  }
+}
+function _leerValoresFormularioFidelizacion(prefijo) {
+  const telefono = document.getElementById(prefijo + '-phone').value.replace(/\D/g, '');
+  const nombre = document.getElementById(prefijo + '-nombre').value.trim();
+  let sellos = parseInt(document.getElementById(prefijo + '-sellos').value, 10);
+  if (isNaN(sellos) || sellos < 0) sellos = 0;
+  if (sellos >= FIDELIZACION_META_ADMIN) sellos = FIDELIZACION_META_ADMIN - 1;
+  let premiosPendientes = parseInt(document.getElementById(prefijo + '-premios-pendientes').value, 10);
+  if (isNaN(premiosPendientes) || premiosPendientes < 0) premiosPendientes = 0;
+  let vecesCompletado = parseInt(document.getElementById(prefijo + '-veces-completado').value, 10);
+  if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
+  return { telefono, nombre, sellos, premiosPendientes, vecesCompletado };
+}
 async function guardarFidelizacionManual() {
-  const telInput = document.getElementById('fidel-edit-phone');
-  const telefono = telInput.value.replace(/\D/g, '');
-  if (telefono.length !== 9) {
+  const v = _leerValoresFormularioFidelizacion('fidel-edit');
+  if (v.telefono.length !== 9) {
     alert('Introduce un teléfono válido de 9 dígitos.');
     return;
   }
-  const nombre = document.getElementById('fidel-edit-nombre').value.trim();
-  let sellos = parseInt(document.getElementById('fidel-edit-sellos').value, 10);
-  if (isNaN(sellos) || sellos < 0) sellos = 0;
-  if (sellos >= FIDELIZACION_META_ADMIN) sellos = FIDELIZACION_META_ADMIN - 1;
-  let premiosPendientes = parseInt(document.getElementById('fidel-edit-premios-pendientes').value, 10);
-  if (isNaN(premiosPendientes) || premiosPendientes < 0) premiosPendientes = 0;
-  let vecesCompletado = parseInt(document.getElementById('fidel-edit-veces-completado').value, 10);
-  if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
-
-  let existente = null;
-  try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
-  const cliente = {
-    nombre: nombre || (existente && existente.nombre) || '',
-    sellos,
-    premiosPendientes,
-    vecesCompletado,
-    historialCanjes: (existente && existente.historialCanjes) || []
-  };
-  await window.fb_saveFidelizacionCliente(telefono, cliente);
+  await _guardarFidelizacionValores(v.telefono, v.nombre, v.sellos, v.premiosPendientes, v.vecesCompletado);
   showToast('fidel-toast');
+  renderFidelizacionList();
+}
+
+// ── MODAL DE AJUSTES RÁPIDOS (⚙️ desde cada tarjeta de la lista) ──
+// Mismo formulario que "Editar manualmente", pero como ventana emergente
+// sobre la propia lista, ya rellena con los datos del cliente — para
+// corregir algo puntual (o simplemente comprobar qué hay guardado de
+// verdad, como "veces completado", sin confundirlo con un fallo) sin
+// perder de vista la lista ni tener que volver a escribir el teléfono.
+function abrirFidelizacionAjustesModal(telefono) {
+  const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || null;
+  document.getElementById('fidel-ajustes-phone').value = telefono;
+  document.getElementById('fidel-ajustes-nombre').value = (cliente && cliente.nombre) || '';
+  document.getElementById('fidel-ajustes-sellos').value = (cliente && typeof cliente.sellos === 'number') ? cliente.sellos : 0;
+  document.getElementById('fidel-ajustes-premios-pendientes').value = (cliente && typeof cliente.premiosPendientes === 'number') ? cliente.premiosPendientes : ((cliente && cliente.premioDisponible) ? 1 : 0);
+  document.getElementById('fidel-ajustes-veces-completado').value = (cliente && typeof cliente.vecesCompletado === 'number') ? cliente.vecesCompletado : 0;
+  const infoEl = document.getElementById('fidel-ajustes-cliente-info');
+  if (infoEl) infoEl.textContent = ((cliente && cliente.nombre) ? cliente.nombre + ' — ' : '') + telefono;
+  const modal = document.getElementById('fidel-ajustes-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function cerrarFidelizacionAjustesModal() {
+  const modal = document.getElementById('fidel-ajustes-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function guardarFidelizacionAjustesModal() {
+  const v = _leerValoresFormularioFidelizacion('fidel-ajustes');
+  if (v.telefono.length !== 9) {
+    alert('Teléfono inválido — ciérralo y ábrelo de nuevo desde la tarjeta del cliente.');
+    return;
+  }
+  await _guardarFidelizacionValores(v.telefono, v.nombre, v.sellos, v.premiosPendientes, v.vecesCompletado);
+  cerrarFidelizacionAjustesModal();
   renderFidelizacionList();
 }
 
@@ -10993,16 +15405,26 @@ async function renderAccesosLog() {
 async function recordProductSales(items) {
   if (!items || !items.length) return;
   const fecha = new Date().toISOString().slice(0, 10);
-  try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
+  const mutator = function (current) {
+    const actual = current || {};
     items.forEach(it => {
       if (it.id == null) return;
       const id = String(it.id);
       actual[id] = (actual[id] || 0) + (it.qty || 0);
     });
-    await ref.set(actual);
+    return actual;
+  };
+  try {
+    // Transacción: igual que recordOrderStats justo debajo (que ya lo hace
+    // por el mismo motivo) — dos pedidos completándose casi a la vez podían
+    // pisarse el conteo de ventas por producto con un .set() plano.
+    if (window.fb_transactNative) {
+      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
+    } else {
+      const ref = firebase.database().ref('ventasProductos/' + fecha);
+      const sn = await ref.once('value');
+      await ref.set(mutator(sn.exists() ? sn.val() : null));
+    }
   } catch (e) {
     console.warn('[ventasProductos] no se pudo guardar', e);
   }
@@ -11170,12 +15592,28 @@ function getStockData() {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
-function saveStockData(data) {
+// Aplica mutatorFn (que modifica el objeto de ingredientes in-place) de
+// forma atómica: actualiza localStorage al instante para que la UI
+// responda, y por separado aplica la MISMA mutación contra el valor más
+// reciente de Firebase con una transacción — si dos dispositivos añaden,
+// borran o reordenan ingredientes casi a la vez, Firebase reintenta con
+// el dato fresco en vez de que uno pise el cambio del otro.
+function stockMutateData(mutatorFn) {
+  const data = getStockData();
+  mutatorFn(data);
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_saveStockData) {
+  if (window.fb_transactJsonString) {
+    window._stockDataLocalWrite = Date.now();
+    window.fb_transactJsonString('config/stockData', function (current) {
+      const base = current || {};
+      mutatorFn(base);
+      return base;
+    }).catch(() => {});
+  } else if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }
+  return data;
 }
 
 // ── ADMIN: ingredient management ──
@@ -11187,7 +15625,7 @@ function loadStockAdminList() {
     let _ref26 = _slicedToArray(_ref25, 2),
       group = _ref26[0],
       items = _ref26[1];
-    return "\n    <div style=\"margin-bottom:18px\">\n      <div style=\"font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #F5E6C8\">".concat(STOCK_GROUP_LABELS[group] || group, "</div>\n      <div id=\"stock-drag-group-").concat(group, "\" data-group=\"").concat(group, "\" style=\"display:flex;flex-direction:column\">\n        ").concat(items.map((ing, i) => "\n          <div draggable=\"true\" data-group=\"".concat(group, "\" data-index=\"").concat(i, "\"\n               style=\"display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 12px;cursor:grab\"\n               ondragstart=\"stockDragStart(event)\" ondragover=\"stockDragOver(event)\" ondrop=\"stockDrop(event)\" ondragend=\"stockDragEnd(event)\">\n            <span style=\"color:#8A6A4E;font-size:16px;cursor:grab;user-select:none\">\u2630</span>\n            <span style=\"font-size:14px;color:#2A1506;flex:1\">").concat(ing, "</span>\n            <button onclick=\"removeStockItem('").concat(group, "',").concat(i, ")\" style=\"background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:700\">&#128465;</button>\n          </div>")).join(''), "\n      </div>\n    </div>");
+    return "\n    <div style=\"margin-bottom:18px\">\n      <div style=\"font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #F5E6C8\">".concat(STOCK_GROUP_LABELS[group] || group, "</div>\n      <div id=\"stock-drag-group-").concat(group, "\" data-group=\"").concat(group, "\" style=\"display:flex;flex-direction:column\">\n        ").concat(items.map((ing, i) => "\n          <div draggable=\"true\" data-group=\"".concat(group, "\" data-index=\"").concat(i, "\"\n               style=\"display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 12px;cursor:grab\"\n               ondragstart=\"stockDragStart(event)\" ondragover=\"stockDragOver(event)\" ondrop=\"stockDrop(event)\" ondragend=\"stockDragEnd(event)\">\n            <span style=\"color:#8A6A4E;font-size:16px;cursor:grab;user-select:none\">\u2630</span>\n            <span style=\"font-size:14px;color:#2A1506;flex:1\">").concat(escapeHtml(ing), "</span>\n            <button onclick=\"removeStockItem('").concat(group, "',").concat(i, ")\" style=\"background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:700\">&#128465;</button>\n          </div>")).join(''), "\n      </div>\n    </div>");
   }).join('');
   _initStockDrag();
 }
@@ -11216,13 +15654,12 @@ function stockDrop(e) {
   if (srcGroup !== dstGroup) return; // solo dentro del mismo grupo
   const srcIdx = parseInt(_stockDragSrc.dataset.index);
   const dstIdx = parseInt(e.currentTarget.dataset.index);
-  const data = getStockData();
-  const arr = data[srcGroup];
-  const _arr$splice = arr.splice(srcIdx, 1),
-    _arr$splice2 = _slicedToArray(_arr$splice, 1),
-    moved = _arr$splice2[0];
-  arr.splice(dstIdx, 0, moved);
-  saveStockData(data);
+  stockMutateData(function (data) {
+    const arr = data[srcGroup];
+    if (!arr || !arr[srcIdx]) return;
+    const moved = arr.splice(srcIdx, 1)[0];
+    arr.splice(dstIdx, 0, moved);
+  });
   loadStockAdminList();
   showToast('stock-config-toast');
 }
@@ -11268,13 +15705,12 @@ function _stockTouchEnd(e) {
     if (endY > rect.top && endY < rect.bottom) targetIdx = i;
   });
   if (targetIdx !== srcIdx) {
-    const data = getStockData();
-    const arr = data[group];
-    const _arr$splice3 = arr.splice(srcIdx, 1),
-      _arr$splice4 = _slicedToArray(_arr$splice3, 1),
-      moved = _arr$splice4[0];
-    arr.splice(targetIdx, 0, moved);
-    saveStockData(data);
+    stockMutateData(function (data) {
+      const arr = data[group];
+      if (!arr || !arr[srcIdx]) return;
+      const moved = arr.splice(srcIdx, 1)[0];
+      arr.splice(targetIdx, 0, moved);
+    });
     loadStockAdminList();
     showToast('stock-config-toast');
   }
@@ -11287,22 +15723,27 @@ function addStockIngredient() {
   const group = groupSel ? groupSel.value : 'ingredientes';
   if (!name) return;
   const data = getStockData();
-  if (!data[group]) data[group] = [];
-  if (data[group].includes(name)) {
+  if (data[group] && data[group].includes(name)) {
     alert('Ya existe en ese grupo');
     return;
   }
-  data[group].push(name);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) d[group] = [];
+    if (!d[group].includes(name)) d[group].push(name);
+  });
   input.value = '';
   loadStockAdminList();
   showToast('stock-config-toast');
 }
 function removeStockItem(group, i) {
   const data = getStockData();
-  if (!data[group]) return;
-  data[group].splice(i, 1);
-  saveStockData(data);
+  const ing = data[group] && data[group][i];
+  if (!ing) return;
+  stockMutateData(function (d) {
+    if (!d[group]) return;
+    const idx = d[group].indexOf(ing);
+    if (idx !== -1) d[group].splice(idx, 1);
+  });
   loadStockAdminList();
 }
 
@@ -11323,21 +15764,23 @@ function stockOverlayAddItem() {
   const name = document.getElementById('stock-edit-name').value.trim();
   if (!name) return;
   const data = getStockData();
-  if (!data[group]) data[group] = [];
-  if (data[group].includes(name)) {
+  if (data[group] && data[group].includes(name)) {
     alert('Ya existe en esa categoría');
     return;
   }
-  data[group].push(name);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) d[group] = [];
+    if (!d[group].includes(name)) d[group].push(name);
+  });
   document.getElementById('stock-edit-name').value = '';
   renderStockItems();
 }
 function stockOverlayRemoveItem(group, ing) {
   if (!confirm('¿Eliminar "' + ing + '"?')) return;
-  const data = getStockData();
-  data[group] = data[group].filter(i => i !== ing);
-  saveStockData(data);
+  stockMutateData(function (d) {
+    if (!d[group]) return;
+    d[group] = d[group].filter(i => i !== ing);
+  });
   renderStockItems();
 }
 let _stockOverlayDragSrc = null;
@@ -11364,14 +15807,15 @@ function stockOverlayDrop(e) {
   if (srcGroup !== dstGroup) return;
   const srcIng = _stockOverlayDragSrc.dataset.ing;
   const dstIng = e.currentTarget.dataset.ing;
-  const data = getStockData();
-  const arr = data[srcGroup];
-  const srcIdx = arr.indexOf(srcIng);
-  const dstIdx = arr.indexOf(dstIng);
-  if (srcIdx === -1 || dstIdx === -1) return;
-  arr.splice(srcIdx, 1);
-  arr.splice(dstIdx, 0, srcIng);
-  saveStockData(data);
+  stockMutateData(function (data) {
+    const arr = data[srcGroup];
+    if (!arr) return;
+    const srcIdx = arr.indexOf(srcIng);
+    const dstIdx = arr.indexOf(dstIng);
+    if (srcIdx === -1 || dstIdx === -1) return;
+    arr.splice(srcIdx, 1);
+    arr.splice(dstIdx, 0, srcIng);
+  });
   renderStockItems();
 }
 function openStockFromAdmin() {
@@ -11529,12 +15973,12 @@ function renderStockItems() {
     const isExtras = group === 'extras';
     return '<div style="margin-bottom:4px">' + '<div style="font-family:\'Anton\',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em">' + (STOCK_GROUP_LABELS[group] || group) + '</div>' + items.map(ing => {
       if (_stockEditMode) {
-        return '<div draggable="true" data-group="' + group + '" data-ing="' + ing.replace(/"/g, '&quot;') + '"' + ' style="display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:grab"' + ' ondragstart="stockOverlayDragStart(event)" ondragover="stockOverlayDragOver(event)" ondrop="stockOverlayDrop(event)" ondragend="stockOverlayDragEnd(event)">' + '<span style="color:#8A6A4E;font-size:18px;user-select:none">☰</span>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<button onclick="stockOverlayRemoveItem(\'' + group + '\',\'' + ing.replace(/'/g, "\\'") + '\')" style="background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;cursor:pointer">✕</button>' + '</div>';
+        return '<div draggable="true" data-group="' + group + '" data-ing="' + ing.replace(/"/g, '&quot;') + '"' + ' style="display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:grab"' + ' ondragstart="stockOverlayDragStart(event)" ondragover="stockOverlayDragOver(event)" ondrop="stockOverlayDrop(event)" ondragend="stockOverlayDragEnd(event)">' + '<span style="color:#8A6A4E;font-size:18px;user-select:none">☰</span>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<button onclick="stockOverlayRemoveItem(\'' + group + '\',\'' + ing.replace(/'/g, "\\'") + '\')" style="background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;cursor:pointer">✕</button>' + '</div>';
       }
       const i = Object.values(window._stockItemIndex).indexOf(ing);
       if (isExtras) {
         const eid = 'extra_' + ing.replace(/[^a-z0-9]/gi, '_');
-        return '<div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:8px">' + '<div style="font-size:14px;font-weight:600;color:#3D1F0D;margin-bottom:6px">' + ing + '</div>' + '<textarea id="' + eid + '" placeholder="Escribe aqu\u00ED..." rows="2" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;resize:none;box-sizing:border-box"></textarea>' + '</div>';
+        return '<div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:8px">' + '<div style="font-size:14px;font-weight:600;color:#3D1F0D;margin-bottom:6px">' + escapeHtml(ing) + '</div>' + '<textarea id="' + eid + '" placeholder="Escribe aqu\u00ED..." rows="2" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;resize:none;box-sizing:border-box"></textarea>' + '</div>';
       }
       // ── LIMPIEZA (✅ Hay / ❌ No hay) ──
       if (STOCK_LIMPIEZA.has(ing)) {
@@ -11545,7 +15989,7 @@ function renderStockItems() {
         const btnBaseL = 'width:42px;height:42px;border-radius:50%;font-size:18px;cursor:pointer;border:2px solid ';
         const btnHay = state === 1 ? btnBaseL + '#27855a;background:#eafaf1' : btnBaseL + '#F5E6C8;background:#FFFFFF';
         const btnNo = state === -1 ? btnBaseL + '#c0392b;background:#fdf0ee' : btnBaseL + '#F5E6C8;background:#FFFFFF';
-        return '<div style="background:' + bgL + ';border:2px solid ' + borderL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<div style="display:flex;flex-shrink:0">' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',1)" style="' + btnHay + '">✅</button>' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',-1)" style="' + btnNo + '">❌</button>' + '</div></div></div>';
+        return '<div style="background:' + bgL + ';border:2px solid ' + borderL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;flex-shrink:0">' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',1)" style="' + btnHay + '">✅</button>' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',-1)" style="' + btnNo + '">❌</button>' + '</div></div></div>';
       }
 
       // ── CHECK + NOTA OPCIONAL (boles, papel térmico, etc.) ──
@@ -11558,7 +16002,7 @@ function renderStockItems() {
         const borderTL = checked ? '#3D1F0D' : '#F5E6C8';
         const btnBorderTL = checked ? '#3D1F0D' : '#F5E6C8';
         const btnBgTL = checked ? '#3D1F0D' : '#FFFFFF';
-        return '<div style="background:' + bgTL + ';border:2px solid ' + borderTL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<button onclick="stockCheckToggle(\'' + safeIngTL + '\')" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;border:2px solid ' + btnBorderTL + ';background:' + btnBgTL + ';font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">' + (checked ? '\u2705' : '') + '</button>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + (STOCK_DISPLAY_LABEL[ing] || ing) + '</span>' + '</div>' + (checked ? '<div style="margin-top:10px;display:flex;flex-direction:column">' + (STOCK_CHECK_MEDIO.has(ing) ? '<button onclick="stockNotaSetMedio(\'' + safeIngTL + '\')" style="align-self:flex-start;padding:5px 12px;border-radius:7px;border:1.5px solid #3D1F0D;background:' + (nota === '\u00bd paquete' ? 'rgba(244,196,48,0.08)' : '#FFFFFF') + ';color:' + (nota === '\u00bd paquete' ? '#3D1F0D' : '#8A6A4E') + ';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u00bd paquete</button>' : '') + '<input type="text" id="' + notaId + '" value="' + nota.replace(/"/g, '&quot;') + '" placeholder="Nota opcional\u2026" oninput="stockNotaChange(\'' + safeIngTL + '\',this.value)" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 12px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;box-sizing:border-box">' + '</div>' : '') + '</div>';
+        return '<div style="background:' + bgTL + ';border:2px solid ' + borderTL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<button onclick="stockCheckToggle(\'' + safeIngTL + '\')" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;border:2px solid ' + btnBorderTL + ';background:' + btnBgTL + ';font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">' + (checked ? '\u2705' : '') + '</button>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(STOCK_DISPLAY_LABEL[ing] || ing) + '</span>' + '</div>' + (checked ? '<div style="margin-top:10px;display:flex;flex-direction:column">' + (STOCK_CHECK_MEDIO.has(ing) ? '<button onclick="stockNotaSetMedio(\'' + safeIngTL + '\')" style="align-self:flex-start;padding:5px 12px;border-radius:7px;border:1.5px solid #3D1F0D;background:' + (nota === '\u00bd paquete' ? 'rgba(244,196,48,0.08)' : '#FFFFFF') + ';color:' + (nota === '\u00bd paquete' ? '#3D1F0D' : '#8A6A4E') + ';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u00bd paquete</button>' : '') + '<input type="text" id="' + notaId + '" value="' + nota.replace(/"/g, '&quot;') + '" placeholder="Nota opcional\u2026" oninput="stockNotaChange(\'' + safeIngTL + '\',this.value)" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 12px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;box-sizing:border-box">' + '</div>' : '') + '</div>';
       }
 
       // ── BOTE (cremas) ──
@@ -11568,7 +16012,7 @@ function renderStockItems() {
         const bgB = boteVal > 0 ? 'rgba(244,196,48,0.08)' : '#FFFFFF';
         const borderB = boteVal > 0 ? '#3D1F0D' : '#F5E6C8';
         const boteStr = boteVal > 0 ? boteVal % 1 === 0.5 ? Math.floor(boteVal) > 0 ? Math.floor(boteVal) + '\u00bd' : '\u00bd' : boteVal : '\u2013';
-        return '<div style="background:' + bgB + ';border:2px solid ' + borderB + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockSetBote(\'' + safeIngB + '\',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + '<button onclick="stockBoteMedio(\'' + safeIngB + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' + '<span style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center">' + boteStr + '</span>' + '<button onclick="stockSetBote(\'' + safeIngB + '\',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="margin-top:8px"><span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">Bote</span></div>' + '</div>';
+        return '<div style="background:' + bgB + ';border:2px solid ' + borderB + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockSetBote(\'' + safeIngB + '\',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + '<button onclick="stockBoteMedio(\'' + safeIngB + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' + '<span style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center">' + boteStr + '</span>' + '<button onclick="stockSetBote(\'' + safeIngB + '\',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="margin-top:8px"><span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">Bote</span></div>' + '</div>';
       }
 
       // ── CONTABLE ──
@@ -11585,7 +16029,7 @@ function renderStockItems() {
       const qtyId = 'stk-qty-' + i;
       const showMedio = STOCK_ADMITE_MEDIO.has(ing) || STOCK_ADMITE_MEDIO_CAJAS.has(ing) && unit === 'cajas';
       const medioBtn = showMedio ? '<button onclick="stockQtyMedio(\'' + safeIng + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' : '';
-      return '<div style="background:' + bg + ';border:2px solid ' + border + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span onclick="stockToggle(' + i + ')" style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1;cursor:pointer">' + ing + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockQty(' + i + ',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + medioBtn + '<span id="' + qtyId + '" onclick="stockActivateInput(' + i + ')" title="Pulsa para escribir" style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center;cursor:text;border-radius:6px;padding:2px 4px' + (qty > 0 ? ';background:rgba(0,0,0,0.05)' : '') + '">' + (qty !== null ? qty : '\u2013') + '</span>' + '<button onclick="stockQty(' + i + ',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="display:flex;margin-top:8px;align-items:center">' + (fixedUnit ? '<span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">' + fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1) + '</span>' : '<button onclick="stockSetUnit(\'' + safeIng + '\',\'cajas\')" style="' + unitCajas + '">📦 Cajas</button>' + '<button onclick="stockSetUnit(\'' + safeIng + '\',\'unidades\')" style="' + unitUds + '">🔢 Unidades</button>') + '</div></div>';
+      return '<div style="background:' + bg + ';border:2px solid ' + border + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span onclick="stockToggle(' + i + ')" style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1;cursor:pointer">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockQty(' + i + ',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + medioBtn + '<span id="' + qtyId + '" onclick="stockActivateInput(' + i + ')" title="Pulsa para escribir" style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center;cursor:text;border-radius:6px;padding:2px 4px' + (qty > 0 ? ';background:rgba(0,0,0,0.05)' : '') + '">' + (qty !== null ? qty : '\u2013') + '</span>' + '<button onclick="stockQty(' + i + ',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="display:flex;margin-top:8px;align-items:center">' + (fixedUnit ? '<span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">' + fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1) + '</span>' : '<button onclick="stockSetUnit(\'' + safeIng + '\',\'cajas\')" style="' + unitCajas + '">📦 Cajas</button>' + '<button onclick="stockSetUnit(\'' + safeIng + '\',\'unidades\')" style="' + unitUds + '">🔢 Unidades</button>') + '</div></div>';
     }).join('') + '</div>';
   }).join('');
 }
@@ -11716,18 +16160,26 @@ function getStockHistorial() {
   }
 }
 function saveToStockHistorial(ts, lines) {
-  const hist = getStockHistorial();
-  hist.push({
-    ts,
-    lines
-  });
-  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
+  const entrada = { ts, lines };
+  // Local al instante...
+  const histLocal = getStockHistorial();
+  histLocal.push(entrada);
+  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(histLocal));
 
-  // 🔥 Subir a Firebase — reintenta si aún no está listo
+  // ...y de forma atómica contra Firebase — reintenta si aún no está listo,
+  // y usa una transacción para no perder la reposición de otro dispositivo
+  // guardada casi al mismo tiempo.
   function subirAFirebase(intentos) {
-    if (window.fb_saveStockHistorial) {
+    if (window.fb_transactNative) {
       window._stockLocalWrite = Date.now();
-      window.fb_saveStockHistorial(hist).catch(e => console.warn('Firebase stock historial error:', e));
+      window.fb_transactNative('stock/historial', function (current) {
+        const hist = Array.isArray(current) ? current.slice() : [];
+        hist.push(entrada);
+        return hist;
+      }).catch(e => console.warn('Firebase stock historial error:', e));
+    } else if (window.fb_saveStockHistorial) {
+      window._stockLocalWrite = Date.now();
+      window.fb_saveStockHistorial(histLocal).catch(e => console.warn('Firebase stock historial error:', e));
     } else if (intentos > 0) {
       setTimeout(() => subirAFirebase(intentos - 1), 500);
     } else {
@@ -11768,11 +16220,15 @@ function renderStockHistorial() {
   let html = '';
 
   // Latest entry (always visible)
-  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + latest.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>';
+  // Cada línea es texto libre que cualquier empleado puede escribir al
+  // añadir un ingrediente/nota — sin escapar aquí se ejecutaba en cuanto un
+  // admin abriera este historial (renderStockItems, la lista en vivo, ya
+  // escapaba esto; aquí se había quedado fuera).
+  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + escapeHtml(latest.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>';
 
   // Older entries in a collapsible folder
   if (older.length) {
-    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + entry.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>').join('') + '</div></details>';
+    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + escapeHtml(entry.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>').join('') + '</div></details>';
   }
   el.innerHTML = html;
 }
@@ -11780,7 +16236,7 @@ function exportStockPDF() {
   const lines = window._lastStockLines || [];
   const ts = window._lastStockTs || '';
   if (!lines.length) return;
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(ts, "</p>\n  <ul>").concat(lines.map(l => '<li>' + l + '</li>').join(''), "</ul>\n  </body></html>");
+  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(escapeHtml(ts), "</p>\n  <ul>").concat(lines.map(l => '<li>' + escapeHtml(l) + '</li>').join(''), "</ul>\n  </body></html>");
   const blob = new Blob([html], {
     type: 'text/html'
   });
@@ -11870,7 +16326,7 @@ function mostrarUltimoStock() {
     const last = arr[arr.length - 1];
     tsEl.textContent = '\uD83D\uDCC5 ' + (last.ts || '');
     const lines = normalizeHist(last.lines);
-    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + l + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
+    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + escapeHtml(l) + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
   }
   function tryLoad(intentos) {
     if (window.fb_loadStockHistorial) {
@@ -12069,45 +16525,780 @@ async function saveOrderTotal(orderNum, rawValue) {
     return;
   }
   const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  if (window.fb_getStats) {
+  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
+  // vez que entra un pedido nuevo — un .set() plano aquí (leer, cambiar el
+  // total de un pedido en memoria, sobreescribir el nodo entero) podía
+  // perder un pedido real llegado justo mientras se editaba este total.
+  let ordenNoEncontrada = false;
+  let oldTotal = null;
+  const mutator = function (current) {
+    const stats = current || {};
+    if (!stats.orders) { ordenNoEncontrada = true; return stats; }
+    const order = stats.orders.find(o => o.num === orderNum);
+    if (!order) { ordenNoEncontrada = true; return stats; }
+    oldTotal = order.total;
+    order.total = newTotal;
+    stats.total = parseFloat((stats.orders.reduce((s, o) => s + (o.total || 0), 0)).toFixed(2));
+    return stats;
+  };
+  let statsFinal = null;
+  if (window.fb_transactNative) {
+    try { statsFinal = await window.fb_transactNative('stats/' + todayKey, mutator); } catch (e) { console.warn('Firebase stats error', e); }
+  } else if (window.fb_getStats) {
     try {
       const fb = await window.fb_getStats(todayKey);
-      if (fb) stats = fb;
-    } catch (e) {}
+      if (fb) {
+        statsFinal = mutator(fb);
+        if (window.fb_saveStats) await window.fb_saveStats(statsFinal);
+      }
+    } catch (e) { console.warn('Firebase stats error', e); }
   }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {
-      stats = {};
-    }
-  }
-  if (!stats || !stats.orders) {
+  if (ordenNoEncontrada || !statsFinal) {
     loadLiveOrders();
     return;
   }
-  const order = stats.orders.find(o => o.num === orderNum);
-  if (!order) {
-    loadLiveOrders();
-    return;
-  }
-  const oldTotal = order.total;
-  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
-  order.total = newTotal;
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
+  localStorage.setItem(STATS_KEY, JSON.stringify(statsFinal));
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();
 }
 
+
+// ═══════════════════════════════════════════════════════════
+//  RULETA DE PREMIOS / RASCA Y GANA
+//
+//  El premio lo decide juegos.php (cuenta de servicio) — este archivo
+//  solo pide "quiero girar/rascar" y dibuja/anima lo que el servidor
+//  devuelve. Nunca decide él mismo qué premio toca (por eso no hay
+//  ningún Math.random() de premios aquí, solo de estética: colores,
+//  vueltas extra de la ruleta, radio de cada rasca del cursor...).
+// ═══════════════════════════════════════════════════════════
+
+const JUEGO_COLORES = ['#3D1F0D', '#C0392B', '#D9A441', '#27855a', '#8A6A4E', '#1f6f8b', '#a5471f', '#6b4226'];
+const CONFETI_COLORES = ['#D9A441', '#C0392B', '#27855a', '#3D1F0D', '#FFF8EE', '#1f6f8b'];
+
+window._juegoActivoActual = 'ninguno';
+window._juegoState = { juego: null, premio: null, code: null };
+
+// Confeti + sonido al ganar un premio de verdad (pct>0) — solo estética,
+// no afecta a nada del cálculo/aplicación del premio. El sonido se
+// sintetiza con Web Audio (sin archivo de audio que subir); si el
+// navegador bloquea el audio por lo que sea, sigue mostrándose el confeti
+// igualmente.
+function _celebrarPremio() {
+  _lanzarConfeti();
+  _sonidoCelebracion();
+}
+function _lanzarConfeti() {
+  const cont = document.createElement('div');
+  cont.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:99999;overflow:hidden';
+  document.body.appendChild(cont);
+  const N = 60;
+  for (let i = 0; i < N; i++) {
+    const piece = document.createElement('div');
+    const color = CONFETI_COLORES[i % CONFETI_COLORES.length];
+    const left = Math.random() * 100;
+    const size = 6 + Math.random() * 6;
+    const duration = 2200 + Math.random() * 1400;
+    const delay = Math.random() * 300;
+    const rot = Math.random() * 360;
+    piece.style.cssText = 'position:absolute;top:-20px;left:' + left + 'vw;width:' + size + 'px;height:' + (size * 0.4) + 'px;background:' + color + ';opacity:.9;transform:rotate(' + rot + 'deg);border-radius:2px;' +
+      'animation:juegoConfetiCae ' + duration + 'ms ease-in ' + delay + 'ms forwards';
+    cont.appendChild(piece);
+  }
+  setTimeout(() => cont.remove(), 4200);
+}
+function _sonidoCelebracion() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notas = [523.25, 659.25, 783.99, 1046.5]; // Do-Mi-Sol-Do, un arpegio alegre
+    notas.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.4);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
+
+function _juegosInit() {
+  if (window.fb_listenJuegoActivo) {
+    window.fb_listenJuegoActivo(function (juego) {
+      window._juegoActivoActual = juego || 'ninguno';
+      _actualizarJuegoFab(window._juegoActivoActual);
+    });
+  }
+}
+if (window._firebaseReady) _juegosInit();
+document.addEventListener('firebaseReady', _juegosInit);
+
+// El banner de cookies (#cookies-banner, ver index.html) tapa toda la
+// franja de abajo de la pantalla en móvil hasta que se acepta/rechaza, con
+// un z-index mucho más alto que cualquier botón flotante — sin esto el
+// botón del juego queda escondido debajo la primera vez que alguien entra.
+// Se vigila con un observer en vez de tocar cookiesAceptar() directamente,
+// así funciona pase lo que pase cómo se cierre el banner.
+function _juegoFabVigilarBannerCookies() {
+  const banner = document.getElementById('cookies-banner');
+  const fab = document.getElementById('juego-fab');
+  if (!banner || !fab) return;
+  const actualizar = () => {
+    const visible = getComputedStyle(banner).display !== 'none';
+    fab.classList.toggle('sobre-banner-cookies', visible);
+  };
+  actualizar();
+  new MutationObserver(actualizar).observe(banner, { attributes: true, attributeFilter: ['style'] });
+}
+document.addEventListener('DOMContentLoaded', _juegoFabVigilarBannerCookies);
+if (document.readyState !== 'loading') _juegoFabVigilarBannerCookies();
+
+function _actualizarJuegoFab(juego) {
+  const fab = document.getElementById('juego-fab');
+  const icon = document.getElementById('juego-fab-icon');
+  if (fab) {
+    if (juego === 'ruleta') {
+      if (icon) icon.textContent = '🎡';
+      fab.classList.remove('hidden');
+    } else if (juego === 'rasca') {
+      if (icon) icon.textContent = '🎫';
+      fab.classList.remove('hidden');
+    } else {
+      fab.classList.add('hidden');
+    }
+  }
+  document.querySelectorAll('#juego-activo-selector button').forEach(btn => {
+    const on = btn.dataset.juego === juego;
+    btn.style.background = on ? 'var(--brown)' : 'var(--white)';
+    btn.style.color = on ? 'var(--gold)' : 'var(--brown)';
+  });
+}
+
+function abrirJuegoActivo() {
+  if (window._juegoActivoActual === 'ruleta') openRuleta();
+  else if (window._juegoActivoActual === 'rasca') openRasca();
+}
+
+// Teléfono guardado de un pedido anterior (mismo patrón que usa el resto
+// de la web para no pedirlo dos veces si ya lo tenemos).
+function _juegoTelefonoGuardado() {
+  try { return localStorage.getItem('dpf_customer_phone') || ''; } catch (e) { return ''; }
+}
+
+// El teléfono no demuestra que quien pregunta jugó de verdad (sin
+// verificación SMS aquí) — juegos.php ahora exige también este token para
+// devolver el premio/código al "recuperar" una jugada de hoy, para que no
+// baste con probar un teléfono ajeno para robarle su código de descuento.
+function _juegoTokenKey(juego) {
+  return 'dpf_juego_token_' + juego;
+}
+async function _juegoGirar(juego, telefono) {
+  let token = '';
+  try { token = localStorage.getItem(_juegoTokenKey(juego)) || ''; } catch (e) {}
+  const res = await fetch('juegos.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'girar', juego, telefono, token })
+  });
+  const data = await res.json();
+  if (data && data.token) {
+    try { localStorage.setItem(_juegoTokenKey(juego), data.token); } catch (e) {}
+  }
+  return data;
+}
+
+function _aplicarPremioComun(juego) {
+  const st = window._juegoState;
+  if (juego === 'ruleta') closeRuleta(); else closeRasca();
+  if (st && st.code) {
+    const input = document.getElementById('discount-input');
+    if (input) input.value = st.code;
+    if (typeof dcAplicar === 'function') dcAplicar(st.code);
+    showAlert('🎉 ¡Código ' + st.code + ' aplicado! El descuento ya está en tu pedido.', '¡Premio aplicado!');
+  }
+  if (typeof openCartDrawer === 'function' && window.innerWidth <= 700) openCartDrawer();
+  else { const panel = document.querySelector('.order-panel'); if (panel) panel.scrollIntoView({ behavior: 'smooth' }); }
+}
+
+// ── RULETA ──────────────────────────────────────────────────────────────
+let _ruletaPremios = [];
+let _ruletaEjecutando = false;
+
+function openRuleta() {
+  document.getElementById('ruleta-modal').classList.add('open');
+  document.getElementById('ruleta-intro').style.display = 'block';
+  document.getElementById('ruleta-resultado').style.display = 'none';
+  document.getElementById('ruleta-ya-jugaste').style.display = 'none';
+  const btn = document.getElementById('ruleta-spin-btn');
+  btn.disabled = false;
+  btn.textContent = 'Girar la ruleta';
+  const tel = document.getElementById('ruleta-telefono');
+  if (tel) { tel.value = _juegoTelefonoGuardado(); if (tel.value) formatPhone(tel); }
+  document.getElementById('ruleta-tel-error').style.display = 'none';
+  const canvas = document.getElementById('ruleta-canvas');
+  canvas.style.transition = 'none';
+  canvas.style.transform = 'rotate(0deg)';
+  requestAnimationFrame(() => { canvas.style.transition = ''; });
+  (window.fb_loadRuletaConfig ? window.fb_loadRuletaConfig() : Promise.resolve(null)).then(cfg => {
+    _ruletaPremios = (cfg && Array.isArray(cfg.premios)) ? cfg.premios : [];
+    _dibujarRuletaWheel(_ruletaPremios);
+  }).catch(() => { _ruletaPremios = []; });
+}
+function closeRuleta() {
+  document.getElementById('ruleta-modal').classList.remove('open');
+}
+
+function _dibujarRuletaWheel(premios) {
+  const canvas = document.getElementById('ruleta-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2, r = w / 2;
+  ctx.clearRect(0, 0, w, h);
+  if (!premios.length) {
+    ctx.fillStyle = '#eee';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8A6A4E'; ctx.font = '13px DM Sans, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Sin premios configurados', cx, cy);
+    return;
+  }
+  const seg = (Math.PI * 2) / premios.length;
+  const n = premios.length;
+  const emojiSize = n > 8 ? 13 : n > 6 ? 15 : n > 4 ? 17 : 20;
+  const EMOJI_FONTS = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  // Ancho disponible para el texto: la cuerda del arco a la altura donde
+  // se dibuja, con un margen — así el ajuste se basa en el hueco real de
+  // cada porción (más estrecho cuantos más premios haya) y no en un
+  // recuento de caracteres a ojo.
+  const radialPos = r * 0.6;
+  const maxTextWidth = Math.max(30, 2 * radialPos * Math.sin(seg / 2) * 0.82);
+
+  // Reparte "nombre" en 1-2 líneas que quepan en maxTextWidth, reduciendo
+  // el tamaño de letra si hace falta (hasta un mínimo legible). Devuelve
+  // las líneas ya recortadas con "…" si ni así caben.
+  function _ajustarTexto(nombre) {
+    for (let size = 9; size >= 6; size--) {
+      ctx.font = '600 ' + size + 'px DM Sans, sans-serif';
+      if (ctx.measureText(nombre).width <= maxTextWidth) return { size, lineas: [nombre] };
+      const palabras = nombre.split(' ');
+      if (palabras.length > 1) {
+        // Envuelve en 2 líneas por el espacio más cercano a la mitad.
+        let mejor = 1, mejorDiff = Infinity;
+        let acumulado = 0;
+        for (let k = 0; k < palabras.length - 1; k++) {
+          acumulado += palabras[k].length + 1;
+          const diff = Math.abs(acumulado - nombre.length / 2);
+          if (diff < mejorDiff) { mejorDiff = diff; mejor = k + 1; }
+        }
+        const l1 = palabras.slice(0, mejor).join(' ');
+        const l2 = palabras.slice(mejor).join(' ');
+        if (ctx.measureText(l1).width <= maxTextWidth && ctx.measureText(l2).width <= maxTextWidth) {
+          return { size, lineas: [l1, l2] };
+        }
+      }
+    }
+    // Ni a tamaño mínimo cabe entero: recortar con "…"
+    ctx.font = '600 6px DM Sans, sans-serif';
+    let corto = nombre;
+    while (corto.length > 1 && ctx.measureText(corto + '…').width > maxTextWidth) {
+      corto = corto.slice(0, -1);
+    }
+    return { size: 6, lineas: [corto + '…'] };
+  }
+
+  premios.forEach((p, i) => {
+    // Ángulo 0 = arriba (donde está el puntero), sentido horario.
+    // En coordenadas de canvas eso equivale a restar 90°.
+    const start = i * seg - Math.PI / 2;
+    const end = start + seg;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.fillStyle = JUEGO_COLORES[i % JUEGO_COLORES.length];
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    const { size, lineas } = _ajustarTexto(p.nombre || '');
+
+    ctx.save();
+    // Recortar el dibujo del texto a la propia porción — así, sea cual
+    // sea el tamaño del nombre del premio, nunca puede "pintarse" por
+    // encima del color de la porción de al lado (antes se veía cortado
+    // a medias entre dos colores cuando el texto no cabía).
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.translate(cx, cy);
+    ctx.rotate(start + seg / 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFF8EE';
+    ctx.font = emojiSize + 'px ' + EMOJI_FONTS;
+    ctx.fillText(p.emoji || '🎁', radialPos, lineas.length > 1 ? -12 : -8);
+    ctx.font = '600 ' + size + 'px DM Sans, sans-serif';
+    lineas.forEach((linea, li) => {
+      ctx.fillText(linea, radialPos, 8 + li * (size + 2));
+    });
+    ctx.restore();
+  });
+}
+
+async function girarRuleta() {
+  if (_ruletaEjecutando) return;
+  const tel = document.getElementById('ruleta-telefono');
+  const digits = (tel.value || '').replace(/\D/g, '');
+  if (digits.length !== 9) {
+    document.getElementById('ruleta-tel-error').style.display = 'block';
+    return;
+  }
+  document.getElementById('ruleta-tel-error').style.display = 'none';
+  _ruletaEjecutando = true;
+  const btn = document.getElementById('ruleta-spin-btn');
+  btn.disabled = true;
+  btn.textContent = 'Girando…';
+  try {
+    const data = await _juegoGirar('ruleta', digits);
+    if (!data.success) {
+      showAlert(data.message || 'No se pudo girar la ruleta ahora mismo. Inténtalo más tarde.', 'Vaya…');
+      btn.disabled = false; btn.textContent = 'Girar la ruleta';
+      _ruletaEjecutando = false;
+      return;
+    }
+    if (data.yaJugaste) {
+      // Ya jugó hoy — en vez de la pantalla genérica "vuelve mañana", se
+      // reutiliza la de resultado con lo que ganó de verdad: si tenía un
+      // código sin aplicar (cerró el modal, cambió de dispositivo...) aquí
+      // puede recuperarlo, en vez de quedarse sin ninguna forma de verlo.
+      const premio = data.premio || {};
+      document.getElementById('ruleta-intro').style.display = 'none';
+      document.getElementById('ruleta-resultado').style.display = 'block';
+      document.getElementById('ruleta-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('ruleta-resultado-titulo').textContent = 'Ya has girado hoy';
+      document.getElementById('ruleta-resultado-desc').textContent = premio.pct > 0
+        ? 'Tu premio de hoy fue "' + premio.nombre + '" — aquí tienes tu código otra vez, por si no lo llegaste a usar.'
+        : (premio.nombre || 'Suerte la próxima vez') + '. Vuelve mañana para otra oportunidad.';
+      document.getElementById('ruleta-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      window._juegoState = { juego: 'ruleta', premio, code: data.code };
+      _ruletaEjecutando = false;
+      return;
+    }
+    let idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    if (idx === -1) {
+      // La lista de premios cambió entre abrir la ruleta y girar (el admin
+      // la editó justo en medio) — el premio real que se ha ganado (texto,
+      // emoji y código) sigue siendo correcto porque viene del servidor,
+      // pero la ruleta dibujada localmente ya no tiene ese premio en
+      // ninguno de sus segmentos. Se recarga y redibuja con la lista
+      // actual antes de animar, para no parar visualmente en un segmento
+      // que no es el premio ganado de verdad.
+      try {
+        const cfgFresco = window.fb_loadRuletaConfig ? await window.fb_loadRuletaConfig() : null;
+        if (cfgFresco && Array.isArray(cfgFresco.premios)) {
+          _ruletaPremios = cfgFresco.premios;
+          _dibujarRuletaWheel(_ruletaPremios);
+        }
+      } catch (e) {}
+      idx = _ruletaPremios.findIndex(p => p.id === (data.premio && data.premio.id));
+    }
+    if (idx === -1) idx = 0;
+    const seg = 360 / (_ruletaPremios.length || 1);
+    const mid = idx * seg + seg / 2;
+    const vueltas = 5 + Math.floor(Math.random() * 3);
+    const deg = 360 * vueltas - mid;
+    const canvas = document.getElementById('ruleta-canvas');
+    canvas.style.transform = 'rotate(' + deg + 'deg)';
+    window._juegoState = { juego: 'ruleta', premio: data.premio, code: data.code };
+    setTimeout(() => {
+      document.getElementById('ruleta-intro').style.display = 'none';
+      document.getElementById('ruleta-resultado').style.display = 'block';
+      const premio = data.premio || {};
+      document.getElementById('ruleta-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('ruleta-resultado-titulo').textContent = '¡Enhorabuena!';
+      document.getElementById('ruleta-resultado-desc').textContent = premio.pct > 0
+        ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
+        : (premio.nombre || 'Suerte la próxima vez');
+      document.getElementById('ruleta-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      if (premio.pct > 0) _celebrarPremio();
+      _ruletaEjecutando = false;
+    }, 4700);
+  } catch (e) {
+    showAlert('Error de conexión. Inténtalo de nuevo.', 'Vaya…');
+    btn.disabled = false; btn.textContent = 'Girar la ruleta';
+    _ruletaEjecutando = false;
+  }
+}
+function aplicarPremioRuleta() { _aplicarPremioComun('ruleta'); }
+
+// ── RASCA Y GANA ────────────────────────────────────────────────────────
+let _rascaEjecutando = false;
+let _rascaScratching = false;
+let _rascaRevelado = false;
+
+function openRasca() {
+  document.getElementById('rasca-modal').classList.add('open');
+  document.getElementById('rasca-intro').style.display = 'block';
+  document.getElementById('rasca-resultado').style.display = 'none';
+  document.getElementById('rasca-ya-jugaste').style.display = 'none';
+  document.getElementById('rasca-tel-paso').style.display = 'block';
+  document.getElementById('rasca-tarjeta-paso').style.display = 'none';
+  const tel = document.getElementById('rasca-telefono');
+  if (tel) { tel.value = _juegoTelefonoGuardado(); if (tel.value) formatPhone(tel); }
+  document.getElementById('rasca-tel-error').style.display = 'none';
+  _rascaRevelado = false;
+}
+function closeRasca() {
+  document.getElementById('rasca-modal').classList.remove('open');
+}
+
+async function empezarRasca() {
+  if (_rascaEjecutando) return;
+  const tel = document.getElementById('rasca-telefono');
+  const digits = (tel.value || '').replace(/\D/g, '');
+  if (digits.length !== 9) {
+    document.getElementById('rasca-tel-error').style.display = 'block';
+    return;
+  }
+  document.getElementById('rasca-tel-error').style.display = 'none';
+  _rascaEjecutando = true;
+  const btn = document.getElementById('rasca-empezar-btn');
+  btn.disabled = true;
+  btn.textContent = 'Cargando…';
+  try {
+    const data = await _juegoGirar('rasca', digits);
+    btn.disabled = false; btn.textContent = 'Destapar mi tarjeta';
+    if (!data.success) {
+      showAlert(data.message || 'No se pudo cargar la tarjeta ahora mismo. Inténtalo más tarde.', 'Vaya…');
+      _rascaEjecutando = false;
+      return;
+    }
+    window._juegoState = { juego: 'rasca', premio: data.premio, code: data.code };
+    if (data.yaJugaste) {
+      // Igual que en la ruleta: si ya rascó hoy, se le enseña directamente
+      // el resultado (con el botón de aplicar si aún tiene código sin usar)
+      // en vez de un "vuelve mañana" sin ninguna forma de recuperarlo.
+      const premio = data.premio || {};
+      document.getElementById('rasca-tel-paso').style.display = 'none';
+      document.getElementById('rasca-resultado').style.display = 'block';
+      document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
+      document.getElementById('rasca-resultado-titulo').textContent = 'Ya rascaste hoy';
+      document.getElementById('rasca-resultado-desc').textContent = premio.pct > 0
+        ? 'Tu premio de hoy fue "' + premio.nombre + '" — aquí tienes tu código otra vez, por si no lo llegaste a usar.'
+        : (premio.nombre || 'Suerte la próxima vez') + '. Vuelve mañana para otra tarjeta.';
+      document.getElementById('rasca-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+      _rascaEjecutando = false;
+      return;
+    }
+    const premio = data.premio || {};
+    document.getElementById('rasca-premio-emoji').textContent = premio.emoji || '🎁';
+    document.getElementById('rasca-premio-texto').textContent = premio.nombre || '';
+    document.getElementById('rasca-tel-paso').style.display = 'none';
+    document.getElementById('rasca-tarjeta-paso').style.display = 'block';
+    _dibujarRascaFoil();
+    _rascaEjecutando = false;
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Destapar mi tarjeta';
+    showAlert('Error de conexión. Inténtalo de nuevo.', 'Vaya…');
+    _rascaEjecutando = false;
+  }
+}
+
+function _dibujarRascaFoil() {
+  const canvas = document.getElementById('rasca-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.globalCompositeOperation = 'source-over';
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, '#C9A25A'); grad.addColorStop(1, '#8A6A4E');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.font = '600 15px DM Sans, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🎫 Rasca aquí', w / 2, h / 2);
+
+  let drawing = false;
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: (p.clientX - rect.left) * (w / rect.width), y: (p.clientY - rect.top) * (h / rect.height) };
+  }
+  function scratchAt(x, y) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  function checkRevealed() {
+    if (_rascaRevelado) return;
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let transparent = 0, total = 0;
+    for (let i = 3; i < data.length; i += 4 * 8) { // muestreo cada 8 píxeles, suficiente para estimar el %
+      total++;
+      if (data[i] === 0) transparent++;
+    }
+    if (total > 0 && transparent / total >= 0.5) {
+      _rascaRevelado = true;
+      ctx.clearRect(0, 0, w, h);
+      setTimeout(_mostrarResultadoRasca, 350);
+    }
+  }
+  function onDown(e) { drawing = true; const p = pos(e); scratchAt(p.x, p.y); e.preventDefault(); }
+  function onMove(e) { if (!drawing) return; const p = pos(e); scratchAt(p.x, p.y); checkRevealed(); e.preventDefault(); }
+  function onUp() { drawing = false; checkRevealed(); }
+
+  canvas.onpointerdown = onDown;
+  canvas.onpointermove = onMove;
+  canvas.onpointerup = onUp;
+  canvas.onpointerleave = onUp;
+}
+
+function _mostrarResultadoRasca() {
+  document.getElementById('rasca-tarjeta-paso').style.display = 'none';
+  document.getElementById('rasca-resultado').style.display = 'block';
+  const premio = (window._juegoState && window._juegoState.premio) || {};
+  document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
+  document.getElementById('rasca-resultado-titulo').textContent = '¡Enhorabuena!';
+  document.getElementById('rasca-resultado-desc').textContent = premio.pct > 0
+    ? '¡Has ganado ' + premio.nombre + '! Tu código de descuento ya está listo.'
+    : (premio.nombre || 'Suerte la próxima vez');
+  document.getElementById('rasca-aplicar-btn').style.display = premio.pct > 0 ? 'block' : 'none';
+  if (premio.pct > 0) _celebrarPremio();
+}
+function aplicarPremioRasca() { _aplicarPremioComun('rasca'); }
+
+// ── ADMIN: PANEL DE CONFIGURACIÓN ──────────────────────────────────────
+let _ruletaAdminPremios = [];
+let _rascaAdminPremios = [];
+
+function _premioId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+function _renderPremiosAdmin(listaId, premios) {
+  const cont = document.getElementById(listaId);
+  if (!cont) return;
+  cont.innerHTML = premios.map((p, i) => (
+    '<div id="premio-row-' + p.id + '" style="display:flex;gap:6px;align-items:center;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:8px">' +
+      '<input value="' + (p.emoji || '').replace(/"/g, '&quot;') + '" data-i="' + i + '" data-f="emoji" style="width:38px;text-align:center;padding:6px 4px;border:1px solid var(--warm);border-radius:6px;font-size:16px" maxlength="4">' +
+      '<input value="' + (p.nombre || '').replace(/"/g, '&quot;') + '" data-i="' + i + '" data-f="nombre" placeholder="Nombre (ej. 10% descuento)" style="flex:1;min-width:0;padding:6px 8px;border:1px solid var(--warm);border-radius:6px;font-size:12px">' +
+      '<input value="' + (p.pct != null ? p.pct : 0) + '" data-i="' + i + '" data-f="pct" type="number" min="0" max="100" title="% de descuento (0 = sin premio)" style="width:52px;padding:6px 4px;border:1px solid var(--warm);border-radius:6px;font-size:12px">' +
+      '<input value="' + (p.peso != null ? p.peso : 1) + '" data-i="' + i + '" data-f="peso" type="number" min="0" title="Peso (probabilidad relativa)" style="width:48px;padding:6px 4px;border:1px solid var(--warm);border-radius:6px;font-size:12px">' +
+      '<button data-i="' + i + '" class="premio-del-btn" title="Eliminar" style="background:#fdecea;color:#c0392b;border:none;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px">✕</button>' +
+    '</div>'
+  )).join('') || '<div style="font-size:12px;color:var(--muted);text-align:center;padding:10px">Sin premios todavía — añade el primero.</div>';
+
+  cont.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const i = parseInt(inp.dataset.i, 10), f = inp.dataset.f;
+      const arr = listaId === 'ruleta-admin-lista' ? _ruletaAdminPremios : _rascaAdminPremios;
+      if (!arr[i]) return;
+      arr[i][f] = (f === 'pct' || f === 'peso') ? parseFloat(inp.value) || 0 : inp.value;
+    });
+  });
+  cont.querySelectorAll('.premio-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.i, 10);
+      if (listaId === 'ruleta-admin-lista') { _ruletaAdminPremios.splice(i, 1); _renderPremiosAdmin(listaId, _ruletaAdminPremios); }
+      else { _rascaAdminPremios.splice(i, 1); _renderPremiosAdmin(listaId, _rascaAdminPremios); }
+    });
+  });
+}
+
+// Resume los giros/rascados de hoy: total, cuántos tuvieron descuento de
+// verdad (lo que cuenta contra el tope diario) y un desglose por premio —
+// para que el admin vea de un vistazo cuánta gente juega y qué se lleva,
+// sin tener que ir a mirar Firebase directamente.
+function _resumenGirosHoy(giros) {
+  const lista = Object.values(giros || {}).filter(g => g && g.premio);
+  const total = lista.length;
+  let conDescuento = 0;
+  const porPremio = {};
+  lista.forEach(g => {
+    const nombre = g.premio.nombre || '?';
+    porPremio[nombre] = (porPremio[nombre] || 0) + 1;
+    if ((g.premio.pct || 0) > 0) conDescuento++;
+  });
+  return { total, conDescuento, porPremio };
+}
+function _pintarResumenHoy(elId, resumen, tope) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (resumen.total === 0) {
+    el.innerHTML = 'Todavía nadie ha jugado hoy.';
+    return;
+  }
+  // premio.nombre lo escribe el admin en texto libre al configurar los
+  // premios — sin escapar aquí, un nombre con HTML se ejecutaba en cuanto
+  // cualquier admin abriera este resumen.
+  const desglose = Object.entries(resumen.porPremio)
+    .map(([nombre, n]) => n + '× ' + escapeHtml(nombre))
+    .join(' · ');
+  const topeTxt = tope > 0
+    ? '<br><b>' + resumen.conDescuento + ' / ' + tope + '</b> premios con descuento entregados hoy' + (resumen.conDescuento >= tope ? ' — <span style="color:#c0392b;font-weight:700">tope alcanzado, solo queda "sin premio" hasta mañana</span>' : '')
+    : '';
+  el.innerHTML = '<b>' + resumen.total + '</b> jugada' + (resumen.total === 1 ? '' : 's') + ' hoy: ' + desglose + topeTxt;
+}
+
+async function renderRuletaAdmin() {
+  const cfg = window.fb_loadRuletaConfig ? await window.fb_loadRuletaConfig().catch(() => null) : null;
+  _ruletaAdminPremios = (cfg && Array.isArray(cfg.premios)) ? cfg.premios.map(p => Object.assign({}, p)) : [];
+  document.getElementById('ruleta-admin-activa').checked = !!(cfg && cfg.activa);
+  _actualizarTrack('ruleta-admin-toggle-track', !!(cfg && cfg.activa));
+  document.getElementById('ruleta-admin-tope').value = (cfg && cfg.topeDiario) || '';
+  _renderPremiosAdmin('ruleta-admin-lista', _ruletaAdminPremios);
+  document.getElementById('ruleta-admin-stats').textContent = (_ruletaAdminPremios.length) + ' premio' + (_ruletaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_ruletaAdminPremios.length === 1 ? '' : 's');
+  if (window.fb_loadRuletaGiros) {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    window.fb_loadRuletaGiros(todayKey).then(giros => {
+      _pintarResumenHoy('ruleta-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
+    }).catch(() => {});
+  }
+}
+function ruletaAdminAddPremio() {
+  _ruletaAdminPremios.push({ id: _premioId(), emoji: '🎁', nombre: '', pct: 10, peso: 1 });
+  _renderPremiosAdmin('ruleta-admin-lista', _ruletaAdminPremios);
+}
+function _ruletaTopeActual() {
+  const inp = document.getElementById('ruleta-admin-tope');
+  const v = inp ? parseInt(inp.value, 10) : 0;
+  return (v > 0) ? v : 0;
+}
+async function ruletaAdminGuardar() {
+  const activa = document.getElementById('ruleta-admin-activa').checked;
+  const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  const topeDiario = _ruletaTopeActual();
+  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
+  logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+  showToast('ruleta-config-toast');
+}
+async function ruletaAdminToggleActiva(checked) {
+  _actualizarTrack('ruleta-admin-toggle-track', checked);
+  const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
+  logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
+}
+
+async function renderRascaAdmin() {
+  const cfg = window.fb_loadRascaConfig ? await window.fb_loadRascaConfig().catch(() => null) : null;
+  _rascaAdminPremios = (cfg && Array.isArray(cfg.premios)) ? cfg.premios.map(p => Object.assign({}, p)) : [];
+  document.getElementById('rasca-admin-activa').checked = !!(cfg && cfg.activa);
+  _actualizarTrack('rasca-admin-toggle-track', !!(cfg && cfg.activa));
+  document.getElementById('rasca-admin-tope').value = (cfg && cfg.topeDiario) || '';
+  _renderPremiosAdmin('rasca-admin-lista', _rascaAdminPremios);
+  document.getElementById('rasca-admin-stats').textContent = (_rascaAdminPremios.length) + ' premio' + (_rascaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_rascaAdminPremios.length === 1 ? '' : 's');
+  if (window.fb_loadRascaGiros) {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    window.fb_loadRascaGiros(todayKey).then(giros => {
+      _pintarResumenHoy('rasca-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
+    }).catch(() => {});
+  }
+}
+function rascaAdminAddPremio() {
+  _rascaAdminPremios.push({ id: _premioId(), emoji: '🎁', nombre: '', pct: 10, peso: 1 });
+  _renderPremiosAdmin('rasca-admin-lista', _rascaAdminPremios);
+}
+function _rascaTopeActual() {
+  const inp = document.getElementById('rasca-admin-tope');
+  const v = inp ? parseInt(inp.value, 10) : 0;
+  return (v > 0) ? v : 0;
+}
+async function rascaAdminGuardar() {
+  const activa = document.getElementById('rasca-admin-activa').checked;
+  const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  const topeDiario = _rascaTopeActual();
+  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
+  logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+  showToast('rasca-config-toast');
+}
+async function rascaAdminToggleActiva(checked) {
+  _actualizarTrack('rasca-admin-toggle-track', checked);
+  const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
+  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
+  logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
+}
+
+function _actualizarTrack(id, activo) {
+  const el = document.getElementById(id);
+  if (el) el.style.background = activo ? 'var(--brown)' : '#ccc';
+}
+
+async function guardarJuegoActivo(juego) {
+  if (window.fb_saveJuegoActivo) await window.fb_saveJuegoActivo(juego);
+  window._juegoActivoActual = juego;
+  _actualizarJuegoFab(juego);
+  const nombres = { ruleta: 'Ruleta de premios', rasca: 'Rasca y gana', ninguno: 'Ninguno' };
+  logActivity('🎮 Juego activo para clientes: ' + (nombres[juego] || juego));
+}
+
+// ── DATOS PRIVADOS DE EMPLEADOS ──────────────────────────────────────
+// Empleados y fichajes (PIN, DNI, teléfono, firmas) son datos sensibles.
+// Solo se cargan tras un login real (Firebase Auth admin o PIN bimba
+// verificado en el servidor) — nunca al abrir la página como visitante.
+// Llamar desde checkAdminPwd() (slots-alertas.js) y secureLockConfirm()
+// (admin-accesos.js) justo después de confirmar el acceso.
+function _cargarDatosEmpleadosPrivados() {
+  if (window.fb_loadEmpleados) {
+    window.fb_loadEmpleados().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_empleados', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadFichajes) {
+    window.fb_loadFichajes().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  // El badge de 🔔 Alertas necesita datos frescos del log nada más
+  // entrar al panel, sin esperar a que se abra esa pestaña en concreto.
+  if (window.fb_loadActivityLog) {
+    window.fb_loadActivityLog().then(log => {
+      if (log && log.length) localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    }).catch(() => {
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  } else if (typeof updateAlertBadge === 'function') {
+    updateAlertBadge();
+  }
+  // Tokens de acceso (?bimba=/?key=) y clave de stock: solo se cargan al
+  // panel de ajustes DESPUÉS de un login real, para no exponerlos a
+  // cualquier visitante. La comprobación de ?bimba=/?key= en sí la hace
+  // el servidor (bimba-verify.php), este valor cacheado solo sirve para
+  // que la propia admin pueda ver/copiar el enlace desde Ajustes.
+  if (window.fb_loadUrlToken) {
+    window.fb_loadUrlToken().then(t => {
+      if (t) {
+        localStorage.setItem(URL_TOKEN_KEY, t);
+        if (typeof loadUrlTokenUI === 'function') loadUrlTokenUI();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadBimbaToken) {
+    window.fb_loadBimbaToken().then(t => {
+      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+    }).catch(() => {});
+  }
+  if (window.fb_loadStockPwd) {
+    window.fb_loadStockPwd().then(pwd => {
+      if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
+    }).catch(() => {});
+  }
+}
 
 // ── INIT ADMIN DATA ──
 loadSavedMenu();
@@ -12218,26 +17409,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     });
   }
 
-  // Carga inicial de datos críticos desde Firebase (empleados, fichajes, cats, slots)
+  // Carga inicial de datos críticos desde Firebase (cats, slots, etc.)
+  // NOTA DE SEGURIDAD: empleados y fichajes NO se cargan aquí — esta
+  // función corre para cualquier visitante. Ver _cargarDatosEmpleadosPrivados().
   function _cargarCriticosDesdeFirebase() {
-    if (window.fb_loadEmpleados) {
-      window.fb_loadEmpleados().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB31;
-          localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-          if ((_document$getElementB31 = document.getElementById('admin-empleados')) !== null && _document$getElementB31 !== void 0 && _document$getElementB31.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadFichajes) {
-      window.fb_loadFichajes().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB32;
-          localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-          if ((_document$getElementB32 = document.getElementById('admin-empleados')) !== null && _document$getElementB32 !== void 0 && _document$getElementB32.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
     if (window.fb_loadBlockedCats) {
       window.fb_loadBlockedCats().then(cats => {
         if (cats) {
@@ -12295,6 +17470,16 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (!c) return;
         localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
         Object.assign(CONFIG, c);
+        // getModifyWindowMs() (antifraude.js) lee su propia clave suelta
+        // dpf_modify_window_mins, no CONFIG.modifyWindowMins — sin esto, el
+        // tiempo para modificar pedido que se guarda desde el panel admin
+        // (Configuración de pedidos) nunca llegaba a los dispositivos de
+        // los clientes: cada uno seguía usando el valor por defecto de su
+        // propio localStorage, aunque el ajuste sí se hubiera guardado bien
+        // en Firebase.
+        if (typeof c.modifyWindowMins === 'number' && c.modifyWindowMins >= 1 && c.modifyWindowMins <= 30) {
+          localStorage.setItem('dpf_modify_window_mins', c.modifyWindowMins);
+        }
         if ((_document$getElementB37 = document.getElementById('admin-local')) !== null && _document$getElementB37 !== void 0 && _document$getElementB37.classList.contains('active')) loadAdminConfig();
       }).catch(() => {});
     }
@@ -12324,26 +17509,14 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {
@@ -12377,6 +17550,47 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     _cargarCriticosDesdeFirebase();
   } else {
     document.addEventListener('firebaseReady', _cargarCriticosDesdeFirebase);
+  }
+})();
+
+// ── AVISO DE PROBLEMA DE CONEXIÓN ────────────────────────────────────────────
+// _firebaseReady solo confirma que el SDK cargó al principio — si después
+// se cae la conexión real (wifi del local, Firebase caído, etc.), la web
+// seguía pareciendo normal pero con datos parados (turnos, config de
+// gastos, pedidos abiertos/cerrados...) sin ningún aviso. ".info/connected"
+// es la señal fiable de la conexión real en cada momento.
+(function _iniciarAvisoConexionFirebase() {
+  let _conexionPerdidaTimeout = null;
+  let _bannerConexionMostrado = false;
+  function _mostrarBannerConexion(mostrar) {
+    const banner = document.getElementById('firebase-conexion-banner');
+    if (!banner) return;
+    banner.style.display = mostrar ? 'block' : 'none';
+    _bannerConexionMostrado = mostrar;
+  }
+  function _iniciar() {
+    if (!window.fb_listenConnectionState) return;
+    window.fb_listenConnectionState(connected => {
+      if (connected) {
+        if (_conexionPerdidaTimeout) {
+          clearTimeout(_conexionPerdidaTimeout);
+          _conexionPerdidaTimeout = null;
+        }
+        if (_bannerConexionMostrado) _mostrarBannerConexion(false);
+      } else if (!_conexionPerdidaTimeout) {
+        // Margen de unos segundos antes de avisar — un corte breve al
+        // cambiar de wifi a datos móviles es normal y no debe alarmar.
+        _conexionPerdidaTimeout = setTimeout(() => {
+          _conexionPerdidaTimeout = null;
+          _mostrarBannerConexion(true);
+        }, 6000);
+      }
+    });
+  }
+  if (window._firebaseReady) {
+    _iniciar();
+  } else {
+    document.addEventListener('firebaseReady', _iniciar);
   }
 })();
 
@@ -12506,11 +17720,11 @@ async function smsVerifyCode() {
   }
 
   try {
-    const res = await fetch('/verify-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/verify-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: pendingPhone, code })
-    });
+    }, 8000);
     const data = await res.json();
     if (data.verified) {
       await _finalizarPedido();
@@ -12530,11 +17744,11 @@ async function smsResendCode() {
   if (!window._pendingOrderData) return;
   const phone = '+34' + window._pendingOrderData.phoneClean;
   try {
-    const res = await fetch('/send-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
-    });
+    }, 8000);
     const data = await res.json();
     const errEl = document.getElementById('sms-error-msg');
     if (data.success) {
@@ -12865,3 +18079,343 @@ function _mostrarAlertaTablet(data) {
 
   document.body.appendChild(overlay);
 }
+
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
+  if (!btn) return;
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
+})();
+
+// ── Recordar nombre y teléfono entre visitas ──────────────────────
+// Se guardan (antifraude.js, justo tras confirmar un pedido) sin caducar,
+// y se rellenan solos aquí en la próxima visita — el cliente puede
+// editarlos igual si ha cambiado de número o quiere pedir para otra
+// persona. Solo se prellena el campo de escritorio: el del cajón móvil
+// lo recoge él solo la primera vez que se pinta (ver _syncCartDrawer en
+// carrito-checkout.js, que cae al valor de escritorio si el suyo propio
+// está vacío).
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    const nombreGuardado = localStorage.getItem('dpf_cliente_nombre');
+    const telGuardado = localStorage.getItem('dpf_cliente_telefono');
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    if (nombreGuardado && nameEl && !nameEl.value) nameEl.value = nombreGuardado;
+    if (telGuardado && phoneEl && !phoneEl.value) {
+      phoneEl.value = telGuardado;
+      if (typeof formatPhone === 'function') formatPhone(phoneEl);
+    }
+  } catch (e) {}
+});
+
+// ── Service Worker (PWA) ──────────────────────────────────────────
+// Habilita "Añadir a pantalla de inicio" y sirve css/js/img desde caché
+// para que cargue más rápido con conexión floja. Ver sw.js para el
+// detalle de qué se cachea (nunca HTML, PHP ni Firebase).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('[SW] No se pudo registrar:', err);
+    });
+  });
+}
+
+// ── BUSCADOR del panel admin y del panel bimba ──
+// Busca en secciones (navegación estática) y en contenido real: productos
+// de la carta, ingredientes de stock, empleados, códigos de descuento y
+// premios de ruleta/rasca. Al hacer clic navega de verdad a la sección y,
+// si el resultado es contenido concreto, hace scroll + resalta la fila.
+
+let _buscadorLastAdmin = [];
+let _buscadorLastBimba = [];
+let _buscadorDiscountsCache = null;
+let _buscadorPremiosCache = null; // { ruleta: [...], rasca: [...] }
+
+function _buscadorNorm(s) {
+  // La coma decimal ("5,90") se normaliza a punto para que encuentre
+  // precios como "5.90 €", que es como los formatea el resto de la app.
+  return (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/,/g, '.');
+}
+
+function _buscadorHighlight(text, q) {
+  const t = String(text == null ? '' : text);
+  if (!q) return escapeHtml(t);
+  const i = _buscadorNorm(t).indexOf(_buscadorNorm(q));
+  if (i === -1) return escapeHtml(t);
+  return escapeHtml(t.slice(0, i)) + '<mark>' + escapeHtml(t.slice(i, i + q.length)) + '</mark>' + escapeHtml(t.slice(i + q.length));
+}
+
+function _buscadorItemMatches(item, q) {
+  if (!q) return true;
+  const nq = _buscadorNorm(q);
+  if (_buscadorNorm(item.nombre).includes(nq)) return true;
+  return (item.meta || []).some(m => _buscadorNorm(m.valor).includes(nq));
+}
+
+function _buscadorScrollFlash(id, delay) {
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('buscador-flash');
+    setTimeout(() => el.classList.remove('buscador-flash'), 1500);
+  }, delay || 300);
+}
+
+// Abre el acordeón bimba `panelId` simulando un clic en su fila `rowId`
+// (reutiliza el toggle ya existente) solo si está cerrado.
+function _buscadorAbrirBimbaAcordeon(panelId, rowId) {
+  const panel = document.getElementById(panelId);
+  const row = document.getElementById(rowId);
+  if (panel && row && panel.style.display === 'none') row.click();
+}
+
+// ── SECCIONES (navegación estática) ──────────────────────────────────────
+function _buscadorSeccionesAdmin() {
+  const tab = id => document.querySelector('.admin-tab[data-section="' + id + '"]');
+  return [
+    { icon: '🍽️', badge: 'section', tipo: 'Sección', nombre: 'Carta', ruta: 'Panel admin', meta: [], go: () => showAdminSection('productos', tab('productos')) },
+    { icon: '🏪', badge: 'section', tipo: 'Sección', nombre: 'Local', ruta: 'Panel admin', meta: [], go: () => showAdminSection('local', tab('local')) },
+    { icon: '🔴', badge: 'section', tipo: 'Sección', nombre: 'En vivo', ruta: 'Panel admin · pedidos', meta: [], go: () => showAdminSection('pedidos', tab('pedidos')) },
+    { icon: '📊', badge: 'section', tipo: 'Sección', nombre: 'Hoy', ruta: 'Panel admin · estadísticas', meta: [], go: () => showAdminSection('stats', tab('stats')) },
+    { icon: '📅', badge: 'section', tipo: 'Sección', nombre: 'Historial', ruta: 'Panel admin', meta: [], go: () => showAdminSection('historial', tab('historial')) },
+    { icon: '📦', badge: 'section', tipo: 'Sección', nombre: 'Stock', ruta: 'Panel admin', meta: [], go: () => { document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); if (typeof openStockInline === 'function') openStockInline(); } },
+    { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Fidelización', ruta: 'Panel admin', meta: [], go: () => { showAdminSection('fidelizacion', tab('fidelizacion')); if (typeof renderFidelizacionList === 'function') renderFidelizacionList(); } },
+    { icon: '🔔', badge: 'section', tipo: 'Sección', nombre: 'Alertas', ruta: 'Panel admin', meta: [], go: () => showAdminSection('alertas', tab('alertas')) },
+    { icon: '🛡️', badge: 'section', tipo: 'Sección', nombre: 'Configuración de pedidos', ruta: 'Panel admin · ⚙️ Ajustes', meta: [], go: () => showAdminSection('pedidos-config', null) },
+  ];
+}
+
+function _buscadorSeccionesBimba() {
+  const volverYAbrir = (panelId, rowId) => () => {
+    if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+    setTimeout(() => _buscadorAbrirBimbaAcordeon(panelId, rowId), 200);
+  };
+  return [
+    { icon: '🔥', badge: 'section', tipo: 'Sección', nombre: 'Promociones', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('bimba-promos-body', 'mkt-row-promos') },
+    { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Códigos de descuento', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('dc-panel', 'mkt-row-codigos') },
+    { icon: '🎡', badge: 'section', tipo: 'Sección', nombre: 'Ruleta de premios', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('ruleta-admin-panel', 'mkt-row-ruleta') },
+    { icon: '🎫', badge: 'section', tipo: 'Sección', nombre: 'Rasca y gana', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('rasca-admin-panel', 'mkt-row-rasca') },
+    {
+      icon: '👥', badge: 'section', tipo: 'Sección', nombre: 'Lista de empleados', ruta: 'bimba · Empleados', meta: [],
+      go: () => { if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados(); setTimeout(() => _buscadorAbrirBimbaAcordeon('bimba-emp-body', 'emp-row-lista'), 100); }
+    },
+    {
+      icon: '📋', badge: 'section', tipo: 'Sección', nombre: 'Historial de fichajes', ruta: 'bimba · Empleados', meta: [],
+      go: () => { if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados(); setTimeout(() => _buscadorAbrirBimbaAcordeon('bimba-hist-body', 'emp-row-hist'), 100); }
+    },
+  ];
+}
+
+// ── CONTENIDO REAL ────────────────────────────────────────────────────────
+function _buscadorContenidoAdmin() {
+  const items = [];
+  if (typeof MENU !== 'undefined') {
+    MENU.forEach(p => {
+      items.push({
+        icon: '🍽️', badge: 'prod', tipo: 'Producto', nombre: p.name,
+        ruta: 'Carta · ' + p.cat + ' · ' + p.price.toFixed(2) + ' €',
+        meta: [{ etiqueta: 'categoría', valor: p.cat }, { etiqueta: 'precio', valor: p.price.toFixed(2) }],
+        go: () => {
+          showAdminSection('productos', document.querySelector('.admin-tab[data-section="productos"]'));
+          _buscadorScrollFlash('arow-' + p.id, 150);
+        }
+      });
+    });
+  }
+  if (typeof pp2AllItems === 'function') {
+    try {
+      pp2AllItems().forEach(ing => {
+        items.push({
+          icon: '📦', badge: 'prod', tipo: 'Ingrediente', nombre: ing.nombre,
+          ruta: 'Pedidos proveedores' + (ing.cat ? ' · ' + ing.cat : ''),
+          meta: [{ etiqueta: 'grupo', valor: ing.cat || '' }],
+          go: () => {
+            if (typeof openPedidosProvOverlay === 'function') openPedidosProvOverlay();
+            _pp2SearchQuery = ing.nombre;
+            const sb = document.getElementById('pp2-search');
+            if (sb) sb.value = ing.nombre;
+            setTimeout(() => {
+              if (typeof pp2Render === 'function') pp2Render();
+              _buscadorScrollFlash('pp2-row-' + ing.id, 80);
+            }, 450);
+          }
+        });
+      });
+    } catch (e) {}
+  }
+  return items;
+}
+
+function _buscadorContenidoBimba() {
+  const items = [];
+  if (typeof empLoadAll === 'function') {
+    try {
+      empLoadAll().forEach(e => {
+        items.push({
+          icon: '👤', badge: 'emp', tipo: 'Empleado', nombre: e.nombre,
+          ruta: 'bimba · Empleados' + (e.deBaja ? ' · de baja' : ''),
+          meta: [{ etiqueta: 'DNI', valor: e.dni || '' }, { etiqueta: 'tel', valor: e.tel || '' }],
+          go: () => {
+            if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados();
+            setTimeout(() => {
+              _buscadorAbrirBimbaAcordeon('bimba-emp-body', 'emp-row-lista');
+              _buscadorScrollFlash('emp-row-' + e.id, 200);
+            }, 100);
+          }
+        });
+      });
+    } catch (e) {}
+  }
+  // Solo códigos creados a mano — los RAS-/RUL- de premios no se listan
+  // aquí tampoco (mismo criterio que dcCargar, ver admin-turnos-descuentos.js)
+  if (_buscadorDiscountsCache) {
+    Object.keys(_buscadorDiscountsCache).filter(code => !_buscadorDiscountsCache[code].origen).forEach(code => {
+      const d = _buscadorDiscountsCache[code];
+      items.push({
+        icon: '🏷️', badge: 'code', tipo: 'Código', nombre: code,
+        ruta: 'bimba · Códigos · ' + d.pct + '% · ' + (d.uses || 0) + '/' + d.maxUses + ' usos',
+        meta: [],
+        go: () => {
+          if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+          setTimeout(() => {
+            _buscadorAbrirBimbaAcordeon('dc-panel', 'mkt-row-codigos');
+            _buscadorScrollFlash('dc-row-' + code, 200);
+          }, 300);
+        }
+      });
+    });
+  }
+  if (_buscadorPremiosCache) {
+    (_buscadorPremiosCache.ruleta || []).filter(p => p.nombre).forEach(p => {
+      items.push({
+        icon: '🎡', badge: 'premio', tipo: 'Premio', nombre: p.nombre, ruta: 'bimba · Ruleta de premios', meta: [],
+        go: () => {
+          if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+          setTimeout(() => {
+            _buscadorAbrirBimbaAcordeon('ruleta-admin-panel', 'mkt-row-ruleta');
+            _buscadorScrollFlash('premio-row-' + p.id, 350);
+          }, 300);
+        }
+      });
+    });
+    (_buscadorPremiosCache.rasca || []).filter(p => p.nombre).forEach(p => {
+      items.push({
+        icon: '🎫', badge: 'premio', tipo: 'Premio', nombre: p.nombre, ruta: 'bimba · Rasca y gana', meta: [],
+        go: () => {
+          if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
+          setTimeout(() => {
+            _buscadorAbrirBimbaAcordeon('rasca-admin-panel', 'mkt-row-rasca');
+            _buscadorScrollFlash('premio-row-' + p.id, 350);
+          }, 300);
+        }
+      });
+    });
+  }
+  return items;
+}
+
+// ── RENDER + WIRING ────────────────────────────────────────────────────────
+function _buscadorRenderRow(item, q) {
+  let nombreHtml, rutaHtml;
+  if (!q || _buscadorNorm(item.nombre).includes(_buscadorNorm(q))) {
+    nombreHtml = _buscadorHighlight(item.nombre, q);
+    rutaHtml = escapeHtml(item.ruta);
+  } else {
+    const hit = (item.meta || []).find(m => _buscadorNorm(m.valor).includes(_buscadorNorm(q)));
+    nombreHtml = escapeHtml(item.nombre);
+    rutaHtml = escapeHtml(item.ruta) + (hit ? ' · coincide en ' + escapeHtml(hit.etiqueta) + ': ' + _buscadorHighlight(hit.valor, q) : '');
+  }
+  return '<button type="button" class="buscador-row" data-idx="' + item._idx + '">'
+    + '<span class="buscador-row-icon">' + item.icon + '</span>'
+    + '<span class="buscador-row-text">'
+    + '<span class="buscador-row-top">'
+    + '<span class="buscador-row-name">' + nombreHtml + '</span>'
+    + '<span class="buscador-badge buscador-badge--' + item.badge + '">' + escapeHtml(item.tipo) + '</span>'
+    + '</span>'
+    + '<span class="buscador-row-path">' + rutaHtml + '</span>'
+    + '</span>'
+    + '</button>';
+}
+
+function _buscadorRenderizar(inputEl, resultsEl, seccionesFn, contenidoFn, tipoPanel) {
+  const q = inputEl.value.trim();
+  const items = q ? seccionesFn().concat(contenidoFn()) : seccionesFn();
+  const found = (q ? items.filter(it => _buscadorItemMatches(it, q)) : items).slice(0, 24);
+  if (tipoPanel === 'admin') _buscadorLastAdmin = found; else _buscadorLastBimba = found;
+  resultsEl.innerHTML = found.length
+    ? found.map((it, i) => _buscadorRenderRow(Object.assign({}, it, { _idx: i }), q)).join('')
+    : '<div class="buscador-empty">Sin resultados' + (q ? ' para "' + escapeHtml(q) + '"' : '') + '</div>';
+  resultsEl.classList.add('open');
+}
+
+function _buscadorWireResultsClick(resultsEl, tipoPanel, inputEl) {
+  resultsEl.addEventListener('click', e => {
+    const row = e.target.closest('.buscador-row');
+    if (!row) return;
+    const idx = parseInt(row.dataset.idx, 10);
+    const item = (tipoPanel === 'admin' ? _buscadorLastAdmin : _buscadorLastBimba)[idx];
+    if (!item) return;
+    resultsEl.classList.remove('open');
+    inputEl.blur();
+    try { item.go(); } catch (err) { console.error('[buscador] error al navegar:', err); }
+  });
+}
+
+function _buscadorRefreshBimbaCache(inputEl, resultsEl) {
+  const rerenderSiHayTexto = () => { if (inputEl.value.trim()) _buscadorRenderizar(inputEl, resultsEl, _buscadorSeccionesBimba, _buscadorContenidoBimba, 'bimba'); };
+  if (window.fb_loadDiscounts) {
+    window.fb_loadDiscounts().then(d => { _buscadorDiscountsCache = d || {}; rerenderSiHayTexto(); }).catch(() => {});
+  }
+  if (window.fb_loadRuletaConfig) {
+    window.fb_loadRuletaConfig().then(c => {
+      _buscadorPremiosCache = _buscadorPremiosCache || {};
+      _buscadorPremiosCache.ruleta = (c && c.premios) || [];
+      rerenderSiHayTexto();
+    }).catch(() => {});
+  }
+  if (window.fb_loadRascaConfig) {
+    window.fb_loadRascaConfig().then(c => {
+      _buscadorPremiosCache = _buscadorPremiosCache || {};
+      _buscadorPremiosCache.rasca = (c && c.premios) || [];
+      rerenderSiHayTexto();
+    }).catch(() => {});
+  }
+}
+
+function _buscadorInit() {
+  const ai = document.getElementById('buscador-admin-input');
+  const ar = document.getElementById('buscador-admin-results');
+  if (ai && ar) {
+    const renderAdmin = () => _buscadorRenderizar(ai, ar, _buscadorSeccionesAdmin, _buscadorContenidoAdmin, 'admin');
+    ai.addEventListener('input', renderAdmin);
+    ai.addEventListener('focus', renderAdmin);
+    ai.addEventListener('keydown', e => { if (e.key === 'Escape') { ar.classList.remove('open'); ai.blur(); } });
+    document.addEventListener('click', e => { if (!ai.contains(e.target) && !ar.contains(e.target)) ar.classList.remove('open'); });
+    _buscadorWireResultsClick(ar, 'admin', ai);
+  }
+  const bi = document.getElementById('buscador-bimba-input');
+  const br = document.getElementById('buscador-bimba-results');
+  if (bi && br) {
+    const renderBimba = () => _buscadorRenderizar(bi, br, _buscadorSeccionesBimba, _buscadorContenidoBimba, 'bimba');
+    bi.addEventListener('input', renderBimba);
+    bi.addEventListener('focus', () => { _buscadorRefreshBimbaCache(bi, br); renderBimba(); });
+    bi.addEventListener('keydown', e => { if (e.key === 'Escape') { br.classList.remove('open'); bi.blur(); } });
+    document.addEventListener('click', e => { if (!bi.contains(e.target) && !br.contains(e.target)) br.classList.remove('open'); });
+    _buscadorWireResultsClick(br, 'bimba', bi);
+  }
+}
+document.addEventListener('adminShellLoaded', _buscadorInit);

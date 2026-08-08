@@ -1,3 +1,65 @@
+// ── DATOS PRIVADOS DE EMPLEADOS ──────────────────────────────────────
+// Empleados y fichajes (PIN, DNI, teléfono, firmas) son datos sensibles.
+// Solo se cargan tras un login real (Firebase Auth admin o PIN bimba
+// verificado en el servidor) — nunca al abrir la página como visitante.
+// Llamar desde checkAdminPwd() (slots-alertas.js) y secureLockConfirm()
+// (admin-accesos.js) justo después de confirmar el acceso.
+function _cargarDatosEmpleadosPrivados() {
+  if (window.fb_loadEmpleados) {
+    window.fb_loadEmpleados().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_empleados', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadFichajes) {
+    window.fb_loadFichajes().then(arr => {
+      if (arr && arr.length) {
+        localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
+        if (typeof empRenderAdmin === 'function') empRenderAdmin();
+        if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
+      }
+    }).catch(() => {});
+  }
+  // El badge de 🔔 Alertas necesita datos frescos del log nada más
+  // entrar al panel, sin esperar a que se abra esa pestaña en concreto.
+  if (window.fb_loadActivityLog) {
+    window.fb_loadActivityLog().then(log => {
+      if (log && log.length) localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    }).catch(() => {
+      if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  } else if (typeof updateAlertBadge === 'function') {
+    updateAlertBadge();
+  }
+  // Tokens de acceso (?bimba=/?key=) y clave de stock: solo se cargan al
+  // panel de ajustes DESPUÉS de un login real, para no exponerlos a
+  // cualquier visitante. La comprobación de ?bimba=/?key= en sí la hace
+  // el servidor (bimba-verify.php), este valor cacheado solo sirve para
+  // que la propia admin pueda ver/copiar el enlace desde Ajustes.
+  if (window.fb_loadUrlToken) {
+    window.fb_loadUrlToken().then(t => {
+      if (t) {
+        localStorage.setItem(URL_TOKEN_KEY, t);
+        if (typeof loadUrlTokenUI === 'function') loadUrlTokenUI();
+      }
+    }).catch(() => {});
+  }
+  if (window.fb_loadBimbaToken) {
+    window.fb_loadBimbaToken().then(t => {
+      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+    }).catch(() => {});
+  }
+  if (window.fb_loadStockPwd) {
+    window.fb_loadStockPwd().then(pwd => {
+      if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
+    }).catch(() => {});
+  }
+}
+
 // ── INIT ADMIN DATA ──
 loadSavedMenu();
 initTabs(); // re-renderizar pestañas con el menú guardado
@@ -107,26 +169,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     });
   }
 
-  // Carga inicial de datos críticos desde Firebase (empleados, fichajes, cats, slots)
+  // Carga inicial de datos críticos desde Firebase (cats, slots, etc.)
+  // NOTA DE SEGURIDAD: empleados y fichajes NO se cargan aquí — esta
+  // función corre para cualquier visitante. Ver _cargarDatosEmpleadosPrivados().
   function _cargarCriticosDesdeFirebase() {
-    if (window.fb_loadEmpleados) {
-      window.fb_loadEmpleados().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB31;
-          localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-          if ((_document$getElementB31 = document.getElementById('admin-empleados')) !== null && _document$getElementB31 !== void 0 && _document$getElementB31.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadFichajes) {
-      window.fb_loadFichajes().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB32;
-          localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-          if ((_document$getElementB32 = document.getElementById('admin-empleados')) !== null && _document$getElementB32 !== void 0 && _document$getElementB32.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
     if (window.fb_loadBlockedCats) {
       window.fb_loadBlockedCats().then(cats => {
         if (cats) {
@@ -184,6 +230,16 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (!c) return;
         localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
         Object.assign(CONFIG, c);
+        // getModifyWindowMs() (antifraude.js) lee su propia clave suelta
+        // dpf_modify_window_mins, no CONFIG.modifyWindowMins — sin esto, el
+        // tiempo para modificar pedido que se guarda desde el panel admin
+        // (Configuración de pedidos) nunca llegaba a los dispositivos de
+        // los clientes: cada uno seguía usando el valor por defecto de su
+        // propio localStorage, aunque el ajuste sí se hubiera guardado bien
+        // en Firebase.
+        if (typeof c.modifyWindowMins === 'number' && c.modifyWindowMins >= 1 && c.modifyWindowMins <= 30) {
+          localStorage.setItem('dpf_modify_window_mins', c.modifyWindowMins);
+        }
         if ((_document$getElementB37 = document.getElementById('admin-local')) !== null && _document$getElementB37 !== void 0 && _document$getElementB37.classList.contains('active')) loadAdminConfig();
       }).catch(() => {});
     }
@@ -213,26 +269,14 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {
@@ -266,6 +310,47 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     _cargarCriticosDesdeFirebase();
   } else {
     document.addEventListener('firebaseReady', _cargarCriticosDesdeFirebase);
+  }
+})();
+
+// ── AVISO DE PROBLEMA DE CONEXIÓN ────────────────────────────────────────────
+// _firebaseReady solo confirma que el SDK cargó al principio — si después
+// se cae la conexión real (wifi del local, Firebase caído, etc.), la web
+// seguía pareciendo normal pero con datos parados (turnos, config de
+// gastos, pedidos abiertos/cerrados...) sin ningún aviso. ".info/connected"
+// es la señal fiable de la conexión real en cada momento.
+(function _iniciarAvisoConexionFirebase() {
+  let _conexionPerdidaTimeout = null;
+  let _bannerConexionMostrado = false;
+  function _mostrarBannerConexion(mostrar) {
+    const banner = document.getElementById('firebase-conexion-banner');
+    if (!banner) return;
+    banner.style.display = mostrar ? 'block' : 'none';
+    _bannerConexionMostrado = mostrar;
+  }
+  function _iniciar() {
+    if (!window.fb_listenConnectionState) return;
+    window.fb_listenConnectionState(connected => {
+      if (connected) {
+        if (_conexionPerdidaTimeout) {
+          clearTimeout(_conexionPerdidaTimeout);
+          _conexionPerdidaTimeout = null;
+        }
+        if (_bannerConexionMostrado) _mostrarBannerConexion(false);
+      } else if (!_conexionPerdidaTimeout) {
+        // Margen de unos segundos antes de avisar — un corte breve al
+        // cambiar de wifi a datos móviles es normal y no debe alarmar.
+        _conexionPerdidaTimeout = setTimeout(() => {
+          _conexionPerdidaTimeout = null;
+          _mostrarBannerConexion(true);
+        }, 6000);
+      }
+    });
+  }
+  if (window._firebaseReady) {
+    _iniciar();
+  } else {
+    document.addEventListener('firebaseReady', _iniciar);
   }
 })();
 
@@ -395,11 +480,11 @@ async function smsVerifyCode() {
   }
 
   try {
-    const res = await fetch('/verify-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/verify-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: pendingPhone, code })
-    });
+    }, 8000);
     const data = await res.json();
     if (data.verified) {
       await _finalizarPedido();
@@ -419,11 +504,11 @@ async function smsResendCode() {
   if (!window._pendingOrderData) return;
   const phone = '+34' + window._pendingOrderData.phoneClean;
   try {
-    const res = await fetch('/send-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
-    });
+    }, 8000);
     const data = await res.json();
     const errEl = document.getElementById('sms-error-msg');
     if (data.success) {
@@ -753,4 +838,57 @@ function _mostrarAlertaTablet(data) {
     '</div>';
 
   document.body.appendChild(overlay);
+}
+
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
+  if (!btn) return;
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
+  }
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
+})();
+
+// ── Recordar nombre y teléfono entre visitas ──────────────────────
+// Se guardan (antifraude.js, justo tras confirmar un pedido) sin caducar,
+// y se rellenan solos aquí en la próxima visita — el cliente puede
+// editarlos igual si ha cambiado de número o quiere pedir para otra
+// persona. Solo se prellena el campo de escritorio: el del cajón móvil
+// lo recoge él solo la primera vez que se pinta (ver _syncCartDrawer en
+// carrito-checkout.js, que cae al valor de escritorio si el suyo propio
+// está vacío).
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    const nombreGuardado = localStorage.getItem('dpf_cliente_nombre');
+    const telGuardado = localStorage.getItem('dpf_cliente_telefono');
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    if (nombreGuardado && nameEl && !nameEl.value) nameEl.value = nombreGuardado;
+    if (telGuardado && phoneEl && !phoneEl.value) {
+      phoneEl.value = telGuardado;
+      if (typeof formatPhone === 'function') formatPhone(phoneEl);
+    }
+  } catch (e) {}
+});
+
+// ── Service Worker (PWA) ──────────────────────────────────────────
+// Habilita "Añadir a pantalla de inicio" y sirve css/js/img desde caché
+// para que cargue más rápido con conexión floja. Ver sw.js para el
+// detalle de qué se cachea (nunca HTML, PHP ni Firebase).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('[SW] No se pudo registrar:', err);
+    });
+  });
 }
