@@ -431,22 +431,29 @@ async function checkAdminPwd() {
     _guardarIntentosFallidosAdmin(0);
     const trustedChecked = (_document$getElementB6 = document.getElementById('trusted-device-check')) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.checked;
     const trustedName = ((_document$getElementB7 = document.getElementById('trusted-device-name')) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value.trim()) || 'Sin nombre';
-    if (trustedChecked) await setTrustedDevice(true, trustedName);
-    document.getElementById('admin-login').style.display = 'none';
-    document.getElementById('admin-panel').style.display = 'block';
-    _cargarDatosEmpleadosPrivados();
-    renderAdminProducts();
-    loadAdminConfig();
-    loadAdminHorario();
-    loadOpenStatus();
-    loadOrdersStatus();
-    showTrustedBannerIfNeeded();
-    if (localStorage.getItem(AUDIO_PREF_KEY) === '1') unlockAudioContext();
-    const audioBanner = document.getElementById('audio-unlock-banner');
-    if (audioBanner) audioBanner.style.display = _audioCtxUnlocked ? 'none' : 'block';
-    setTimeout(_updateAudioBannerState, 200);
-    logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
-    if (typeof _avisarSiDispositivoAdminNuevo === 'function') _avisarSiDispositivoAdminNuevo(email);
+
+    // Verificaci\u00f3n en dos pasos (2FA): solo se pide si hay un tel\u00e9fono
+    // configurado Y este dispositivo nunca ha entrado antes con \u00e9xito \u2014 los
+    // dispositivos ya conocidos no la vuelven a pedir. Si algo falla al
+    // comprobarlo (Firebase ca\u00eddo, etc.) se deja pasar sin 2FA: mejor no
+    // bloquear un acceso leg\u00edtimo por un fallo de red que ser estricto aqu\u00ed.
+    let dispositivoConocido = true;
+    try {
+      if (typeof firebase !== 'undefined' && firebase.database && typeof getDeviceId === 'function') {
+        const snap = await firebase.database().ref('config/dispositivosAdminConocidos/' + getDeviceId()).once('value');
+        dispositivoConocido = snap.exists();
+      }
+    } catch (e) {}
+    let telefono2FA = null;
+    if (!dispositivoConocido && window.fb_loadAdmin2FAPhone) {
+      try { telefono2FA = await window.fb_loadAdmin2FAPhone(); } catch (e) {}
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+    if (telefono2FA) {
+      _abrirModal2FA(telefono2FA, () => _concederAccesoAdminPanel(email, trustedChecked, trustedName));
+      return;
+    }
+    await _concederAccesoAdminPanel(email, trustedChecked, trustedName);
   } else {
     _adminFailedAttempts++;
     _guardarIntentosFallidosAdmin(_adminFailedAttempts);
@@ -464,6 +471,118 @@ async function checkAdminPwd() {
     btn.disabled = false;
     btn.textContent = 'Entrar';
   }
+}
+
+// Lo que antes hacía directamente checkAdminPwd() al confirmar la
+// contraseña — ahora vive aparte porque también hay que llamarlo cuando el
+// acceso pasa primero por la verificación en dos pasos (2FA).
+async function _concederAccesoAdminPanel(email, trustedChecked, trustedName) {
+  if (trustedChecked) await setTrustedDevice(true, trustedName);
+  document.getElementById('admin-login').style.display = 'none';
+  const _2faScreen = document.getElementById('admin-2fa');
+  if (_2faScreen) _2faScreen.style.display = 'none';
+  document.getElementById('admin-panel').style.display = 'block';
+  _cargarDatosEmpleadosPrivados();
+  renderAdminProducts();
+  loadAdminConfig();
+  loadAdminHorario();
+  loadOpenStatus();
+  loadOrdersStatus();
+  showTrustedBannerIfNeeded();
+  if (localStorage.getItem(AUDIO_PREF_KEY) === '1') unlockAudioContext();
+  const audioBanner = document.getElementById('audio-unlock-banner');
+  if (audioBanner) audioBanner.style.display = _audioCtxUnlocked ? 'none' : 'block';
+  setTimeout(_updateAudioBannerState, 200);
+  logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " — dispositivo registrado como \"" + trustedName + "\"" : ''));
+  if (typeof _avisarSiDispositivoAdminNuevo === 'function') _avisarSiDispositivoAdminNuevo(email);
+}
+
+// ── VERIFICACIÓN EN DOS PASOS (2FA) — dispositivo nuevo ──────────────────
+// Reutiliza send-code.php/verify-code.php (el mismo envío de SMS por
+// Twilio que ya usa la verificación del teléfono del cliente al pedir) —
+// son genéricos, no atados a ningún flujo de cliente, así que sirven igual
+// para un teléfono de admin.
+let _2faTelefono = null;
+let _2faOnSuccess = null;
+function _abrirModal2FA(telefono, onSuccess) {
+  _2faTelefono = telefono;
+  _2faOnSuccess = onSuccess;
+  document.getElementById('admin-login').style.display = 'none';
+  const screen = document.getElementById('admin-2fa');
+  if (!screen) { // por si el HTML es de una versión antigua sin este bloque
+    if (typeof _2faOnSuccess === 'function') _2faOnSuccess();
+    return;
+  }
+  screen.style.display = 'block';
+  const texto = document.getElementById('admin-2fa-texto');
+  const tel9 = String(telefono).replace(/\D/g, '').slice(-9);
+  if (texto) texto.textContent = 'Te hemos mandado un código por SMS al ' + tel9.slice(0, 3) + ' ' + tel9.slice(3, 6) + ' ' + tel9.slice(6) + '.';
+  const codeInput = document.getElementById('admin-2fa-code');
+  if (codeInput) codeInput.value = '';
+  const err = document.getElementById('admin-2fa-error');
+  if (err) err.textContent = '';
+  _enviarSms2FA(telefono);
+}
+async function _enviarSms2FA(telefono) {
+  const err = document.getElementById('admin-2fa-error');
+  try {
+    const res = await fetch('send-code.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: telefono })
+    });
+    const data = await res.json();
+    if (data.error && err) err.textContent = '⚠️ ' + data.error;
+  } catch (e) {
+    if (err) err.textContent = '⚠️ No se pudo enviar el SMS. Comprueba tu conexión y pulsa "Reenviar código".';
+  }
+}
+function reenviarCodigo2FA() {
+  if (!_2faTelefono) return;
+  const err = document.getElementById('admin-2fa-error');
+  if (err) err.textContent = 'Reenviando…';
+  _enviarSms2FA(_2faTelefono);
+}
+async function confirmarCodigo2FA() {
+  const codeInput = document.getElementById('admin-2fa-code');
+  const err = document.getElementById('admin-2fa-error');
+  const code = (codeInput?.value || '').trim();
+  if (!code) { if (err) err.textContent = 'Introduce el código que te ha llegado por SMS.'; return; }
+  const btn = document.querySelector('#admin-2fa .admin-login-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Comprobando…'; }
+  try {
+    const res = await fetch('verify-code.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: _2faTelefono, code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const onSuccess = _2faOnSuccess;
+      _2faTelefono = null;
+      _2faOnSuccess = null;
+      if (typeof onSuccess === 'function') await onSuccess();
+    } else {
+      if (err) err.textContent = '❌ ' + (data.error || 'Código incorrecto');
+    }
+  } catch (e) {
+    if (err) err.textContent = '⚠️ Error de conexión, inténtalo de nuevo.';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Verificar'; }
+}
+// Cancela el intento de acceso — el email/contraseña ya se habían
+// verificado bien (por eso se llegó a pedir el código), así que también
+// hay que cerrar esa sesión de Firebase Auth ya iniciada, no solo esconder
+// la pantalla del código.
+async function cancelar2FA() {
+  _2faTelefono = null;
+  _2faOnSuccess = null;
+  try { if (window.fb_adminLogout) await window.fb_adminLogout(); } catch (e) {}
+  const screen = document.getElementById('admin-2fa');
+  if (screen) screen.style.display = 'none';
+  document.getElementById('admin-login').style.display = 'block';
+  const pwdInput = document.getElementById('admin-pwd-input');
+  if (pwdInput) pwdInput.value = '';
 }
 
 // showAdminSection is defined later with full support

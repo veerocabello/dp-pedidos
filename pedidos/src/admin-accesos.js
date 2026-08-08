@@ -26,6 +26,20 @@ async function imprimirTodosLosActivos() {
   }
 }
 
+// Para cerrar el día de golpe sin tener que ir pedido a pedido pulsando
+// "Entregado" uno a uno.
+async function marcarTodosEntregados() {
+  const activos = (window._activosCache || []).slice();
+  if (!activos.length) { alert('No hay pedidos activos para marcar.'); return; }
+  if (!confirm('¿Marcar los ' + activos.length + ' pedidos activos de ahora mismo como entregados?')) return;
+  if (typeof stopAlertLoop === 'function') stopAlertLoop();
+  await Promise.all(activos.map(o => setOrderStatus(o.num, 'entregado')));
+  activos.forEach(o => { if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(o.num); });
+  if (typeof loadLiveOrders === 'function') loadLiveOrders();
+  if (typeof refreshKitchenGrid === 'function') refreshKitchenGrid();
+  if (typeof logActivity === 'function') logActivity('✅ ' + activos.length + ' pedidos marcados como entregados a la vez');
+}
+
 function _markAsImpreso(orderNum) {
   _printedOrders.add(orderNum);
   // Parar sonido al imprimir — equivale a haber visto el pedido. Idempotente:
@@ -54,6 +68,32 @@ function saveTrustedExpiry() {
   localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
   logActivity('🔐 Expiración de sesión configurada: ' + days + ' días');
   alert('✅ Guardado. Se aplicará en el próximo inicio de sesión.');
+}
+
+// ── TELÉFONO PARA VERIFICACIÓN EN DOS PASOS (2FA) ─────────────────────────────
+async function saveAdmin2FAPhone() {
+  const el = document.getElementById('admin-2fa-phone');
+  const raw = (el?.value || '').replace(/\D/g, '');
+  if (raw && !/^[6789]\d{8}$/.test(raw)) {
+    alert('Introduce un teléfono español válido de 9 dígitos (o déjalo vacío para desactivar el 2FA).');
+    return;
+  }
+  if (!window.fb_saveAdmin2FAPhone) return;
+  try {
+    await window.fb_saveAdmin2FAPhone(raw || null);
+    logActivity(raw ? '📱 Teléfono de verificación en dos pasos configurado' : '📱 Verificación en dos pasos desactivada');
+    showToast('admin-2fa-toast');
+  } catch (e) {
+    alert('No se pudo guardar: ' + e.message);
+  }
+}
+async function loadAdmin2FAPhoneUI() {
+  const el = document.getElementById('admin-2fa-phone');
+  if (!el || !window.fb_loadAdmin2FAPhone) return;
+  try {
+    const tel = await window.fb_loadAdmin2FAPhone();
+    el.value = tel || '';
+  } catch (e) {}
 }
 
 
@@ -183,15 +223,42 @@ function getTrustedDeviceName() {
 // otros avisos que ya se revisan cada día — para enterarse sin tener que ir
 // a buscarlo. Los accesos siguientes desde el mismo dispositivo no repiten
 // el aviso.
+// Un dispositivo que lleva mucho tiempo sin volver a entrar se "olvida"
+// solo — si alguien vuelve a usar ese mismo navegador/tablet (o alguien
+// con acceso físico a él, si se perdió o se dejó de usar sin borrar los
+// datos) tras tanto tiempo, se trata como dispositivo nuevo otra vez y
+// vuelve a avisar, en vez de quedar "conocido" para siempre desde el
+// primer día que se usó.
+const DISPOSITIVOS_ADMIN_CADUCIDAD_DIAS = 90;
 async function _avisarSiDispositivoAdminNuevo(email) {
   try {
     if (typeof firebase === 'undefined' || !firebase.database) return;
-    const deviceId = getDeviceId();
-    const ref = firebase.database().ref('config/dispositivosAdminConocidos/' + deviceId);
-    const snap = await ref.once('value');
-    if (snap.exists()) return; // ya se había visto este dispositivo antes
-    await ref.set({
+    const ref = firebase.database().ref('config/dispositivosAdminConocidos');
+    try {
+      const snapTodos = await ref.once('value');
+      if (snapTodos.exists()) {
+        const limite = Date.now() - DISPOSITIVOS_ADMIN_CADUCIDAD_DIAS * 24 * 60 * 60 * 1000;
+        const todos = snapTodos.val();
+        const updates = {};
+        Object.keys(todos).forEach(id => {
+          const d = todos[id];
+          const ultima = (d && (d.ultimaVez || d.primeraVez)) || 0;
+          if (ultima < limite) updates[id] = null;
+        });
+        if (Object.keys(updates).length) await ref.update(updates);
+      }
+    } catch (e) { /* si falla la limpieza, se sigue igual con el resto */ }
+
+    const miRef = ref.child(getDeviceId());
+    const snap = await miRef.once('value');
+    if (snap.exists()) {
+      // Ya conocido: solo refrescar cuándo se vio por última vez, sin volver a avisar.
+      await miRef.update({ ultimaVez: Date.now() });
+      return;
+    }
+    await miRef.set({
       primeraVez: Date.now(),
+      ultimaVez: Date.now(),
       fecha: new Date().toLocaleString('es-ES'),
       email: email || '',
       dispositivo: navigator.userAgent.slice(0, 120)

@@ -307,6 +307,9 @@ function _initFirebase() {
   // ADMIN PWD
   window.fb_saveAdminPwd = async function(h) { await jset("config/adminPwd",h); };
   window.fb_loadAdminPwd = async function() { var sn=await jget("config/adminPwd"); return sn.exists()?sn.val():null; };
+  // TELÉFONO PARA VERIFICACIÓN EN DOS PASOS (2FA) DEL PANEL ADMIN
+  window.fb_saveAdmin2FAPhone = async function(tel) { await jset("config/admin2FAPhone",tel); };
+  window.fb_loadAdmin2FAPhone = async function() { var sn=await jget("config/admin2FAPhone"); return sn.exists()?sn.val():null; };
   // EMPRESA
   window.fb_saveEmpresa = async function(e,c) { await jset("config/empresa",jstr({empresa:e,cif:c})); };
   window.fb_loadEmpresa = async function() { var sn=await jget("config/empresa"); return sn.exists()?jparse(sn.val()):null; };

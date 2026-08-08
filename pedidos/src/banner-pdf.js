@@ -806,6 +806,7 @@ function showAdminSection(id, btn) {
   if (id === 'accesos') {
     renderAccesosLog();
     renderActivityLog();
+    if (typeof loadAdmin2FAPhoneUI === 'function') loadAdmin2FAPhoneUI();
   }
   if (id === 'empleados') {
     setTimeout(empRenderAdmin, 50);

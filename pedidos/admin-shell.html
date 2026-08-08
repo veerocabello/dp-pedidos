@@ -104,6 +104,23 @@
       <div class="admin-error" id="admin-error"></div>
     </div>
 
+    <!-- VERIFICACIÓN EN DOS PASOS (2FA) — dispositivo nuevo -->
+    <div id="admin-2fa" style="display:none">
+      <h2 style="justify-content:center;background:var(--brown);color:var(--cream);border-radius:12px;padding:16px 20px;width:100%;box-sizing:border-box;margin:0 0 0 0;font-family:'Anton',sans-serif;font-size:20px;font-weight:400;letter-spacing:0.04em;text-transform:uppercase">📱 Verificación en dos pasos</h2>
+      <p id="admin-2fa-texto" style="margin-top:18px;margin-bottom:12px">Te hemos mandado un código por SMS.</p>
+      <div style="margin-bottom:8px">
+        <input type="text" id="admin-2fa-code" placeholder="Código de 6 dígitos" maxlength="6" inputmode="numeric"
+          style="width:100%;padding:10px 14px;border:1.5px solid var(--warm);border-radius:8px;font-size:16px;letter-spacing:0.15em;text-align:center;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none;box-sizing:border-box"
+          onkeydown="if(event.key==='Enter')confirmarCodigo2FA()">
+      </div>
+      <br><button class="admin-login-btn" onclick="confirmarCodigo2FA()">Verificar</button>
+      <div class="admin-error" id="admin-2fa-error"></div>
+      <div style="margin-top:12px;display:flex;justify-content:center;gap:16px;font-size:13px">
+        <span onclick="reenviarCodigo2FA()" style="cursor:pointer;color:var(--brown);text-decoration:underline">Reenviar código</span>
+        <span onclick="cancelar2FA()" style="cursor:pointer;color:var(--muted);text-decoration:underline">Cancelar</span>
+      </div>
+    </div>
+
     <!-- PANEL -->
     <div id="admin-panel" style="display:none">
       <h2 style="display:flex;align-items:center;justify-content:space-between;font-family:'Anton',sans-serif;font-size:20px;font-weight:400;color:var(--cream);background:var(--brown);padding:16px 20px;margin:-20px -20px 20px;letter-spacing:0.04em;text-transform:uppercase;border-radius:16px 16px 0 0;">
@@ -465,6 +482,7 @@
             <button class="admin-save-btn" onclick="openKitchenMode()" style="background:var(--brown);padding:8px 18px;font-size:13px">🍳 Pantalla cocina</button>
             <button class="admin-save-btn" onclick="loadLiveOrders()" style="background:var(--brown);padding:8px 18px;font-size:13px">🔄 Actualizar</button>
             <button class="admin-save-btn" onclick="imprimirTodosLosActivos()" style="background:var(--brown);padding:8px 18px;font-size:13px">🖨️ Imprimir todos</button>
+            <button class="admin-save-btn" onclick="marcarTodosEntregados()" style="background:#27855a;padding:8px 18px;font-size:13px">✅ Marcar todo entregado</button>
           </div>
         </div>
         <!-- Slots en vivo -->
@@ -649,6 +667,16 @@
             <input type="number" id="trusted-expiry-days" min="1" max="365" value="30" style="width:60px;padding:5px 8px;border:1.5px solid var(--warm);border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center">
             <span style="font-size:12px;color:var(--muted)">días</span>
             <button onclick="saveTrustedExpiry()" style="padding:6px 14px;background:var(--brown);color:var(--white);border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+          </div>
+        </div>
+
+        <div style="background:var(--white);border-radius:10px;border:1.5px solid var(--warm);padding:12px 16px;margin-bottom:16px">
+          <div style="font-size:13px;color:var(--brown);font-weight:600;margin-bottom:4px">📱 Verificación en dos pasos (2FA)</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Si entras desde un dispositivo nuevo (uno que nunca haya accedido antes), además de la contraseña se pedirá un código por SMS a este número. Los dispositivos que ya conoces no lo piden. Déjalo vacío para desactivarlo.</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="tel" id="admin-2fa-phone" placeholder="Tu móvil (9 dígitos)" maxlength="9" style="width:150px;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none">
+            <button onclick="saveAdmin2FAPhone()" style="padding:6px 14px;background:var(--brown);color:var(--white);border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+            <div class="admin-toast" id="admin-2fa-toast" style="display:none">✅ Guardado</div>
           </div>
         </div>
 
