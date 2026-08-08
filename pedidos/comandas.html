@@ -299,6 +299,10 @@
       <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
     </div>
     <div id="caja-summary"></div>
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia de hoy</button>
+      <button class="btn-secondary" onclick="exportarVentasHoyCSV()">📊 Exportar ventas a Excel (CSV)</button>
+    </div>
     <div class="settings-help">
       "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo hoy. Cuenta el cajón físico y compáralo con esa cifra para cuadrar caja. Lo cobrado con tarjeta no debe estar en el cajón.
     </div>

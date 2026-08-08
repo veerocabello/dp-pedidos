@@ -1683,6 +1683,62 @@ function renderCaja() {
     + row('💰 Efectivo esperado en caja', esperadoCajon, true);
 }
 
+/* ── Copia de seguridad / exportación del día ──────────────────────────
+   Todo lo de esta app vive solo en localStorage: si se borra la caché del
+   navegador, se cambia de ordenador o Chrome hace limpieza, se pierde sin
+   aviso. Estos botones dejan un archivo real fuera del navegador. Ojo:
+   "Pedidos de hoy" solo guarda los últimos 100 (ver getHistorialKey más
+   arriba), así que en un día con más de 100 comandas el detalle exportado
+   no las incluye todas — los totales de "Hacer caja" sí son exactos
+   siempre, porque salen del acumulador aparte, no de este historial. ── */
+function _descargarArchivo(nombre, contenido, tipoMime) {
+  const blob = new Blob([contenido], { type: tipoMime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportarCopiaHoyJSON() {
+  const fecha = new Date().toISOString().slice(0, 10);
+  const copia = {
+    fecha,
+    generadoEn: new Date().toLocaleString('es-ES'),
+    fondoCaja: loadCajaFondo(),
+    totales: loadCajaTotales(),
+    pedidos: getHistorial(),
+  };
+  _descargarArchivo('dulce-patata-copia-' + fecha + '.json', JSON.stringify(copia, null, 2), 'application/json');
+  toast('📥 Copia de hoy descargada');
+}
+function _csvCelda(v) {
+  const s = String(v == null ? '' : v);
+  return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function exportarVentasHoyCSV() {
+  const fecha = new Date().toISOString().slice(0, 10);
+  const cols = ['Nº pedido', 'Hora', 'Nombre', 'Pagado', 'Método', 'Total (€)', 'Productos'];
+  // Punto y coma como separador (no coma): con la configuración regional
+  // española de Excel, que usa la coma como separador decimal, un CSV con
+  // comas se abre todo en una sola columna en vez de repartirse en celdas.
+  const filas = [cols.join(';')];
+  getHistorial().slice().reverse().forEach(o => {
+    const productos = (o.items || []).map(it => it.qty + 'x ' + it.name).join(' · ');
+    filas.push([
+      _csvCelda(o.num), _csvCelda(o.time), _csvCelda(o.name || ''),
+      _csvCelda(o.paid ? 'Sí' : 'No'), _csvCelda(o.paid ? (o.paymentMethod === 'tarjeta' ? 'Tarjeta' : 'Efectivo') : ''),
+      _csvCelda(fmt(o.total)), _csvCelda(productos),
+    ].join(';'));
+  });
+  // BOM al principio: sin esto, Excel interpreta el UTF-8 como Windows-1252
+  // y las tildes/eñes salen como símbolos raros.
+  _descargarArchivo('dulce-patata-ventas-' + fecha + '.csv', '﻿' + filas.join('\r\n'), 'text/csv;charset=utf-8');
+  toast('📊 CSV de ventas descargado');
+}
+
 /* ══════════════════════════════════════════════════════════════
    IMPRESIÓN — directa por USB (ESC/POS) con respaldo de diálogo
    ══════════════════════════════════════════════════════════════ */
