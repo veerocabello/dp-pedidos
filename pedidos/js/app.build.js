@@ -14681,6 +14681,8 @@ function showAdminSection(id, btn) {
     // Inicializar slot max
     var slotMaxEl = document.getElementById('slot-max-input-cfg') || document.getElementById('slot-max-input');
     if (slotMaxEl) slotMaxEl.value = getSlotMax();
+    // Inicializar tiempo para modificar pedido
+    if (typeof loadModifyWindowInput === 'function') loadModifyWindowInput();
     // Inicializar descuento estudiante/jubilado
     if (typeof getStudentDiscountEnabled === 'function') {
       var sdEn = getStudentDiscountEnabled();
@@ -17468,6 +17470,16 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (!c) return;
         localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
         Object.assign(CONFIG, c);
+        // getModifyWindowMs() (antifraude.js) lee su propia clave suelta
+        // dpf_modify_window_mins, no CONFIG.modifyWindowMins — sin esto, el
+        // tiempo para modificar pedido que se guarda desde el panel admin
+        // (Configuración de pedidos) nunca llegaba a los dispositivos de
+        // los clientes: cada uno seguía usando el valor por defecto (30s)
+        // de su propio localStorage, aunque el ajuste sí se hubiera
+        // guardado bien en Firebase.
+        if (typeof c.modifyWindowMins === 'number' && c.modifyWindowMins >= 1 && c.modifyWindowMins <= 300) {
+          localStorage.setItem('dpf_modify_window_mins', c.modifyWindowMins);
+        }
         if ((_document$getElementB37 = document.getElementById('admin-local')) !== null && _document$getElementB37 !== void 0 && _document$getElementB37.classList.contains('active')) loadAdminConfig();
       }).catch(() => {});
     }

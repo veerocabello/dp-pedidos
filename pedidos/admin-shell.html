@@ -392,12 +392,8 @@
             <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:10px;border-top:1px solid var(--warm)">
               <span style="font-size:12px;font-weight:600;color:var(--muted)">Pedidos por turno</span>
               <input type="number" id="slot-max-input" min="1" max="20" value="4" style="width:60px;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
-              <span style="font-size:12px;font-weight:600;color:var(--muted)">Modificar hasta</span>
-              <input type="number" id="modify-window-input" min="1" max="300" value="30" style="width:60px;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
-              <span style="font-size:12px;color:var(--muted)">seg</span>
-              <button class="admin-save-btn" onclick="saveSlotConfig();saveModifyWindow()">Guardar</button>
+              <button class="admin-save-btn" onclick="saveSlotConfig()">Guardar</button>
               <div id="slot-config-toast" class="admin-toast" style="display:none">✅ Guardado</div>
-              <div id="modify-window-toast" class="admin-toast" style="display:none">✅ Guardado</div>
             </div>
           </div>
         </div>
@@ -875,6 +871,18 @@
           </div>
           <button onclick="saveSlotConfig();showToast('slot-max-cfg-toast')" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
           <div class="admin-toast" id="slot-max-cfg-toast" style="display:none">✅ Guardado</div>
+        </div>
+
+        <!-- TIEMPO PARA MODIFICAR PEDIDO -->
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:16px;padding:16px;margin-bottom:12px">
+          <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">⏱️ Tiempo para modificar pedido</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Cuánto tiempo, justo después de confirmar, puede el cliente pulsar "Modificar" o "Cancelar pedido" desde su propia pantalla.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <input type="number" id="modify-window-input" min="1" max="300" value="30" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">segundos</span>
+          </div>
+          <button onclick="saveModifyWindow()" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+          <div class="admin-toast" id="modify-window-toast" style="display:none">✅ Guardado</div>
         </div>
 
         <!-- BLACKLIST -->

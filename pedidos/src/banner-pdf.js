@@ -839,6 +839,8 @@ function showAdminSection(id, btn) {
     // Inicializar slot max
     var slotMaxEl = document.getElementById('slot-max-input-cfg') || document.getElementById('slot-max-input');
     if (slotMaxEl) slotMaxEl.value = getSlotMax();
+    // Inicializar tiempo para modificar pedido
+    if (typeof loadModifyWindowInput === 'function') loadModifyWindowInput();
     // Inicializar descuento estudiante/jubilado
     if (typeof getStudentDiscountEnabled === 'function') {
       var sdEn = getStudentDiscountEnabled();
