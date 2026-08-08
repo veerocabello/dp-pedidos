@@ -738,28 +738,12 @@ function pp2LoadState() {
     return {};
   }
 }
-// Aplica mutatorFn (que modifica el objeto de estado in-place) de forma
-// atómica: actualiza localStorage al instante para que la UI responda sin
-// esperar, y por separado aplica la MISMA mutación contra el valor más
-// reciente de Firebase con una transacción — si dos dispositivos tocan
-// cantidades/proveedores a la vez, Firebase reintenta con el dato fresco
-// en vez de que uno pise el cambio del otro.
-function pp2MutateState(mutatorFn) {
-  const s = pp2LoadState();
-  mutatorFn(s);
+function pp2SaveState(s) {
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
-  if (window.fb_transactNative) {
-    window._pp2LocalWrite = Date.now();
-    window.fb_transactNative('pp2/state', function (current) {
-      const base = current || {};
-      mutatorFn(base);
-      return base;
-    }).catch(() => {});
-  } else if (window.fb_savePP2) {
+  if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
     window.fb_savePP2('state', s).catch(() => {});
   }
-  return s;
 }
 function pp2LoadCustom() {
   try {
@@ -830,20 +814,6 @@ function pp2AllProvs() {
 function pp2AllItems() {
   return pp2AllItemsOrdered();
 }
-// Compara el nombre de un ingrediente con la línea del historial de stock
-// que le corresponde — antes se usaba un .includes() sin límite de
-// palabra en ambos sentidos, así que "Sal" coincidía con cualquier línea
-// que contuviera "sal" en medio de otra palabra (p. ej. "Salsa Ketchup"),
-// mostrando el stock de un producto distinto en la tarjeta equivocada.
-function _stockNombreCoincide(a, b) {
-  if (a === b) return true;
-  const corto = a.length <= b.length ? a : b;
-  const largo = a.length <= b.length ? b : a;
-  if (!corto) return false;
-  const escapado = corto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp('(^|[^a-zà-ÿ0-9])' + escapado + '($|[^a-zà-ÿ0-9])', 'i');
-  return re.test(largo);
-}
 function pp2GetStockBadge(itemId, nombre) {
   const minimos = pp2LoadMinimos();
   const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
@@ -859,7 +829,7 @@ function pp2GetStockBadge(itemId, nombre) {
           const lineName = text.slice(0, colonIdx).trim().toLowerCase();
           const lineVal = text.slice(colonIdx + 1).trim();
           const itemName = nombre.toLowerCase();
-          if (_stockNombreCoincide(lineName, itemName)) {
+          if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
             const m = lineVal.match(/^(\d+)\s*(.*)/);
             const qty = m ? parseInt(m[1]) : null;
             const unit = m ? m[2] || '' : lineVal;
@@ -1002,7 +972,7 @@ function pp2Render() {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName = nombre.toLowerCase();
-      if (_stockNombreCoincide(lineName, itemName)) {
+      if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty = m ? parseInt(m[1]) : null;
         const unit = m ? m[2] || '' : lineVal;
@@ -1046,13 +1016,13 @@ function pp2Render() {
       const delCb = _pp2DeleteMode ? "<input type=\"checkbox\" ".concat(_pp2DeleteSel.has(item.id) ? 'checked' : '', " onchange=\"pp2DelToggle('").concat(item.id, "',this.checked)\"\n                   style=\"width:18px;height:18px;accent-color:#c0392b;flex-shrink:0;cursor:pointer;margin-right:2px\">") : '';
 
       // Badge stock con color según mínimo
-      const stockBadge = stock !== null ? "<span data-stock-badge style=\"font-size:13px;font-weight:700;color:".concat(stock.bajo ? '#c0392b' : '#27855a', ";background:").concat(stock.bajo ? '#fdf0ee' : '#eafaf1', ";border:1.5px solid ").concat(stock.bajo ? '#e74c3c' : '#a9dfbf', ";border-radius:8px;padding:2px 10px;white-space:nowrap;flex-shrink:0\">\n                  ").concat(stock.bajo ? '⚠️ ' : '', "En tienda: ").concat(escapeHtml(stock.qty)).concat(stock.unit ? ' ' + escapeHtml(stock.unit) : '').concat(stock.min !== null ? ' (mín. ' + escapeHtml(String(stock.min)) + ')' : '', "\n                 </span>") : '';
+      const stockBadge = stock !== null ? "<span data-stock-badge style=\"font-size:13px;font-weight:700;color:".concat(stock.bajo ? '#c0392b' : '#27855a', ";background:").concat(stock.bajo ? '#fdf0ee' : '#eafaf1', ";border:1.5px solid ").concat(stock.bajo ? '#e74c3c' : '#a9dfbf', ";border-radius:8px;padding:2px 10px;white-space:nowrap;flex-shrink:0\">\n                  ").concat(stock.bajo ? '⚠️ ' : '', "En tienda: ").concat(stock.qty).concat(stock.unit ? ' ' + stock.unit : '').concat(stock.min !== null ? ' (mín. ' + stock.min + ')' : '', "\n                 </span>") : '';
 
       // Botón proveedor: si es habitual lo distinguimos visualmente
       const provBtnStyle = prov ? isHabitual ? "border:1.5px dashed #3D1F0D;background:rgba(244,196,48,0.08);color:#3D1F0D" : "border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D" : "border:1.5px solid #F5E6C8;background:#FFFFFF;color:#8A6A4E";
-      return "<div class=\"pp2-row\" id=\"pp2-row-".concat(item.id, "\" data-id=\"").concat(item.id, "\" data-cat=\"").concat(cat.replace(/"/g, '&quot;'), "\"\n                draggable=\"true\"\n                ondragstart=\"pp2DragStart(event)\"\n                ondragover=\"pp2DragOver(event)\"\n                ondrop=\"pp2Drop(event)\"\n                ondragend=\"pp2DragEnd(event)\"\n                ondragleave=\"this.style.background=''\"\n                style=\"display:flex;align-items:center;background:").concat(bg, ";border:2px solid ").concat(border, ";border-radius:12px;padding:11px 14px;margin-bottom:8px;cursor:default\">\n              ").concat(delCb, "\n              <span style=\"font-size:18px;color:#8A6A4E;cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;touch-action:none\" title=\"Arrastrar\">\u283F</span>\n              <div style=\"flex:1;min-width:0\">\n                <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap\">\n                  <span style=\"font-size:15px;font-weight:600;color:#3D1F0D\">").concat(escapeHtml(item.nombre), "</span>\n                  ").concat(stockBadge, "\n                </div>\n                <div style=\"display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap\">\n                  ").concat(fixedUnit ? "<span style=\"padding:3px 9px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif\">".concat(fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1), "</span>") : "<button data-unit=\"cajas\" onclick=\"pp2SetUnit('".concat(item.id, "','cajas')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'cajas' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'cajas' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'cajas' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F4E6; Cajas\n                      </button>\n                      <button data-unit=\"unidades\" onclick=\"pp2SetUnit('").concat(item.id, "','unidades')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'unidades' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'unidades' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'unidades' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F522; Unidades\n                      </button>"), "\n                </div>\n              </div>\n              <div style=\"display:flex;align-items:center;gap:4px;flex-shrink:0\">\n                <button onclick=\"pp2Qty('").concat(item.id, "',-1)\" style=\"width:34px;height:34px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:20px;font-weight:700;cursor:pointer;color:#3D1F0D\">&#x2212;</button>\n                <span data-qty style=\"font-size:18px;font-weight:900;color:#3D1F0D;min-width:24px;text-align:center\">").concat(qty || '', "</span>\n                <button onclick=\"pp2Qty('").concat(item.id, "',1)\" style=\"width:34px;height:34px;border-radius:50%;border:none;background:#3D1F0D;font-size:20px;font-weight:700;cursor:pointer;color:#fff\">+</button>\n              </div>\n              <button data-prov-btn onclick=\"pp2PickerOpen('").concat(item.id, "')\"\n                style=\"flex-shrink:0;padding:5px 10px;border-radius:8px;").concat(provBtnStyle, ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis\">\n                ").concat(prov ? escapeHtml(provLabel) : '+ Prov.', "\n              </button>\n            </div>");
+      return "<div class=\"pp2-row\" id=\"pp2-row-".concat(item.id, "\" data-id=\"").concat(item.id, "\" data-cat=\"").concat(cat.replace(/"/g, '&quot;'), "\"\n                draggable=\"true\"\n                ondragstart=\"pp2DragStart(event)\"\n                ondragover=\"pp2DragOver(event)\"\n                ondrop=\"pp2Drop(event)\"\n                ondragend=\"pp2DragEnd(event)\"\n                ondragleave=\"this.style.background=''\"\n                style=\"display:flex;align-items:center;background:").concat(bg, ";border:2px solid ").concat(border, ";border-radius:12px;padding:11px 14px;margin-bottom:8px;cursor:default\">\n              ").concat(delCb, "\n              <span style=\"font-size:18px;color:#8A6A4E;cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;touch-action:none\" title=\"Arrastrar\">\u283F</span>\n              <div style=\"flex:1;min-width:0\">\n                <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap\">\n                  <span style=\"font-size:15px;font-weight:600;color:#3D1F0D\">").concat(item.nombre, "</span>\n                  ").concat(stockBadge, "\n                </div>\n                <div style=\"display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap\">\n                  ").concat(fixedUnit ? "<span style=\"padding:3px 9px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:'DM Sans',sans-serif\">".concat(fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1), "</span>") : "<button data-unit=\"cajas\" onclick=\"pp2SetUnit('".concat(item.id, "','cajas')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'cajas' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'cajas' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'cajas' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F4E6; Cajas\n                      </button>\n                      <button data-unit=\"unidades\" onclick=\"pp2SetUnit('").concat(item.id, "','unidades')\"\n                        style=\"padding:3px 9px;border-radius:6px;border:1.5px solid ").concat(unit === 'unidades' ? '#3D1F0D' : '#F5E6C8', ";background:").concat(unit === 'unidades' ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(unit === 'unidades' ? '#3D1F0D' : '#8A6A4E', ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n                        &#x1F522; Unidades\n                      </button>"), "\n                </div>\n              </div>\n              <div style=\"display:flex;align-items:center;gap:4px;flex-shrink:0\">\n                <button onclick=\"pp2Qty('").concat(item.id, "',-1)\" style=\"width:34px;height:34px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:20px;font-weight:700;cursor:pointer;color:#3D1F0D\">&#x2212;</button>\n                <span data-qty style=\"font-size:18px;font-weight:900;color:#3D1F0D;min-width:24px;text-align:center\">").concat(qty || '', "</span>\n                <button onclick=\"pp2Qty('").concat(item.id, "',1)\" style=\"width:34px;height:34px;border-radius:50%;border:none;background:#3D1F0D;font-size:20px;font-weight:700;cursor:pointer;color:#fff\">+</button>\n              </div>\n              <button data-prov-btn onclick=\"pp2PickerOpen('").concat(item.id, "')\"\n                style=\"flex-shrink:0;padding:5px 10px;border-radius:8px;").concat(provBtnStyle, ";font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis\">\n                ").concat(prov ? provLabel : '+ Prov.', "\n              </button>\n            </div>");
     }).join('');
-    return "<div style=\"margin-bottom:4px\">\n            <div style=\"font-family:'Anton',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em\">".concat(escapeHtml(cat), "</div>\n            ").concat(rows, "\n          </div>");
+    return "<div style=\"margin-bottom:4px\">\n            <div style=\"font-family:'Anton',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em\">".concat(cat, "</div>\n            ").concat(rows, "\n          </div>");
   }
 
   // Renderizar por chunks usando requestAnimationFrame para no bloquear el hilo principal
@@ -1112,7 +1082,7 @@ function pp2RenderRow(id) {
       const lineName = text.slice(0, colonIdx).trim().toLowerCase();
       const lineVal = text.slice(colonIdx + 1).trim();
       const itemName2 = nombre2.toLowerCase();
-      if (_stockNombreCoincide(lineName, itemName2)) {
+      if (lineName === itemName2 || itemName2.includes(lineName) || lineName.includes(itemName2)) {
         const m = lineVal.match(/^(\d+)\s*(.*)/);
         const qty2 = m ? parseInt(m[1]) : null;
         const unit2 = m ? m[2] || '' : lineVal;
@@ -1187,17 +1157,17 @@ function pp2RenderRow(id) {
 
 // ── quantity & unit ──────────────────────────────────────
 function pp2Qty(id, delta) {
-  pp2MutateState(function (s) {
-    if (!s[id]) s[id] = {};
-    s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
-  });
+  const s = pp2LoadState();
+  if (!s[id]) s[id] = {};
+  s[id].qty = Math.max(0, (s[id].qty || 0) + delta);
+  pp2SaveState(s);
   pp2RenderRow(id);
 }
 function pp2SetUnit(id, unit) {
-  pp2MutateState(function (s) {
-    if (!s[id]) s[id] = {};
-    s[id].unit = unit;
-  });
+  const s = pp2LoadState();
+  if (!s[id]) s[id] = {};
+  s[id].unit = unit;
+  pp2SaveState(s);
   pp2RenderRow(id);
 }
 
@@ -1215,16 +1185,16 @@ function pp2PickerOpen(itemId) {
   btns.innerHTML = pp2AllProvs().map(p => {
     const isSelected = current === p.id;
     const isHab = habitual === p.id && !isSelected;
-    return "<button onclick=\"pp2PickerSelect('".concat(p.id, "')\"\n            style=\"padding:8px 14px;border-radius:10px;border:2px solid ").concat(isSelected ? '#3D1F0D' : isHab ? '#3D1F0D' : '#F5E6C8', ";background:").concat(isSelected ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(isSelected ? '#3D1F0D' : '#2A1506', ";font-size:13px;font-weight:").concat(isSelected ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif;position:relative\">\n            ").concat(escapeHtml(p.label)).concat(isHab ? ' <span style="font-size:9px;vertical-align:super;color:#3D1F0D">habitual</span>' : '', "\n          </button>");
+    return "<button onclick=\"pp2PickerSelect('".concat(p.id, "')\"\n            style=\"padding:8px 14px;border-radius:10px;border:2px solid ").concat(isSelected ? '#3D1F0D' : isHab ? '#3D1F0D' : '#F5E6C8', ";background:").concat(isSelected ? 'rgba(244,196,48,0.08)' : '#FFFFFF', ";color:").concat(isSelected ? '#3D1F0D' : '#2A1506', ";font-size:13px;font-weight:").concat(isSelected ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif;position:relative\">\n            ").concat(p.label).concat(isHab ? ' <span style="font-size:9px;vertical-align:super;color:#3D1F0D">habitual</span>' : '', "\n          </button>");
   }).join('') + "<button onclick=\"pp2NuevoProveedorModal()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #27855a;background:#eafaf1;color:#27855a;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x2795; Nuevo proveedor\n        </button>\n        <button onclick=\"pp2EliminarProveedorModal()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #c0392b;background:#fdf0ee;color:#c0392b;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x1F5D1; Eliminar proveedor\n        </button>" + "<button onclick=\"pp2PickerClose()\"\n          style=\"padding:8px 14px;border-radius:10px;border:2px solid #ccc;background:#f5f5f5;color:#888;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif\">\n          &#x2715; Salir\n        </button>";
   const picker = document.getElementById('pp2-picker');
   picker.style.display = 'flex';
 }
 function pp2PickerSelect(provId) {
-  pp2MutateState(function (s) {
-    if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
-    s[_pp2CurrentItem].prov = provId;
-  });
+  const s = pp2LoadState();
+  if (!s[_pp2CurrentItem]) s[_pp2CurrentItem] = {};
+  s[_pp2CurrentItem].prov = provId;
+  pp2SaveState(s);
   // Guardar como habitual si se asigna uno (no si se quita)
   if (provId) {
     const hab = pp2LoadProvHab();
@@ -1377,14 +1347,15 @@ function pp2ConfirmDelete() {
 // ── nueva semana ─────────────────────────────────────────
 function pp2NuevaSemana() {
   if (!confirm('¿Nueva semana? Se borran todas las cantidades. Los proveedores habituales se mantienen y se precargarán automáticamente.')) return;
+  const s = pp2LoadState();
+  const hab = pp2LoadProvHab();
   // Limpiar cantidades y proveedores del estado; los habituales se aplican en render
-  pp2MutateState(function (s) {
-    Object.keys(s).forEach(id => {
-      s[id].qty = 0;
-      s[id].prov = '';
-      s[id].unit = s[id].unit || 'cajas';
-    });
+  Object.keys(s).forEach(id => {
+    s[id].qty = 0;
+    s[id].prov = '';
+    s[id].unit = s[id].unit || 'cajas';
   });
+  pp2SaveState(s);
   pp2Render();
   const t = document.getElementById('pp2-toast');
   t.textContent = '🔄 ¡Nueva semana! Proveedores habituales precargados.';
@@ -1395,29 +1366,19 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
+  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  const entrada = { fecha, nota };
-  // Añadir la entrada localmente al instante (UI responde ya)...
-  const histLocal = pp2LoadHistorial();
-  histLocal.push(entrada);
-  if (histLocal.length > 50) histLocal.shift();
-  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(histLocal));
-  // ...y de forma atómica contra Firebase, para no perder el pedido que
-  // otro dispositivo acaba de guardar en el historial casi al mismo tiempo.
-  if (window.fb_transactNative) {
-    window.fb_transactNative('pp2/historial', function (current) {
-      const hist = Array.isArray(current) ? current.slice() : [];
-      hist.push(entrada);
-      if (hist.length > 50) hist.shift();
-      return hist;
-    }).catch(() => {});
-  } else if (window.fb_savePP2) {
-    window.fb_savePP2('historial', histLocal).catch(() => {});
-  }
+  hist.push({
+    fecha,
+    nota
+  }); // más antiguo primero, más reciente al final
+  if (hist.length > 50) hist.shift(); // máximo 50 entradas
+  localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
+  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();
@@ -1427,7 +1388,7 @@ function pp2VerHistorial() {
     list.innerHTML = '<p style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin historial aún. Los pedidos enviados por WhatsApp se guardan aquí automáticamente.</p>';
   } else {
     // Mostrar de más antiguo (índice 0) a más reciente (último)
-    list.innerHTML = hist.map((h, i) => "\n            <div style=\"border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;margin-bottom:10px;background:#FFFFFF\">\n              <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap\">\n                <span style=\"font-size:17px;font-weight:900;color:#3D1F0D\">\uD83D\uDCE6 ".concat(escapeHtml(h.fecha), "</span>\n                <div style=\"display:flex\">\n                  <button onclick=\"pp2HistDescargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 8px;background:#FFFFFF;color:#3D1F0D;border:1.5px solid #F5E6C8;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">\uD83D\uDCBE</button>\n                  <button onclick=\"pp2HistRecargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">Usar de base</button>\n                </div>\n              </div>\n              <pre style=\"font-size:12px;color:#2A1506;white-space:pre-wrap;margin:0;line-height:1.5;font-family:'DM Sans',sans-serif\">").concat(escapeHtml(h.nota), "</pre>\n            </div>")).join('');
+    list.innerHTML = hist.map((h, i) => "\n            <div style=\"border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;margin-bottom:10px;background:#FFFFFF\">\n              <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap\">\n                <span style=\"font-size:17px;font-weight:900;color:#3D1F0D\">\uD83D\uDCE6 ".concat(h.fecha, "</span>\n                <div style=\"display:flex\">\n                  <button onclick=\"pp2HistDescargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 8px;background:#FFFFFF;color:#3D1F0D;border:1.5px solid #F5E6C8;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">\uD83D\uDCBE</button>\n                  <button onclick=\"pp2HistRecargar(").concat(i, ")\" style=\"font-size:11px;padding:3px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;cursor:pointer;font-weight:700;font-family:'DM Sans',sans-serif\">Usar de base</button>\n                </div>\n              </div>\n              <pre style=\"font-size:12px;color:#2A1506;white-space:pre-wrap;margin:0;line-height:1.5;font-family:'DM Sans',sans-serif\">").concat(h.nota, "</pre>\n            </div>")).join('');
   }
   modal.style.display = 'block';
 }
@@ -1482,7 +1443,7 @@ function pp2VerMinimos() {
   const list = document.getElementById('pp2-min-list');
   list.innerHTML = items.map(item => {
     const val = minimos[item.id] !== undefined ? minimos[item.id] : '';
-    return "<div style=\"display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #F5E6C8\">\n            <span style=\"flex:1;font-size:13px;font-weight:600;color:#3D1F0D\">".concat(escapeHtml(item.nombre), "</span>\n            <input type=\"number\" min=\"0\" value=\"").concat(val, "\" placeholder=\"\u2014\"\n              onchange=\"pp2SetMinimo('").concat(item.id, "',this.value)\"\n              style=\"width:64px;padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;background:#FFFFFF\">\n          </div>");
+    return "<div style=\"display:flex;align-items:center;padding:7px 0;border-bottom:1px solid #F5E6C8\">\n            <span style=\"flex:1;font-size:13px;font-weight:600;color:#3D1F0D\">".concat(item.nombre, "</span>\n            <input type=\"number\" min=\"0\" value=\"").concat(val, "\" placeholder=\"\u2014\"\n              onchange=\"pp2SetMinimo('").concat(item.id, "',this.value)\"\n              style=\"width:64px;padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;background:#FFFFFF\">\n          </div>");
   }).join('');
   modal.style.display = 'block';
 }
@@ -1558,19 +1519,12 @@ function pp2BuildNota() {
   const byProv = {};
   items.forEach(item => {
     const s = state[item.id] || {};
-    if (!s.qty || s.qty <= 0) return;
-    // Antes, si se ponía cantidad pero se olvidaba asignar proveedor, el
-    // ingrediente se omitía en silencio del pedido (aquí y en el enviado
-    // por WhatsApp) sin ningún aviso. Ahora se agrupa bajo "SIN
-    // PROVEEDOR", igual que ya hacía pp2Save() al guardar en el historial.
-    const prov = s.prov || '__sin__';
-    if (!byProv[prov]) byProv[prov] = [];
-    byProv[prov].push(item);
+    if (!s.qty || s.qty <= 0 || !s.prov) return;
+    if (!byProv[s.prov]) byProv[s.prov] = [];
+    byProv[s.prov].push(item);
   });
   if (!Object.keys(byProv).length) return null;
   const sortedProvs = Object.keys(byProv).sort((a, b) => {
-    if (a === '__sin__') return 1;
-    if (b === '__sin__') return -1;
     const la = (PP_PROVS.find(p => p.id === a) || {
       label: a
     }).label;
@@ -1582,7 +1536,7 @@ function pp2BuildNota() {
   let txt = '🛒 PEDIDO\n';
   sortedProvs.forEach(provId => {
     const allProvs = pp2AllProvs();
-    const provLabel = provId === '__sin__' ? 'SIN PROVEEDOR' : (allProvs.find(p => p.id === provId) || {
+    const provLabel = (allProvs.find(p => p.id === provId) || {
       label: provId
     }).label.toUpperCase();
     txt += '\n' + provLabel + ':\n';
@@ -1598,7 +1552,7 @@ function pp2BuildNota() {
 function pp2SaveToPad() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad puesta');
+    alert('No hay productos con cantidad y proveedor asignado');
     return;
   }
   document.getElementById('pp2-pad-text').value = txt;
@@ -1633,7 +1587,7 @@ function pp2PadWA() {
 function pp2ExportWA() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad puesta');
+    alert('No hay productos con cantidad y proveedor asignado');
     return;
   }
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
@@ -3475,18 +3429,15 @@ async function incrementSlot(slotTime) {
 }
 async function decrementSlot(slotTime) {
   if (!slotTime) return;
-  // Update local cache immediately
+  // Solo actualiza la caché local (_slotsCache/localStorage) para que este
+  // mismo dispositivo vea el turno libre al instante. La liberación real en
+  // Firebase la hace el servidor (guardar-pedido.php, acción
+  // "cancelarPedido") con la cuenta de servicio — el navegador nunca tuvo
+  // permiso de escritura directa sobre slots/ (por eso ya no existe
+  // fb_decrementSlot: se quitó junto con fb_incrementSlot al mover la
+  // reserva de turnos al servidor, ver incrementSlot() arriba).
   _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
-  // Persist to Firebase (atomic decrement)
-  if (window.fb_decrementSlot) {
-    try {
-      await window.fb_decrementSlot(slotTime);
-    } catch (e) {
-      console.warn('Firebase slot decrement error', e);
-    }
-  } else {
-    saveSlotsData(getSlotsData());
-  }
+  saveSlotsData(getSlotsData());
 }
 
 // ¿El carrito tiene patatas?
@@ -5165,7 +5116,16 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
     }
   }
 
-  // 4. El slot NO se libera al cancelar — el turno quedó ocupado
+  // 4. Liberar el turno reservado — el servidor (guardar-pedido.php, misma
+  // llamada "cancelarPedido" del paso 2) ya decrementó slots/<fecha>/<turno>
+  // de verdad; esto solo refresca la caché local (_slotsCache/localStorage)
+  // para que ESTE dispositivo vea el hueco libre al instante, sin esperar a
+  // que llegue por el listener de Firebase. Antes esto no se hacía nunca (ni
+  // aquí ni en el servidor), así que cada cancelación/modificación dejaba el
+  // turno ocupado para siempre.
+  if (slotToFree && typeof decrementSlot === 'function') {
+    try { await decrementSlot(slotToFree); } catch (e) { console.warn('[slot] no se pudo liberar localmente', e); }
+  }
 
   // 5. Refrescar cocina y pedidos en vivo inmediatamente
   refreshKitchenGrid();
@@ -6493,10 +6453,7 @@ function _bimbaPintarConfigEquipo(empleados) {
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
   _equipoPagoConfig[empId].tipoPago = tipo;
-  _bimbaGuardarPagoConfig(function (cfg) {
-    if (!cfg[empId]) cfg[empId] = {};
-    cfg[empId].tipoPago = tipo;
-  });
+  _bimbaGuardarPagoConfig();
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarCalcEquipo(empleados);
@@ -6504,29 +6461,12 @@ function bimbaSetTipoPago(empId, tipo) {
 function bimbaActualizarPago(empId, campo, valor) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = { tipoPago: 'hora' };
   const val = parseFloat(valor);
-  const valorGuardado = isNaN(val) ? null : val;
-  _equipoPagoConfig[empId][campo] = valorGuardado;
-  _bimbaGuardarPagoConfig(function (cfg) {
-    if (!cfg[empId]) cfg[empId] = { tipoPago: 'hora' };
-    cfg[empId][campo] = valorGuardado;
-  });
+  _equipoPagoConfig[empId][campo] = isNaN(val) ? null : val;
+  _bimbaGuardarPagoConfig();
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarCalcEquipo(empleados);
 }
-// mutatorFn modifica in-place la config de pago de UN empleado. Se aplica
-// contra el valor más reciente de Firebase (transacción), no contra la
-// copia en memoria de _equipoPagoConfig, que solo se cargó una vez al abrir
-// el overlay — así dos personas editando el pago de dos empleados distintos
-// a la vez no se pisan la una a la otra.
-function _bimbaGuardarPagoConfig(mutatorFn) {
-  if (window.fb_transactNative) {
-    window.fb_transactNative('config/empleadosPago', function (current) {
-      const cfg = current || {};
-      mutatorFn(cfg);
-      return cfg;
-    }).catch(() => {});
-    return;
-  }
+function _bimbaGuardarPagoConfig() {
   firebase.database().ref('config/empleadosPago').set(_equipoPagoConfig).catch(() => {});
 }
 function _bimbaCosteEmpleado(emp) {
@@ -6679,45 +6619,6 @@ async function _estrellasObtenerVentas(inicio, fin) {
   }
   return totales;
 }
-async function _estrellasObtenerUpsellPostre(inicio, fin) {
-  let mostrado = 0, anadido = 0;
-  try {
-    const snap = await firebase.database().ref('upsellPostre').orderByKey().startAt(inicio).endAt(fin).once('value');
-    if (snap.exists()) {
-      snap.forEach(diaSnap => {
-        const dia = diaSnap.val() || {};
-        mostrado += Number(dia.mostrado) || 0;
-        anadido += Number(dia.anadido) || 0;
-      });
-    }
-  } catch (e) {
-    console.warn('[estrellas] error leyendo upsellPostre', e);
-  }
-  return { mostrado, anadido };
-}
-function _renderUpsellPostreStats(mostrado, anadido) {
-  const el = document.getElementById('upsell-postre-contenido');
-  if (!el) return;
-  if (mostrado === 0) {
-    el.innerHTML = '<div style="font-size:12px;color:#8A6A4E">Todavía no se ha mostrado la sugerencia "¿algo dulce de postre?" en este periodo.</div>';
-    return;
-  }
-  const tasa = mostrado > 0 ? (anadido / mostrado) * 100 : 0;
-  el.innerHTML = '<div style="display:flex;gap:8px">'
-    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
-    + '<div style="font-size:20px;font-weight:800;color:#3D1F0D">' + mostrado + '</div>'
-    + '<div style="font-size:11px;color:#8A6A4E">veces mostrada</div>'
-    + '</div>'
-    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
-    + '<div style="font-size:20px;font-weight:800;color:#166534">' + anadido + '</div>'
-    + '<div style="font-size:11px;color:#8A6A4E">veces añadida</div>'
-    + '</div>'
-    + '<div style="flex:1;background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 12px;text-align:center">'
-    + '<div style="font-size:20px;font-weight:800;color:#B5862C">' + tasa.toFixed(0) + '%</div>'
-    + '<div style="font-size:11px;color:#8A6A4E">tasa de éxito</div>'
-    + '</div>'
-    + '</div>';
-}
 async function bimbaRenderEstrellas() {
   const el = document.getElementById('estrellas-contenido');
   const rangoEl = document.getElementById('estrellas-rango-texto');
@@ -6725,8 +6626,6 @@ async function bimbaRenderEstrellas() {
   el.innerHTML = '<div style="color:#8A6A4E;font-size:13px">Cargando...</div>';
   const { inicio, fin } = _estrellasRangoPeriodo();
   if (rangoEl) rangoEl.textContent = 'Periodo: ' + _fechaCorta(inicio) + ' — ' + _fechaCorta(fin);
-
-  _estrellasObtenerUpsellPostre(inicio, fin).then(({ mostrado, anadido }) => _renderUpsellPostreStats(mostrado, anadido));
 
   const ventas = await _estrellasObtenerVentas(inicio, fin);
   const totalVentas = Object.values(ventas).reduce((s, v) => s + v, 0);
@@ -6866,27 +6765,15 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    // Transacción: ventasProductos/<fecha> también lo escribe cada pedido
-    // real de un cliente (recordProductSales, en antifraude.js) mientras se
-    // puede estar guardando una venta manual aquí — con un .set() plano
-    // (leer, sumar en memoria, sobreescribir todo el nodo) una venta real
-    // que llegara justo en medio se podía perder sin ningún aviso.
-    const mutator = function (current) {
-      const actual = current || {};
-      inputs.forEach(i => {
-        const id = i.dataset.id;
-        const cantidad = parseInt(i.value, 10);
-        actual[id] = (actual[id] || 0) + cantidad;
-      });
-      return actual;
-    };
-    if (window.fb_transactNative) {
-      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
-    } else {
-      const ref = firebase.database().ref('ventasProductos/' + fecha);
-      const sn = await ref.once('value');
-      await ref.set(mutator(sn.exists() ? sn.val() : null));
-    }
+    const ref = firebase.database().ref('ventasProductos/' + fecha);
+    const sn = await ref.once('value');
+    const actual = sn.exists() ? sn.val() : {};
+    inputs.forEach(i => {
+      const id = i.dataset.id;
+      const cantidad = parseInt(i.value, 10);
+      actual[id] = (actual[id] || 0) + cantidad;
+    });
+    await ref.set(actual);
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();
@@ -6926,35 +6813,10 @@ function bimbaPintarTicketConfig() {
   const autoEl = document.getElementById('tc-auto-imprimir');
   autoEl.checked = tc.autoImprimir !== false;
   document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
-  const letraEl = document.getElementById('tc-letra-grande');
-  if (letraEl) letraEl.checked = !!tc.letraGrande;
-  const qrEl = document.getElementById('tc-qr-habilitado');
-  if (qrEl) qrEl.checked = !!tc.qrHabilitado;
-  const qrContenidoEl = document.getElementById('tc-qr-contenido');
-  if (qrContenidoEl) qrContenidoEl.value = tc.qrContenido || '';
-
-  // Gastos fijos (se guardan aparte, no dentro de TICKET_CONFIG_KEY)
-  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
-  if (tcFeeEnabled) {
-    tcFeeEnabled.checked = getFeeEnabled();
-    document.getElementById('tc-fee-amount').value = getFeeAmount();
-    document.getElementById('tc-fee-label').value = getFeeLabel();
-  }
-  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
-  if (tcFee2Enabled && typeof getFee2Enabled === 'function') {
-    tcFee2Enabled.checked = getFee2Enabled();
-    document.getElementById('tc-fee2-amount').value = getFee2Amount();
-    document.getElementById('tc-fee2-label').value = getFee2Label();
-  }
-  const tcLocalCode = document.getElementById('tc-local-fee-code');
-  if (tcLocalCode && typeof getLocalFeeCode === 'function') tcLocalCode.value = getLocalFeeCode();
-  const tcTiendaEspera = document.getElementById('tc-tienda-espera');
-  if (tcTiendaEspera && typeof getTiendaEsperaMinutos === 'function') tcTiendaEspera.value = String(getTiendaEsperaMinutos());
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
   bimbaPintarTicketConfig();
-  if (typeof _renderTicketSendLog === 'function') _renderTicketSendLog();
 }
 function closeTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.remove('open');
@@ -6969,29 +6831,9 @@ function bimbaGuardarTicketConfig() {
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
-    autoImprimir: document.getElementById('tc-auto-imprimir').checked,
-    letraGrande: document.getElementById('tc-letra-grande') ? document.getElementById('tc-letra-grande').checked : false,
-    qrHabilitado: document.getElementById('tc-qr-habilitado') ? document.getElementById('tc-qr-habilitado').checked : false,
-    qrContenido: document.getElementById('tc-qr-contenido') ? document.getElementById('tc-qr-contenido').value.trim() : ''
+    autoImprimir: document.getElementById('tc-auto-imprimir').checked
   };
   saveTicketConfig(cfg);
-
-  // Gastos fijos — cada uno con su propio guardado/interruptor
-  const tcFeeEnabled = document.getElementById('tc-fee-enabled');
-  if (tcFeeEnabled) {
-    const amt = parseFloat(document.getElementById('tc-fee-amount').value) || 0;
-    const lbl = document.getElementById('tc-fee-label').value.trim() || 'Gastos de gestión online';
-    saveFeeConfig(tcFeeEnabled.checked, amt, lbl);
-  }
-  const tcFee2Enabled = document.getElementById('tc-fee2-enabled');
-  if (tcFee2Enabled && typeof saveFee2Config === 'function') {
-    const amt2 = parseFloat(document.getElementById('tc-fee2-amount').value) || 0;
-    const lbl2 = document.getElementById('tc-fee2-label').value.trim() || 'Otro gasto fijo';
-    saveFee2Config(tcFee2Enabled.checked, amt2, lbl2);
-  }
-  const tcLocalCode = document.getElementById('tc-local-fee-code');
-  if (tcLocalCode && typeof saveLocalFeeCode === 'function') saveLocalFeeCode(tcLocalCode.value);
-
   if (msgEl) {
     msgEl.style.color = '#27855a';
     msgEl.textContent = '✅ Guardado';
@@ -7040,9 +6882,9 @@ async function imprimirTodosLosActivos() {
 
 function _markAsImpreso(orderNum) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido. Idempotente:
-  // reimprimir el mismo pedido no vuelve a restar del contador.
-  _marcarPedidoAtendido(orderNum);
+  // Parar sonido al imprimir — equivale a haber visto el pedido
+  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
+  if (_alertPendingOrders === 0) stopAlertLoop();
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';
@@ -7074,34 +6916,6 @@ function openEmpleadosWithBimba() {
   // Usar el mismo modal bimba pero redirigir a empleados al confirmar
   window._bimbaTargetEmpleados = true;
   secureLockTap();
-}
-
-// ── "HISTORIAL POR DÍAS" (FACTURACIÓN) DENTRO DEL PANEL SECRETO BIMBA ────────
-// A diferencia del historial de clientes (visible para cualquiera con acceso
-// al panel), el resumen por días muestra el total facturado — información
-// que no hace falta que vea el personal, solo la dueña. Vive como una fila
-// más dentro del panel bimba (admin-stock-config, el mismo al que se entra
-// con el candado 👤) — como ya se pasó el PIN para llegar hasta ahí, este
-// salto no vuelve a pedirlo.
-function verHistorialDiasDesdeBimba() {
-  // Solo se alterna la clase .active — la hoja de estilos ya tiene
-  // .admin-section{display:none!important} / .admin-section.active{display:block!important},
-  // con más especificidad la segunda. Fijar un display inline aquí (como
-  // hacía antes el código de "empleados por bimba") deja ese estilo inline
-  // pegado para siempre: ni siquiera quitar .active después lo oculta, así
-  // que "← Volver" dejaría esta sección visible por encima de las demás.
-  document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-  const sec = document.getElementById('admin-bimba-historial');
-  if (sec) sec.classList.add('active');
-  if (typeof loadHistorial === 'function') loadHistorial();
-  if (typeof loadAutoDeleteUI === 'function') loadAutoDeleteUI();
-  if (typeof applyAutoDelete === 'function') applyAutoDelete();
-}
-// Botón "← Volver" de las pantallas dentro de bimba (config, contraseña,
-// historial por días...) — vuelve a la pantalla principal del panel secreto.
-function bimbaVolverAlPanel() {
-  openStockConfigSecret();
 }
 
 // ── DISPOSITIVO DE CONFIANZA ──
@@ -7186,34 +7000,6 @@ async function isTrustedDevice() {
 
 function getTrustedDeviceName() {
   return localStorage.getItem(TRUSTED_NAME_KEY) || 'Sin nombre';
-}
-
-// ── AVISO DE DISPOSITIVO NUEVO EN EL PANEL ADMIN ─────────────────────────────
-// Antes, un acceso correcto solo quedaba en el "Registro de actividad" (había
-// que entrar a mirarlo a propósito para enterarse). Ahora, la PRIMERA vez que
-// este deviceId entra con éxito, además se avisa como Alerta — igual que
-// otros avisos que ya se revisan cada día — para enterarse sin tener que ir
-// a buscarlo. Los accesos siguientes desde el mismo dispositivo no repiten
-// el aviso.
-async function _avisarSiDispositivoAdminNuevo(email) {
-  try {
-    if (typeof firebase === 'undefined' || !firebase.database) return;
-    const deviceId = getDeviceId();
-    const ref = firebase.database().ref('config/dispositivosAdminConocidos/' + deviceId);
-    const snap = await ref.once('value');
-    if (snap.exists()) return; // ya se había visto este dispositivo antes
-    await ref.set({
-      primeraVez: Date.now(),
-      fecha: new Date().toLocaleString('es-ES'),
-      email: email || '',
-      dispositivo: navigator.userAgent.slice(0, 120)
-    });
-    if (typeof logActivity === 'function') {
-      logActivity('🚨 Nuevo dispositivo ha entrado al panel admin (' + (email || 'sin email') + ') — ' + navigator.userAgent.slice(0, 80));
-    }
-  } catch (e) {
-    console.warn('[dispositivos-admin] no se pudo comprobar/registrar:', e);
-  }
 }
 
 async function setTrustedDevice(val, name) {
@@ -7632,6 +7418,27 @@ function toggleAdminPwdVisibility(btn) {
 }
 
 
+// ── Alerta de slot casi lleno ─────────────────────────────
+const _slotAlertSent = {};
+async function _checkSlotAlmostFull(slotTime, count, max) {
+  if (!slotTime || !max) return;
+  const pct = Math.round((count / max) * 100);
+  if (pct < 80) return;
+  const key = slotTime + '_' + count;
+  if (_slotAlertSent[key]) return;
+  _slotAlertSent[key] = true;
+  try {
+    if (typeof emailjs === 'undefined') return;
+    emailjs.init('Euum_k_XJdrejjnKj');
+    await emailjs.send('service_bil4ri5', 'template_ee4f7sp', {
+      slot:  slotTime,
+      count: count,
+      max:   max,
+      pct:   pct
+    });
+  } catch(e) {}
+}
+
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}
@@ -7654,7 +7461,7 @@ async function closeAdmin() {
   if (eyeOpen) eyeOpen.style.display = 'block';
   if (eyeClosed) eyeClosed.style.display = 'none';
   stopAlertLoop();
-  _resetPedidosPendientesAlerta();
+  _alertPendingOrders = 0;
   document.getElementById('admin-overlay').classList.remove('open');
   // Resetear estado login/panel para la próxima apertura
   document.getElementById('admin-login').style.display = 'block';
@@ -7928,29 +7735,7 @@ function loadUrlTokenUI() {
     }
   }
 }
-// Antes _adminFailedAttempts solo vivía en memoria: recargar la pantalla de
-// login (F5) lo volvía a poner a 0 y se saltaba el retraso progresivo
-// entero. Se persiste en localStorage (con la hora del último fallo, para
-// que 30 minutos sin ningún fallo lo reseteen solos y no penalice a un
-// admin de verdad que vuelve más tarde).
-const ADMIN_FAILED_KEY = 'dpf_admin_failed_attempts';
-const ADMIN_FAILED_RESET_MS = 30 * 60 * 1000;
-function _cargarIntentosFallidosAdmin() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ADMIN_FAILED_KEY) || 'null');
-    if (raw && typeof raw.count === 'number' && typeof raw.ts === 'number' && (Date.now() - raw.ts) < ADMIN_FAILED_RESET_MS) {
-      return raw.count;
-    }
-  } catch (e) {}
-  return 0;
-}
-function _guardarIntentosFallidosAdmin(count) {
-  try {
-    if (count > 0) localStorage.setItem(ADMIN_FAILED_KEY, JSON.stringify({ count, ts: Date.now() }));
-    else localStorage.removeItem(ADMIN_FAILED_KEY);
-  } catch (e) {}
-}
-let _adminFailedAttempts = _cargarIntentosFallidosAdmin();
+let _adminFailedAttempts = 0;
 let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
@@ -8062,7 +7847,6 @@ async function checkAdminPwd() {
   if (result.ok) {
     var _document$getElementB6, _document$getElementB7;
     _adminFailedAttempts = 0;
-    _guardarIntentosFallidosAdmin(0);
     const trustedChecked = (_document$getElementB6 = document.getElementById('trusted-device-check')) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.checked;
     const trustedName = ((_document$getElementB7 = document.getElementById('trusted-device-name')) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value.trim()) || 'Sin nombre';
     if (trustedChecked) await setTrustedDevice(true, trustedName);
@@ -8080,10 +7864,8 @@ async function checkAdminPwd() {
     if (audioBanner) audioBanner.style.display = _audioCtxUnlocked ? 'none' : 'block';
     setTimeout(_updateAudioBannerState, 200);
     logActivity('🔑 Acceso con Firebase Auth (' + email + ')' + (trustedChecked ? " \u2014 dispositivo registrado como \"".concat(trustedName, "\"") : ''));
-    if (typeof _avisarSiDispositivoAdminNuevo === 'function') _avisarSiDispositivoAdminNuevo(email);
   } else {
     _adminFailedAttempts++;
-    _guardarIntentosFallidosAdmin(_adminFailedAttempts);
     const errMsg = result.msg || 'Error al iniciar sesión';
     let errDisplay = errMsg;
     if (_adminFailedAttempts >= 3) {
@@ -8557,17 +8339,6 @@ function promoAddToCart(p, opts) {
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
 
-// Algunas descripciones llevan pegado "· NO se pueden quitar ingredientes"
-// (p.ej. Carbonara, Boloñesa) — se separa en su propia línea y en rojo
-// para que se note de un vistazo, en vez de perderse dentro del texto.
-function _formatDescConAvisoIngredientes(desc) {
-  if (!desc) return '';
-  const marcador = 'NO se pueden quitar ingredientes';
-  const idx = desc.indexOf(marcador);
-  if (idx === -1) return desc;
-  const antes = desc.slice(0, idx).replace(/[\s·]+$/, '');
-  return antes + '<br><span style="color:#c0392b;font-weight:700;font-size:11px">⚠️ ' + marcador + '</span>';
-}
 function renderMenu() {
   window._tartaLastSub = null;
   var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
@@ -8615,9 +8386,8 @@ function renderMenu() {
       const count = catCounts[item.cat] || '';
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
-          + (emoji ? '<div class="menu-cat-icon">' + emoji + '</div>' : '')
           + '<div class="menu-cat-left">'
-          + '<div class="menu-cat-name">' + item.cat.toUpperCase() + '</div>'
+          + '<div class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</div>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
@@ -8646,7 +8416,7 @@ function renderMenu() {
     sep = sep + tartaSep;
     let controls;
     if (soldout) {
-      controls = '<span style="background:#c0392b;color:#fff;font-size:10.5px;font-weight:800;padding:4px 10px;border-radius:99px;letter-spacing:.02em;white-space:nowrap">AGOTADO</span>';
+      controls = '<span style="font-size:12px;color:#c0392b;font-weight:700">AGOTADO</span>';
     } else if (qty > 0) {
       controls = '<button class="qty-btn" onclick="changeQty(' + item.id + ',-1)">−</button>'
                + '<span class="qty-num">' + qty + '</span>'
@@ -8654,18 +8424,15 @@ function renderMenu() {
     } else {
       controls = '<button class="add-btn" onclick="changeQty(' + item.id + ',+1)" title="Añadir">+</button>';
     }
-    const esTopVentas = item.name && item.name.indexOf('🔥') !== -1;
-    const nombreParaBadge = esTopVentas ? item.name.replace('🔥', '').trim() : item.name;
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
       + ' data-name="' + escapeAttr(item.name) + '"'
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
-      + (esTopVentas ? '<span class="tag-top-ventas">Top ventas</span>' : '')
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '"><span class="item-name-hl">' + formatNombreConBadgeNuevo(nombreParaBadge) + '</span></div>'
-      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : _formatDescConAvisoIngredientes(item.desc)) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
+      + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
       + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
       + '<div class="item-controls">' + controls + '</div>'
@@ -8852,21 +8619,9 @@ function saveHorario() {
   const manClose = document.getElementById('h-man-close') ? document.getElementById('h-man-close').value : '';
   const tarOpen = document.getElementById('h-tar-open') ? document.getElementById('h-tar-open').value : '';
   const tarClose = document.getElementById('h-tar-close') ? document.getElementById('h-tar-close').value : '';
-  // Estos 3 campos no tienen valor por defecto en el HTML (solo
-  // placeholder) y solo se rellenan cuando termina de cargar el horario
-  // desde Firebase (loadAdminHorario). Si se guarda en un dispositivo/
-  // sesión nueva antes de que esa carga termine, los campos están vacíos
-  // en pantalla sin que el admin haya tocado nada — así que si están
-  // vacíos aquí, se conserva el mensaje personalizado que ya hubiera
-  // guardado antes, en vez de borrarlo sin querer.
-  let _hPrev = {};
-  try { _hPrev = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}'); } catch {}
-  const closedMsgMidRaw = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
-  const closedMsgNightRaw = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
-  const closedMsgDayRaw = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
-  const closedMsgMid = closedMsgMidRaw || _hPrev.closedMsgMid || '';
-  const closedMsgNight = closedMsgNightRaw || _hPrev.closedMsgNight || '';
-  const closedMsgDay = closedMsgDayRaw || _hPrev.closedMsgDay || '';
+  const closedMsgMid = document.getElementById('h-closed-msg-mid') ? document.getElementById('h-closed-msg-mid').value.trim() : '';
+  const closedMsgNight = document.getElementById('h-closed-msg-night') ? document.getElementById('h-closed-msg-night').value.trim() : '';
+  const closedMsgDay = document.getElementById('h-closed-msg-day') ? document.getElementById('h-closed-msg-day').value.trim() : '';
   const h = {
     manOpen,
     manClose,
@@ -8990,16 +8745,10 @@ function checkAutoCloseWarning() {
     return;
   }
   const now = new Date();
-  // Mismo criterio de "día de servicio" que isOutsideHours()/isTodayOpen():
-  // antes de las 06:00 se trata como parte del día anterior (y su minuto se
-  // extiende +1440) — sin esto, un cierre después de medianoche (ej. 00:30)
-  // hacía que este punto verde/rojo dijera "cerrado" o "día cerrado"
-  // contradiciendo al formulario de pedido, que con isOutsideHours() ya
-  // corregido seguía activo debajo.
-  const nowMin = (now.getHours() < 6) ? (now.getHours() * 60 + now.getMinutes() + 1440) : (now.getHours() * 60 + now.getMinutes());
+  const nowMin = now.getHours() * 60 + now.getMinutes();
 
   // Bloquear pedidos si hoy es día cerrado (independientemente del toggle manual)
-  const todayDay = (now.getHours() < 6) ? (now.getDay() + 6) % 7 : now.getDay();
+  const todayDay = now.getDay();
   const diasAbiertos = (_h$diasAbiertos2 = h.diasAbiertos) !== null && _h$diasAbiertos2 !== void 0 ? _h$diasAbiertos2 : [2, 3, 4, 5, 6, 0];
   if (!diasAbiertos.includes(todayDay)) {
     const dot2 = document.querySelector('.dot');
@@ -9066,13 +8815,7 @@ function checkAutoCloseWarning() {
   // mediodía). manOpen/tarClose siguen editándose por separado en el panel,
   // pero aquí solo se usan los extremos.
   const openStartMin = getMinutes(h.manOpen) ?? getMinutes(h.tarOpen);
-  let closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
-  // Si cierra después de medianoche, expresarlo en el mismo espacio
-  // extendido que nowMin (ver más arriba) para poder comparar de forma
-  // continua — mismo arreglo que en isOutsideHours().
-  if (openStartMin !== null && closeEndMin !== null && closeEndMin < openStartMin) {
-    closeEndMin += 1440;
-  }
+  const closeEndMin = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
   const sessions = (openStartMin !== null && closeEndMin !== null)
     ? [{ open: openStartMin, close: closeEndMin }]
     : [];
@@ -9169,16 +8912,6 @@ function getFeeAmount() {
 function getFeeLabel() {
   return localStorage.getItem(FEE_LABEL_KEY) || 'Gastos de gestión online';
 }
-// El código de "pedido desde el local" debe librar SIEMPRE del gasto que
-// sea de gestión — pero cuál de los dos gastos fijos (el primero o el
-// segundo) es "el de gestión" depende de cómo los haya nombrado el admin
-// desde el panel, no de en qué orden se crearon. Por eso se identifica por
-// el texto de su etiqueta ("gestión"/"gestion"), no por ser fee1 o fee2 —
-// así funciona bien aunque se hayan configurado al revés de lo esperado.
-function _esEtiquetaDeGestion(label) {
-  const l = (label || '').toLowerCase();
-  return l.includes('gestión') || l.includes('gestion');
-}
 function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE_AMOUNT_KEY, String(amount));
@@ -9188,292 +8921,18 @@ function saveFeeConfig(enabled, amount, label) {
   logActivity((enabled ? '\u2705' : '\u26d4') + ' Gastos de gesti\u00f3n ' + (enabled ? 'activados' : 'desactivados') + ' \u2014 ' + amount.toFixed(2) + '\u20ac');
 }
 function loadFeeFromFirebase() {
-  // Lectura directa de una sola vez, además del listener en tiempo real de
-  // abajo — si no, en una visita nueva getFeeEnabled() podía devolver
-  // "desactivado" (el valor por defecto) durante los primeros segundos,
-  // hasta que el listener recibiera su primer valor real; si el cliente
-  // confirmaba el pedido en ese hueco, se quedaba sin cobrar el gasto fijo
-  // aunque estuviera activado de verdad.
-  if (window.fb_loadFeeConfig) {
-    window.fb_loadFeeConfig().then(cfg => {
-      if (!cfg) return;
-      if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-      if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
-      if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
-      renderCart();
-    }).catch(() => {}).then(() => { window._feeConfigListo = true; });
-  } else {
-    window._feeConfigListo = true;
+  console.log('[fee] loadFeeFromFirebase called, fb_listenFeeConfig=', typeof window.fb_listenFeeConfig);
+  if (!window.fb_listenFeeConfig) {
+    console.warn('[fee] fb_listenFeeConfig no disponible');
+    return;
   }
-  if (!window.fb_listenFeeConfig) return;
   window.fb_listenFeeConfig(function (cfg) {
+    console.log('[fee] listener fired, cfg=', JSON.stringify(cfg));
     if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
     if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
     if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
+    console.log('[fee] after update: enabled=', localStorage.getItem(FEE_ENABLED_KEY));
     renderCart();
-  });
-}
-// ── SEGUNDO GASTO FIJO (independiente del anterior, con su propio interruptor) ──
-const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
-const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
-const FEE2_LABEL_KEY = 'dpf_fee2_label';
-function getFee2Enabled() {
-  return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
-}
-function getFee2Amount() {
-  return parseFloat(localStorage.getItem(FEE2_AMOUNT_KEY) || '0.50');
-}
-function getFee2Label() {
-  return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
-}
-function saveFee2Config(enabled, amount, label) {
-  localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
-  localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
-  localStorage.setItem(FEE2_LABEL_KEY, label);
-  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function () {});
-  renderCart();
-  logActivity((enabled ? '✅' : '⛔') + ' ' + label + ' ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
-}
-function loadFee2FromFirebase() {
-  // Lectura directa de una sola vez — mismo motivo que loadFeeFromFirebase():
-  // sin esto, un cliente que confirmara el pedido muy rápido en una visita
-  // nueva podía quedarse sin cobrar la bolsa (getFee2Enabled() devolvía
-  // "desactivado" por defecto hasta que el listener recibiera el valor real).
-  if (window.fb_loadFee2Config) {
-    window.fb_loadFee2Config().then(cfg => {
-      if (!cfg) return;
-      if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-      if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
-      if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
-      renderCart();
-    }).catch(() => {}).then(() => { window._fee2ConfigListo = true; });
-  } else {
-    window._fee2ConfigListo = true;
-  }
-  if (!window.fb_listenFee2Config) return;
-  window.fb_listenFee2Config(function (cfg) {
-    if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-    if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
-    if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
-    renderCart();
-  });
-}
-
-// ── DESCUENTO ESTUDIANTE/JUBILADO (autodeclarado, se comprueba el carné al cobrar) ──
-const STUDENT_DISCOUNT_ENABLED_KEY = 'dpf_student_discount_enabled';
-const STUDENT_DISCOUNT_PCT_KEY = 'dpf_student_discount_pct';
-function getStudentDiscountEnabled() {
-  return localStorage.getItem(STUDENT_DISCOUNT_ENABLED_KEY) === 'true';
-}
-function getStudentDiscountPct() {
-  return parseFloat(localStorage.getItem(STUDENT_DISCOUNT_PCT_KEY) || '10');
-}
-function saveStudentDiscountConfig(enabled, pct) {
-  localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
-  localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
-  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function () {});
-  renderCart();
-  logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
-}
-function loadStudentDiscountFromFirebase() {
-  // Mismo motivo que loadFeeFromFirebase()/loadFee2FromFirebase(): lectura
-  // directa de una sola vez además del listener, para que en una visita
-  // nueva la casilla no aparezca oculta/desactivada solo porque el
-  // listener todavía no ha recibido su primer valor.
-  if (window.fb_loadStudentDiscountConfig) {
-    window.fb_loadStudentDiscountConfig().then(cfg => {
-      if (!cfg) return;
-      if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-      if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
-      renderCart();
-    }).catch(() => {}).then(() => { window._studentDiscountConfigListo = true; });
-  } else {
-    window._studentDiscountConfigListo = true;
-  }
-  if (!window.fb_listenStudentDiscountConfig) return;
-  window.fb_listenStudentDiscountConfig(function (cfg) {
-    if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-    if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
-    renderCart();
-  });
-}
-
-// ── CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión, no el otro gasto fijo) ──
-// Para cuando hay cola y quieres que la gente pida desde el móvil sin que
-// les cobre los gastos de gestión online — cambiable desde el panel en
-// cualquier momento, para que no valga para siempre si alguien lo comparte.
-const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
-function getLocalFeeCode() {
-  return (localStorage.getItem(LOCAL_FEE_CODE_KEY) || '').toUpperCase();
-}
-function saveLocalFeeCode(code) {
-  const c = (code || '').trim().toUpperCase();
-  localStorage.setItem(LOCAL_FEE_CODE_KEY, c);
-  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(c).catch(function () {});
-  logActivity('🏪 Código "pedido desde el local" actualizado: ' + (c || '(vacío)'));
-}
-function loadLocalFeeCodeFromFirebase() {
-  if (!window.fb_listenLocalFeeCode) return;
-  window.fb_listenLocalFeeCode(function (code) {
-    localStorage.setItem(LOCAL_FEE_CODE_KEY, (code || '').toUpperCase());
-    // El código real puede tardar en llegar de Firebase más de lo que
-    // tarda en dispararse _aplicarCodigoLocalDesdeURL() (600ms fijos tras
-    // cargar la página) — con conexión lenta en el local al escanear el
-    // QR, la comprobación llegaba a hacerse ANTES de tener el código real
-    // guardado, así que _modoLocalActivo() la daba por incorrecta y
-    // cobraba de más el resto del pedido sin que el cliente lo notara.
-    // Repetir la comprobación aquí, ahora que ya hay valor real, lo arregla
-    // aunque haya llegado tarde.
-    if (typeof _aplicarCodigoLocalDesdeURL === 'function') _aplicarCodigoLocalDesdeURL();
-  });
-}
-function generarCodigoLocalNuevo() {
-  const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I, para no confundir al leerlo en voz alta
-  let c = '';
-  for (let i = 0; i < 4; i++) c += letras[Math.floor(Math.random() * letras.length)];
-  const el = document.getElementById('tc-local-fee-code');
-  if (el) el.value = c;
-}
-// ── TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda) ──
-// Si llegan varios pedidos "desde el local" seguidos, todos salían con la
-// hora real en que se hicieron ("ahora mismo") — cocina los veía todos
-// como urgentes a la vez. Con esto, cada uno se reparte en el tiempo por
-// el intervalo elegido (15/20/25 min), igual que un turno normal.
-const TIENDA_ESPERA_MINUTOS_KEY = 'dpf_tienda_espera_minutos';
-function getTiendaEsperaMinutos() {
-  return parseInt(localStorage.getItem(TIENDA_ESPERA_MINUTOS_KEY) || '0', 10) || 0;
-}
-function saveTiendaEsperaMinutos(minutos) {
-  const m = parseInt(minutos, 10) || 0;
-  localStorage.setItem(TIENDA_ESPERA_MINUTOS_KEY, m);
-  if (window.fb_saveTiendaEsperaMinutos) window.fb_saveTiendaEsperaMinutos(m).catch(function () {});
-  logActivity('⏱️ Tiempo de espera entre tickets (QR tienda): ' + (m ? m + ' min' : 'desactivado'));
-}
-function loadTiendaEsperaMinutosFromFirebase() {
-  if (!window.fb_listenTiendaEsperaMinutos) return;
-  window.fb_listenTiendaEsperaMinutos(function (minutos) {
-    localStorage.setItem(TIENDA_ESPERA_MINUTOS_KEY, minutos || 0);
-  });
-}
-// Transacción en Firebase (no localStorage): varios clientes pidiendo desde
-// sus propios móviles con el mismo código QR necesitan compartir la misma
-// "cola" para repartirse bien, aunque no sea el mismo dispositivo.
-async function _asignarHoraTiendaQR() {
-  const minutos = getTiendaEsperaMinutos();
-  if (!minutos || typeof firebase === 'undefined' || !firebase.database) return null;
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const intervaloMs = minutos * 60000;
-  try {
-    const res = await firebase.database().ref('tiendaColaQR/' + todayKey).transaction(function (current) {
-      const ahora = Date.now();
-      const base = (current && typeof current.proximoTs === 'number' && current.proximoTs > ahora) ? current.proximoTs : ahora;
-      return { proximoTs: base + intervaloMs };
-    });
-    const val = res && res.committed && res.snapshot ? res.snapshot.val() : null;
-    if (!val || !val.proximoTs) return null;
-    return new Date(val.proximoTs).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-  } catch (e) {
-    console.warn('[tienda-qr] no se pudo asignar hora escalonada:', e);
-    return null;
-  }
-}
-// Comprueba el código que escribió el cliente — sin distinguir mayúsculas/minúsculas
-function _modoLocalActivo() {
-  const input = document.getElementById('local-fee-code-input');
-  const escrito = input ? input.value.trim().toUpperCase() : '';
-  const real = getLocalFeeCode();
-  return !!(real && escrito && escrito === real);
-}
-function comprobarCodigoLocal() {
-  const activo = _modoLocalActivo();
-  const input = document.getElementById('local-fee-code-input');
-  const escrito = input ? input.value.trim() : '';
-  ['local-fee-code-feedback', 'drawer-local-fee-code-feedback'].forEach(id => {
-    const feedback = document.getElementById(id);
-    if (!feedback) return;
-    if (!escrito) {
-      feedback.textContent = '';
-    } else {
-      feedback.textContent = activo ? '✅ Sin gastos de gestión — pedido para ahora mismo, sin turno' : '❌ Código incorrecto';
-      feedback.style.color = activo ? '#27855a' : '#c0392b';
-    }
-  });
-  renderCart();
-}
-// Si se llega con ?local=CODIGO en la URL (el cartel con QR del mostrador
-// lleva a un enlace así), se rellena y se comprueba solo, sin que el
-// cliente tenga que escribir nada — para eso sirve el QR.
-async function _aplicarCodigoLocalDesdeURL() {
-  const params = new URLSearchParams(window.location.search);
-  const codigo = params.get('local');
-  if (!codigo) { window._localCodeListo = true; return; }
-  try {
-    // Esta función se puede volver a llamar sola (cuando el código real
-    // llega de Firebase con retraso) — si para entonces el cliente ya está
-    // escribiendo su nombre/teléfono, no le repintamos el carrito debajo
-    // de los dedos; se reintenta en un momento en vez de perder el aviso
-    // para siempre.
-    const activo = document.activeElement;
-    if (activo && (activo.tagName === 'INPUT' || activo.tagName === 'TEXTAREA') && activo.id !== 'local-fee-code-input' && activo.id !== 'drawer-local-fee-code-input') {
-      setTimeout(_aplicarCodigoLocalDesdeURL, 2000);
-      return; // window._localCodeListo sigue en false: se reintenta en 2s
-    }
-    const upper = codigo.trim().toUpperCase();
-    const input = document.getElementById('local-fee-code-input');
-    if (input) input.value = upper;
-    // Lectura directa a Firebase (no fiarse solo de localStorage/del
-    // listener en tiempo real) — en una visita nueva o en incógnito,
-    // localStorage está vacío y el listener puede tardar más en recibir su
-    // primer valor de lo que tarda el cliente en rellenar el formulario y
-    // pulsar "Confirmar". Con esta lectura directa el dato real está listo
-    // antes de seguir, en vez de esperar a que llegue por su cuenta.
-    if (window.fb_loadLocalFeeCode) {
-      try {
-        const real = await window.fb_loadLocalFeeCode();
-        localStorage.setItem(LOCAL_FEE_CODE_KEY, (real || '').toUpperCase());
-      } catch (e) {
-        console.warn('[local] no se pudo leer el código real de Firebase', e);
-      }
-    }
-    console.log('[local] código desde URL:', upper, '| código guardado:', getLocalFeeCode(), '| ¿coinciden?', upper === getLocalFeeCode());
-    comprobarCodigoLocal();
-  } catch (e) {
-    console.warn('[local] error aplicando código desde URL', e);
-  }
-  window._localCodeListo = true;
-}
-document.addEventListener('DOMContentLoaded', () => {
-  if (new URLSearchParams(window.location.search).get('local')) window._localCodeListo = false;
-  // Con margen, para dar tiempo a que renderCart() haya pintado ya el
-  // carrito al menos una vez (si no, el interruptor de gastos de gestión
-  // podría no estar listo todavía y no se mostraría el aviso de aplicado).
-  setTimeout(_aplicarCodigoLocalDesdeURL, 600);
-});
-
-// ── Gate de config crítica antes de confirmar un pedido ──
-// Antes, cada ajuste que dependía de Firebase (gastos de gestión, bolsa,
-// código local...) se iba parcheando por separado cada vez que aparecía un
-// caso de "a veces no se aplica a tiempo" (ver comentarios de arriba). En
-// vez de seguir cazando estos casos uno a uno, submitOrder() espera a este
-// punto de control único antes de calcular fees/total definitivos. En el
-// caso normal (config ya cargada mucho antes de que el cliente termine de
-// rellenar el formulario) esto no añade ninguna espera perceptible — solo
-// entra en juego en una visita nueva/muy rápida, y como mucho espera
-// maxMs antes de continuar igualmente con los valores que haya, para no
-// dejar al cliente colgado si Firebase estuviera caído de verdad (para eso
-// ya existe el aviso de "Firebase no disponible").
-window._feeConfigListo = window._feeConfigListo || false;
-window._fee2ConfigListo = window._fee2ConfigListo || false;
-window._localCodeListo = window._localCodeListo === undefined ? true : window._localCodeListo;
-window._studentDiscountConfigListo = window._studentDiscountConfigListo || false;
-function esperarConfigCriticaLista(maxMs) {
-  return new Promise(resolve => {
-    const start = Date.now();
-    (function chk() {
-      const listo = window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo;
-      if (listo || Date.now() - start > maxMs) { resolve(); return; }
-      setTimeout(chk, 80);
-    })();
   });
 }
 const SLOTS_KEY = 'dpf_slots';
@@ -9487,10 +8946,7 @@ const TICKET_CONFIG_DEFAULTS = {
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
   copias: 1,
-  autoImprimir: true,
-  letraGrande: false,
-  qrHabilitado: false,
-  qrContenido: ''
+  autoImprimir: true
 };
 function getTicketConfig() {
   try {
@@ -9523,20 +8979,6 @@ function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(() => {});
-  // Un toggle manual gana siempre sobre la auto-pausa: se marca que este
-  // estado ya NO lo puso el sistema (para que no lo "corrija" solo) y se le
-  // da un margen antes de que la auto-pausa pueda volver a tocar nada \u2014 si
-  // no, un reabrir manual con la cola todav\u00EDa alta se auto-pausar\u00EDa de
-  // nuevo en cuanto entrara el siguiente pedido.
-  _setAutoPausaEstado(false, Date.now() + AUTO_PAUSA_COOLDOWN_MS);
-  // Un toggle manual tambi\u00E9n cancela cualquier pausa expr\u00E9s pendiente \u2014
-  // si no, esta podr\u00EDa reabrir sola pasado su tiempo aunque el admin ya
-  // haya decidido otra cosa en medio.
-  if (_getPausaExpresHasta()) {
-    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
-    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
-    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
-  }
   updateOrdersUI(next);
   logActivity("\uD83D\uDEA6 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
@@ -9551,316 +8993,6 @@ function savePauseMsg() {
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');
-}
-
-// \u2500\u2500 AUTO-PAUSA POR SATURACI\u00D3N \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// Si se acumulan demasiados pedidos pendientes (sin marcar "listo"), la web
-// se pausa sola \u2014reutilizando el mismo mecanismo de "Pedidos pausados" de
-// arriba, banner y candado en el carrito incluidos\u2014 y se reactiva sola en
-// cuanto la cola baja, para que en hora punta no haga falta estar pendiente
-// de pausar/reabrir a mano.
-const AUTO_PAUSA_ENABLED_KEY = 'dpf_auto_pausa_enabled';
-const AUTO_PAUSA_UMBRAL_KEY = 'dpf_auto_pausa_umbral';
-const AUTO_PAUSA_MSG_KEY = 'dpf_auto_pausa_msg';
-const AUTO_PAUSA_DEFAULT_MSG = '\uD83D\uDD25 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.';
-const AUTO_PAUSA_DEFAULT_UMBRAL = 15;
-// Para reabrir hace falta bajar del umbral con margen (no solo tocarlo
-// justo) \u2014 si no, con la cola oscilando alrededor del umbral se abrir\u00EDa y
-// cerrar\u00EDa sola una y otra vez.
-const AUTO_PAUSA_HISTERESIS = 3;
-const AUTO_PAUSA_ACTIVA_KEY = 'dpf_auto_pausa_activa'; // \u00BFla pausa actual la puso el sistema (no el admin)?
-const AUTO_PAUSA_COOLDOWN_KEY = 'dpf_auto_pausa_cooldown';
-const AUTO_PAUSA_COOLDOWN_MS = 3 * 60 * 1000;
-
-function getAutoPausaConfig() {
-  return {
-    enabled: localStorage.getItem(AUTO_PAUSA_ENABLED_KEY) === 'true',
-    umbral: parseInt(localStorage.getItem(AUTO_PAUSA_UMBRAL_KEY) || '', 10) || AUTO_PAUSA_DEFAULT_UMBRAL,
-    msg: localStorage.getItem(AUTO_PAUSA_MSG_KEY) || AUTO_PAUSA_DEFAULT_MSG
-  };
-}
-function saveAutoPausaConfig(enabled, umbral, msg) {
-  localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, enabled ? 'true' : 'false');
-  localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(umbral));
-  localStorage.setItem(AUTO_PAUSA_MSG_KEY, msg);
-  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(enabled, umbral, msg).catch(() => {});
-  logActivity((enabled ? '\u2705' : '\u26D4') + ' Auto-pausa por saturaci\u00F3n ' + (enabled ? 'activada \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivada'));
-  if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
-}
-function loadAutoPausaConfigFromFirebase() {
-  if (!window.fb_listenAutoPausaConfig) return;
-  window.fb_listenAutoPausaConfig(function (cfg) {
-    if (cfg.enabled !== undefined) localStorage.setItem(AUTO_PAUSA_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-    if (cfg.umbral !== undefined) localStorage.setItem(AUTO_PAUSA_UMBRAL_KEY, String(cfg.umbral));
-    if (cfg.msg !== undefined) localStorage.setItem(AUTO_PAUSA_MSG_KEY, cfg.msg);
-    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
-  });
-}
-function _getAutoPausaEstado() {
-  return {
-    activa: localStorage.getItem(AUTO_PAUSA_ACTIVA_KEY) === 'true',
-    cooldownUntil: parseInt(localStorage.getItem(AUTO_PAUSA_COOLDOWN_KEY) || '', 10) || 0
-  };
-}
-function _setAutoPausaEstado(activa, cooldownUntil) {
-  localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, activa ? 'true' : 'false');
-  localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(cooldownUntil || 0));
-  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(activa, cooldownUntil || 0).catch(() => {});
-}
-function loadAutoPausaEstadoFromFirebase() {
-  if (!window.fb_listenAutoPausaEstado) return;
-  window.fb_listenAutoPausaEstado(function (estado) {
-    if (estado.activa !== undefined) localStorage.setItem(AUTO_PAUSA_ACTIVA_KEY, estado.activa ? 'true' : 'false');
-    if (estado.cooldownUntil !== undefined) localStorage.setItem(AUTO_PAUSA_COOLDOWN_KEY, String(estado.cooldownUntil || 0));
-  });
-}
-// Se llama cada vez que se repinta "Pedidos en vivo" con el n\u00BA de pedidos
-// pendientes (sin marcar "listo"/"entregado"/"cancelado"). Solo pausa o
-// reactiva pedidos \u2014 nunca toca el horario ni el estado "Local abierto".
-function _comprobarAutoPausaSaturacion(pendientes) {
-  const cfg = getAutoPausaConfig();
-  if (!cfg.enabled) return;
-  // Fuera de horario/d\u00EDa cerrado: eso ya cierra los pedidos por su cuenta
-  // (getOrdersOpen), no hay saturaci\u00F3n que gestionar.
-  if (isOutsideHours() || !isTodayOpen()) return;
-  const estado = _getAutoPausaEstado();
-  if (Date.now() < estado.cooldownUntil) return; // toggle manual reciente, no lo pisamos todav\u00EDa
-
-  const open = getOrdersOpen();
-  if (open && pendientes >= cfg.umbral) {
-    localStorage.setItem(ORDERS_KEY, 'false');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
-    localStorage.setItem(ORDERS_MSG_KEY, cfg.msg);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg).catch(() => {});
-    _setAutoPausaEstado(true, 0);
-    updateOrdersUI(false, cfg.msg);
-    logActivity('\uD83D\uDD25 Pedidos pausados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes (umbral: ' + cfg.umbral + ')');
-    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
-  } else if (!open && estado.activa && pendientes <= Math.max(0, cfg.umbral - AUTO_PAUSA_HISTERESIS)) {
-    localStorage.setItem(ORDERS_KEY, 'true');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
-    _setAutoPausaEstado(false, 0);
-    updateOrdersUI(true);
-    logActivity('\u2705 Pedidos reactivados autom\u00E1ticamente \u2014 ' + pendientes + ' pedidos pendientes');
-    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
-  } else if (typeof _renderAutoPausaUI === 'function') {
-    _renderAutoPausaUI(pendientes);
-  }
-}
-function toggleAutoPausaEnabled() {
-  const cfg = getAutoPausaConfig();
-  saveAutoPausaConfig(!cfg.enabled, cfg.umbral, cfg.msg);
-}
-function guardarAutoPausaConfig() {
-  const umbralInput = document.getElementById('auto-pausa-umbral');
-  const msgInput = document.getElementById('auto-pausa-msg');
-  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
-  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AUTO_PAUSA_DEFAULT_UMBRAL : parsedUmbral;
-  const msg = (msgInput && msgInput.value.trim()) || AUTO_PAUSA_DEFAULT_MSG;
-  saveAutoPausaConfig(getAutoPausaConfig().enabled, umbral, msg);
-  showToast('local-toast');
-}
-function _renderAutoPausaUI(pendientesActuales) {
-  const cfg = getAutoPausaConfig();
-  const btn = document.getElementById('auto-pausa-toggle-btn');
-  if (btn) {
-    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
-    btn.textContent = cfg.enabled ? '\u2705 Activada' : '\u26D4 Desactivada';
-  }
-  const umbralInput = document.getElementById('auto-pausa-umbral');
-  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
-  const msgInput = document.getElementById('auto-pausa-msg');
-  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
-  const estadoEl = document.getElementById('auto-pausa-estado-texto');
-  if (estadoEl) {
-    if (!cfg.enabled) {
-      estadoEl.textContent = '';
-    } else {
-      const estado = _getAutoPausaEstado();
-      const pendientes = pendientesActuales !== undefined ? pendientesActuales : (window._activosCache || []).length;
-      estadoEl.textContent = estado.activa
-        ? '\uD83D\uDD25 Pausado autom\u00E1ticamente ahora mismo (' + pendientes + ' pedidos pendientes)'
-        : 'Ahora mismo: ' + pendientes + ' / ' + cfg.umbral + ' pedidos pendientes';
-    }
-  }
-}
-
-// \u2500\u2500 PAUSA EXPR\u00C9S (pausa temporal con cuenta atr\u00E1s) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// Para cuando sabes que el pico va a durar poco y no quieres tener que
-// acordarte de reactivar los pedidos t\u00FA misma \u2014 se reabre sola pasado el
-// tiempo, sin depender de que baje la cola (a diferencia de la auto-pausa
-// por saturaci\u00F3n, que solo mira el n\u00BA de pedidos pendientes).
-const PAUSA_EXPRES_HASTA_KEY = 'dpf_pausa_expres_hasta';
-function _getPausaExpresHasta() {
-  return parseInt(localStorage.getItem(PAUSA_EXPRES_HASTA_KEY) || '', 10) || 0;
-}
-function pausarExpres(minutos) {
-  const hasta = Date.now() + minutos * 60 * 1000;
-  localStorage.setItem(ORDERS_KEY, 'false');
-  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
-  localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta));
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(() => {});
-  // No debe considerarse una auto-pausa (para que la auto-pausa por
-  // saturaci\u00F3n no la reabra antes de tiempo ni la vuelva a tocar).
-  _setAutoPausaEstado(false, hasta);
-  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-  const msg = '\u23F1\uFE0F Pausado temporalmente. Volvemos sobre las ' + horaReapertura + '.';
-  localStorage.setItem(ORDERS_MSG_KEY, msg);
-  if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(() => {});
-  updateOrdersUI(false, msg);
-  logActivity('\u23F1\uFE0F Pausa expr\u00E9s activada: ' + minutos + ' min (reabre a las ' + horaReapertura + ')');
-  _renderPausaExpresUI();
-}
-function _comprobarPausaExpres() {
-  const hasta = _getPausaExpresHasta();
-  if (!hasta) return;
-  if (Date.now() >= hasta) {
-    localStorage.removeItem(PAUSA_EXPRES_HASTA_KEY);
-    if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
-    // Solo reabre si nadie ha vuelto a tocar el toggle manual mientras tanto
-    // (toggleOrdersAccepting ya limpia esta clave al pulsarlo).
-    if (localStorage.getItem(ORDERS_KEY) === 'false') {
-      localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
-      updateOrdersUI(true);
-      logActivity('\u2705 Pausa expr\u00E9s terminada \u2014 pedidos reactivados');
-    }
-    _renderPausaExpresUI();
-  }
-}
-function loadPausaExpresFromFirebase() {
-  if (!window.fb_listenPausaExpresHasta) return;
-  window.fb_listenPausaExpresHasta(function (hasta) {
-    localStorage.setItem(PAUSA_EXPRES_HASTA_KEY, String(hasta || 0));
-    _renderPausaExpresUI();
-  });
-}
-function _renderPausaExpresUI() {
-  const el = document.getElementById('pausa-expres-estado-texto');
-  if (!el) return;
-  const hasta = _getPausaExpresHasta();
-  if (!hasta || Date.now() >= hasta) {
-    el.textContent = '';
-    return;
-  }
-  const horaReapertura = new Date(hasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-  const minutosRestantes = Math.max(1, Math.round((hasta - Date.now()) / 60000));
-  el.textContent = '\u23F1\uFE0F Pausa expr\u00E9s activa \u2014 reabre a las ' + horaReapertura + ' (~' + minutosRestantes + ' min)';
-}
-// Comprobaci\u00F3n peri\u00F3dica: nada m\u00E1s dispara esto si no llega ning\u00FAn pedido
-// nuevo mientras dura la pausa.
-setInterval(() => {
-  if (typeof _comprobarPausaExpres === 'function') _comprobarPausaExpres();
-}, 15000);
-
-// \u2500\u2500 AVISO SUAVE DE SATURACI\u00D3N (previo a la auto-pausa) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// Antes de llegar al punto de cerrar los pedidos del todo, avisa (sin
-// bloquear) tanto al cliente ("va a tardar m\u00E1s de lo normal") como a cocina
-// (sonido distinto) y empuja el selector de turno hacia horas m\u00E1s tarde \u2014
-// para repartir mejor la carga en vez de amontonarla toda en el turno m\u00E1s
-// pr\u00F3ximo.
-const AVISO_SAT_ENABLED_KEY = 'dpf_aviso_sat_enabled';
-const AVISO_SAT_UMBRAL_KEY = 'dpf_aviso_sat_umbral';
-const AVISO_SAT_MSG_KEY = 'dpf_aviso_sat_msg';
-const AVISO_SAT_SALTO_KEY = 'dpf_aviso_sat_salto_min';
-const AVISO_SAT_MINPP_KEY = 'dpf_aviso_sat_minpp';
-const AVISO_SAT_DEFAULT_MSG = '\u23F3 Hay bastante ambiente ahora mismo, tu pedido tardar\u00E1 m\u00E1s de lo habitual.';
-const AVISO_SAT_DEFAULT_UMBRAL = 8;
-const AVISO_SAT_DEFAULT_SALTO_MIN = 30;
-const AVISO_SAT_DEFAULT_MINPP = 3;
-function getAvisoSaturacionConfig() {
-  return {
-    enabled: localStorage.getItem(AVISO_SAT_ENABLED_KEY) === 'true',
-    umbral: parseInt(localStorage.getItem(AVISO_SAT_UMBRAL_KEY) || '', 10) || AVISO_SAT_DEFAULT_UMBRAL,
-    msg: localStorage.getItem(AVISO_SAT_MSG_KEY) || AVISO_SAT_DEFAULT_MSG,
-    minutosSalto: parseInt(localStorage.getItem(AVISO_SAT_SALTO_KEY) || '', 10) || AVISO_SAT_DEFAULT_SALTO_MIN,
-    minPorPedido: parseInt(localStorage.getItem(AVISO_SAT_MINPP_KEY) || '', 10) || AVISO_SAT_DEFAULT_MINPP
-  };
-}
-function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido) {
-  localStorage.setItem(AVISO_SAT_ENABLED_KEY, enabled ? 'true' : 'false');
-  localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(umbral));
-  localStorage.setItem(AVISO_SAT_MSG_KEY, msg);
-  localStorage.setItem(AVISO_SAT_SALTO_KEY, String(minutosSalto));
-  localStorage.setItem(AVISO_SAT_MINPP_KEY, String(minPorPedido));
-  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido).catch(() => {});
-  logActivity((enabled ? '\u2705' : '\u26D4') + ' Aviso previo de saturaci\u00F3n ' + (enabled ? 'activado \u2014 a partir de ' + umbral + ' pedidos pendientes' : 'desactivado'));
-  _renderAvisoSaturacionUI();
-}
-function loadAvisoSaturacionFromFirebase() {
-  if (!window.fb_listenAvisoSaturacionConfig) return;
-  window.fb_listenAvisoSaturacionConfig(function (cfg) {
-    if (cfg.enabled !== undefined) localStorage.setItem(AVISO_SAT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
-    if (cfg.umbral !== undefined) localStorage.setItem(AVISO_SAT_UMBRAL_KEY, String(cfg.umbral));
-    if (cfg.msg !== undefined) localStorage.setItem(AVISO_SAT_MSG_KEY, cfg.msg);
-    if (cfg.minutosSalto !== undefined) localStorage.setItem(AVISO_SAT_SALTO_KEY, String(cfg.minutosSalto));
-    if (cfg.minPorPedido !== undefined) localStorage.setItem(AVISO_SAT_MINPP_KEY, String(cfg.minPorPedido));
-    _renderAvisoSaturacionUI();
-  });
-}
-function toggleAvisoSaturacionEnabled() {
-  const cfg = getAvisoSaturacionConfig();
-  saveAvisoSaturacionConfig(!cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido);
-}
-function guardarAvisoSaturacionConfig() {
-  const umbralInput = document.getElementById('aviso-sat-umbral');
-  const msgInput = document.getElementById('aviso-sat-msg');
-  const saltoInput = document.getElementById('aviso-sat-salto');
-  const minppInput = document.getElementById('aviso-sat-minpp');
-  const parsedUmbral = parseInt(umbralInput && umbralInput.value, 10);
-  const umbral = (isNaN(parsedUmbral) || parsedUmbral < 1) ? AVISO_SAT_DEFAULT_UMBRAL : parsedUmbral;
-  const parsedSalto = parseInt(saltoInput && saltoInput.value, 10);
-  const minutosSalto = (isNaN(parsedSalto) || parsedSalto < 0) ? AVISO_SAT_DEFAULT_SALTO_MIN : parsedSalto;
-  const parsedMinpp = parseInt(minppInput && minppInput.value, 10);
-  const minPorPedido = (isNaN(parsedMinpp) || parsedMinpp < 0) ? AVISO_SAT_DEFAULT_MINPP : parsedMinpp;
-  const msg = (msgInput && msgInput.value.trim()) || AVISO_SAT_DEFAULT_MSG;
-  saveAvisoSaturacionConfig(getAvisoSaturacionConfig().enabled, umbral, msg, minutosSalto, minPorPedido);
-  showToast('local-toast');
-}
-// Estimaci\u00F3n de espera para la pantalla de \u00E9xito: pendientes \u00D7 minutos/pedido
-function _estimarMinutosEspera(pendientes) {
-  const cfg = getAvisoSaturacionConfig();
-  if (!cfg.enabled || pendientes < cfg.umbral) return 0;
-  return pendientes * cfg.minPorPedido;
-}
-function _renderAvisoSaturacionUI() {
-  const cfg = getAvisoSaturacionConfig();
-  const btn = document.getElementById('aviso-sat-toggle-btn');
-  if (btn) {
-    btn.className = 'open-toggle ' + (cfg.enabled ? 'abierto' : 'cerrado');
-    btn.textContent = cfg.enabled ? '\u2705 Activado' : '\u26D4 Desactivado';
-  }
-  const umbralInput = document.getElementById('aviso-sat-umbral');
-  if (umbralInput && document.activeElement !== umbralInput) umbralInput.value = cfg.umbral;
-  const msgInput = document.getElementById('aviso-sat-msg');
-  if (msgInput && document.activeElement !== msgInput) msgInput.value = cfg.msg;
-  const saltoInput = document.getElementById('aviso-sat-salto');
-  if (saltoInput && document.activeElement !== saltoInput) saltoInput.value = cfg.minutosSalto;
-  const minppInput = document.getElementById('aviso-sat-minpp');
-  if (minppInput && document.activeElement !== minppInput) minppInput.value = cfg.minPorPedido;
-}
-// \u00BFEst\u00E1 el nivel de "aviso" activo ahora mismo? (por debajo del umbral de
-// auto-pausa \u2014si ya est\u00E1 pausado del todo, el banner de cerrado manda\u2014)
-window._saturacionAvisoActiva = false;
-function _actualizarAvisoSaturacion(pendientes) {
-  const cfg = getAvisoSaturacionConfig();
-  const banner = document.getElementById('aviso-saturacion-banner');
-  const pausaCfg = getAutoPausaConfig();
-  const yaPausado = pausaCfg.enabled && !getOrdersOpen();
-  const activa = cfg.enabled && !yaPausado && pendientes >= cfg.umbral;
-  const eraActiva = window._saturacionAvisoActiva;
-  window._saturacionAvisoActiva = activa;
-  if (banner) {
-    banner.style.display = activa ? 'block' : 'none';
-    banner.textContent = activa ? cfg.msg : '';
-  }
-  if (activa && !eraActiva && _adminLoggedIn && typeof playNotificationSound === 'function') {
-    playNotificationSound('bip');
-  }
-  if (typeof renderSlotPicker === 'function') {
-    const group = document.getElementById('slot-picker-group');
-    if (group && group.style.display !== 'none') renderSlotPicker();
-  }
 }
 function loadFeeUI() {
   const btn = document.getElementById('fee-toggle-btn');
@@ -9880,10 +9012,7 @@ function toggleFeeEnabled() {
   showToast('fee-toast');
 }
 function saveFeeFromPanel() {
-  // Antes "|| 0.50" trataba un 0 escrito a propósito como si no se hubiera
-  // escrito nada (0 es falsy en JS) y lo sustituía por 0,50€ sin avisar.
-  const parsedAmount = parseFloat(document.getElementById('fee-amount-input').value);
-  const amount = (isNaN(parsedAmount) || parsedAmount < 0) ? 0.50 : parsedAmount;
+  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
   const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
   saveFeeConfig(getFeeEnabled(), amount, label);
   loadFeeUI();
@@ -9954,14 +9083,8 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
-    // Si cierra después de medianoche (closeEnd < openStart), hay que expresar
-    // closeEnd en el mismo "espacio extendido" que nowMin (que ya suma 1440
-    // antes de las 06:00) para poder comparar de forma continua — antes
-    // comparaba nowMin extendido contra closeEnd sin extender, así que entre
-    // el cierre real (ej. 00:30) y las 06:00 nunca detectaba que ya había
-    // cerrado (nowMin >= openStart seguía siendo cierto igual).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
+      ? (nowMin >= openStart || nowMin < closeEnd)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado
@@ -10144,20 +9267,13 @@ async function _comprobarPremioFidelizacion(phoneClean) {
     if (!data.success) return;
     const cliente = { sellos: data.sellos, premiosPendientes: data.premiosPendientes, vecesCompletado: data.vecesCompletado };
     const premiosPendientes = cliente.premiosPendientes;
-    // Se guarda para que renderCart() pueda volver a pintar la tarjeta cada
-    // vez que reconstruye el carrito — en el cajón móvil, _syncCartDrawer()
-    // sustituye TODO el HTML del carrito (incluido el campo de teléfono al
-    // que se había enganchado esta tarjeta con appendChild), así que sin
-    // esto la tarjeta se borraba en el primer repintado después de aparecer
-    // y nunca se volvía a ver.
-    window._fidelizacionClienteCache = { phone: phoneClean, cliente };
     _pintarTarjetaSellos(phoneClean, cliente);
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
       window._fidelizacionProximoSelloActivo = null;
       _ocultarAvisoProximoSelloFidelizacion();
       _mostrarAvisoPremioFidelizacion(phoneClean);
-    } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata() && _carritoSubtotalActual() >= FIDELIZACION_PEDIDO_MINIMO) {
+    } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata()) {
       // El cliente está a 1 sello del premio (9/10) y este pedido ya incluye
       // patata: este sería el pedido que completa el sello. Avisamos antes
       // de confirmar, no después.
@@ -10171,16 +9287,6 @@ async function _comprobarPremioFidelizacion(phoneClean) {
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
     }
-    // Repintar el carrito para que el total ya refleje el premio (o deje
-    // de hacerlo) en cuanto se sabe, sin esperar a que el cliente toque
-    // el carrito para que se note el cambio. PERO no si el cliente está
-    // escribiendo en ese momento (nombre/teléfono/notas) — renderCart()
-    // reconstruye esos campos desde cero y le borraría lo que ha escrito.
-    // El descuento se calcula igualmente bien al confirmar el pedido
-    // aunque el carrito no se repinte al instante.
-    const _campoActivo = document.activeElement ? document.activeElement.tagName : '';
-    const _escribiendoAhora = _campoActivo === 'INPUT' || _campoActivo === 'TEXTAREA';
-    if (typeof renderCart === 'function' && !_escribiendoAhora) renderCart();
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
 function _carritoTienePatata() {
@@ -10190,29 +9296,6 @@ function _carritoTienePatata() {
     // por ejemplo "Patata Al Gusto" vive en custCart, no en cart.
     return typeof cartHasPatatas === 'function' ? cartHasPatatas() : false;
   } catch (e) { return false; }
-}
-// Subtotal aproximado del carrito (sin gastos fijos ni descuentos) — solo
-// para el aviso de "este pedido completa tu 10º sello", que debe coincidir
-// con el mismo mínimo de gasto que exige el sello de verdad al confirmar
-// (ver FIDELIZACION_PEDIDO_MINIMO / _pedidoElegibleFidelizacion en
-// carrito-checkout.js). No hace falta ser exacto al céntimo aquí: si al
-// final el pedido no llega al mínimo, simplemente no se le da el sello,
-// esto es solo el aviso previo.
-function _carritoSubtotalActual() {
-  try {
-    const regularTotal = Object.entries(cart).reduce((s, [id, q]) => {
-      const it = MENU.find(m => m.id == id);
-      return s + (it ? it.price * q : 0);
-    }, 0);
-    const custTotal = Object.values(custCart).filter(c => c.qty > 0).reduce((s, c) => {
-      const item = MENU.find(m => m.id == c.menuId);
-      if (!item) return s;
-      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-      return s + unitPrice * c.qty;
-    }, 0);
-    const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + (typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) * c.qty : 0), 0);
-    return regularTotal + custTotal + extTotal;
-  } catch (e) { return 0; }
 }
 function _campoTelefonoVisible(phoneCleanEsperado) {
   // En escritorio el formulario vive en la página principal (customer-phone);
@@ -10291,17 +9374,14 @@ function _pintarTarjetaSellos(phoneClean, cliente) {
 
   const card = document.createElement('div');
   card.className = 'tarjeta-sellos-cliente';
-  card.style.cssText = 'border-radius:12px;margin-top:10px;font-family:\'DM Sans\',sans-serif;' +
-    (premios > 0
-      ? 'padding:12px 14px;background:#3D1F0D;color:#FFF8EE'
-      : 'padding:11px 13px 11px 44px;position:relative;background:#fff;border:1px solid rgba(61,31,13,.10);box-shadow:0 1px 3px rgba(0,0,0,.06);color:#3D1F0D');
+  card.style.cssText = 'border-radius:12px;padding:12px 14px;margin-top:10px;font-family:\'DM Sans\',sans-serif;' +
+    (premios > 0 ? 'background:#3D1F0D;color:#FFF8EE' : 'background:#FBEFD6;border:1.5px solid #F4C430;color:#3D1F0D');
 
   if (premios > 0) {
     card.innerHTML = '<div style="font-size:14px;font-weight:800;margin-bottom:2px">🎉 ¡Tienes ' + premios + ' patata' + (premios > 1 ? 's' : '') + ' gratis para canjear!</div>' +
       '<div style="font-size:12px;color:#F4C430">Añádela al carrito y se descontará sola al confirmar.</div>';
   } else {
-    card.innerHTML = '<div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F4C430">🎁</div>' +
-      '<div style="font-size:12px;font-weight:700;margin-bottom:6px">Tus sellos: ' + sellos + '/10</div>' +
+    card.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">🎁 Tus sellos: ' + sellos + '/10</div>' +
       '<div>' + dots + '</div>' +
       (veces > 0 ? '<div style="font-size:11px;color:#8A6A4E;margin-top:6px">🏅 Ya van ' + veces + ' patata' + (veces > 1 ? 's' : '') + ' gratis conseguidas</div>' : '');
   }
@@ -10336,1019 +9416,6 @@ function _lanzarConfetiSellos() {
   } catch {}
 }
 
-
-// ── IMPRESORA TÉRMICA (WebUSB) ──
-// Imprime directamente desde el navegador a la impresora térmica UNYKAch POS5 (USB, ESC/POS),
-// sin depender de un PC intermedio: funciona igual en Chrome de escritorio (para probar) que en
-// Chrome de la tablet Android de la tienda (con la impresora conectada por USB-OTG).
-// Requiere Chrome/Edge — Safari y Firefox no soportan WebUSB.
-
-const PRINTER_LOGO_W = 384;
-const PRINTER_LOGO_H = 384;
-const PRINTER_LOGO_DATA = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 128, 0, 0, 31, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 128, 0, 0, 127, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 254, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 252, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 248, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 248, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 240, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 240, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 224, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 224, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 192, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 192, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 192, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 128, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 128, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 128, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 252, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 252, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 1, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 31, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 199, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 159, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 127, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 248, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 128, 1, 255, 252, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 254, 0, 0, 127, 224, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 248, 0, 0, 63, 128, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 240, 31, 192, 15, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 225, 255, 248, 4, 3, 255, 192, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 199, 255, 255, 0, 31, 255, 248, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 159, 255, 255, 128, 127, 255, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 127, 255, 255, 225, 255, 255, 255, 143, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 243, 255, 255, 255, 207, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 247, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 231, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 227, 255, 255, 255, 191, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 129, 255, 255, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 127, 255, 252, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 252, 0, 63, 255, 240, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 240, 0, 7, 255, 192, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 128, 0, 0, 120, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 7, 255, 131, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 254, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 1, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 7, 252, 0, 0, 0, 0, 0, 3, 248, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 15, 254, 0, 0, 0, 0, 0, 7, 254, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 31, 255, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 224, 0, 31, 255, 0, 0, 0, 0, 0, 31, 255, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 224, 0, 63, 255, 128, 0, 0, 0, 0, 31, 255, 128, 0, 0, 0, 7, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 192, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 128, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 7, 255, 255, 224, 31, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 255, 128, 7, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 31, 255, 0, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 255, 0, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 31, 254, 0, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 254, 0, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 15, 254, 0, 0, 0, 0, 0, 31, 255, 0, 0, 0, 0, 7, 255, 252, 0, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 7, 252, 0, 0, 0, 0, 0, 15, 254, 0, 0, 0, 0, 15, 255, 248, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 1, 240, 0, 0, 0, 0, 0, 7, 252, 0, 0, 0, 0, 15, 255, 240, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 3, 248, 0, 0, 0, 0, 15, 255, 240, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 240, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 0, 0, 127, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 56, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 126, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 254, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 127, 224, 0, 63, 252, 0, 0, 0, 0, 0, 0, 31, 255, 128, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 3, 255, 248, 1, 255, 255, 0, 0, 0, 0, 0, 0, 31, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 15, 255, 254, 3, 255, 255, 192, 0, 0, 0, 0, 0, 31, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 63, 255, 255, 15, 255, 255, 240, 0, 0, 0, 0, 0, 63, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 127, 255, 255, 159, 255, 255, 252, 0, 0, 0, 0, 0, 63, 255, 129, 255, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 1, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 63, 255, 129, 255, 1, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 63, 255, 128, 254, 1, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 63, 255, 128, 254, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 127, 255, 0, 124, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 0, 127, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 127, 255, 0, 0, 7, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 195, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 24, 0, 0, 127, 255, 0, 0, 7, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 252, 0, 0, 127, 255, 0, 0, 15, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 127, 255, 0, 0, 31, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 255, 255, 0, 0, 63, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 255, 255, 0, 0, 127, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 255, 255, 0, 0, 127, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 255, 255, 0, 1, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 1, 255, 254, 0, 3, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 1, 255, 254, 0, 7, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 1, 255, 254, 0, 31, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 1, 255, 255, 129, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 1, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 3, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 3, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 3, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 7, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 7, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 7, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 15, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 15, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 15, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 31, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 31, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 251, 248, 0, 0, 0, 31, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 247, 255, 255, 255, 255, 187, 248, 0, 0, 0, 63, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 3, 255, 255, 252, 253, 255, 255, 251, 248, 0, 0, 0, 63, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 3, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 63, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 3, 255, 255, 255, 251, 255, 255, 255, 240, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 1, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 1, 255, 255, 254, 247, 255, 255, 239, 224, 0, 0, 0, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 0, 255, 223, 254, 255, 255, 255, 255, 192, 0, 0, 0, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 255, 255, 254, 239, 255, 255, 255, 192, 0, 0, 1, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 127, 255, 254, 223, 255, 255, 255, 128, 0, 0, 1, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 127, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 240, 0, 0, 63, 239, 255, 255, 255, 255, 255, 0, 0, 0, 3, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 7, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 15, 255, 255, 255, 255, 255, 252, 0, 0, 0, 7, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 15, 255, 255, 255, 255, 255, 248, 0, 0, 0, 15, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 7, 255, 255, 255, 255, 223, 240, 0, 0, 0, 31, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 252, 0, 0, 3, 255, 63, 255, 255, 127, 224, 0, 0, 0, 31, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 252, 0, 0, 1, 255, 239, 255, 253, 255, 192, 0, 0, 0, 63, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 254, 0, 0, 0, 255, 251, 255, 207, 255, 128, 0, 0, 0, 127, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 127, 255, 193, 255, 255, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 63, 255, 255, 255, 252, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 128, 0, 0, 15, 255, 255, 255, 248, 0, 0, 0, 1, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 192, 0, 0, 7, 255, 255, 255, 224, 0, 0, 0, 3, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 192, 0, 0, 1, 255, 255, 255, 128, 0, 0, 0, 7, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 224, 0, 0, 0, 63, 255, 254, 0, 0, 0, 0, 15, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 240, 0, 0, 0, 7, 255, 224, 0, 0, 0, 0, 31, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 252, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 254, 0, 0, 7, 0, 0, 8, 0, 0, 0, 1, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 0, 0, 7, 240, 0, 56, 0, 0, 0, 3, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 192, 0, 7, 255, 255, 248, 0, 0, 0, 7, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 224, 0, 7, 255, 255, 240, 0, 0, 0, 31, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 248, 0, 7, 255, 255, 240, 0, 0, 0, 63, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 252, 0, 7, 255, 255, 240, 0, 0, 0, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 0, 7, 255, 255, 224, 0, 0, 3, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 192, 7, 255, 255, 224, 0, 0, 15, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 240, 3, 255, 255, 192, 0, 0, 63, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 254, 3, 255, 255, 192, 0, 0, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 195, 255, 255, 128, 0, 7, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 0, 0, 63, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 254, 0, 7, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 254, 3, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
-// Sustituye acentos/ñ por su equivalente ASCII — la mayoría de estas impresoras
-// clon no traen bien configurada la página de códigos y los acentos salen mal;
-// es más fiable no depender de ninguna tabla de códigos.
-function _ptEncodeStr(str) {
-  const map = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?' };
-  return (str || '').split('').map(c => map[c] || c).join('');
-}
-
-// El campo "time" del ticket normalmente ya viene como "HH:MM" (así lo
-// guarda el servidor en stats/<fecha>), pero algún camino interno todavía
-// puede traer la fecha completa (toLocaleString) — esto se queda solo con
-// la hora corta en cualquiera de los dos casos, para imprimirla en grande.
-function _ptHoraCorta(t) {
-  if (!t) return '';
-  const m = String(t).match(/(\d{1,2}):(\d{2})/);
-  return m ? m[0] : String(t);
-}
-
-// Construye los bytes ESC/POS de un ticket (mismo formato que usaba el bridge Node.js
-// en pedidos/js/index.js, incluyendo el logo). Devuelve un Uint8Array listo para USB.
-function _ptBuildTicketBytes(ticket, omitirLogo) {
-  const tc = getTicketConfig();
-  const ESC = 0x1B, GS = 0x1D;
-  const d = [];
-  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
-  const center = () => d.push(ESC, 0x61, 0x01);
-  const left = () => d.push(ESC, 0x61, 0x00);
-  const big = () => d.push(ESC, 0x21, 0x30);
-  // Altura doble opcional (ajustable en Configuración del ticket) — 0x00
-  // tamaño normal 1x1, 0x10 altura doble/ancho normal. No afecta al ajuste
-  // de columnas de los productos (el ancho del carácter no cambia).
-  const normal = () => d.push(ESC, 0x21, tc.letraGrande ? 0x10 : 0x00);
-  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
-
-  // Inicializar
-  d.push(ESC, 0x40);
-
-  // Logo centrado — son ~18 KB de datos, sin problema por USB pero
-  // demasiado para Bluetooth (varios segundos de más, y más trozos con
-  // los que se puede perder algo por el camino), así que se omite en esa
-  // vía (ver imprimirTicketTermico, que decide omitirLogo según el
-  // transporte activo).
-  if (!omitirLogo) {
-    center();
-    const bpr = (PRINTER_LOGO_W + 7) >> 3;
-    d.push(GS, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, PRINTER_LOGO_H & 0xFF, (PRINTER_LOGO_H >> 8) & 0xFF);
-    PRINTER_LOGO_DATA.forEach(b => d.push(b));
-  }
-
-  // Nombre del negocio
-  center();
-  big();
-  push(tc.nombre + '\n');
-  normal();
-  push(tc.direccion + '\n');
-  push(tc.telefono + '\n');
-  push('------------------------------------------------\n');
-
-  // Hora de recogida si tiene turno — si no lo tiene (pedido con código
-  // local, sin turno porque es para ahora mismo desde el mostrador), se
-  // imprime en su lugar la hora a la que se hizo el pedido, igual de
-  // grande, para que en cocina quede claro en el propio papel sin depender
-  // de la etiqueta "🏪 En el local" que solo se ve en pantalla. Si hay un
-  // tiempo de espera configurado para pedidos de tienda (panel >
-  // Configuración impresora), slotTime SÍ viene relleno también para estos
-  // pedidos (con la hora ya repartida, ver _asignarHoraTiendaQR en
-  // admin-config.js) — se etiqueta distinto ("HORA ESTIMADA") para no
-  // confundirlo con un turno elegido de verdad por el cliente.
-  if (ticket.slotTime) {
-    center();
-    push(ticket.esPedidoLocal ? 'HORA ESTIMADA\n' : 'HORA RECOGIDA\n');
-    big();
-    push(ticket.slotTime + '\n');
-    normal();
-    if (ticket.esPedidoLocal) push('(pedido hecho en tienda)\n');
-  } else if (ticket.time) {
-    center();
-    push('HORA DEL PEDIDO\n');
-    big();
-    push(_ptHoraCorta(ticket.time) + '\n');
-    normal();
-    push('(pedido hecho en tienda)\n');
-  }
-
-  // Nombre del cliente
-  center();
-  big();
-  push((ticket.name || '').toUpperCase() + '\n');
-  normal();
-  if (ticket.phone) push('Tlfno. ' + ticket.phone + '\n');
-  push('------------------------------------------------\n');
-
-  // Número de pedido
-  center();
-  big();
-  push('PEDIDO ' + ticket.orderNum + '\n');
-  normal();
-  push((ticket.time || '') + '\n');
-  push('------------------------------------------------\n');
-
-  // Productos
-  left();
-  (ticket.items || []).forEach(item => {
-    const partes = _ptEncodeStr(item.name || '').split(' + ');
-    const nombrePrincipal = partes[0].toUpperCase();
-    const extrasNombre = partes.slice(1);
-    const extrasArr = item.extras || [];
-    const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
-    const W = tc.anchoPapel === 58 ? 32 : 48;
-    const prefix = item.qty + 'x ';
-    const spaces = W - prefix.length - nombrePrincipal.length - precio.length;
-    if (spaces >= 0) {
-      push(prefix + nombrePrincipal + ' '.repeat(spaces) + precio + '\n');
-    } else {
-      push(prefix + nombrePrincipal.substring(0, W - prefix.length) + '\n');
-      push(' '.repeat(Math.max(0, W - precio.length)) + precio + '\n');
-    }
-    extrasNombre.forEach(extra => {
-      const conParentesis = extra.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/, ' (+$1 EUR)').trim();
-      push('     - ' + _ptEncodeStr(conParentesis).toUpperCase() + '\n');
-    });
-    if (Array.isArray(extrasArr)) {
-      extrasArr.forEach(extra => {
-        const nombreExtra = _ptEncodeStr(((extra && extra.name) ? extra.name : extra) + '').toUpperCase();
-        const precioExtraTxt = (extra && extra.price) ? '+' + parseFloat(extra.price).toFixed(2) + ' EUR' : '';
-        const prefixExtra = '  - ';
-        if (!precioExtraTxt) {
-          push(prefixExtra + nombreExtra + '\n');
-          return;
-        }
-        // Precio del extra alineado a la misma columna derecha que el
-        // precio de la línea principal (misma W), no pegado al nombre.
-        const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
-        if (spacesExtra >= 1) {
-          push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
-        } else {
-          push(prefixExtra + nombreExtra + '\n');
-          push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
-        }
-      });
-    }
-  });
-
-  push('------------------------------------------------\n');
-
-  // Pedido que cumple los requisitos del sello de fidelización (patata +
-  // pedido mínimo) — aviso destacado para que se compruebe/aplique el
-  // sello al cobrar, igual que el de estudiante/jubilado justo debajo.
-  if (ticket.fidelizacionElegible) {
-    center();
-    bold(true);
-    big();
-    push('*** COMPROBAR SELLOS ***\n');
-    normal();
-    bold(false);
-    push('------------------------------------------------\n');
-  }
-
-  // Descuento estudiante/jubilado autodeclarado — aviso destacado justo
-  // antes del total, para que se compruebe el carné en el momento de cobrar.
-  if (ticket.esEstudianteJubilado) {
-    center();
-    bold(true);
-    big();
-    push('*** VERIFICAR CARNET ***\n');
-    normal();
-    push('ESTUDIANTE / JUBILADO\n');
-    bold(false);
-    push('------------------------------------------------\n');
-  }
-
-  // Total
-  center();
-  big();
-  push((ticket.total || 0).toFixed(2) + ' EUR\n');
-  normal();
-  push(tc.textoPago + '\n');
-
-  if (ticket.notes) {
-    left();
-    push('------------------------------------------------\n');
-    bold(true); push('NOTAS: '); bold(false);
-    push(ticket.notes + '\n');
-  }
-
-  center();
-  push('------------------------------------------------\n');
-  push(tc.despedida + '\n');
-
-  // Código QR opcional (configurable en Configuración del ticket) — lo genera
-  // la propia impresora a partir del texto/URL, no hace falta ninguna imagen.
-  if (tc.qrHabilitado && tc.qrContenido) {
-    push('\n');
-    _ptPushQR(d, GS, tc.qrContenido, 6);
-  }
-
-  push('\n\n\n');
-
-  // Cortar papel
-  d.push(GS, 0x56, 0x42, 0x00);
-
-  return new Uint8Array(d);
-}
-
-// Manda a la impresora el comando ESC/POS estándar de código QR (GS ( k,
-// "Modelo 2") — la impresora lo dibuja ella sola a partir del texto, sin
-// necesidad de generar ninguna imagen desde el navegador.
-function _ptPushQR(d, GS, contenido, tamañoModulo) {
-  const tam = tamañoModulo || 6; // 1-16; 6-8 suele leerse bien en 80mm
-  const bytes = Array.from(new TextEncoder().encode(contenido));
-  const storeLen = bytes.length + 3;
-  const pL = storeLen & 0xFF, pH = (storeLen >> 8) & 0xFF;
-  // Seleccionar modelo 2
-  d.push(GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
-  // Tamaño del módulo
-  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, tam);
-  // Nivel de corrección de errores (48=L 49=M 50=Q 51=H)
-  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 48);
-  // Guardar los datos del QR
-  d.push(GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30);
-  bytes.forEach(b => d.push(b));
-  // Imprimir el QR guardado
-  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
-}
-
-// ── CONEXIÓN USB ──
-let _ptDevice = null;
-let _ptEndpointOut = null;
-let _ptEndpointIn = null;
-let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir último")
-
-// Puede haber varias copias del indicador de estado en distintas pantallas
-// (Configuración del ticket, Pedidos en vivo, Panel bimba) — se actualizan todas
-// a la vez porque comparten la misma conexión USB (misma pestaña del navegador).
-// Recuerda si estaba conectada la última vez que se llamó a _ptStatusUI,
-// para poder distinguir "se acaba de desconectar ahora mismo" (dispara
-// sonido + banner) de "sigue sin estar conectada" (cada reintento fallido
-// vuelve a llamar con connected=false, y no queremos repetir la alerta
-// cada 8 segundos mientras tanto).
-let _ptEstabaConectada = false;
-function _ptStatusUI(connected, msg) {
-  if (_ptEstabaConectada && !connected) _ptAvisoDesconexionImpresora();
-  if (!_ptEstabaConectada && connected) {
-    // Se acaba de reconectar: vacía sola la cola de tickets que se quedaron
-    // pendientes mientras estuvo desconectada (ver _ptColaProcesar). Un
-    // pequeño margen antes de empezar a imprimir, para que la conexión
-    // recién hecha se asiente (sobre todo por Bluetooth).
-    setTimeout(_ptColaProcesar, 800);
-  }
-  if (connected) _ptOcultarAvisoDesconexion();
-  _ptEstabaConectada = connected;
-  const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
-  document.querySelectorAll('.pt-conn-status').forEach(el => {
-    el.textContent = texto;
-    el.style.color = connected ? '#166534' : '#991B1B';
-  });
-}
-
-// Aviso de que la impresora se acaba de desconectar — sonido distinto al
-// de "nuevo pedido" (para no confundirlos) y un banner visible tanto en
-// la pantalla de cocina como en el panel de admin. Vale igual para USB
-// que para Bluetooth, ya que _ptStatusUI es la única función de estado
-// que comparten ambos transportes.
-//
-// Si sigue sin reconectar pasado un rato, el aviso se repite solo — un
-// sonido único al desconectarse es fácil de dar por "ya lo he visto" y
-// olvidarlo de fondo mientras siguen llegando pedidos que no se imprimen.
-let _ptAvisoEscaladoTimer = null;
-const PT_AVISO_ESCALADO_MS = 3 * 60 * 1000;
-function _ptAvisoDesconexionImpresora() {
-  _ptSonarAvisoDesconexion();
-  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
-    el.style.display = el.dataset.showDisplay || 'block';
-  });
-  if (_ptAvisoEscaladoTimer) clearInterval(_ptAvisoEscaladoTimer);
-  _ptAvisoEscaladoTimer = setInterval(() => {
-    if (_ptIsConnected()) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; return; }
-    _ptSonarAvisoDesconexion();
-  }, PT_AVISO_ESCALADO_MS);
-}
-function _ptSonarAvisoDesconexion() {
-  if (typeof playNotificationSound === 'function') {
-    const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
-    playNotificationSound(tipo);
-  }
-}
-function _ptOcultarAvisoDesconexion() {
-  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => { el.style.display = 'none'; });
-  if (_ptAvisoEscaladoTimer) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; }
-}
-
-// ── FILA ÚNICA DE IMPRESIÓN ────────────────────────────────────────────
-// Si llegan varios pedidos casi a la vez (varios clientes pidiendo en el
-// mismo minuto), cada uno lanzaba su propio envío a la impresora por su
-// cuenta — como JavaScript no bloquea entre cada "await", los bytes de dos
-// tickets distintos podían intercalarse a mitad de envío en la misma
-// conexión Bluetooth/USB, y la impresora sacaba basura o se quedaba
-// colgada sin imprimir ninguno de los dos ("se volvía loca"). Ahora TODO
-// lo que haya que imprimir (auto-imprimir, reimprimir a mano, la cola
-// pendiente al reconectar) pasa por esta única fila — se imprimen de uno
-// en uno, en el orden en que se pidieron, aunque hayan llegado casi a la
-// vez.
-let _ptColaEjecucion = Promise.resolve();
-function _ptEnFila(fn) {
-  const resultado = _ptColaEjecucion.then(fn, fn);
-  // La cadena sigue aunque este envío falle — si no, un ticket atascado
-  // dejaría a todos los siguientes esperando para siempre.
-  _ptColaEjecucion = resultado.then(() => {}, () => {});
-  return resultado;
-}
-
-// 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
-// solo con cuál de los dos consigue conectar primero (ver _ptReconectar).
-let _ptTransporte = null;
-
-function _ptIsConnected() {
-  if (_ptTransporte === 'ble') return !!(_ptBleDevice && _ptBleDevice.gatt && _ptBleDevice.gatt.connected && _ptBleCharacteristic);
-  if (_ptTransporte === 'usb') return !!(_ptDevice && _ptEndpointOut !== null);
-  return false;
-}
-
-function _ptResetConexion() {
-  _ptDevice = null; _ptEndpointOut = null; _ptEndpointIn = null;
-  _ptBleDevice = null; _ptBleCharacteristic = null;
-  _ptTransporte = null;
-}
-
-// Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
-// para diagnosticar por qué no imprime sola: si el admin no está "activo" en este
-// dispositivo, o el auto-imprimir está apagado, aquí sale sin tener que adivinar.
-function _ptUpdateDebugStatus() {
-  const el = document.getElementById('pt-debug-status');
-  const elKitchen = document.getElementById('pt-debug-status-kitchen');
-  if (!el && !elKitchen) return;
-  const admin = window._adminLoggedIn ? '🟢 Admin activo' : '🔴 Admin NO activo';
-  const auto = (typeof getTicketConfig === 'function' && getTicketConfig().autoImprimir) ? '🟢 Auto-imprimir ON' : '🔴 Auto-imprimir OFF';
-  const conexion = _ptIsConnected() ? '🟢 ' + (_ptTransporte === 'ble' ? 'Bluetooth' : 'USB') + ' conectada' : '🔴 Impresora no conectada';
-  const texto = admin + ' · ' + auto + ' · ' + conexion;
-  if (el) el.textContent = texto;
-  if (elKitchen) elKitchen.textContent = texto;
-}
-
-// Busca en el dispositivo USB la interfaz que tenga endpoints de salida (bulk OUT,
-// para imprimir) y de entrada (bulk IN, para leer el estado de papel) y la reclama.
-// Es genérico: no depende de conocer de antemano el vendor/product ID.
-async function _ptClaimInterface(device) {
-  await device.open();
-  if (device.configuration === null) await device.selectConfiguration(1);
-  let ifaceNumber = null, epOut = null, epIn = null;
-  for (const iface of device.configuration.interfaces) {
-    const alt = iface.alternates[0];
-    const out = alt.endpoints.find(e => e.direction === 'out');
-    if (out) {
-      ifaceNumber = iface.interfaceNumber;
-      epOut = out.endpointNumber;
-      const inEp = alt.endpoints.find(e => e.direction === 'in');
-      epIn = inEp ? inEp.endpointNumber : null;
-      break;
-    }
-  }
-  if (ifaceNumber === null) throw new Error('No se encontró un endpoint de salida USB en este dispositivo');
-  await device.claimInterface(ifaceNumber);
-  return { epOut, epIn };
-}
-
-// Pide permiso al navegador para acceder a la impresora — debe llamarse desde
-// un click (gesto del usuario), el navegador no deja hacerlo en segundo plano.
-async function conectarImpresoraTermica() {
-  if (!navigator.usb) {
-    alert('Este navegador no soporta impresión USB. Usa Chrome o Edge (no funciona en Safari ni Firefox).');
-    return false;
-  }
-  try {
-    // Sin filtros: no sabemos con certeza el vendor/product ID de esta impresora,
-    // así que mostramos todos los dispositivos USB conectados y que el usuario
-    // elija el suyo de la lista (evita listas vacías por un filtro equivocado).
-    const device = await navigator.usb.requestDevice({ filters: [] });
-    const { epOut, epIn } = await _ptClaimInterface(device);
-    _ptDevice = device;
-    _ptEndpointOut = epOut;
-    _ptEndpointIn = epIn;
-    _ptTransporte = 'usb';
-    _ptStatusUI(true);
-    return true;
-  } catch (e) {
-    console.warn('[Impresora] conexión cancelada o fallida', e);
-    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora: ' + e.message);
-    return false;
-  }
-}
-
-// Reconecta en silencio (sin pedir permiso) a un dispositivo ya autorizado antes —
-// se llama sola al cargar la página, y también sola cada pocos segundos si se
-// pierde la conexión (cable desenchufado, tablet que se durmió...), para no
-// tener que ir a pulsar "Conectar impresora" a mano cada vez.
-// Hay hasta 4 disparadores distintos que pueden llamar a esta función casi a
-// la vez (al cargar la página, el evento "connect" de WebUSB, el intervalo
-// de 8s, y el aviso al volver a la pestaña/pantalla) — sin este candado,
-// dos llamadas simultáneas podían pasar ambas la comprobación de "no
-// conectada" antes de que ninguna terminara, e intentar reclamar la
-// interfaz USB a la vez: la segunda fallaba con "Unable to claim interface"
-// aunque la primera sí lo hubiera conseguido bien.
-let _ptReconectando = false;
-// Prueba USB primero (dispositivo ya autorizado antes) y, si no hay nada
-// por ahí, prueba Bluetooth (también ya autorizado antes) — cualquiera de
-// los 4 disparadores de siempre (carga de página, evento "connect" USB,
-// intervalo de 8s, volver a la pestaña) sirve igual para las dos vías,
-// así que basta con ampliar esta única función en vez de duplicar toda
-// la maquinaria de candado/timeout para Bluetooth aparte.
-async function _ptReconectar() {
-  if (_ptIsConnected()) return true;
-  if (_ptReconectando) return false;
-  _ptReconectando = true;
-  try {
-    if (navigator.usb) {
-      // Límite de tiempo de seguridad — si getDevices()/claimInterface() se
-      // quedaran colgados sin resolver ni rechazar nunca (un fallo raro del
-      // driver USB del sistema), sin esto el candado de arriba se quedaría
-      // en true para siempre y ningún disparador podría volver a intentar
-      // reconectar hasta recargar la página entera.
-      const resultado = await Promise.race([
-        (async () => {
-          const devices = await navigator.usb.getDevices();
-          if (!devices.length) return null;
-          const device = devices[0];
-          const { epOut, epIn } = await _ptClaimInterface(device);
-          return { device, epOut, epIn };
-        })(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando con la impresora')), 6000))
-      ]).catch((e) => { console.warn('[Impresora] reconexión USB fallida', e); return null; });
-      if (resultado) {
-        _ptDevice = resultado.device;
-        _ptEndpointOut = resultado.epOut;
-        _ptEndpointIn = resultado.epIn;
-        _ptTransporte = 'usb';
-        _ptStatusUI(true);
-        return true;
-      }
-    }
-    const okBle = await _ptBleReconectar();
-    if (okBle) return true;
-    _ptStatusUI(false);
-    return false;
-  } finally {
-    _ptReconectando = false;
-  }
-}
-
-// Envuelve una promesa que no tiene por qué llegar a resolverse nunca
-// (transferOut de WebUSB y writeValue/writeValueWithoutResponse de Web
-// Bluetooth no traen ningún timeout de fábrica: si la impresora se queda
-// en un estado raro a media escritura — atasco de papel, un USB que se
-// desconecta sin disparar su evento, Bluetooth fuera de rango justo en
-// ese instante — la promesa puede quedarse colgada para siempre). Sin
-// esto, como TODOS los tickets pasan por la misma fila (_ptEnFila), un
-// solo envío colgado dejaba bloqueados también todos los pedidos
-// siguientes sin ningún aviso ni forma de recuperarse sola. La operación
-// de bajo nivel que se abandona puede seguir viva de fondo, pero ya no
-// bloquea nada: _ptResetConexion() olvida esa conexión y el siguiente
-// intento abre una nueva de cero.
-function _ptConTimeout(promise, ms, mensaje) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(mensaje || 'timeout de impresora')), ms))
-  ]);
-}
-async function _ptEnviarBytesUnaVez(bytes) {
-  if (!_ptIsConnected()) {
-    const ok = await _ptReconectar();
-    if (!ok) throw new Error('Impresora no conectada — pulsa "Conectar impresora" en Configuración del ticket');
-  }
-  if (_ptTransporte === 'ble') { await _ptBleEnviarBytes(bytes); return; }
-  await _ptConTimeout(_ptDevice.transferOut(_ptEndpointOut, bytes), 8000, 'timeout enviando por USB — la impresora no respondió');
-}
-
-// Reintenta un par de veces (con reconexión de por medio) antes de rendirse —
-// un fallo puntual (impresora ocupada, un instante de corte USB) ya no se
-// queda directamente como "Falló" sin que nadie lo intente de nuevo.
-async function _ptEnviarBytes(bytes, intentos) {
-  intentos = intentos || 3;
-  let ultimoError = null;
-  for (let i = 0; i < intentos; i++) {
-    try {
-      await _ptEnviarBytesUnaVez(bytes);
-      return;
-    } catch (e) {
-      ultimoError = e;
-      console.warn('[Impresora] intento ' + (i + 1) + '/' + intentos + ' falló', e);
-      if (i < intentos - 1) {
-        _ptResetConexion(); // forzar reconexión limpia en el siguiente intento
-        await new Promise(r => setTimeout(r, 1200));
-      }
-    }
-  }
-  throw ultimoError;
-}
-
-// ── IMPRESORA TÉRMICA — BLUETOOTH (BLE) ──────────────────────────────
-// Vía alternativa a USB. Solo vale para impresoras Bluetooth de BAJO
-// CONSUMO (BLE) — compruébalo antes con "Probar Bluetooth" en
-// Configuración del ticket. La mayoría de impresoras térmicas baratas
-// llevan Bluetooth "clásico" (SPP), que ningún navegador puede usar; eso
-// no tiene arreglo por código.
-//
-// A diferencia de USB (donde pedimos la lista completa de dispositivos
-// y el vendor ID no importa), en Bluetooth hay que declarar de antemano
-// qué "servicios" GATT se van a usar. No hay un ID de fabricante fijo
-// que buscar, así que se prueban los UUID de servicio más habituales
-// entre impresoras térmicas ESC/POS BLE genéricas (muchas comparten el
-// mismo firmware de fábrica aunque se vendan con marcas distintas), y se
-// usa la primera característica que permita escribir que se encuentre.
-const PT_BLE_SERVICIOS_CANDIDATOS = [
-  '000018f0-0000-1000-8000-00805f9b34fb', // el más habitual en clones ESC/POS BLE
-  '0000ff00-0000-1000-8000-00805f9b34fb',
-  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'  // Nordic UART Service (otro habitual)
-];
-
-let _ptBleDevice = null;
-let _ptBleCharacteristic = null;
-
-async function _ptBleBuscarCaracteristicaEscritura(server) {
-  for (const uuidServicio of PT_BLE_SERVICIOS_CANDIDATOS) {
-    try {
-      const servicio = await server.getPrimaryService(uuidServicio);
-      const caracteristicas = await servicio.getCharacteristics();
-      const escribible = caracteristicas.find(c => c.properties.write || c.properties.writeWithoutResponse);
-      if (escribible) return escribible;
-    } catch (e) {
-      // Este servicio candidato no existe en el dispositivo — se prueba el siguiente.
-    }
-  }
-  return null;
-}
-
-async function _ptBleConectarDispositivo(device) {
-  const server = await device.gatt.connect();
-  const characteristic = await _ptBleBuscarCaracteristicaEscritura(server);
-  if (!characteristic) {
-    server.disconnect();
-    throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
-  }
-  _ptBleDevice = device;
-  _ptBleCharacteristic = characteristic;
-  _ptTransporte = 'ble';
-  // Muchas impresoras Bluetooth baratas todavía no están listas para
-  // recibir datos de verdad justo al terminar de conectar — el primer envío
-  // en ese instante se puede perder en silencio (writeValueWithoutResponse
-  // no avisa de ningún fallo), así que la web lo daba por impreso pero no
-  // salía nada en papel. Antes solo había una espera fija de 0,5s, pero
-  // seguía perdiéndose el primer ticket real en algunos módulos — ahora,
-  // ANTES de esperar, se manda primero un "pulso" inofensivo (el mismo
-  // comando de estado que ya se usa para mantener viva la conexión, no
-  // imprime nada en el papel): si algo se pierde por este motivo de
-  // arranque, se pierde ese envío de prueba y no el ticket real del
-  // cliente. Después se espera un margen mayor (0,8s) antes de marcar la
-  // impresora como lista.
-  try { await _ptBlePulso(); } catch (e) {}
-  await new Promise(r => setTimeout(r, 800));
-  device.addEventListener('gattserverdisconnected', () => {
-    if (_ptTransporte === 'ble') _ptResetConexion();
-    _ptStatusUI(false);
-    _ptReconectar();
-  });
-  _ptStatusUI(true, '🟢 Impresora conectada (Bluetooth)');
-}
-
-// Pide permiso al navegador — debe llamarse desde un click (gesto del
-// usuario), el navegador no deja hacerlo en segundo plano.
-async function conectarImpresoraBluetooth() {
-  if (!navigator.bluetooth) {
-    alert('Este navegador no soporta impresión por Bluetooth. Usa Chrome o Edge (no funciona en Safari ni en iPhone/iPad).');
-    return false;
-  }
-  try {
-    // Si ya sabemos el nombre de la impresora de una conexión anterior, se
-    // filtra la ventana de selección para que solo aparezca ella (en vez
-    // de la lista completa de aparatos Bluetooth cercanos) — más rápido
-    // de encontrar cada vez que haga falta reconectar a mano. Si por lo
-    // que sea no aparece con ese filtro (nombre cambiado, etc.), se
-    // reintenta mostrando la lista completa antes de rendirse.
-    let nombreGuardado = null;
-    try { nombreGuardado = localStorage.getItem('dpf_bt_printer_name') || null; } catch (e) {}
-    let device;
-    if (nombreGuardado) {
-      try {
-        device = await navigator.bluetooth.requestDevice({ filters: [{ name: nombreGuardado }], optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
-      } catch (e) {
-        device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
-      }
-    } else {
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
-    }
-    await _ptBleConectarDispositivo(device);
-    try { localStorage.setItem('dpf_bt_printer_name', device.name || ''); } catch (e) {}
-    // Diagnóstico: si este navegador no soporta navigator.bluetooth.getDevices()
-    // (API de permisos Bluetooth persistentes), no hay forma de reconectar sola
-    // tras recargar la página — habrá que pulsar este botón cada vez que se
-    // recargue o se abra de nuevo. No es un fallo del código: es un límite de
-    // seguridad del propio navegador/plataforma, sin alternativa posible.
-    if (!navigator.bluetooth.getDevices) {
-      console.warn('[Impresora BLE] Este navegador no soporta navigator.bluetooth.getDevices() — no podrá reconectar sola tras recargar la página, solo mientras esta pestaña siga abierta.');
-    }
-    return true;
-  } catch (e) {
-    console.warn('[Impresora BLE] conexión cancelada o fallida', e);
-    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora por Bluetooth: ' + e.message);
-    return false;
-  }
-}
-
-// Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
-// espejo de la reconexión USB, usando navigator.bluetooth.getDevices()
-// (API de permisos persistentes; no está en todas las versiones de Chrome,
-// de ahí la comprobación).
-async function _ptBleReconectar() {
-  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
-  try {
-    const dispositivos = await navigator.bluetooth.getDevices();
-    if (!dispositivos.length) return false;
-    await Promise.race([
-      _ptBleConectarDispositivo(dispositivos[0]),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando Bluetooth')), 6000))
-    ]);
-    return true;
-  } catch (e) {
-    console.warn('[Impresora BLE] reconexión fallida', e);
-    return false;
-  }
-}
-
-// Se prefiere "con respuesta" (writeValue): cada trozo espera la
-// confirmación real de la impresora antes de mandar el siguiente, así que
-// el ritmo lo marca la propia impresora en vez de un tiempo de espera fijo
-// adivinado — no hace falta añadir ningún retraso extra encima. Solo si
-// la característica no soporta escritura con respuesta se usa
-// writeValueWithoutResponse con una pequeña espera manual de por medio.
-async function _ptBleEnviarBytes(bytes) {
-  const TAMANO_TROZO = 100;
-  const conRespuesta = !!_ptBleCharacteristic.properties.write;
-  for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
-    const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
-    if (conRespuesta) {
-      await _ptConTimeout(_ptBleCharacteristic.writeValue(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
-    } else {
-      await _ptConTimeout(_ptBleCharacteristic.writeValueWithoutResponse(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
-      await new Promise(r => setTimeout(r, 45));
-    }
-  }
-}
-
-// "Pulso" de mantenimiento — un comando de estado en tiempo real (no
-// imprime nada en el papel) para generar tráfico en la conexión Bluetooth
-// mientras no hay ningún pedido que imprimir. Si falla, no pasa nada
-// grave: el intervalo que lo llama ya comprueba _ptIsConnected() cada
-// pocos segundos y dispara la reconexión si de verdad se ha caído.
-async function _ptBlePulso() {
-  if (_ptTransporte !== 'ble' || !_ptBleCharacteristic) return;
-  try {
-    const bytes = new Uint8Array([0x10, 0x04, 0x01]);
-    if (_ptBleCharacteristic.properties.writeWithoutResponse) {
-      await _ptBleCharacteristic.writeValueWithoutResponse(bytes);
-    } else if (_ptBleCharacteristic.properties.write) {
-      await _ptBleCharacteristic.writeValue(bytes);
-    }
-  } catch (e) {
-    // Se ignora — si de verdad se cayó la conexión, el siguiente chequeo
-    // de _ptIsConnected() lo detectará y disparará la reconexión.
-  }
-}
-
-// Imprime un ticket, repitiendo tantas copias como esté configurado.
-async function imprimirTicketTermico(ticket) {
-  const tc = getTicketConfig();
-  const bytes = _ptBuildTicketBytes(ticket);
-  _ptUltimoTicket = ticket;
-  const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
-  for (let i = 0; i < copias; i++) {
-    await _ptEnviarBytes(bytes);
-    _ptPapelRegistrarTicketImpreso();
-    if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
-  }
-}
-
-// ── Contador de papel restante estimado ──────────────────────────────
-// Por Bluetooth no se puede leer el sensor de papel de la impresora (y por
-// USB tampoco todos los modelos lo soportan), así que en vez de depender
-// de eso se lleva la cuenta de cuántos tickets se han impreso desde el
-// último cambio de rollo, y se compara contra una capacidad aproximada
-// (cuántos tickets suele dar un rollo nuevo) que la usuaria calibra a ojo
-// la primera vez y ajusta si hace falta — no es una medida exacta en
-// milímetros, pero avisa con margen suficiente antes de quedarse sin papel.
-const PT_PAPEL_TICKETS_KEY = 'dpf_papel_tickets_desde_rollo';
-const PT_PAPEL_CAPACIDAD_KEY = 'dpf_papel_rollo_capacidad';
-function _ptPapelTicketsUsados() {
-  return parseInt(localStorage.getItem(PT_PAPEL_TICKETS_KEY) || '0', 10);
-}
-function _ptPapelCapacidad() {
-  return parseInt(localStorage.getItem(PT_PAPEL_CAPACIDAD_KEY) || '150', 10);
-}
-function _ptPapelRegistrarTicketImpreso() {
-  localStorage.setItem(PT_PAPEL_TICKETS_KEY, String(_ptPapelTicketsUsados() + 1));
-  _ptPapelActualizarUI();
-}
-function _ptPapelNuevoRollo() {
-  localStorage.setItem(PT_PAPEL_TICKETS_KEY, '0');
-  _ptPapelActualizarUI();
-  if (typeof logActivity === 'function') logActivity('🧻 Rollo de papel reiniciado (contador a 0)');
-}
-function guardarCapacidadRollo(valor) {
-  const n = Math.max(1, parseInt(valor, 10) || 150);
-  localStorage.setItem(PT_PAPEL_CAPACIDAD_KEY, String(n));
-  _ptPapelActualizarUI();
-}
-function _ptPapelActualizarUI() {
-  const usados = _ptPapelTicketsUsados();
-  const capacidad = _ptPapelCapacidad();
-  const restantes = Math.max(0, capacidad - usados);
-  const pct = capacidad > 0 ? Math.max(0, Math.min(100, Math.round((restantes / capacidad) * 100))) : 100;
-  document.querySelectorAll('.pt-papel-contador').forEach(el => {
-    el.textContent = '🧻 ~' + pct + '% de papel restante (' + restantes + ' de ' + capacidad + ' tickets aprox.)';
-    el.style.color = pct <= 15 ? '#c0392b' : '';
-  });
-  const inputCap = document.getElementById('tc-papel-capacidad');
-  if (inputCap && document.activeElement !== inputCap) inputCap.value = capacidad;
-}
-document.addEventListener('DOMContentLoaded', () => { _ptPapelActualizarUI(); });
-
-// ── Cola de impresión pendiente ──────────────────────────────────────
-// Si un ticket no consigue imprimirse ni tras los reintentos normales
-// (la impresora estaba desconectada en ese momento), antes se quedaba solo
-// en un aviso que había que atender a mano ("🔧 Reintentar impresión" en
-// Alertas). Ahora, además, se guarda aquí — y en cuanto la impresora
-// vuelva a conectar (ver _ptStatusUI) se reimprime sola, en el mismo orden
-// en que llegaron, sin que nadie tenga que darle a ese botón.
-const PT_COLA_KEY = 'dpf_cola_impresion_pendiente';
-function _ptColaCargar() {
-  try { return JSON.parse(localStorage.getItem(PT_COLA_KEY) || '[]'); } catch (e) { return []; }
-}
-function _ptColaGuardar(cola) {
-  try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
-  _ptColaActualizarUI();
-}
-function _ptColaAgregar(ticket) {
-  if (!ticket || !ticket.orderNum) return;
-  const cola = _ptColaCargar();
-  if (cola.some(t => t.orderNum === ticket.orderNum)) return;
-  cola.push(ticket);
-  _ptColaGuardar(cola);
-}
-function _ptColaQuitar(orderNum) {
-  _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
-}
-function _ptColaActualizarUI() {
-  const n = _ptColaCargar().length;
-  document.querySelectorAll('.pt-cola-contador').forEach(el => {
-    el.style.display = n > 0 ? (el.dataset.showDisplay || 'block') : 'none';
-    el.textContent = '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
-  });
-}
-document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
-
-// Vacía la cola cuando la impresora reconecta — de una en una y en orden;
-// si alguna vuelve a fallar (se ha caído otra vez a media cola), se para
-// ahí y se deja para el próximo reconectar, en vez de perder el orden o
-// darlas por perdidas.
-let _ptColaProcesando = false;
-async function _ptColaProcesar() {
-  if (_ptColaProcesando || !_ptIsConnected()) return;
-  _ptColaProcesando = true;
-  try {
-    const cola = _ptColaCargar();
-    for (const ticket of cola) {
-      try {
-        await _ptEnFila(() => imprimirTicketTermico(ticket));
-        _ptColaQuitar(ticket.orderNum);
-        if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
-        if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
-        if (typeof logActivity === 'function') logActivity('🖨️ Ticket #' + ticket.orderNum + ' impreso solo desde la cola pendiente, al reconectar la impresora');
-        if (typeof getOrderStatus === 'function' && typeof setOrderStatus === 'function' && getOrderStatus(ticket.orderNum) === 'nuevo') {
-          setOrderStatus(ticket.orderNum, 'recibido').catch(() => {});
-        }
-      } catch (e) {
-        break;
-      }
-    }
-  } finally {
-    _ptColaProcesando = false;
-  }
-}
-
-// Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
-// y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede
-// borrar, así que se imprime este aviso para que en cocina sepan que ese
-// número de pedido ya NO es válido y hay que tirar el ticket anterior.
-function _ptBuildAnulacionBytes(orderNum) {
-  const ESC = 0x1B, GS = 0x1D;
-  const d = [];
-  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
-  const center = () => d.push(ESC, 0x61, 0x01);
-  const big = () => d.push(ESC, 0x21, 0x30);
-  const normal = () => d.push(ESC, 0x21, 0x00);
-  d.push(ESC, 0x40);
-  center();
-  push('\n');
-  big();
-  push('X X X X X\n');
-  push('ANULADO\n');
-  normal();
-  push('------------------------------------------------\n');
-  big();
-  push('PEDIDO ' + orderNum + '\n');
-  normal();
-  push('Tira el ticket anterior\n');
-  push('de este pedido\n');
-  push('\n\n\n');
-  d.push(GS, 0x56, 0x42, 0x00);
-  return new Uint8Array(d);
-}
-
-async function imprimirAnulacion(orderNum) {
-  // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
-  // aviso podía intercalarse (o perderse sin más) con el ticket del pedido
-  // nuevo si el cliente modificaba y volvía a mandar el pedido enseguida,
-  // y cocina se quedaba sin enterarse de que tenía que tirar el anterior.
-  const _ptEjecutarAnulacion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
-  await _ptEjecutarAnulacion(() => _ptEnviarBytes(_ptBuildAnulacionBytes(orderNum)));
-}
-
-async function imprimirTicketPrueba() {
-  try {
-    await imprimirTicketTermico({
-      orderNum: 'PRUEBA',
-      name: 'Ticket de prueba',
-      phone: '',
-      notes: '',
-      slotTime: null,
-      items: [{ name: 'Impresora configurada correctamente', qty: 1, subtotal: 0 }],
-      total: 0,
-      time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-    });
-  } catch (e) {
-    alert('⚠️ ' + e.message);
-  }
-}
-
-// Reimprime el último ticket normal enviado (no el de prueba, ni una
-// anulación) — para el caso de que se atasque el papel a mitad de
-// impresión, sin tener que ir a buscar el pedido en la lista.
-async function reimprimirUltimoTicketTermico() {
-  if (!_ptUltimoTicket) {
-    alert('Todavía no se ha impreso ningún ticket en este dispositivo.');
-    return;
-  }
-  try {
-    await imprimirTicketTermico(_ptUltimoTicket);
-  } catch (e) {
-    alert('⚠️ No se pudo reimprimir: ' + e.message);
-  }
-}
-
-// Cartel con QR para el mostrador: al escanearlo se abre la web ya con el
-// código de "pedido desde el local" puesto (sin gastos de gestión), sin que
-// el cliente tenga que escribir nada — para pegar en el mostrador cuando
-// hay cola. Se imprime tal cual, en un ticket corto aparte.
-async function imprimirCartelQRLocal() {
-  const code = (typeof getLocalFeeCode === 'function') ? getLocalFeeCode() : '';
-  if (!code) {
-    alert('Primero pon y guarda un código en "Código pedido desde el local".');
-    return;
-  }
-  const url = window.location.origin + '/?local=' + encodeURIComponent(code);
-  const ESC = 0x1B, GS = 0x1D;
-  const d = [];
-  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
-  const center = () => d.push(ESC, 0x61, 0x01);
-  const big = () => d.push(ESC, 0x21, 0x30);
-  const normal = () => d.push(ESC, 0x21, 0x00);
-  d.push(ESC, 0x40);
-  center();
-  push('\n');
-  big();
-  push('PIDE DESDE\n');
-  push('EL MOVIL\n');
-  normal();
-  push('sin gastos de gestion\n');
-  push('\n');
-  _ptPushQR(d, GS, url, 8);
-  push('\n');
-  push('Escanea el codigo\n');
-  push('o escribe el codigo:\n');
-  big();
-  push(code + '\n');
-  normal();
-  push('\n');
-  push(window.location.origin + '/\n');
-  push('\n\n\n');
-  d.push(GS, 0x56, 0x42, 0x00);
-  try {
-    await _ptEnviarBytes(new Uint8Array(d));
-  } catch (e) {
-    alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
-  }
-}
-
-// ── AVISO DE PAPEL ──
-// Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
-// de papel). La interpretación exacta de los bits varía algo según el
-// fabricante — esta es la más habitual en clones compatibles con Epson.
-// Si en esta impresora en concreto no coincidiera al probarlo con el rollo
-// realmente vacío, hay que ajustar las máscaras (0x0C / 0x60) de aquí abajo.
-async function _ptComprobarPapel() {
-  // Solo USB expone este comando de estado de papel de forma fiable — para
-  // Bluetooth dependería de que cada modelo tenga su propia característica
-  // de notificación, algo que varía demasiado entre clones como para
-  // adivinarlo sin poder probarlo en la impresora real.
-  if (_ptTransporte !== 'usb' || !_ptIsConnected() || _ptEndpointIn === null) return;
-  try {
-    await _ptDevice.transferOut(_ptEndpointOut, new Uint8Array([0x10, 0x04, 0x04]));
-    const res = await _ptDevice.transferIn(_ptEndpointIn, 8);
-    if (!res.data || res.data.byteLength === 0) return;
-    const status = res.data.getUint8(0);
-    const sinPapel = (status & 0x60) !== 0;
-    _ptPapelUI(sinPapel);
-  } catch (e) {
-    // No pasa nada si esta impresora no responde a este comando — simplemente
-    // no se muestra el aviso de papel, el resto sigue funcionando igual.
-  }
-}
-function _ptPapelUI(sinPapel) {
-  document.querySelectorAll('.pt-papel-aviso').forEach(el => {
-    // El banner grande de la pantalla de cocina necesita "flex" (para
-    // colocar el texto centrado verticalmente como el de "activa el
-    // audio"); los avisos pequeños del panel de admin usan "block" por
-    // defecto — cada elemento indica el suyo con data-show-display.
-    el.style.display = sinPapel ? (el.dataset.showDisplay || 'block') : 'none';
-  });
-}
-
-if (navigator.usb) {
-  document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
-  navigator.usb.addEventListener('disconnect', (e) => {
-    if (_ptDevice && e.device === _ptDevice) { _ptResetConexion(); _ptStatusUI(false); }
-  });
-  // Si Chrome detecta que se ha enchufado algún dispositivo USB, probamos a
-  // reconectar por si es la impresora (p.ej. se desenchufó el cable y se
-  // volvió a meter) — sin esto había que pulsar "Conectar impresora" a mano.
-  navigator.usb.addEventListener('connect', () => {
-    if (!_ptIsConnected()) _ptReconectar();
-  });
-}
-
-if (navigator.usb || navigator.bluetooth) {
-  if (!navigator.usb) document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
-  // Reintento periódico de reconexión mientras no esté conectada — cubre el
-  // caso de que la tablet se haya quedado en reposo o no se dispare ningún
-  // evento de conexión a tiempo. Si SÍ está conectada por Bluetooth, se
-  // manda además un "pulso" (comando de estado en tiempo real, no imprime
-  // nada) para generar tráfico en la conexión — muchos módulos BLE baratos
-  // se desconectan solos tras un rato sin ningún dato, aunque estén dentro
-  // de alcance y con batería; este pulso evita que se les considere
-  // "inactivos" entre pedido y pedido.
-  //
-  // Mientras está DESCONECTADA se reintenta cada 2s en vez de 8s — el hueco
-  // más habitual es justo al abrir/recargar la web (la reconexión con un
-  // dispositivo ya emparejado tarda unos segundos), y si un pedido llega
-  // justo en ese hueco se queda en la cola pendiente hasta el siguiente
-  // reintento con éxito. Con 8s de por medio, "el primer pedido no sale
-  // solo" podía tardar bastante en corregirse sin tocar nada; con 2s el
-  // hueco real se reduce mucho. Una vez conectada, vuelve al ritmo normal
-  // de 8s (no hace falta ir más rápido, y así no se satura de tráfico la
-  // conexión Bluetooth sin necesidad).
-  function _ptBucleMantenimiento() {
-    const conectada = _ptIsConnected();
-    setTimeout(() => {
-      if (!_ptIsConnected()) {
-        _ptReconectar();
-      } else if (_ptTransporte === 'ble') {
-        _ptBlePulso();
-      } else {
-        _ptComprobarPapel();
-      }
-      // La cola pendiente normalmente se vacía sola al detectar una
-      // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
-      // error puntual de escritura SIN que la impresora llegue a desconectarse
-      // de verdad — en ese caso ese flanco nunca se dispara. Este intento
-      // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
-      // ya se protege solo contra solapes (_ptColaProcesando).
-      if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
-      _ptBucleMantenimiento();
-    }, conectada ? 8000 : 2000);
-  }
-  _ptBucleMantenimiento();
-  // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
-  // segundo plano — si la tablet se queda con la pantalla apagada un rato
-  // (algo habitual entre pedido y pedido) el reintento de arriba puede no
-  // llegar a ejecutarse a tiempo. En cuanto la pantalla se enciende o se
-  // vuelve a esta pestaña, se reintenta al momento en vez de esperar al
-  // siguiente tick de los 8s.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !_ptIsConnected()) _ptReconectar();
-  });
-}
 
 // ── HISTORIAL (últimos 30 días) ──
 const HISTORIAL_KEY = 'dpf_historial';
@@ -13840,6 +11907,1031 @@ setInterval(() => {
 }, 10000);
 
 
+// ── IMPRESORA TÉRMICA (WebUSB) ──
+// Imprime directamente desde el navegador a la impresora térmica UNYKAch POS5 (USB, ESC/POS),
+// sin depender de un PC intermedio: funciona igual en Chrome de escritorio (para probar) que en
+// Chrome de la tablet Android de la tienda (con la impresora conectada por USB-OTG).
+// Requiere Chrome/Edge — Safari y Firefox no soportan WebUSB.
+
+const PRINTER_LOGO_W = 384;
+const PRINTER_LOGO_H = 384;
+const PRINTER_LOGO_DATA = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 128, 0, 0, 31, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 128, 0, 0, 127, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 254, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 252, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 248, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 248, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 240, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 240, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 224, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 224, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 192, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 192, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 192, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 128, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 128, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 128, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 252, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 252, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 253, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 1, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 31, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 199, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 159, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 127, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 248, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 128, 1, 255, 252, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 254, 0, 0, 127, 224, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 248, 0, 0, 63, 128, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 240, 31, 192, 15, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 225, 255, 248, 4, 3, 255, 192, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 199, 255, 255, 0, 31, 255, 248, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 159, 255, 255, 128, 127, 255, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 127, 255, 255, 225, 255, 255, 255, 143, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 243, 255, 255, 255, 207, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 247, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 231, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 227, 255, 255, 255, 191, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 129, 255, 255, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 0, 127, 255, 252, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 252, 0, 63, 255, 240, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 240, 0, 7, 255, 192, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 128, 0, 0, 120, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 7, 255, 131, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 254, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 1, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 7, 252, 0, 0, 0, 0, 0, 3, 248, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 15, 254, 0, 0, 0, 0, 0, 7, 254, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 31, 255, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 224, 0, 31, 255, 0, 0, 0, 0, 0, 31, 255, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 224, 0, 63, 255, 128, 0, 0, 0, 0, 31, 255, 128, 0, 0, 0, 7, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 63, 255, 192, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 3, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 192, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 127, 255, 128, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 127, 255, 192, 0, 0, 0, 7, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 192, 0, 0, 0, 7, 255, 255, 224, 31, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 63, 255, 128, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 255, 128, 7, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 31, 255, 0, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 255, 0, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 31, 254, 0, 0, 0, 0, 0, 63, 255, 128, 0, 0, 0, 7, 255, 254, 0, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 15, 254, 0, 0, 0, 0, 0, 31, 255, 0, 0, 0, 0, 7, 255, 252, 0, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 7, 252, 0, 0, 0, 0, 0, 15, 254, 0, 0, 0, 0, 15, 255, 248, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 1, 240, 0, 0, 0, 0, 0, 7, 252, 0, 0, 0, 0, 15, 255, 240, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 3, 248, 0, 0, 0, 0, 15, 255, 240, 0, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 240, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 224, 0, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 0, 0, 127, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 56, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 126, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 192, 254, 0, 127, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 0, 127, 224, 0, 63, 252, 0, 0, 0, 0, 0, 0, 31, 255, 128, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 3, 255, 248, 1, 255, 255, 0, 0, 0, 0, 0, 0, 31, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 15, 255, 254, 3, 255, 255, 192, 0, 0, 0, 0, 0, 31, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 63, 255, 255, 15, 255, 255, 240, 0, 0, 0, 0, 0, 63, 255, 129, 255, 0, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 0, 127, 255, 255, 159, 255, 255, 252, 0, 0, 0, 0, 0, 63, 255, 129, 255, 1, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 1, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 63, 255, 129, 255, 1, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 63, 255, 128, 254, 1, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 63, 255, 128, 254, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 127, 255, 0, 124, 3, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 0, 127, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 127, 255, 0, 0, 7, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 195, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 24, 0, 0, 127, 255, 0, 0, 7, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 252, 0, 0, 127, 255, 0, 0, 15, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 127, 255, 0, 0, 31, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 255, 255, 0, 0, 63, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 255, 255, 0, 0, 127, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 255, 255, 0, 0, 127, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 254, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 255, 255, 0, 1, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 1, 255, 254, 0, 3, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 1, 255, 254, 0, 7, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 1, 255, 254, 0, 31, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 1, 255, 255, 129, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 1, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 3, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 128, 0, 3, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 3, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 7, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 7, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 7, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 15, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 15, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 15, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 31, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 31, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 255, 255, 255, 255, 255, 251, 248, 0, 0, 0, 31, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 7, 255, 247, 255, 255, 255, 255, 187, 248, 0, 0, 0, 63, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 128, 0, 3, 255, 255, 252, 253, 255, 255, 251, 248, 0, 0, 0, 63, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 128, 0, 3, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 63, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 3, 255, 255, 255, 251, 255, 255, 255, 240, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 1, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 127, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 1, 255, 255, 254, 247, 255, 255, 239, 224, 0, 0, 0, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 192, 0, 0, 255, 223, 254, 255, 255, 255, 255, 192, 0, 0, 0, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 255, 255, 254, 239, 255, 255, 255, 192, 0, 0, 1, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 127, 255, 254, 223, 255, 255, 255, 128, 0, 0, 1, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 224, 0, 0, 127, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 240, 0, 0, 63, 239, 255, 255, 255, 255, 255, 0, 0, 0, 3, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 31, 255, 255, 255, 255, 255, 254, 0, 0, 0, 7, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 240, 0, 0, 15, 255, 255, 255, 255, 255, 252, 0, 0, 0, 7, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 15, 255, 255, 255, 255, 255, 248, 0, 0, 0, 15, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 248, 0, 0, 7, 255, 255, 255, 255, 223, 240, 0, 0, 0, 31, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 252, 0, 0, 3, 255, 63, 255, 255, 127, 224, 0, 0, 0, 31, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 252, 0, 0, 1, 255, 239, 255, 253, 255, 192, 0, 0, 0, 63, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 254, 0, 0, 0, 255, 251, 255, 207, 255, 128, 0, 0, 0, 127, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 127, 255, 193, 255, 255, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 0, 0, 0, 63, 255, 255, 255, 252, 0, 0, 0, 0, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 128, 0, 0, 15, 255, 255, 255, 248, 0, 0, 0, 1, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 192, 0, 0, 7, 255, 255, 255, 224, 0, 0, 0, 3, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 192, 0, 0, 1, 255, 255, 255, 128, 0, 0, 0, 7, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 224, 0, 0, 0, 63, 255, 254, 0, 0, 0, 0, 15, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 240, 0, 0, 0, 7, 255, 224, 0, 0, 0, 0, 31, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 252, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 254, 0, 0, 7, 0, 0, 8, 0, 0, 0, 1, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 0, 0, 7, 240, 0, 56, 0, 0, 0, 3, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 192, 0, 7, 255, 255, 248, 0, 0, 0, 7, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 224, 0, 7, 255, 255, 240, 0, 0, 0, 31, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 248, 0, 7, 255, 255, 240, 0, 0, 0, 63, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 252, 0, 7, 255, 255, 240, 0, 0, 0, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 0, 7, 255, 255, 224, 0, 0, 3, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 192, 7, 255, 255, 224, 0, 0, 15, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 240, 3, 255, 255, 192, 0, 0, 63, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 254, 3, 255, 255, 192, 0, 0, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 195, 255, 255, 128, 0, 7, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 0, 0, 63, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 254, 0, 7, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 254, 3, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 248, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 255, 255, 255, 255, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 255, 255, 255, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 255, 255, 255, 255, 252, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+// Sustituye acentos/ñ por su equivalente ASCII — la mayoría de estas impresoras
+// clon no traen bien configurada la página de códigos y los acentos salen mal;
+// es más fiable no depender de ninguna tabla de códigos.
+function _ptEncodeStr(str) {
+  const map = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?' };
+  // Quita bytes de control (incluyendo ESC 0x1B y GS 0x1D) antes de mapear
+  // acentos — igual que dpf_limpiar_texto() en guardar-pedido.php, pero
+  // aplicado también aquí en el navegador: esta función es el único punto
+  // por el que pasa TODO texto libre del cliente (nombre, notas, nombres de
+  // producto/extra) antes de convertirse en bytes ESC/POS reales. El
+  // servidor ya limpia lo que guarda, pero reimprimirUltimoTicketTermico()
+  // reconstruye el ticket desde localStorage sin volver a pasar por el
+  // servidor, así que confiar solo en la limpieza de guardar-pedido.php no
+  // cubre ese camino — sin este filtro, una secuencia ESC/GS colada en el
+  // nombre o las notas se interpretaría como un comando real de la
+  // impresora (cortar papel, abrir el cajón...) en vez de imprimirse como texto.
+  const limpio = (str || '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  return limpio.split('').map(c => map[c] || c).join('');
+}
+
+// El campo "time" del ticket normalmente ya viene como "HH:MM" (así lo
+// guarda el servidor en stats/<fecha>), pero algún camino interno todavía
+// puede traer la fecha completa (toLocaleString) — esto se queda solo con
+// la hora corta en cualquiera de los dos casos, para imprimirla en grande.
+function _ptHoraCorta(t) {
+  if (!t) return '';
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  return m ? m[0] : String(t);
+}
+
+// Construye los bytes ESC/POS de un ticket (mismo formato que usaba el bridge Node.js
+// en pedidos/js/index.js, incluyendo el logo). Devuelve un Uint8Array listo para USB.
+function _ptBuildTicketBytes(ticket, omitirLogo) {
+  const tc = getTicketConfig();
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const left = () => d.push(ESC, 0x61, 0x00);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  // Altura doble opcional (ajustable en Configuración del ticket) — 0x00
+  // tamaño normal 1x1, 0x10 altura doble/ancho normal. No afecta al ajuste
+  // de columnas de los productos (el ancho del carácter no cambia).
+  const normal = () => d.push(ESC, 0x21, tc.letraGrande ? 0x10 : 0x00);
+  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+
+  // Inicializar
+  d.push(ESC, 0x40);
+
+  // Logo centrado — son ~18 KB de datos, sin problema por USB pero
+  // demasiado para Bluetooth (varios segundos de más, y más trozos con
+  // los que se puede perder algo por el camino), así que se omite en esa
+  // vía (ver imprimirTicketTermico, que decide omitirLogo según el
+  // transporte activo).
+  if (!omitirLogo) {
+    center();
+    const bpr = (PRINTER_LOGO_W + 7) >> 3;
+    d.push(GS, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, PRINTER_LOGO_H & 0xFF, (PRINTER_LOGO_H >> 8) & 0xFF);
+    PRINTER_LOGO_DATA.forEach(b => d.push(b));
+  }
+
+  // Nombre del negocio
+  center();
+  big();
+  push(tc.nombre + '\n');
+  normal();
+  push(tc.direccion + '\n');
+  push(tc.telefono + '\n');
+  push('------------------------------------------------\n');
+
+  // Hora de recogida si tiene turno — si no lo tiene (pedido con código
+  // local, sin turno porque es para ahora mismo desde el mostrador), se
+  // imprime en su lugar la hora a la que se hizo el pedido, igual de
+  // grande, para que en cocina quede claro en el propio papel sin depender
+  // de la etiqueta "🏪 En el local" que solo se ve en pantalla. Si hay un
+  // tiempo de espera configurado para pedidos de tienda (panel >
+  // Configuración impresora), slotTime SÍ viene relleno también para estos
+  // pedidos (con la hora ya repartida, ver _asignarHoraTiendaQR en
+  // admin-config.js) — se etiqueta distinto ("HORA ESTIMADA") para no
+  // confundirlo con un turno elegido de verdad por el cliente.
+  if (ticket.slotTime) {
+    center();
+    push(ticket.esPedidoLocal ? 'HORA ESTIMADA\n' : 'HORA RECOGIDA\n');
+    big();
+    push(ticket.slotTime + '\n');
+    normal();
+    if (ticket.esPedidoLocal) push('(pedido hecho en tienda)\n');
+  } else if (ticket.time) {
+    center();
+    push('HORA DEL PEDIDO\n');
+    big();
+    push(_ptHoraCorta(ticket.time) + '\n');
+    normal();
+    push('(pedido hecho en tienda)\n');
+  }
+
+  // Nombre del cliente
+  center();
+  big();
+  push((ticket.name || '').toUpperCase() + '\n');
+  normal();
+  if (ticket.phone) push('Tlfno. ' + ticket.phone + '\n');
+  push('------------------------------------------------\n');
+
+  // Número de pedido
+  center();
+  big();
+  push('PEDIDO ' + ticket.orderNum + '\n');
+  normal();
+  push((ticket.time || '') + '\n');
+  push('------------------------------------------------\n');
+
+  // Productos
+  left();
+  (ticket.items || []).forEach(item => {
+    const partes = _ptEncodeStr(item.name || '').split(' + ');
+    const nombrePrincipal = partes[0].toUpperCase();
+    const extrasNombre = partes.slice(1);
+    const extrasArr = item.extras || [];
+    const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
+    const W = tc.anchoPapel === 58 ? 32 : 48;
+    const prefix = item.qty + 'x ';
+    const spaces = W - prefix.length - nombrePrincipal.length - precio.length;
+    if (spaces >= 0) {
+      push(prefix + nombrePrincipal + ' '.repeat(spaces) + precio + '\n');
+    } else {
+      push(prefix + nombrePrincipal.substring(0, W - prefix.length) + '\n');
+      push(' '.repeat(Math.max(0, W - precio.length)) + precio + '\n');
+    }
+    extrasNombre.forEach(extra => {
+      const conParentesis = extra.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/, ' (+$1 EUR)').trim();
+      push('     - ' + _ptEncodeStr(conParentesis).toUpperCase() + '\n');
+    });
+    if (Array.isArray(extrasArr)) {
+      extrasArr.forEach(extra => {
+        const nombreExtra = _ptEncodeStr(((extra && extra.name) ? extra.name : extra) + '').toUpperCase();
+        const precioExtraTxt = (extra && extra.price) ? '+' + parseFloat(extra.price).toFixed(2) + ' EUR' : '';
+        const prefixExtra = '  - ';
+        if (!precioExtraTxt) {
+          push(prefixExtra + nombreExtra + '\n');
+          return;
+        }
+        // Precio del extra alineado a la misma columna derecha que el
+        // precio de la línea principal (misma W), no pegado al nombre.
+        const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
+        if (spacesExtra >= 1) {
+          push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
+        } else {
+          push(prefixExtra + nombreExtra + '\n');
+          push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
+        }
+      });
+    }
+  });
+
+  push('------------------------------------------------\n');
+
+  // Pedido que cumple los requisitos del sello de fidelización (patata +
+  // pedido mínimo) — aviso destacado para que se compruebe/aplique el
+  // sello al cobrar, igual que el de estudiante/jubilado justo debajo.
+  if (ticket.fidelizacionElegible) {
+    center();
+    bold(true);
+    big();
+    push('*** COMPROBAR SELLOS ***\n');
+    normal();
+    bold(false);
+    push('------------------------------------------------\n');
+  }
+
+  // Descuento estudiante/jubilado autodeclarado — aviso destacado justo
+  // antes del total, para que se compruebe el carné en el momento de cobrar.
+  if (ticket.esEstudianteJubilado) {
+    center();
+    bold(true);
+    big();
+    push('*** VERIFICAR CARNET ***\n');
+    normal();
+    push('ESTUDIANTE / JUBILADO\n');
+    bold(false);
+    push('------------------------------------------------\n');
+  }
+
+  // Total
+  center();
+  big();
+  push((ticket.total || 0).toFixed(2) + ' EUR\n');
+  normal();
+  push(tc.textoPago + '\n');
+
+  if (ticket.notes) {
+    left();
+    push('------------------------------------------------\n');
+    bold(true); push('NOTAS: '); bold(false);
+    push(ticket.notes + '\n');
+  }
+
+  center();
+  push('------------------------------------------------\n');
+  push(tc.despedida + '\n');
+
+  // Código QR opcional (configurable en Configuración del ticket) — lo genera
+  // la propia impresora a partir del texto/URL, no hace falta ninguna imagen.
+  if (tc.qrHabilitado && tc.qrContenido) {
+    push('\n');
+    _ptPushQR(d, GS, tc.qrContenido, 6);
+  }
+
+  push('\n\n\n');
+
+  // Cortar papel
+  d.push(GS, 0x56, 0x42, 0x00);
+
+  return new Uint8Array(d);
+}
+
+// Manda a la impresora el comando ESC/POS estándar de código QR (GS ( k,
+// "Modelo 2") — la impresora lo dibuja ella sola a partir del texto, sin
+// necesidad de generar ninguna imagen desde el navegador.
+function _ptPushQR(d, GS, contenido, tamañoModulo) {
+  const tam = tamañoModulo || 6; // 1-16; 6-8 suele leerse bien en 80mm
+  const bytes = Array.from(new TextEncoder().encode(contenido));
+  const storeLen = bytes.length + 3;
+  const pL = storeLen & 0xFF, pH = (storeLen >> 8) & 0xFF;
+  // Seleccionar modelo 2
+  d.push(GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+  // Tamaño del módulo
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, tam);
+  // Nivel de corrección de errores (48=L 49=M 50=Q 51=H)
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 48);
+  // Guardar los datos del QR
+  d.push(GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30);
+  bytes.forEach(b => d.push(b));
+  // Imprimir el QR guardado
+  d.push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
+}
+
+// ── CONEXIÓN USB ──
+let _ptDevice = null;
+let _ptEndpointOut = null;
+let _ptEndpointIn = null;
+let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir último")
+
+// Puede haber varias copias del indicador de estado en distintas pantallas
+// (Configuración del ticket, Pedidos en vivo, Panel bimba) — se actualizan todas
+// a la vez porque comparten la misma conexión USB (misma pestaña del navegador).
+// Recuerda si estaba conectada la última vez que se llamó a _ptStatusUI,
+// para poder distinguir "se acaba de desconectar ahora mismo" (dispara
+// sonido + banner) de "sigue sin estar conectada" (cada reintento fallido
+// vuelve a llamar con connected=false, y no queremos repetir la alerta
+// cada 8 segundos mientras tanto).
+let _ptEstabaConectada = false;
+function _ptStatusUI(connected, msg) {
+  if (_ptEstabaConectada && !connected) _ptAvisoDesconexionImpresora();
+  if (!_ptEstabaConectada && connected) {
+    // Se acaba de reconectar: vacía sola la cola de tickets que se quedaron
+    // pendientes mientras estuvo desconectada (ver _ptColaProcesar). Un
+    // pequeño margen antes de empezar a imprimir, para que la conexión
+    // recién hecha se asiente (sobre todo por Bluetooth).
+    setTimeout(_ptColaProcesar, 800);
+  }
+  if (connected) _ptOcultarAvisoDesconexion();
+  _ptEstabaConectada = connected;
+  const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
+  document.querySelectorAll('.pt-conn-status').forEach(el => {
+    el.textContent = texto;
+    el.style.color = connected ? '#166534' : '#991B1B';
+  });
+}
+
+// Aviso de que la impresora se acaba de desconectar — sonido distinto al
+// de "nuevo pedido" (para no confundirlos) y un banner visible tanto en
+// la pantalla de cocina como en el panel de admin. Vale igual para USB
+// que para Bluetooth, ya que _ptStatusUI es la única función de estado
+// que comparten ambos transportes.
+//
+// Si sigue sin reconectar pasado un rato, el aviso se repite solo — un
+// sonido único al desconectarse es fácil de dar por "ya lo he visto" y
+// olvidarlo de fondo mientras siguen llegando pedidos que no se imprimen.
+let _ptAvisoEscaladoTimer = null;
+const PT_AVISO_ESCALADO_MS = 3 * 60 * 1000;
+function _ptAvisoDesconexionImpresora() {
+  _ptSonarAvisoDesconexion();
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => {
+    el.style.display = el.dataset.showDisplay || 'block';
+  });
+  if (_ptAvisoEscaladoTimer) clearInterval(_ptAvisoEscaladoTimer);
+  _ptAvisoEscaladoTimer = setInterval(() => {
+    if (_ptIsConnected()) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; return; }
+    _ptSonarAvisoDesconexion();
+  }, PT_AVISO_ESCALADO_MS);
+}
+function _ptSonarAvisoDesconexion() {
+  if (typeof playNotificationSound === 'function') {
+    const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
+    playNotificationSound(tipo);
+  }
+}
+function _ptOcultarAvisoDesconexion() {
+  document.querySelectorAll('.pt-desconexion-aviso').forEach(el => { el.style.display = 'none'; });
+  if (_ptAvisoEscaladoTimer) { clearInterval(_ptAvisoEscaladoTimer); _ptAvisoEscaladoTimer = null; }
+}
+
+// ── FILA ÚNICA DE IMPRESIÓN ────────────────────────────────────────────
+// Si llegan varios pedidos casi a la vez (varios clientes pidiendo en el
+// mismo minuto), cada uno lanzaba su propio envío a la impresora por su
+// cuenta — como JavaScript no bloquea entre cada "await", los bytes de dos
+// tickets distintos podían intercalarse a mitad de envío en la misma
+// conexión Bluetooth/USB, y la impresora sacaba basura o se quedaba
+// colgada sin imprimir ninguno de los dos ("se volvía loca"). Ahora TODO
+// lo que haya que imprimir (auto-imprimir, reimprimir a mano, la cola
+// pendiente al reconectar) pasa por esta única fila — se imprimen de uno
+// en uno, en el orden en que se pidieron, aunque hayan llegado casi a la
+// vez.
+let _ptColaEjecucion = Promise.resolve();
+function _ptEnFila(fn) {
+  const resultado = _ptColaEjecucion.then(fn, fn);
+  // La cadena sigue aunque este envío falle — si no, un ticket atascado
+  // dejaría a todos los siguientes esperando para siempre.
+  _ptColaEjecucion = resultado.then(() => {}, () => {});
+  return resultado;
+}
+
+// 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Se decide
+// solo con cuál de los dos consigue conectar primero (ver _ptReconectar).
+let _ptTransporte = null;
+
+function _ptIsConnected() {
+  if (_ptTransporte === 'ble') return !!(_ptBleDevice && _ptBleDevice.gatt && _ptBleDevice.gatt.connected && _ptBleCharacteristic);
+  if (_ptTransporte === 'usb') return !!(_ptDevice && _ptEndpointOut !== null);
+  return false;
+}
+
+function _ptResetConexion() {
+  _ptDevice = null; _ptEndpointOut = null; _ptEndpointIn = null;
+  _ptBleDevice = null; _ptBleCharacteristic = null;
+  _ptTransporte = null;
+}
+
+// Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
+// para diagnosticar por qué no imprime sola: si el admin no está "activo" en este
+// dispositivo, o el auto-imprimir está apagado, aquí sale sin tener que adivinar.
+function _ptUpdateDebugStatus() {
+  const el = document.getElementById('pt-debug-status');
+  const elKitchen = document.getElementById('pt-debug-status-kitchen');
+  if (!el && !elKitchen) return;
+  const admin = window._adminLoggedIn ? '🟢 Admin activo' : '🔴 Admin NO activo';
+  const auto = (typeof getTicketConfig === 'function' && getTicketConfig().autoImprimir) ? '🟢 Auto-imprimir ON' : '🔴 Auto-imprimir OFF';
+  const conexion = _ptIsConnected() ? '🟢 ' + (_ptTransporte === 'ble' ? 'Bluetooth' : 'USB') + ' conectada' : '🔴 Impresora no conectada';
+  const texto = admin + ' · ' + auto + ' · ' + conexion;
+  if (el) el.textContent = texto;
+  if (elKitchen) elKitchen.textContent = texto;
+}
+
+// Busca en el dispositivo USB la interfaz que tenga endpoints de salida (bulk OUT,
+// para imprimir) y de entrada (bulk IN, para leer el estado de papel) y la reclama.
+// Es genérico: no depende de conocer de antemano el vendor/product ID.
+async function _ptClaimInterface(device) {
+  await device.open();
+  if (device.configuration === null) await device.selectConfiguration(1);
+  let ifaceNumber = null, epOut = null, epIn = null;
+  for (const iface of device.configuration.interfaces) {
+    const alt = iface.alternates[0];
+    const out = alt.endpoints.find(e => e.direction === 'out');
+    if (out) {
+      ifaceNumber = iface.interfaceNumber;
+      epOut = out.endpointNumber;
+      const inEp = alt.endpoints.find(e => e.direction === 'in');
+      epIn = inEp ? inEp.endpointNumber : null;
+      break;
+    }
+  }
+  if (ifaceNumber === null) throw new Error('No se encontró un endpoint de salida USB en este dispositivo');
+  await device.claimInterface(ifaceNumber);
+  return { epOut, epIn };
+}
+
+// Pide permiso al navegador para acceder a la impresora — debe llamarse desde
+// un click (gesto del usuario), el navegador no deja hacerlo en segundo plano.
+async function conectarImpresoraTermica() {
+  if (!navigator.usb) {
+    alert('Este navegador no soporta impresión USB. Usa Chrome o Edge (no funciona en Safari ni Firefox).');
+    return false;
+  }
+  try {
+    // Sin filtros: no sabemos con certeza el vendor/product ID de esta impresora,
+    // así que mostramos todos los dispositivos USB conectados y que el usuario
+    // elija el suyo de la lista (evita listas vacías por un filtro equivocado).
+    const device = await navigator.usb.requestDevice({ filters: [] });
+    const { epOut, epIn } = await _ptClaimInterface(device);
+    _ptDevice = device;
+    _ptEndpointOut = epOut;
+    _ptEndpointIn = epIn;
+    _ptTransporte = 'usb';
+    _ptStatusUI(true);
+    return true;
+  } catch (e) {
+    console.warn('[Impresora] conexión cancelada o fallida', e);
+    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora: ' + e.message);
+    return false;
+  }
+}
+
+// Reconecta en silencio (sin pedir permiso) a un dispositivo ya autorizado antes —
+// se llama sola al cargar la página, y también sola cada pocos segundos si se
+// pierde la conexión (cable desenchufado, tablet que se durmió...), para no
+// tener que ir a pulsar "Conectar impresora" a mano cada vez.
+// Hay hasta 4 disparadores distintos que pueden llamar a esta función casi a
+// la vez (al cargar la página, el evento "connect" de WebUSB, el intervalo
+// de 8s, y el aviso al volver a la pestaña/pantalla) — sin este candado,
+// dos llamadas simultáneas podían pasar ambas la comprobación de "no
+// conectada" antes de que ninguna terminara, e intentar reclamar la
+// interfaz USB a la vez: la segunda fallaba con "Unable to claim interface"
+// aunque la primera sí lo hubiera conseguido bien.
+let _ptReconectando = false;
+// Prueba USB primero (dispositivo ya autorizado antes) y, si no hay nada
+// por ahí, prueba Bluetooth (también ya autorizado antes) — cualquiera de
+// los 4 disparadores de siempre (carga de página, evento "connect" USB,
+// intervalo de 8s, volver a la pestaña) sirve igual para las dos vías,
+// así que basta con ampliar esta única función en vez de duplicar toda
+// la maquinaria de candado/timeout para Bluetooth aparte.
+async function _ptReconectar() {
+  if (_ptIsConnected()) return true;
+  if (_ptReconectando) return false;
+  _ptReconectando = true;
+  try {
+    if (navigator.usb) {
+      // Límite de tiempo de seguridad — si getDevices()/claimInterface() se
+      // quedaran colgados sin resolver ni rechazar nunca (un fallo raro del
+      // driver USB del sistema), sin esto el candado de arriba se quedaría
+      // en true para siempre y ningún disparador podría volver a intentar
+      // reconectar hasta recargar la página entera.
+      const resultado = await Promise.race([
+        (async () => {
+          const devices = await navigator.usb.getDevices();
+          if (!devices.length) return null;
+          const device = devices[0];
+          const { epOut, epIn } = await _ptClaimInterface(device);
+          return { device, epOut, epIn };
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando con la impresora')), 6000))
+      ]).catch((e) => { console.warn('[Impresora] reconexión USB fallida', e); return null; });
+      if (resultado) {
+        _ptDevice = resultado.device;
+        _ptEndpointOut = resultado.epOut;
+        _ptEndpointIn = resultado.epIn;
+        _ptTransporte = 'usb';
+        _ptStatusUI(true);
+        return true;
+      }
+    }
+    const okBle = await _ptBleReconectar();
+    if (okBle) return true;
+    _ptStatusUI(false);
+    return false;
+  } finally {
+    _ptReconectando = false;
+  }
+}
+
+// Envuelve una promesa que no tiene por qué llegar a resolverse nunca
+// (transferOut de WebUSB y writeValue/writeValueWithoutResponse de Web
+// Bluetooth no traen ningún timeout de fábrica: si la impresora se queda
+// en un estado raro a media escritura — atasco de papel, un USB que se
+// desconecta sin disparar su evento, Bluetooth fuera de rango justo en
+// ese instante — la promesa puede quedarse colgada para siempre). Sin
+// esto, como TODOS los tickets pasan por la misma fila (_ptEnFila), un
+// solo envío colgado dejaba bloqueados también todos los pedidos
+// siguientes sin ningún aviso ni forma de recuperarse sola. La operación
+// de bajo nivel que se abandona puede seguir viva de fondo, pero ya no
+// bloquea nada: _ptResetConexion() olvida esa conexión y el siguiente
+// intento abre una nueva de cero.
+function _ptConTimeout(promise, ms, mensaje) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(mensaje || 'timeout de impresora')), ms))
+  ]);
+}
+async function _ptEnviarBytesUnaVez(bytes) {
+  if (!_ptIsConnected()) {
+    const ok = await _ptReconectar();
+    if (!ok) throw new Error('Impresora no conectada — pulsa "Conectar impresora" en Configuración del ticket');
+  }
+  if (_ptTransporte === 'ble') { await _ptBleEnviarBytes(bytes); return; }
+  await _ptConTimeout(_ptDevice.transferOut(_ptEndpointOut, bytes), 8000, 'timeout enviando por USB — la impresora no respondió');
+}
+
+// Reintenta un par de veces (con reconexión de por medio) antes de rendirse —
+// un fallo puntual (impresora ocupada, un instante de corte USB) ya no se
+// queda directamente como "Falló" sin que nadie lo intente de nuevo.
+async function _ptEnviarBytes(bytes, intentos) {
+  intentos = intentos || 3;
+  let ultimoError = null;
+  for (let i = 0; i < intentos; i++) {
+    try {
+      await _ptEnviarBytesUnaVez(bytes);
+      return;
+    } catch (e) {
+      ultimoError = e;
+      console.warn('[Impresora] intento ' + (i + 1) + '/' + intentos + ' falló', e);
+      if (i < intentos - 1) {
+        _ptResetConexion(); // forzar reconexión limpia en el siguiente intento
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+  }
+  throw ultimoError;
+}
+
+// ── IMPRESORA TÉRMICA — BLUETOOTH (BLE) ──────────────────────────────
+// Vía alternativa a USB. Solo vale para impresoras Bluetooth de BAJO
+// CONSUMO (BLE) — compruébalo antes con "Probar Bluetooth" en
+// Configuración del ticket. La mayoría de impresoras térmicas baratas
+// llevan Bluetooth "clásico" (SPP), que ningún navegador puede usar; eso
+// no tiene arreglo por código.
+//
+// A diferencia de USB (donde pedimos la lista completa de dispositivos
+// y el vendor ID no importa), en Bluetooth hay que declarar de antemano
+// qué "servicios" GATT se van a usar. No hay un ID de fabricante fijo
+// que buscar, así que se prueban los UUID de servicio más habituales
+// entre impresoras térmicas ESC/POS BLE genéricas (muchas comparten el
+// mismo firmware de fábrica aunque se vendan con marcas distintas), y se
+// usa la primera característica que permita escribir que se encuentre.
+const PT_BLE_SERVICIOS_CANDIDATOS = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // el más habitual en clones ESC/POS BLE
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'  // Nordic UART Service (otro habitual)
+];
+
+let _ptBleDevice = null;
+let _ptBleCharacteristic = null;
+
+async function _ptBleBuscarCaracteristicaEscritura(server) {
+  for (const uuidServicio of PT_BLE_SERVICIOS_CANDIDATOS) {
+    try {
+      const servicio = await server.getPrimaryService(uuidServicio);
+      const caracteristicas = await servicio.getCharacteristics();
+      const escribible = caracteristicas.find(c => c.properties.write || c.properties.writeWithoutResponse);
+      if (escribible) return escribible;
+    } catch (e) {
+      // Este servicio candidato no existe en el dispositivo — se prueba el siguiente.
+    }
+  }
+  return null;
+}
+
+async function _ptBleConectarDispositivo(device) {
+  const server = await device.gatt.connect();
+  const characteristic = await _ptBleBuscarCaracteristicaEscritura(server);
+  if (!characteristic) {
+    server.disconnect();
+    throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
+  }
+  _ptBleDevice = device;
+  _ptBleCharacteristic = characteristic;
+  _ptTransporte = 'ble';
+  // Muchas impresoras Bluetooth baratas todavía no están listas para
+  // recibir datos de verdad justo al terminar de conectar — el primer envío
+  // en ese instante se puede perder en silencio (writeValueWithoutResponse
+  // no avisa de ningún fallo), así que la web lo daba por impreso pero no
+  // salía nada en papel. Antes solo había una espera fija de 0,5s, pero
+  // seguía perdiéndose el primer ticket real en algunos módulos — ahora,
+  // ANTES de esperar, se manda primero un "pulso" inofensivo (el mismo
+  // comando de estado que ya se usa para mantener viva la conexión, no
+  // imprime nada en el papel): si algo se pierde por este motivo de
+  // arranque, se pierde ese envío de prueba y no el ticket real del
+  // cliente. Después se espera un margen mayor (0,8s) antes de marcar la
+  // impresora como lista.
+  try { await _ptBlePulso(); } catch (e) {}
+  await new Promise(r => setTimeout(r, 800));
+  device.addEventListener('gattserverdisconnected', () => {
+    if (_ptTransporte === 'ble') _ptResetConexion();
+    _ptStatusUI(false);
+    _ptReconectar();
+  });
+  _ptStatusUI(true, '🟢 Impresora conectada (Bluetooth)');
+}
+
+// Pide permiso al navegador — debe llamarse desde un click (gesto del
+// usuario), el navegador no deja hacerlo en segundo plano.
+async function conectarImpresoraBluetooth() {
+  if (!navigator.bluetooth) {
+    alert('Este navegador no soporta impresión por Bluetooth. Usa Chrome o Edge (no funciona en Safari ni en iPhone/iPad).');
+    return false;
+  }
+  try {
+    // Si ya sabemos el nombre de la impresora de una conexión anterior, se
+    // filtra la ventana de selección para que solo aparezca ella (en vez
+    // de la lista completa de aparatos Bluetooth cercanos) — más rápido
+    // de encontrar cada vez que haga falta reconectar a mano. Si por lo
+    // que sea no aparece con ese filtro (nombre cambiado, etc.), se
+    // reintenta mostrando la lista completa antes de rendirse.
+    let nombreGuardado = null;
+    try { nombreGuardado = localStorage.getItem('dpf_bt_printer_name') || null; } catch (e) {}
+    let device;
+    if (nombreGuardado) {
+      try {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ name: nombreGuardado }], optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+      } catch (e) {
+        device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+      }
+    } else {
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PT_BLE_SERVICIOS_CANDIDATOS });
+    }
+    await _ptBleConectarDispositivo(device);
+    try { localStorage.setItem('dpf_bt_printer_name', device.name || ''); } catch (e) {}
+    // Diagnóstico: si este navegador no soporta navigator.bluetooth.getDevices()
+    // (API de permisos Bluetooth persistentes), no hay forma de reconectar sola
+    // tras recargar la página — habrá que pulsar este botón cada vez que se
+    // recargue o se abra de nuevo. No es un fallo del código: es un límite de
+    // seguridad del propio navegador/plataforma, sin alternativa posible.
+    if (!navigator.bluetooth.getDevices) {
+      console.warn('[Impresora BLE] Este navegador no soporta navigator.bluetooth.getDevices() — no podrá reconectar sola tras recargar la página, solo mientras esta pestaña siga abierta.');
+    }
+    return true;
+  } catch (e) {
+    console.warn('[Impresora BLE] conexión cancelada o fallida', e);
+    if (e && e.name !== 'NotFoundError') alert('No se pudo conectar con la impresora por Bluetooth: ' + e.message);
+    return false;
+  }
+}
+
+// Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
+// espejo de la reconexión USB, usando navigator.bluetooth.getDevices()
+// (API de permisos persistentes; no está en todas las versiones de Chrome,
+// de ahí la comprobación).
+async function _ptBleReconectar() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
+  try {
+    const dispositivos = await navigator.bluetooth.getDevices();
+    if (!dispositivos.length) return false;
+    await Promise.race([
+      _ptBleConectarDispositivo(dispositivos[0]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reconectando Bluetooth')), 6000))
+    ]);
+    return true;
+  } catch (e) {
+    console.warn('[Impresora BLE] reconexión fallida', e);
+    return false;
+  }
+}
+
+// Se prefiere "con respuesta" (writeValue): cada trozo espera la
+// confirmación real de la impresora antes de mandar el siguiente, así que
+// el ritmo lo marca la propia impresora en vez de un tiempo de espera fijo
+// adivinado — no hace falta añadir ningún retraso extra encima. Solo si
+// la característica no soporta escritura con respuesta se usa
+// writeValueWithoutResponse con una pequeña espera manual de por medio.
+async function _ptBleEnviarBytes(bytes) {
+  const TAMANO_TROZO = 100;
+  const conRespuesta = !!_ptBleCharacteristic.properties.write;
+  for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
+    const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
+    if (conRespuesta) {
+      await _ptConTimeout(_ptBleCharacteristic.writeValue(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
+    } else {
+      await _ptConTimeout(_ptBleCharacteristic.writeValueWithoutResponse(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
+      await new Promise(r => setTimeout(r, 45));
+    }
+  }
+}
+
+// "Pulso" de mantenimiento — un comando de estado en tiempo real (no
+// imprime nada en el papel) para generar tráfico en la conexión Bluetooth
+// mientras no hay ningún pedido que imprimir. Si falla, no pasa nada
+// grave: el intervalo que lo llama ya comprueba _ptIsConnected() cada
+// pocos segundos y dispara la reconexión si de verdad se ha caído.
+async function _ptBlePulso() {
+  if (_ptTransporte !== 'ble' || !_ptBleCharacteristic) return;
+  try {
+    const bytes = new Uint8Array([0x10, 0x04, 0x01]);
+    if (_ptBleCharacteristic.properties.writeWithoutResponse) {
+      await _ptBleCharacteristic.writeValueWithoutResponse(bytes);
+    } else if (_ptBleCharacteristic.properties.write) {
+      await _ptBleCharacteristic.writeValue(bytes);
+    }
+  } catch (e) {
+    // Se ignora — si de verdad se cayó la conexión, el siguiente chequeo
+    // de _ptIsConnected() lo detectará y disparará la reconexión.
+  }
+}
+
+// Imprime un ticket, repitiendo tantas copias como esté configurado.
+async function imprimirTicketTermico(ticket) {
+  const tc = getTicketConfig();
+  const bytes = _ptBuildTicketBytes(ticket);
+  _ptUltimoTicket = ticket;
+  const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
+  for (let i = 0; i < copias; i++) {
+    await _ptEnviarBytes(bytes);
+    _ptPapelRegistrarTicketImpreso();
+    if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
+  }
+}
+
+// ── Contador de papel restante estimado ──────────────────────────────
+// Por Bluetooth no se puede leer el sensor de papel de la impresora (y por
+// USB tampoco todos los modelos lo soportan), así que en vez de depender
+// de eso se lleva la cuenta de cuántos tickets se han impreso desde el
+// último cambio de rollo, y se compara contra una capacidad aproximada
+// (cuántos tickets suele dar un rollo nuevo) que la usuaria calibra a ojo
+// la primera vez y ajusta si hace falta — no es una medida exacta en
+// milímetros, pero avisa con margen suficiente antes de quedarse sin papel.
+const PT_PAPEL_TICKETS_KEY = 'dpf_papel_tickets_desde_rollo';
+const PT_PAPEL_CAPACIDAD_KEY = 'dpf_papel_rollo_capacidad';
+function _ptPapelTicketsUsados() {
+  return parseInt(localStorage.getItem(PT_PAPEL_TICKETS_KEY) || '0', 10);
+}
+function _ptPapelCapacidad() {
+  return parseInt(localStorage.getItem(PT_PAPEL_CAPACIDAD_KEY) || '150', 10);
+}
+function _ptPapelRegistrarTicketImpreso() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, String(_ptPapelTicketsUsados() + 1));
+  _ptPapelActualizarUI();
+}
+function _ptPapelNuevoRollo() {
+  localStorage.setItem(PT_PAPEL_TICKETS_KEY, '0');
+  _ptPapelActualizarUI();
+  if (typeof logActivity === 'function') logActivity('🧻 Rollo de papel reiniciado (contador a 0)');
+}
+function guardarCapacidadRollo(valor) {
+  const n = Math.max(1, parseInt(valor, 10) || 150);
+  localStorage.setItem(PT_PAPEL_CAPACIDAD_KEY, String(n));
+  _ptPapelActualizarUI();
+}
+function _ptPapelActualizarUI() {
+  const usados = _ptPapelTicketsUsados();
+  const capacidad = _ptPapelCapacidad();
+  const restantes = Math.max(0, capacidad - usados);
+  const pct = capacidad > 0 ? Math.max(0, Math.min(100, Math.round((restantes / capacidad) * 100))) : 100;
+  document.querySelectorAll('.pt-papel-contador').forEach(el => {
+    el.textContent = '🧻 ~' + pct + '% de papel restante (' + restantes + ' de ' + capacidad + ' tickets aprox.)';
+    el.style.color = pct <= 15 ? '#c0392b' : '';
+  });
+  const inputCap = document.getElementById('tc-papel-capacidad');
+  if (inputCap && document.activeElement !== inputCap) inputCap.value = capacidad;
+}
+document.addEventListener('DOMContentLoaded', () => { _ptPapelActualizarUI(); });
+
+// ── Cola de impresión pendiente ──────────────────────────────────────
+// Si un ticket no consigue imprimirse ni tras los reintentos normales
+// (la impresora estaba desconectada en ese momento), antes se quedaba solo
+// en un aviso que había que atender a mano ("🔧 Reintentar impresión" en
+// Alertas). Ahora, además, se guarda aquí — y en cuanto la impresora
+// vuelva a conectar (ver _ptStatusUI) se reimprime sola, en el mismo orden
+// en que llegaron, sin que nadie tenga que darle a ese botón.
+const PT_COLA_KEY = 'dpf_cola_impresion_pendiente';
+function _ptColaCargar() {
+  try { return JSON.parse(localStorage.getItem(PT_COLA_KEY) || '[]'); } catch (e) { return []; }
+}
+function _ptColaGuardar(cola) {
+  try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
+  _ptColaActualizarUI();
+}
+function _ptColaAgregar(ticket) {
+  if (!ticket || !ticket.orderNum) return;
+  const cola = _ptColaCargar();
+  if (cola.some(t => t.orderNum === ticket.orderNum)) return;
+  cola.push(ticket);
+  _ptColaGuardar(cola);
+}
+function _ptColaQuitar(orderNum) {
+  _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
+}
+function _ptColaActualizarUI() {
+  const n = _ptColaCargar().length;
+  document.querySelectorAll('.pt-cola-contador').forEach(el => {
+    el.style.display = n > 0 ? (el.dataset.showDisplay || 'block') : 'none';
+    el.textContent = '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
+  });
+}
+document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
+
+// Vacía la cola cuando la impresora reconecta — de una en una y en orden;
+// si alguna vuelve a fallar (se ha caído otra vez a media cola), se para
+// ahí y se deja para el próximo reconectar, en vez de perder el orden o
+// darlas por perdidas.
+let _ptColaProcesando = false;
+async function _ptColaProcesar() {
+  if (_ptColaProcesando || !_ptIsConnected()) return;
+  _ptColaProcesando = true;
+  try {
+    const cola = _ptColaCargar();
+    for (const ticket of cola) {
+      try {
+        await _ptEnFila(() => imprimirTicketTermico(ticket));
+        _ptColaQuitar(ticket.orderNum);
+        if (typeof _markAsImpreso === 'function') _markAsImpreso(ticket.orderNum);
+        if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticket.orderNum, true);
+        if (typeof logActivity === 'function') logActivity('🖨️ Ticket #' + ticket.orderNum + ' impreso solo desde la cola pendiente, al reconectar la impresora');
+        if (typeof getOrderStatus === 'function' && typeof setOrderStatus === 'function' && getOrderStatus(ticket.orderNum) === 'nuevo') {
+          setOrderStatus(ticket.orderNum, 'recibido').catch(() => {});
+        }
+      } catch (e) {
+        break;
+      }
+    }
+  } finally {
+    _ptColaProcesando = false;
+  }
+}
+
+// Ticket corto de aviso cuando un pedido se cancela o se modifica (se borra
+// y se vuelve a mandar como uno nuevo) — el papel ya impreso no se puede
+// borrar, así que se imprime este aviso para que en cocina sepan que ese
+// número de pedido ya NO es válido y hay que tirar el ticket anterior.
+function _ptBuildAnulacionBytes(orderNum) {
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('X X X X X\n');
+  push('ANULADO\n');
+  normal();
+  push('------------------------------------------------\n');
+  big();
+  push('PEDIDO ' + orderNum + '\n');
+  normal();
+  push('Tira el ticket anterior\n');
+  push('de este pedido\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  return new Uint8Array(d);
+}
+
+async function imprimirAnulacion(orderNum) {
+  // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
+  // aviso podía intercalarse (o perderse sin más) con el ticket del pedido
+  // nuevo si el cliente modificaba y volvía a mandar el pedido enseguida,
+  // y cocina se quedaba sin enterarse de que tenía que tirar el anterior.
+  const _ptEjecutarAnulacion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  await _ptEjecutarAnulacion(() => _ptEnviarBytes(_ptBuildAnulacionBytes(orderNum)));
+}
+
+async function imprimirTicketPrueba() {
+  try {
+    await imprimirTicketTermico({
+      orderNum: 'PRUEBA',
+      name: 'Ticket de prueba',
+      phone: '',
+      notes: '',
+      slotTime: null,
+      items: [{ name: 'Impresora configurada correctamente', qty: 1, subtotal: 0 }],
+      total: 0,
+      time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+    });
+  } catch (e) {
+    alert('⚠️ ' + e.message);
+  }
+}
+
+// Reimprime el último ticket normal enviado (no el de prueba, ni una
+// anulación) — para el caso de que se atasque el papel a mitad de
+// impresión, sin tener que ir a buscar el pedido en la lista.
+async function reimprimirUltimoTicketTermico() {
+  if (!_ptUltimoTicket) {
+    alert('Todavía no se ha impreso ningún ticket en este dispositivo.');
+    return;
+  }
+  try {
+    await imprimirTicketTermico(_ptUltimoTicket);
+  } catch (e) {
+    alert('⚠️ No se pudo reimprimir: ' + e.message);
+  }
+}
+
+// Cartel con QR para el mostrador: al escanearlo se abre la web ya con el
+// código de "pedido desde el local" puesto (sin gastos de gestión), sin que
+// el cliente tenga que escribir nada — para pegar en el mostrador cuando
+// hay cola. Se imprime tal cual, en un ticket corto aparte.
+async function imprimirCartelQRLocal() {
+  const code = (typeof getLocalFeeCode === 'function') ? getLocalFeeCode() : '';
+  if (!code) {
+    alert('Primero pon y guarda un código en "Código pedido desde el local".');
+    return;
+  }
+  const url = window.location.origin + '/?local=' + encodeURIComponent(code);
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('PIDE DESDE\n');
+  push('EL MOVIL\n');
+  normal();
+  push('sin gastos de gestion\n');
+  push('\n');
+  _ptPushQR(d, GS, url, 8);
+  push('\n');
+  push('Escanea el codigo\n');
+  push('o escribe el codigo:\n');
+  big();
+  push(code + '\n');
+  normal();
+  push('\n');
+  push(window.location.origin + '/\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  try {
+    await _ptEnviarBytes(new Uint8Array(d));
+  } catch (e) {
+    alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
+  }
+}
+
+// ── AVISO DE PAPEL ──
+// Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
+// de papel). La interpretación exacta de los bits varía algo según el
+// fabricante — esta es la más habitual en clones compatibles con Epson.
+// Si en esta impresora en concreto no coincidiera al probarlo con el rollo
+// realmente vacío, hay que ajustar las máscaras (0x0C / 0x60) de aquí abajo.
+async function _ptComprobarPapel() {
+  // Solo USB expone este comando de estado de papel de forma fiable — para
+  // Bluetooth dependería de que cada modelo tenga su propia característica
+  // de notificación, algo que varía demasiado entre clones como para
+  // adivinarlo sin poder probarlo en la impresora real.
+  if (_ptTransporte !== 'usb' || !_ptIsConnected() || _ptEndpointIn === null) return;
+  try {
+    await _ptDevice.transferOut(_ptEndpointOut, new Uint8Array([0x10, 0x04, 0x04]));
+    const res = await _ptDevice.transferIn(_ptEndpointIn, 8);
+    if (!res.data || res.data.byteLength === 0) return;
+    const status = res.data.getUint8(0);
+    const sinPapel = (status & 0x60) !== 0;
+    _ptPapelUI(sinPapel);
+  } catch (e) {
+    // No pasa nada si esta impresora no responde a este comando — simplemente
+    // no se muestra el aviso de papel, el resto sigue funcionando igual.
+  }
+}
+function _ptPapelUI(sinPapel) {
+  document.querySelectorAll('.pt-papel-aviso').forEach(el => {
+    // El banner grande de la pantalla de cocina necesita "flex" (para
+    // colocar el texto centrado verticalmente como el de "activa el
+    // audio"); los avisos pequeños del panel de admin usan "block" por
+    // defecto — cada elemento indica el suyo con data-show-display.
+    el.style.display = sinPapel ? (el.dataset.showDisplay || 'block') : 'none';
+  });
+}
+
+if (navigator.usb) {
+  document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
+  navigator.usb.addEventListener('disconnect', (e) => {
+    if (_ptDevice && e.device === _ptDevice) { _ptResetConexion(); _ptStatusUI(false); }
+  });
+  // Si Chrome detecta que se ha enchufado algún dispositivo USB, probamos a
+  // reconectar por si es la impresora (p.ej. se desenchufó el cable y se
+  // volvió a meter) — sin esto había que pulsar "Conectar impresora" a mano.
+  navigator.usb.addEventListener('connect', () => {
+    if (!_ptIsConnected()) _ptReconectar();
+  });
+}
+
+if (navigator.usb || navigator.bluetooth) {
+  if (!navigator.usb) document.addEventListener('DOMContentLoaded', () => { _ptReconectar(); });
+  // Reintento periódico de reconexión mientras no esté conectada — cubre el
+  // caso de que la tablet se haya quedado en reposo o no se dispare ningún
+  // evento de conexión a tiempo. Si SÍ está conectada por Bluetooth, se
+  // manda además un "pulso" (comando de estado en tiempo real, no imprime
+  // nada) para generar tráfico en la conexión — muchos módulos BLE baratos
+  // se desconectan solos tras un rato sin ningún dato, aunque estén dentro
+  // de alcance y con batería; este pulso evita que se les considere
+  // "inactivos" entre pedido y pedido.
+  //
+  // Mientras está DESCONECTADA se reintenta cada 2s en vez de 8s — el hueco
+  // más habitual es justo al abrir/recargar la web (la reconexión con un
+  // dispositivo ya emparejado tarda unos segundos), y si un pedido llega
+  // justo en ese hueco se queda en la cola pendiente hasta el siguiente
+  // reintento con éxito. Con 8s de por medio, "el primer pedido no sale
+  // solo" podía tardar bastante en corregirse sin tocar nada; con 2s el
+  // hueco real se reduce mucho. Una vez conectada, vuelve al ritmo normal
+  // de 8s (no hace falta ir más rápido, y así no se satura de tráfico la
+  // conexión Bluetooth sin necesidad).
+  function _ptBucleMantenimiento() {
+    const conectada = _ptIsConnected();
+    setTimeout(() => {
+      if (!_ptIsConnected()) {
+        _ptReconectar();
+      } else if (_ptTransporte === 'ble') {
+        _ptBlePulso();
+      } else {
+        _ptComprobarPapel();
+      }
+      // La cola pendiente normalmente se vacía sola al detectar una
+      // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
+      // error puntual de escritura SIN que la impresora llegue a desconectarse
+      // de verdad — en ese caso ese flanco nunca se dispara. Este intento
+      // periódico (con la impresora ya conectada) cubre ese hueco; _ptColaProcesar
+      // ya se protege solo contra solapes (_ptColaProcesando).
+      if (typeof _ptColaCargar === 'function' && _ptColaCargar().length) _ptColaProcesar();
+      _ptBucleMantenimiento();
+    }, conectada ? 8000 : 2000);
+  }
+  _ptBucleMantenimiento();
+  // Los navegadores ralentizan o pausan setInterval en pestañas/pantallas en
+  // segundo plano — si la tablet se queda con la pantalla apagada un rato
+  // (algo habitual entre pedido y pedido) el reintento de arriba puede no
+  // llegar a ejecutarse a tiempo. En cuanto la pantalla se enciende o se
+  // vuelve a esta pestaña, se reintenta al momento en vez de esperar al
+  // siguiente tick de los 8s.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !_ptIsConnected()) _ptReconectar();
+  });
+}
+
 // ── HISTORIAL MEJORADO ──
 // ── BANNER DEL DÍA ───────────────────────────────────────────────────────────
 const BANNER_KEY = 'dpf_banner_dia';
@@ -15592,28 +14684,12 @@ function getStockData() {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
-// Aplica mutatorFn (que modifica el objeto de ingredientes in-place) de
-// forma atómica: actualiza localStorage al instante para que la UI
-// responda, y por separado aplica la MISMA mutación contra el valor más
-// reciente de Firebase con una transacción — si dos dispositivos añaden,
-// borran o reordenan ingredientes casi a la vez, Firebase reintenta con
-// el dato fresco en vez de que uno pise el cambio del otro.
-function stockMutateData(mutatorFn) {
-  const data = getStockData();
-  mutatorFn(data);
+function saveStockData(data) {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_transactJsonString) {
-    window._stockDataLocalWrite = Date.now();
-    window.fb_transactJsonString('config/stockData', function (current) {
-      const base = current || {};
-      mutatorFn(base);
-      return base;
-    }).catch(() => {});
-  } else if (window.fb_saveStockData) {
+  if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }
-  return data;
 }
 
 // ── ADMIN: ingredient management ──
@@ -15625,7 +14701,7 @@ function loadStockAdminList() {
     let _ref26 = _slicedToArray(_ref25, 2),
       group = _ref26[0],
       items = _ref26[1];
-    return "\n    <div style=\"margin-bottom:18px\">\n      <div style=\"font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #F5E6C8\">".concat(STOCK_GROUP_LABELS[group] || group, "</div>\n      <div id=\"stock-drag-group-").concat(group, "\" data-group=\"").concat(group, "\" style=\"display:flex;flex-direction:column\">\n        ").concat(items.map((ing, i) => "\n          <div draggable=\"true\" data-group=\"".concat(group, "\" data-index=\"").concat(i, "\"\n               style=\"display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 12px;cursor:grab\"\n               ondragstart=\"stockDragStart(event)\" ondragover=\"stockDragOver(event)\" ondrop=\"stockDrop(event)\" ondragend=\"stockDragEnd(event)\">\n            <span style=\"color:#8A6A4E;font-size:16px;cursor:grab;user-select:none\">\u2630</span>\n            <span style=\"font-size:14px;color:#2A1506;flex:1\">").concat(escapeHtml(ing), "</span>\n            <button onclick=\"removeStockItem('").concat(group, "',").concat(i, ")\" style=\"background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:700\">&#128465;</button>\n          </div>")).join(''), "\n      </div>\n    </div>");
+    return "\n    <div style=\"margin-bottom:18px\">\n      <div style=\"font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #F5E6C8\">".concat(STOCK_GROUP_LABELS[group] || group, "</div>\n      <div id=\"stock-drag-group-").concat(group, "\" data-group=\"").concat(group, "\" style=\"display:flex;flex-direction:column\">\n        ").concat(items.map((ing, i) => "\n          <div draggable=\"true\" data-group=\"".concat(group, "\" data-index=\"").concat(i, "\"\n               style=\"display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:8px;padding:7px 12px;cursor:grab\"\n               ondragstart=\"stockDragStart(event)\" ondragover=\"stockDragOver(event)\" ondrop=\"stockDrop(event)\" ondragend=\"stockDragEnd(event)\">\n            <span style=\"color:#8A6A4E;font-size:16px;cursor:grab;user-select:none\">\u2630</span>\n            <span style=\"font-size:14px;color:#2A1506;flex:1\">").concat(ing, "</span>\n            <button onclick=\"removeStockItem('").concat(group, "',").concat(i, ")\" style=\"background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:700\">&#128465;</button>\n          </div>")).join(''), "\n      </div>\n    </div>");
   }).join('');
   _initStockDrag();
 }
@@ -15654,12 +14730,13 @@ function stockDrop(e) {
   if (srcGroup !== dstGroup) return; // solo dentro del mismo grupo
   const srcIdx = parseInt(_stockDragSrc.dataset.index);
   const dstIdx = parseInt(e.currentTarget.dataset.index);
-  stockMutateData(function (data) {
-    const arr = data[srcGroup];
-    if (!arr || !arr[srcIdx]) return;
-    const moved = arr.splice(srcIdx, 1)[0];
-    arr.splice(dstIdx, 0, moved);
-  });
+  const data = getStockData();
+  const arr = data[srcGroup];
+  const _arr$splice = arr.splice(srcIdx, 1),
+    _arr$splice2 = _slicedToArray(_arr$splice, 1),
+    moved = _arr$splice2[0];
+  arr.splice(dstIdx, 0, moved);
+  saveStockData(data);
   loadStockAdminList();
   showToast('stock-config-toast');
 }
@@ -15705,12 +14782,13 @@ function _stockTouchEnd(e) {
     if (endY > rect.top && endY < rect.bottom) targetIdx = i;
   });
   if (targetIdx !== srcIdx) {
-    stockMutateData(function (data) {
-      const arr = data[group];
-      if (!arr || !arr[srcIdx]) return;
-      const moved = arr.splice(srcIdx, 1)[0];
-      arr.splice(targetIdx, 0, moved);
-    });
+    const data = getStockData();
+    const arr = data[group];
+    const _arr$splice3 = arr.splice(srcIdx, 1),
+      _arr$splice4 = _slicedToArray(_arr$splice3, 1),
+      moved = _arr$splice4[0];
+    arr.splice(targetIdx, 0, moved);
+    saveStockData(data);
     loadStockAdminList();
     showToast('stock-config-toast');
   }
@@ -15723,27 +14801,22 @@ function addStockIngredient() {
   const group = groupSel ? groupSel.value : 'ingredientes';
   if (!name) return;
   const data = getStockData();
-  if (data[group] && data[group].includes(name)) {
+  if (!data[group]) data[group] = [];
+  if (data[group].includes(name)) {
     alert('Ya existe en ese grupo');
     return;
   }
-  stockMutateData(function (d) {
-    if (!d[group]) d[group] = [];
-    if (!d[group].includes(name)) d[group].push(name);
-  });
+  data[group].push(name);
+  saveStockData(data);
   input.value = '';
   loadStockAdminList();
   showToast('stock-config-toast');
 }
 function removeStockItem(group, i) {
   const data = getStockData();
-  const ing = data[group] && data[group][i];
-  if (!ing) return;
-  stockMutateData(function (d) {
-    if (!d[group]) return;
-    const idx = d[group].indexOf(ing);
-    if (idx !== -1) d[group].splice(idx, 1);
-  });
+  if (!data[group]) return;
+  data[group].splice(i, 1);
+  saveStockData(data);
   loadStockAdminList();
 }
 
@@ -15764,23 +14837,21 @@ function stockOverlayAddItem() {
   const name = document.getElementById('stock-edit-name').value.trim();
   if (!name) return;
   const data = getStockData();
-  if (data[group] && data[group].includes(name)) {
+  if (!data[group]) data[group] = [];
+  if (data[group].includes(name)) {
     alert('Ya existe en esa categoría');
     return;
   }
-  stockMutateData(function (d) {
-    if (!d[group]) d[group] = [];
-    if (!d[group].includes(name)) d[group].push(name);
-  });
+  data[group].push(name);
+  saveStockData(data);
   document.getElementById('stock-edit-name').value = '';
   renderStockItems();
 }
 function stockOverlayRemoveItem(group, ing) {
   if (!confirm('¿Eliminar "' + ing + '"?')) return;
-  stockMutateData(function (d) {
-    if (!d[group]) return;
-    d[group] = d[group].filter(i => i !== ing);
-  });
+  const data = getStockData();
+  data[group] = data[group].filter(i => i !== ing);
+  saveStockData(data);
   renderStockItems();
 }
 let _stockOverlayDragSrc = null;
@@ -15807,15 +14878,14 @@ function stockOverlayDrop(e) {
   if (srcGroup !== dstGroup) return;
   const srcIng = _stockOverlayDragSrc.dataset.ing;
   const dstIng = e.currentTarget.dataset.ing;
-  stockMutateData(function (data) {
-    const arr = data[srcGroup];
-    if (!arr) return;
-    const srcIdx = arr.indexOf(srcIng);
-    const dstIdx = arr.indexOf(dstIng);
-    if (srcIdx === -1 || dstIdx === -1) return;
-    arr.splice(srcIdx, 1);
-    arr.splice(dstIdx, 0, srcIng);
-  });
+  const data = getStockData();
+  const arr = data[srcGroup];
+  const srcIdx = arr.indexOf(srcIng);
+  const dstIdx = arr.indexOf(dstIng);
+  if (srcIdx === -1 || dstIdx === -1) return;
+  arr.splice(srcIdx, 1);
+  arr.splice(dstIdx, 0, srcIng);
+  saveStockData(data);
   renderStockItems();
 }
 function openStockFromAdmin() {
@@ -15973,12 +15043,12 @@ function renderStockItems() {
     const isExtras = group === 'extras';
     return '<div style="margin-bottom:4px">' + '<div style="font-family:\'Anton\',sans-serif;font-size:18px;color:#3D1F0D;margin:14px 0 8px;padding-bottom:6px;border-bottom:2px solid rgba(244,196,48,0.4);display:flex;align-items:center;gap:8px;letter-spacing:0.03em">' + (STOCK_GROUP_LABELS[group] || group) + '</div>' + items.map(ing => {
       if (_stockEditMode) {
-        return '<div draggable="true" data-group="' + group + '" data-ing="' + ing.replace(/"/g, '&quot;') + '"' + ' style="display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:grab"' + ' ondragstart="stockOverlayDragStart(event)" ondragover="stockOverlayDragOver(event)" ondrop="stockOverlayDrop(event)" ondragend="stockOverlayDragEnd(event)">' + '<span style="color:#8A6A4E;font-size:18px;user-select:none">☰</span>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<button onclick="stockOverlayRemoveItem(\'' + group + '\',\'' + ing.replace(/'/g, "\\'") + '\')" style="background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;cursor:pointer">✕</button>' + '</div>';
+        return '<div draggable="true" data-group="' + group + '" data-ing="' + ing.replace(/"/g, '&quot;') + '"' + ' style="display:flex;align-items:center;background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:grab"' + ' ondragstart="stockOverlayDragStart(event)" ondragover="stockOverlayDragOver(event)" ondrop="stockOverlayDrop(event)" ondragend="stockOverlayDragEnd(event)">' + '<span style="color:#8A6A4E;font-size:18px;user-select:none">☰</span>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<button onclick="stockOverlayRemoveItem(\'' + group + '\',\'' + ing.replace(/'/g, "\\'") + '\')" style="background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;padding:4px 12px;font-size:13px;font-weight:700;cursor:pointer">✕</button>' + '</div>';
       }
       const i = Object.values(window._stockItemIndex).indexOf(ing);
       if (isExtras) {
         const eid = 'extra_' + ing.replace(/[^a-z0-9]/gi, '_');
-        return '<div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:8px">' + '<div style="font-size:14px;font-weight:600;color:#3D1F0D;margin-bottom:6px">' + escapeHtml(ing) + '</div>' + '<textarea id="' + eid + '" placeholder="Escribe aqu\u00ED..." rows="2" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;resize:none;box-sizing:border-box"></textarea>' + '</div>';
+        return '<div style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:10px 14px;margin-bottom:8px">' + '<div style="font-size:14px;font-weight:600;color:#3D1F0D;margin-bottom:6px">' + ing + '</div>' + '<textarea id="' + eid + '" placeholder="Escribe aqu\u00ED..." rows="2" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 10px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;resize:none;box-sizing:border-box"></textarea>' + '</div>';
       }
       // ── LIMPIEZA (✅ Hay / ❌ No hay) ──
       if (STOCK_LIMPIEZA.has(ing)) {
@@ -15989,7 +15059,7 @@ function renderStockItems() {
         const btnBaseL = 'width:42px;height:42px;border-radius:50%;font-size:18px;cursor:pointer;border:2px solid ';
         const btnHay = state === 1 ? btnBaseL + '#27855a;background:#eafaf1' : btnBaseL + '#F5E6C8;background:#FFFFFF';
         const btnNo = state === -1 ? btnBaseL + '#c0392b;background:#fdf0ee' : btnBaseL + '#F5E6C8;background:#FFFFFF';
-        return '<div style="background:' + bgL + ';border:2px solid ' + borderL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;flex-shrink:0">' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',1)" style="' + btnHay + '">✅</button>' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',-1)" style="' + btnNo + '">❌</button>' + '</div></div></div>';
+        return '<div style="background:' + bgL + ';border:2px solid ' + borderL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<div style="display:flex;flex-shrink:0">' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',1)" style="' + btnHay + '">✅</button>' + '<button onclick="stockLimpiezaSet(\'' + safeIngL + '\',-1)" style="' + btnNo + '">❌</button>' + '</div></div></div>';
       }
 
       // ── CHECK + NOTA OPCIONAL (boles, papel térmico, etc.) ──
@@ -16002,7 +15072,7 @@ function renderStockItems() {
         const borderTL = checked ? '#3D1F0D' : '#F5E6C8';
         const btnBorderTL = checked ? '#3D1F0D' : '#F5E6C8';
         const btnBgTL = checked ? '#3D1F0D' : '#FFFFFF';
-        return '<div style="background:' + bgTL + ';border:2px solid ' + borderTL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<button onclick="stockCheckToggle(\'' + safeIngTL + '\')" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;border:2px solid ' + btnBorderTL + ';background:' + btnBgTL + ';font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">' + (checked ? '\u2705' : '') + '</button>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(STOCK_DISPLAY_LABEL[ing] || ing) + '</span>' + '</div>' + (checked ? '<div style="margin-top:10px;display:flex;flex-direction:column">' + (STOCK_CHECK_MEDIO.has(ing) ? '<button onclick="stockNotaSetMedio(\'' + safeIngTL + '\')" style="align-self:flex-start;padding:5px 12px;border-radius:7px;border:1.5px solid #3D1F0D;background:' + (nota === '\u00bd paquete' ? 'rgba(244,196,48,0.08)' : '#FFFFFF') + ';color:' + (nota === '\u00bd paquete' ? '#3D1F0D' : '#8A6A4E') + ';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u00bd paquete</button>' : '') + '<input type="text" id="' + notaId + '" value="' + nota.replace(/"/g, '&quot;') + '" placeholder="Nota opcional\u2026" oninput="stockNotaChange(\'' + safeIngTL + '\',this.value)" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 12px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;box-sizing:border-box">' + '</div>' : '') + '</div>';
+        return '<div style="background:' + bgTL + ';border:2px solid ' + borderTL + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center">' + '<button onclick="stockCheckToggle(\'' + safeIngTL + '\')" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;border:2px solid ' + btnBorderTL + ';background:' + btnBgTL + ';font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">' + (checked ? '\u2705' : '') + '</button>' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + (STOCK_DISPLAY_LABEL[ing] || ing) + '</span>' + '</div>' + (checked ? '<div style="margin-top:10px;display:flex;flex-direction:column">' + (STOCK_CHECK_MEDIO.has(ing) ? '<button onclick="stockNotaSetMedio(\'' + safeIngTL + '\')" style="align-self:flex-start;padding:5px 12px;border-radius:7px;border:1.5px solid #3D1F0D;background:' + (nota === '\u00bd paquete' ? 'rgba(244,196,48,0.08)' : '#FFFFFF') + ';color:' + (nota === '\u00bd paquete' ? '#3D1F0D' : '#8A6A4E') + ';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u00bd paquete</button>' : '') + '<input type="text" id="' + notaId + '" value="' + nota.replace(/"/g, '&quot;') + '" placeholder="Nota opcional\u2026" oninput="stockNotaChange(\'' + safeIngTL + '\',this.value)" style="width:100%;border:1.5px solid #F5E6C8;border-radius:8px;padding:8px 12px;font-size:13px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#FFF8EE;outline:none;box-sizing:border-box">' + '</div>' : '') + '</div>';
       }
 
       // ── BOTE (cremas) ──
@@ -16012,7 +15082,7 @@ function renderStockItems() {
         const bgB = boteVal > 0 ? 'rgba(244,196,48,0.08)' : '#FFFFFF';
         const borderB = boteVal > 0 ? '#3D1F0D' : '#F5E6C8';
         const boteStr = boteVal > 0 ? boteVal % 1 === 0.5 ? Math.floor(boteVal) > 0 ? Math.floor(boteVal) + '\u00bd' : '\u00bd' : boteVal : '\u2013';
-        return '<div style="background:' + bgB + ';border:2px solid ' + borderB + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockSetBote(\'' + safeIngB + '\',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + '<button onclick="stockBoteMedio(\'' + safeIngB + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' + '<span style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center">' + boteStr + '</span>' + '<button onclick="stockSetBote(\'' + safeIngB + '\',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="margin-top:8px"><span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">Bote</span></div>' + '</div>';
+        return '<div style="background:' + bgB + ';border:2px solid ' + borderB + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1">' + ing + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockSetBote(\'' + safeIngB + '\',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + '<button onclick="stockBoteMedio(\'' + safeIngB + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' + '<span style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center">' + boteStr + '</span>' + '<button onclick="stockSetBote(\'' + safeIngB + '\',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="margin-top:8px"><span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">Bote</span></div>' + '</div>';
       }
 
       // ── CONTABLE ──
@@ -16029,7 +15099,7 @@ function renderStockItems() {
       const qtyId = 'stk-qty-' + i;
       const showMedio = STOCK_ADMITE_MEDIO.has(ing) || STOCK_ADMITE_MEDIO_CAJAS.has(ing) && unit === 'cajas';
       const medioBtn = showMedio ? '<button onclick="stockQtyMedio(\'' + safeIng + '\')" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:13px;font-weight:900;cursor:pointer;color:#3D1F0D">\u00bd</button>' : '';
-      return '<div style="background:' + bg + ';border:2px solid ' + border + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span onclick="stockToggle(' + i + ')" style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1;cursor:pointer">' + escapeHtml(ing) + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockQty(' + i + ',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + medioBtn + '<span id="' + qtyId + '" onclick="stockActivateInput(' + i + ')" title="Pulsa para escribir" style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center;cursor:text;border-radius:6px;padding:2px 4px' + (qty > 0 ? ';background:rgba(0,0,0,0.05)' : '') + '">' + (qty !== null ? qty : '\u2013') + '</span>' + '<button onclick="stockQty(' + i + ',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="display:flex;margin-top:8px;align-items:center">' + (fixedUnit ? '<span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">' + fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1) + '</span>' : '<button onclick="stockSetUnit(\'' + safeIng + '\',\'cajas\')" style="' + unitCajas + '">📦 Cajas</button>' + '<button onclick="stockSetUnit(\'' + safeIng + '\',\'unidades\')" style="' + unitUds + '">🔢 Unidades</button>') + '</div></div>';
+      return '<div style="background:' + bg + ';border:2px solid ' + border + ';border-radius:12px;padding:11px 14px;margin-bottom:8px">' + '<div style="display:flex;align-items:center;justify-content:space-between">' + '<span onclick="stockToggle(' + i + ')" style="font-size:15px;font-weight:600;color:#3D1F0D;flex:1;cursor:pointer">' + ing + '</span>' + '<div style="display:flex;align-items:center;flex-shrink:0">' + '<button onclick="stockQty(' + i + ',-1)" style="width:38px;height:38px;border-radius:50%;border:2px solid #3D1F0D;background:#FFFFFF;font-size:22px;font-weight:700;cursor:pointer;color:#3D1F0D">&#x2212;</button>' + medioBtn + '<span id="' + qtyId + '" onclick="stockActivateInput(' + i + ')" title="Pulsa para escribir" style="font-size:20px;font-weight:900;color:#3D1F0D;min-width:32px;text-align:center;cursor:text;border-radius:6px;padding:2px 4px' + (qty > 0 ? ';background:rgba(0,0,0,0.05)' : '') + '">' + (qty !== null ? qty : '\u2013') + '</span>' + '<button onclick="stockQty(' + i + ',1)" style="width:38px;height:38px;border-radius:50%;border:none;background:#3D1F0D;font-size:22px;font-weight:700;cursor:pointer;color:#F4C430">+</button>' + '</div></div>' + '<div style="display:flex;margin-top:8px;align-items:center">' + (fixedUnit ? '<span style="padding:3px 10px;border-radius:6px;border:1.5px solid #3D1F0D;background:rgba(61,31,13,0.08);color:#3D1F0D;font-size:11px;font-weight:700;font-family:\'DM Sans\',sans-serif">' + fixedUnit.charAt(0).toUpperCase() + fixedUnit.slice(1) + '</span>' : '<button onclick="stockSetUnit(\'' + safeIng + '\',\'cajas\')" style="' + unitCajas + '">📦 Cajas</button>' + '<button onclick="stockSetUnit(\'' + safeIng + '\',\'unidades\')" style="' + unitUds + '">🔢 Unidades</button>') + '</div></div>';
     }).join('') + '</div>';
   }).join('');
 }
@@ -16160,26 +15230,18 @@ function getStockHistorial() {
   }
 }
 function saveToStockHistorial(ts, lines) {
-  const entrada = { ts, lines };
-  // Local al instante...
-  const histLocal = getStockHistorial();
-  histLocal.push(entrada);
-  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(histLocal));
+  const hist = getStockHistorial();
+  hist.push({
+    ts,
+    lines
+  });
+  localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
 
-  // ...y de forma atómica contra Firebase — reintenta si aún no está listo,
-  // y usa una transacción para no perder la reposición de otro dispositivo
-  // guardada casi al mismo tiempo.
+  // 🔥 Subir a Firebase — reintenta si aún no está listo
   function subirAFirebase(intentos) {
-    if (window.fb_transactNative) {
+    if (window.fb_saveStockHistorial) {
       window._stockLocalWrite = Date.now();
-      window.fb_transactNative('stock/historial', function (current) {
-        const hist = Array.isArray(current) ? current.slice() : [];
-        hist.push(entrada);
-        return hist;
-      }).catch(e => console.warn('Firebase stock historial error:', e));
-    } else if (window.fb_saveStockHistorial) {
-      window._stockLocalWrite = Date.now();
-      window.fb_saveStockHistorial(histLocal).catch(e => console.warn('Firebase stock historial error:', e));
+      window.fb_saveStockHistorial(hist).catch(e => console.warn('Firebase stock historial error:', e));
     } else if (intentos > 0) {
       setTimeout(() => subirAFirebase(intentos - 1), 500);
     } else {
@@ -16220,15 +15282,11 @@ function renderStockHistorial() {
   let html = '';
 
   // Latest entry (always visible)
-  // Cada línea es texto libre que cualquier empleado puede escribir al
-  // añadir un ingrediente/nota — sin escapar aquí se ejecutaba en cuanto un
-  // admin abriera este historial (renderStockItems, la lista en vivo, ya
-  // escapaba esto; aquí se había quedado fuera).
-  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + escapeHtml(latest.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>';
+  html += '<div style="background:rgba(244,196,48,0.08);border:2px solid #3D1F0D;border-radius:12px;padding:14px;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<span style="font-size:13px;font-weight:700;color:#3D1F0D">&#x1F4CC; Última lista — ' + latest.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + (hist.length - 1) + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + latest.lines.map(l => '<div style="font-size:13px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>';
 
   // Older entries in a collapsible folder
   if (older.length) {
-    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + escapeHtml(entry.ts) + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + escapeHtml(l) + '</div>').join('') + '</div>').join('') + '</div></details>';
+    html += '<details style="background:#FFFFFF;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:8px">' + '<summary style="font-size:13px;font-weight:700;color:#3D1F0D;cursor:pointer">&#x1F4C2; Listas anteriores (' + older.length + ')</summary>' + '<div style="margin-top:12px;display:flex;flex-direction:column">' + older.map((entry, i) => '<div style="background:#FFF8EE;border:1px solid #F5E6C8;border-radius:8px;padding:10px">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' + '<span style="font-size:12px;font-weight:600;color:#8A6A4E">' + entry.ts + '</span>' + '<button onclick="deleteStockHistorialEntry(' + i + ')" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer">&#128465;</button>' + '</div>' + entry.lines.map(l => '<div style="font-size:12px;color:#2A1506">&#x2022; ' + l + '</div>').join('') + '</div>').join('') + '</div></details>';
   }
   el.innerHTML = html;
 }
@@ -16236,7 +15294,7 @@ function exportStockPDF() {
   const lines = window._lastStockLines || [];
   const ts = window._lastStockTs || '';
   if (!lines.length) return;
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(escapeHtml(ts), "</p>\n  <ul>").concat(lines.map(l => '<li>' + escapeHtml(l) + '</li>').join(''), "</ul>\n  </body></html>");
+  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; padding: 30px; color: #2A1506; }\n    h2 { color: #3D1F0D; margin-bottom: 4px; }\n    p.ts { font-size: 12px; color: #8A6A4E; margin-bottom: 20px; }\n    ul { list-style: none; padding: 0; }\n    li { padding: 6px 0; border-bottom: 1px solid #F5E6C8; font-size: 14px; }\n    li:before { content: \"\u2022 \"; color: #3D1F0D; font-weight: bold; }\n  </style></head><body>\n  <h2>\uD83D\uDCE6 Lista de reposici\xF3n</h2>\n  <p class=\"ts\">".concat(ts, "</p>\n  <ul>").concat(lines.map(l => '<li>' + l + '</li>').join(''), "</ul>\n  </body></html>");
   const blob = new Blob([html], {
     type: 'text/html'
   });
@@ -16326,7 +15384,7 @@ function mostrarUltimoStock() {
     const last = arr[arr.length - 1];
     tsEl.textContent = '\uD83D\uDCC5 ' + (last.ts || '');
     const lines = normalizeHist(last.lines);
-    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + escapeHtml(l) + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
+    linesEl.innerHTML = lines.map(l => '<div style="padding:2px 0">\u2022 ' + l + '</div>').join('') || '<p style="color:#8A6A4E;font-size:13px">Lista vac\u00EDa.</p>';
   }
   function tryLoad(intentos) {
     if (window.fb_loadStockHistorial) {
@@ -16525,39 +15583,40 @@ async function saveOrderTotal(orderNum, rawValue) {
     return;
   }
   const todayKey = new Date().toISOString().slice(0, 10);
-  // Transacción: stats/<fecha> también lo escribe guardar-pedido.php cada
-  // vez que entra un pedido nuevo — un .set() plano aquí (leer, cambiar el
-  // total de un pedido en memoria, sobreescribir el nodo entero) podía
-  // perder un pedido real llegado justo mientras se editaba este total.
-  let ordenNoEncontrada = false;
-  let oldTotal = null;
-  const mutator = function (current) {
-    const stats = current || {};
-    if (!stats.orders) { ordenNoEncontrada = true; return stats; }
-    const order = stats.orders.find(o => o.num === orderNum);
-    if (!order) { ordenNoEncontrada = true; return stats; }
-    oldTotal = order.total;
-    order.total = newTotal;
-    stats.total = parseFloat((stats.orders.reduce((s, o) => s + (o.total || 0), 0)).toFixed(2));
-    return stats;
-  };
-  let statsFinal = null;
-  if (window.fb_transactNative) {
-    try { statsFinal = await window.fb_transactNative('stats/' + todayKey, mutator); } catch (e) { console.warn('Firebase stats error', e); }
-  } else if (window.fb_getStats) {
+  let stats;
+  if (window.fb_getStats) {
     try {
       const fb = await window.fb_getStats(todayKey);
-      if (fb) {
-        statsFinal = mutator(fb);
-        if (window.fb_saveStats) await window.fb_saveStats(statsFinal);
-      }
-    } catch (e) { console.warn('Firebase stats error', e); }
+      if (fb) stats = fb;
+    } catch (e) {}
   }
-  if (ordenNoEncontrada || !statsFinal) {
+  if (!stats) {
+    try {
+      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+    } catch {
+      stats = {};
+    }
+  }
+  if (!stats || !stats.orders) {
     loadLiveOrders();
     return;
   }
-  localStorage.setItem(STATS_KEY, JSON.stringify(statsFinal));
+  const order = stats.orders.find(o => o.num === orderNum);
+  if (!order) {
+    loadLiveOrders();
+    return;
+  }
+  const oldTotal = order.total;
+  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
+  order.total = newTotal;
+  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  if (window.fb_saveStats) {
+    try {
+      await window.fb_saveStats(stats);
+    } catch (e) {
+      console.warn('Firebase stats error', e);
+    }
+  }
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();
@@ -16694,26 +15753,13 @@ function _juegoTelefonoGuardado() {
   try { return localStorage.getItem('dpf_customer_phone') || ''; } catch (e) { return ''; }
 }
 
-// El teléfono no demuestra que quien pregunta jugó de verdad (sin
-// verificación SMS aquí) — juegos.php ahora exige también este token para
-// devolver el premio/código al "recuperar" una jugada de hoy, para que no
-// baste con probar un teléfono ajeno para robarle su código de descuento.
-function _juegoTokenKey(juego) {
-  return 'dpf_juego_token_' + juego;
-}
 async function _juegoGirar(juego, telefono) {
-  let token = '';
-  try { token = localStorage.getItem(_juegoTokenKey(juego)) || ''; } catch (e) {}
   const res = await fetch('juegos.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'girar', juego, telefono, token })
+    body: JSON.stringify({ action: 'girar', juego, telefono })
   });
-  const data = await res.json();
-  if (data && data.token) {
-    try { localStorage.setItem(_juegoTokenKey(juego), data.token); } catch (e) {}
-  }
-  return data;
+  return res.json();
 }
 
 function _aplicarPremioComun(juego) {
@@ -17135,11 +16181,8 @@ function _pintarResumenHoy(elId, resumen, tope) {
     el.innerHTML = 'Todavía nadie ha jugado hoy.';
     return;
   }
-  // premio.nombre lo escribe el admin en texto libre al configurar los
-  // premios — sin escapar aquí, un nombre con HTML se ejecutaba en cuanto
-  // cualquier admin abriera este resumen.
   const desglose = Object.entries(resumen.porPremio)
-    .map(([nombre, n]) => n + '× ' + escapeHtml(nombre))
+    .map(([nombre, n]) => n + '× ' + nombre)
     .join(' · ');
   const topeTxt = tope > 0
     ? '<br><b>' + resumen.conDescuento + ' / ' + tope + '</b> premios con descuento entregados hoy' + (resumen.conDescuento >= tope ? ' — <span style="color:#c0392b;font-weight:700">tope alcanzado, solo queda "sin premio" hasta mañana</span>' : '')

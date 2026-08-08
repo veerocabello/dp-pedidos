@@ -364,6 +364,28 @@ function obtenerSlotMax($databaseURL, $accessToken) {
     return ($cfg && is_numeric($cfg['max'] ?? null)) ? (int)$cfg['max'] : 4;
 }
 
+// Libera un turno reservado (contador atómico slots/<fecha>/<turno>, -1 con
+// suelo en 0) — contrapartida de la reserva que hace la acción 'reservarSlot'.
+// Antes esto no existía: cancelar o modificar un pedido nunca liberaba su
+// turno (ni aquí ni en el navegador, que tampoco tiene permiso de escritura
+// directa sobre slots/ desde que se movió la reserva a este script), así que
+// cada cancelación/modificación dejaba el turno "ocupado" para siempre —
+// con el tiempo los turnos se llenaban de pedidos fantasma y rechazaban a
+// clientes reales aunque quedara hueco de verdad. No baja de 0 aunque haya
+// más liberaciones que reservas (p.ej. si ya se había liberado antes por un
+// reintento) para no dejar el contador en negativo.
+function liberarSlot($databaseURL, $accessToken, $fecha, $slotTime) {
+    if (!$slotTime) return;
+    $path = 'slots/' . $fecha . '/' . $slotTime;
+    for ($intento = 0; $intento < 8; $intento++) {
+        $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+        $count = is_numeric($leido['data']) ? (int)$leido['data'] : 0;
+        if ($count <= 0) return; // nada que liberar
+        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $count - 1, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
 // Añade una entrada al mismo "Registro de actividad" que ya se ve en el
 // panel de admin (config/activityLog) — para que un fallo silencioso del
 // servidor, o un pedido con un precio que no cuadra, aparezcan donde el
@@ -843,6 +865,17 @@ try {
             if (fbPutSiCoincide($databaseURL, 'stats/' . $cFecha, $accessToken, $stats, $leido['etag'])) break;
             usleep(rand(20000, 80000));
         }
+
+        // 3. Liberar el turno reservado — se usa el slot de stats/ si se
+        // encontró ahí, y si no el guardado en el propio ticket (p.ej. si
+        // stats/ ya no tenía el pedido por un reintento anterior). Nunca
+        // bloquea la respuesta de "cancelado con éxito" aunque falle: el
+        // pedido ya está cancelado y fuera de stats, que es lo importante.
+        $cSlotParaLiberar = $cSlot ?: ($cTicket['slotTime'] ?? null);
+        if ($cSlotParaLiberar) {
+            liberarSlot($databaseURL, $accessToken, $cFecha, $cSlotParaLiberar);
+        }
+
         echo json_encode([
             'success' => true,
             'items'   => $cItems,

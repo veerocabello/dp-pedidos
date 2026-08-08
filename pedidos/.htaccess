@@ -33,8 +33,25 @@
     Require all denied
 </FilesMatch>
 
-# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
+# ── Bloquear el código fuente sin construir y ficheros de desarrollo — PERMANENTE ──
+# NO quitar este bloque el día de la reapertura (a diferencia del de más abajo,
+# marcado como temporal). El Service Worker sirve /src/ en producción (para
+# cachearlo como estático), y hasta ahora lo único que impedía leerlo desde
+# fuera era el Basic Auth "cerrado por obras" de toda la web — nada más en
+# este fichero bloquea /src/, /scripts/ ni package.json por nombre de ruta
+# (FilesMatch solo compara el nombre del archivo, no la carpeta, así que no
+# sirve para distinguir src/config.js de js/config.js). Al quitar ese Basic
+# Auth en la reapertura, sin esto quedaría público el código sin minificar
+# con comentarios que explican rutas de secretos, umbrales antifraude y el
+# resto de la arquitectura de seguridad — información que solo debe estar
+# donde ya la protege el .htaccess (fuera de public_html) o compilada/
+# minificada en js/app.js.
 RewriteEngine On
+RewriteRule ^src/ - [F,L]
+RewriteRule ^scripts/ - [F,L]
+RewriteRule ^package\.json$ - [F,L]
+
+# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
 RewriteRule ^send-code\.php$ - [L]
 RewriteRule ^verify-code\.php$ - [L]
 RewriteRule ^webhook-incidencia\.php$ - [L]

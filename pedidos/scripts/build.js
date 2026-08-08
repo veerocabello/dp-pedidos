@@ -27,6 +27,7 @@ const MODULOS = [
   'admin-config.js',
   'historial-export.js',
   'pedidos-vivo-cocina.js',
+  'impresora-termica.js',
   'banner-pdf.js',
   'fidelizacion-admin.js',
   'stock-empleados.js',

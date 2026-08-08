@@ -642,18 +642,15 @@ async function incrementSlot(slotTime) {
 }
 async function decrementSlot(slotTime) {
   if (!slotTime) return;
-  // Update local cache immediately
+  // Solo actualiza la caché local (_slotsCache/localStorage) para que este
+  // mismo dispositivo vea el turno libre al instante. La liberación real en
+  // Firebase la hace el servidor (guardar-pedido.php, acción
+  // "cancelarPedido") con la cuenta de servicio — el navegador nunca tuvo
+  // permiso de escritura directa sobre slots/ (por eso ya no existe
+  // fb_decrementSlot: se quitó junto con fb_incrementSlot al mover la
+  // reserva de turnos al servidor, ver incrementSlot() arriba).
   _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
-  // Persist to Firebase (atomic decrement)
-  if (window.fb_decrementSlot) {
-    try {
-      await window.fb_decrementSlot(slotTime);
-    } catch (e) {
-      console.warn('Firebase slot decrement error', e);
-    }
-  } else {
-    saveSlotsData(getSlotsData());
-  }
+  saveSlotsData(getSlotsData());
 }
 
 // ¿El carrito tiene patatas?

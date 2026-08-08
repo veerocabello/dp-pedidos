@@ -362,6 +362,26 @@ try {
             exit;
         }
 
+        // Rango de cordura: antes $fecha solo se comprobaba de FORMA
+        // (regex), así que un empleado autenticado con su propio PIN podía
+        // fabricar fichajes manuales en cualquier fecha (pasada o futura,
+        // sin límite) — con las horas que quisiera y sin la guardia de
+        // doble entrada/salida (deliberadamente desactivada aquí porque es
+        // una corrección puntual), inflando horas trabajadas sin ningún
+        // tope. Una corrección real es "se me olvidó fichar hoy o ayer",
+        // nunca un día futuro ni de hace semanas.
+        $hoyMadrid = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        $fechaObj = DateTime::createFromFormat('Y-m-d', $fecha, new DateTimeZone('Europe/Madrid'));
+        if (!$fechaObj) {
+            echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
+            exit;
+        }
+        $diffDias = (int)$hoyMadrid->diff($fechaObj)->format('%r%a');
+        if ($diffDias > 0 || $diffDias < -7) {
+            echo json_encode(['success' => false, 'error' => 'Solo puedes corregir fichajes de los últimos 7 días, nunca de una fecha futura.']);
+            exit;
+        }
+
         $empleados = fbGetArrayString($databaseURL, 'config/empleados', $accessToken);
         $emp = null;
         foreach ($empleados as $e) {
@@ -372,14 +392,35 @@ try {
             exit;
         }
 
+        $hoyKey = $hoyMadrid->format('Y-m-d');
         $nuevoFichaje = [
-            'empId'  => $empId,
-            'fecha'  => $fecha,
-            'hora'   => $hora,
-            'tipo'   => $tipo,
-            'manual' => true,
+            'empId'       => $empId,
+            'fecha'       => $fecha,
+            'hora'        => $hora,
+            'tipo'        => $tipo,
+            'manual'      => true,
+            // Fecha en la que se REGISTRA la corrección (siempre hoy), no la
+            // fecha corregida — sirve para limitar cuántas correcciones
+            // puede hacer el mismo empleado en un mismo día, sea cual sea el
+            // día que estén corrigiendo.
+            'registradoEn' => $hoyKey,
         ];
-        $resultado = fbModificarFichajesSeguro($databaseURL, $accessToken, function ($todos) use ($nuevoFichaje) {
+        // Máximo de correcciones manuales que un mismo empleado puede
+        // registrar EN UN DÍA (contando todas las que ya hizo hoy, aunque
+        // corrijan fechas distintas) — de sobra para "se me olvidó fichar
+        // ayer" alguna vez, pero corta en seco un intento de fabricar
+        // muchos fichajes de golpe.
+        $MAX_MANUAL_POR_DIA = 6;
+        $resultado = fbModificarFichajesSeguro($databaseURL, $accessToken, function ($todos) use ($nuevoFichaje, $empId, $hoyKey, $MAX_MANUAL_POR_DIA) {
+            $yaHoy = 0;
+            foreach ($todos as $f) {
+                if (($f['empId'] ?? '') === $empId && !empty($f['manual']) && ($f['registradoEn'] ?? '') === $hoyKey) {
+                    $yaHoy++;
+                }
+            }
+            if ($yaHoy >= $MAX_MANUAL_POR_DIA) {
+                return ['error' => 'Has alcanzado el máximo de correcciones manuales por hoy. Contacta con administración si necesitas más.'];
+            }
             $todos[] = $nuevoFichaje;
             return ['todos' => $todos];
         });

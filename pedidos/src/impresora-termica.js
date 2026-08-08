@@ -13,7 +13,19 @@ const PRINTER_LOGO_DATA = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 // es más fiable no depender de ninguna tabla de códigos.
 function _ptEncodeStr(str) {
   const map = { 'á':'a','é':'e','í':'i','ó':'o','ú':'u','Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N','ü':'u','Ü':'U','¡':'!','¿':'?' };
-  return (str || '').split('').map(c => map[c] || c).join('');
+  // Quita bytes de control (incluyendo ESC 0x1B y GS 0x1D) antes de mapear
+  // acentos — igual que dpf_limpiar_texto() en guardar-pedido.php, pero
+  // aplicado también aquí en el navegador: esta función es el único punto
+  // por el que pasa TODO texto libre del cliente (nombre, notas, nombres de
+  // producto/extra) antes de convertirse en bytes ESC/POS reales. El
+  // servidor ya limpia lo que guarda, pero reimprimirUltimoTicketTermico()
+  // reconstruye el ticket desde localStorage sin volver a pasar por el
+  // servidor, así que confiar solo en la limpieza de guardar-pedido.php no
+  // cubre ese camino — sin este filtro, una secuencia ESC/GS colada en el
+  // nombre o las notas se interpretaría como un comando real de la
+  // impresora (cortar papel, abrir el cajón...) en vez de imprimirse como texto.
+  const limpio = (str || '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  return limpio.split('').map(c => map[c] || c).join('');
 }
 
 // El campo "time" del ticket normalmente ya viene como "HH:MM" (así lo

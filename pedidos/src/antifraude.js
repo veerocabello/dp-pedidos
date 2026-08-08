@@ -731,7 +731,16 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
     }
   }
 
-  // 4. El slot NO se libera al cancelar — el turno quedó ocupado
+  // 4. Liberar el turno reservado — el servidor (guardar-pedido.php, misma
+  // llamada "cancelarPedido" del paso 2) ya decrementó slots/<fecha>/<turno>
+  // de verdad; esto solo refresca la caché local (_slotsCache/localStorage)
+  // para que ESTE dispositivo vea el hueco libre al instante, sin esperar a
+  // que llegue por el listener de Firebase. Antes esto no se hacía nunca (ni
+  // aquí ni en el servidor), así que cada cancelación/modificación dejaba el
+  // turno ocupado para siempre.
+  if (slotToFree && typeof decrementSlot === 'function') {
+    try { await decrementSlot(slotToFree); } catch (e) { console.warn('[slot] no se pudo liberar localmente', e); }
+  }
 
   // 5. Refrescar cocina y pedidos en vivo inmediatamente
   refreshKitchenGrid();
