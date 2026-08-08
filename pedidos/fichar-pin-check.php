@@ -292,7 +292,10 @@ try {
         $response = curl_exec($ch);
         curl_close($ch);
         $tokenReal = json_decode($response, true);
-        echo json_encode(['success' => is_string($tokenReal) && $tokenReal === $token]);
+        // hash_equals (no ===) por consistencia con el resto de comparaciones
+        // de secretos del fichero (verificarSessionToken más arriba) — mismo
+        // motivo: comparar en tiempo constante en vez de carácter a carácter.
+        echo json_encode(['success' => is_string($tokenReal) && hash_equals($tokenReal, $token)]);
         exit;
     }
 
@@ -306,7 +309,10 @@ try {
         $empleados = fbGetArrayString($databaseURL, 'config/empleados', $accessToken);
         $encontrado = null;
         foreach ($empleados as $emp) {
-            if (isset($emp['pin']) && $emp['pin'] === $pin && empty($emp['deBaja'])) {
+            // hash_equals (no ===) por la misma razón que el resto de
+            // comparaciones de secretos del fichero — tiempo constante en
+            // vez de carácter a carácter.
+            if (isset($emp['pin']) && hash_equals((string)$emp['pin'], $pin) && empty($emp['deBaja'])) {
                 $encontrado = $emp;
                 break;
             }

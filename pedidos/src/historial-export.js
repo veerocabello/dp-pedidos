@@ -697,7 +697,16 @@ function exportTodayCSV() {
 // equivocadas al abrirlo en Excel/Sheets. Se duplica cada comilla interna,
 // que es como CSV espera que se escapen ("" dentro de un campo "...").
 function _csvEscape(str) {
-  return String(str == null ? '' : str).replace(/"/g, '""');
+  let s = String(str == null ? '' : str);
+  // Antes de escapar comillas: si el campo empieza por un carácter que
+  // Excel/Sheets interpreta como inicio de fórmula (=, +, -, @), se le
+  // antepone una comilla simple para que se trate como texto literal, no
+  // como fórmula — sin esto, un nombre de cliente como "=HYPERLINK(...)" o
+  // "=cmd|'/C calc'!A0" se ejecuta como fórmula real al abrir el CSV
+  // exportado (inyección de fórmulas CSV: puede robar datos o ejecutar
+  // comandos desde la hoja de cálculo de quien lo abra).
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return s.replace(/"/g, '""');
 }
 function exportHistorialCSV() {
   const hist = getHistorial();
