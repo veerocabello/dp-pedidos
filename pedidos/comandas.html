@@ -316,7 +316,7 @@
       <label>Fondo de caja inicial (con el que abriste ese día)</label>
       <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
     </div>
-    <div id="caja-summary"></div>
+    <div id="caja-summary" class="summary-box"></div>
     <div class="settings-actions">
       <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia</button>
       <button class="btn-secondary" onclick="exportarVentasHoyCSV()">📊 Exportar a Excel (CSV)</button>
@@ -342,7 +342,7 @@
       <button class="btn-text" onclick="resumenPreset(30)">Últimos 30 días</button>
       <button class="btn-text" onclick="resumenPresetMesActual()">Este mes</button>
     </div>
-    <div id="resumen-body"></div>
+    <div id="resumen-body" class="summary-box"></div>
   </div>
 </div>
 

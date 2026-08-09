@@ -868,6 +868,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* ── Settings modal specifics ── */
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* Recuadro con línea marrón para agrupar un bloque de resultados (arqueo
+   de caja, resumen por fechas…) en vez de dejarlo suelto en el modal. */
+.summary-box {
+  border: 1.5px solid var(--brown);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+.summary-box .section-label:first-child { margin-top: 0; }
 .font-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .font-option-card {
   border: 1.5px solid var(--warm); border-radius: var(--radius-sm); padding: 12px 14px;

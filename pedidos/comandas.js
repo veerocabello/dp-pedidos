@@ -2109,7 +2109,7 @@ const FONT_PRESETS = [
   { id: 'grande', name: 'Grande y directa', head: "'Arial Black','Arial Bold',Arial,sans-serif", body: "Arial,'Helvetica Neue',sans-serif" },
 ];
 const FONT_CHOICE_KEY = 'dpf_comandas_font_choice';
-function loadFontChoice() { return localStorage.getItem(FONT_CHOICE_KEY) || 'default'; }
+function loadFontChoice() { return localStorage.getItem(FONT_CHOICE_KEY) || 'grande'; }
 function applyFontChoice(id) {
   const preset = FONT_PRESETS.find(f => f.id === id) || FONT_PRESETS[0];
   document.documentElement.style.setProperty('--font-head', preset.head);
