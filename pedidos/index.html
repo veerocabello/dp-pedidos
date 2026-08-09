@@ -2,6 +2,16 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<!-- Sentry: captura errores reales de JavaScript en el navegador de clientes
+     de verdad (con traza completa) — lo más arriba posible para no perderse
+     errores tempranos. El dominio ya estaba permitido en la CSP desde que
+     se preparó, pero nunca se llegó a activar hasta ahora. -->
+<script src="https://js-de.sentry-cdn.com/65861694625070a6ae9c01293f5017e8.min.js" crossorigin="anonymous"></script>
+<script>
+  Sentry.onLoad(function () {
+    Sentry.init({ environment: 'cliente' });
+  });
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
