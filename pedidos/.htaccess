@@ -50,6 +50,7 @@ RewriteEngine On
 RewriteRule ^src/ - [F,L]
 RewriteRule ^scripts/ - [F,L]
 RewriteRule ^package\.json$ - [F,L]
+RewriteRule ^package-lock\.json$ - [F,L]
 
 # ── Excepciones: estos PHP SÍ son accesibles públicamente ──
 RewriteRule ^send-code\.php$ - [L]
