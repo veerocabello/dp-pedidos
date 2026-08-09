@@ -1043,11 +1043,22 @@ function openExtrasModal(id, editKey) {
 }
 function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; extrasEditKey = null; }
 
+// La salsa de cada patata es siempre el primer ingrediente de la
+// descripción (p.ej. "Salsa philadelphia, york, huevo..."), pero no
+// siempre lleva la palabra "salsa" en el nombre (Nata, Tomate frito,
+// Mayonesa, Alioli, Aceite de oliva) — de ahí la lista aparte.
+const SALSA_EXTRA_NAMES = new Set(['nata', 'tomate frito', 'mayonesa', 'alioli', 'aceite de oliva']);
+function esComponenteSalsa(comp) {
+  const c = comp.trim().toLowerCase();
+  return c.includes('salsa') || SALSA_EXTRA_NAMES.has(c);
+}
 function renderExtrasBody(item) {
   const isBoniato = BONIATO_IDS.has(item.id);
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
   const baseComponents = parseBaseComponents(item);
   const canQuitar = !isQuitarBlocked(item.id) && baseComponents.length > 0;
+  const salsaComponents = baseComponents.filter(esComponenteSalsa);
+  const ingComponents = baseComponents.filter(c => !esComponenteSalsa(c));
   let html = '';
   if (canQuitar) {
     html += `<div class="section-label" style="margin-top:0">Quitar ingredientes</div><div class="chip-grid">`;
@@ -1057,24 +1068,28 @@ function renderExtrasBody(item) {
     });
     html += `</div>`;
     if (!isBoniato) {
-      html += `<div class="section-label">Cambiar un ingrediente</div>`;
-      html += `<div class="swap-card">
-        <div class="swap-row">
-          <select id="cambio-ing-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-          <span class="swap-arrow">→</span>
-          <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-        </div>
-        <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Añadir cambio</button>
-      </div>`;
-      html += `<div class="section-label">Cambiar salsa</div>`;
-      html += `<div class="swap-card">
-        <div class="swap-row">
-          <select id="cambio-salsa-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-          <span class="swap-arrow">→</span>
-          <select id="cambio-salsa-to" class="swap-select">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
-        </div>
-        <button class="swap-add-btn" onclick="addExtraCambio('salsa')">+ Añadir cambio</button>
-      </div>`;
+      if (ingComponents.length) {
+        html += `<div class="section-label">Cambiar un ingrediente</div>`;
+        html += `<div class="swap-card">
+          <div class="swap-row">
+            <select id="cambio-ing-from" class="swap-select">${ingComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            <span class="swap-arrow">→</span>
+            <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+          <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Añadir cambio</button>
+        </div>`;
+      }
+      if (salsaComponents.length) {
+        html += `<div class="section-label">Cambiar salsa</div>`;
+        html += `<div class="swap-card">
+          <div class="swap-row">
+            <select id="cambio-salsa-from" class="swap-select">${salsaComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            <span class="swap-arrow">→</span>
+            <select id="cambio-salsa-to" class="swap-select">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+          <button class="swap-add-btn" onclick="addExtraCambio('salsa')">+ Añadir cambio</button>
+        </div>`;
+      }
       if (extrasCambios.length) {
         html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
           `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`

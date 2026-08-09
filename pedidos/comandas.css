@@ -253,9 +253,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   color: var(--amber-dark);
   text-transform: uppercase;
   letter-spacing: .6px;
-  margin: 12px 2px 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--warm);
+  margin: 12px 0 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius-xs);
+  /* Barra discreta y neutra (marrón muy transparente), para diferenciarla
+     de la cabecera de categoría (.menu-cat-sep) sin competir con ella. */
+  background: rgba(61,31,13,.07);
 }
 .menu-subcat-sep:first-of-type { margin-top: 4px; }
 
