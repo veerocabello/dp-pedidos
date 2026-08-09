@@ -1006,6 +1006,22 @@ function saveFeeConfig(enabled, amount, label) {
 }
 function loadFeeFromFirebase() {
   console.log('[fee] loadFeeFromFirebase called, fb_listenFeeConfig=', typeof window.fb_listenFeeConfig);
+  // Carga directa de una sola vez, antes de suscribirse al listener en
+  // tiempo real — el listener puede tardar en entregar su primer valor más
+  // de lo que tarda un cliente rápido en confirmar el pedido (ver
+  // esperarConfigCriticaLista() más abajo, que espera a este flag).
+  if (window.fb_loadFeeConfig) {
+    window.fb_loadFeeConfig().then(function (cfg) {
+      if (cfg) {
+        if (cfg.enabled !== undefined) localStorage.setItem(FEE_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+        if (cfg.amount !== undefined) localStorage.setItem(FEE_AMOUNT_KEY, String(cfg.amount));
+        if (cfg.label !== undefined) localStorage.setItem(FEE_LABEL_KEY, cfg.label);
+        renderCart();
+      }
+    }).catch(function () {}).finally(function () { window._feeConfigListo = true; });
+  } else {
+    window._feeConfigListo = true;
+  }
   if (!window.fb_listenFeeConfig) {
     console.warn('[fee] fb_listenFeeConfig no disponible');
     return;
@@ -1019,6 +1035,231 @@ function loadFeeFromFirebase() {
     renderCart();
   });
 }
+
+// Etiqueta que cuenta como "gastos de GESTIÓN" (a efectos de qué gasto fijo
+// exime el código de "pedido desde el local") — igual que
+// _esEtiquetaDeGestionPHP() en guardar-pedido.php, para que cliente y
+// servidor decidan siempre lo mismo.
+function _esEtiquetaDeGestion(label) {
+  const l = (label || '').toLowerCase();
+  return l.indexOf('gestión') !== -1 || l.indexOf('gestion') !== -1;
+}
+
+// ── SEGUNDO GASTO FIJO ("Otro gasto fijo", independiente del anterior) ──
+const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
+const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
+const FEE2_LABEL_KEY = 'dpf_fee2_label';
+function getFee2Enabled() {
+  return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
+}
+function getFee2Amount() {
+  return parseFloat(localStorage.getItem(FEE2_AMOUNT_KEY) || '0.50');
+}
+function getFee2Label() {
+  return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
+}
+function saveFee2Config(enabled, amount, label) {
+  localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
+  localStorage.setItem(FEE2_LABEL_KEY, label);
+  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' Otro gasto fijo ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
+}
+function loadFee2FromFirebase() {
+  if (window.fb_loadFee2Config) {
+    window.fb_loadFee2Config().then(function (cfg) {
+      if (cfg) {
+        if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+        if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+        if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+        renderCart();
+      }
+    }).catch(function () {}).finally(function () { window._fee2ConfigListo = true; });
+  } else {
+    window._fee2ConfigListo = true;
+  }
+  if (!window.fb_listenFee2Config) return;
+  window.fb_listenFee2Config(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
+    if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+    renderCart();
+  });
+}
+
+// ── DESCUENTO ESTUDIANTE/JUBILADO (autodeclarado, se pide carné en caja) ──
+const STUDENT_DISCOUNT_ENABLED_KEY = 'dpf_student_discount_enabled';
+const STUDENT_DISCOUNT_PCT_KEY = 'dpf_student_discount_pct';
+function getStudentDiscountEnabled() {
+  return localStorage.getItem(STUDENT_DISCOUNT_ENABLED_KEY) === 'true';
+}
+function getStudentDiscountPct() {
+  return parseFloat(localStorage.getItem(STUDENT_DISCOUNT_PCT_KEY) || '10');
+}
+function saveStudentDiscountConfig(enabled, pct) {
+  localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
+  localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
+  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function () {});
+  renderCart();
+  logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
+}
+function loadStudentDiscountFromFirebase() {
+  if (window.fb_loadStudentDiscountConfig) {
+    window.fb_loadStudentDiscountConfig().then(function (cfg) {
+      if (cfg) {
+        if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+        if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+        renderCart();
+      }
+    }).catch(function () {}).finally(function () { window._studentDiscountConfigListo = true; });
+  } else {
+    window._studentDiscountConfigListo = true;
+  }
+  if (!window.fb_listenStudentDiscountConfig) return;
+  window.fb_listenStudentDiscountConfig(function (cfg) {
+    if (cfg.enabled !== undefined) localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
+    if (cfg.pct !== undefined) localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(cfg.pct));
+    renderCart();
+  });
+}
+
+// ── CÓDIGO "PEDIDO DESDE EL LOCAL" (exime el gasto fijo etiquetado como
+// "de gestión", ver _esEtiquetaDeGestion arriba) ──
+const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
+let _codigoLocalValidado = false;
+function getLocalFeeCode() {
+  return localStorage.getItem(LOCAL_FEE_CODE_KEY) || '';
+}
+function _modoLocalActivo() {
+  return _codigoLocalValidado;
+}
+// Se llama en cada tecla del campo de código (input visible del carrito y
+// el equivalente del drawer móvil, que se mantienen sincronizados entre
+// sí) — compara contra el código real ya cargado en localStorage, nunca
+// hace falta ir al servidor: es un código de un solo nivel (como una
+// contraseña de wifi de cara al público), no un secreto que proteja nada
+// más allá de quitar un par de euros de gasto de gestión, y el propio
+// panel deja cambiarlo cuando se quiera para que deje de valer.
+function comprobarCodigoLocal() {
+  const input = document.getElementById('local-fee-code-input');
+  const feedback = document.getElementById('local-fee-code-feedback');
+  const code = ((input && input.value) || '').trim().toUpperCase();
+  const real = getLocalFeeCode();
+  _codigoLocalValidado = !!code && !!real && code === real;
+  if (feedback) {
+    if (!code) {
+      feedback.textContent = '';
+    } else if (_codigoLocalValidado) {
+      feedback.textContent = '✅ Código válido — gastos de gestión anulados para este pedido';
+      feedback.style.color = '#27855a';
+    } else {
+      feedback.textContent = '❌ Código incorrecto';
+      feedback.style.color = 'var(--error)';
+    }
+  }
+  renderCart();
+}
+// Si la visita llega con ?local=CODIGO en la URL (el QR impreso desde el
+// panel, ver imprimirCartelQRLocal en impresora-termica.js), se valida
+// solo con lo que haya en localStorage — se reintenta también nada más
+// terminar de cargar el código real desde Firebase (loadLocalFeeCodeFromFirebase),
+// por si esta visita es tan nueva que localStorage todavía estaba vacío.
+function _comprobarCodigoLocalDesdeUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = (params.get('local') || '').trim().toUpperCase();
+    if (!fromUrl) return;
+    const real = getLocalFeeCode();
+    if (real && fromUrl === real) {
+      _codigoLocalValidado = true;
+      const input = document.getElementById('local-fee-code-input');
+      if (input) input.value = fromUrl;
+      const box = document.getElementById('local-fee-code-box');
+      if (box) box.style.display = 'flex';
+      const feedback = document.getElementById('local-fee-code-feedback');
+      if (feedback) { feedback.textContent = '✅ Código válido — gastos de gestión anulados para este pedido'; feedback.style.color = '#27855a'; }
+      renderCart();
+    }
+  } catch (e) {}
+}
+function saveLocalFeeCode(code) {
+  const clean = (code || '').trim().toUpperCase();
+  localStorage.setItem(LOCAL_FEE_CODE_KEY, clean);
+  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(clean).catch(function () {});
+  logActivity(clean ? ('🏪 Código "pedido desde el local" actualizado: ' + clean) : '🏪 Código "pedido desde el local" desactivado');
+}
+function generarCodigoLocalNuevo() {
+  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const input = document.getElementById('tc-local-fee-code');
+  if (input) input.value = code;
+  return code;
+}
+function loadLocalFeeCodeFromFirebase() {
+  if (window.fb_loadLocalFeeCode) {
+    window.fb_loadLocalFeeCode().then(function (code) {
+      localStorage.setItem(LOCAL_FEE_CODE_KEY, code || '');
+      _comprobarCodigoLocalDesdeUrl();
+      renderCart();
+    }).catch(function () {}).finally(function () { window._localCodeListo = true; });
+  } else {
+    window._localCodeListo = true;
+  }
+  if (!window.fb_listenLocalFeeCode) return;
+  window.fb_listenLocalFeeCode(function (code) {
+    localStorage.setItem(LOCAL_FEE_CODE_KEY, code || '');
+    renderCart();
+  });
+}
+
+// ── TIEMPO DE ESPERA ENTRE TICKETS DEL LOCAL (minutos, 0 = desactivado) ──
+// Guarda/lee el valor configurado — no aplica por sí solo ningún reparto de
+// horas en el ticket todavía (eso exige decidir el algoritmo exacto con
+// calma, no en el último momento antes de abrir); de momento el admin ya
+// puede configurarlo y queda guardado listo para cuando se implemente.
+const TIENDA_ESPERA_KEY = 'dpf_tienda_espera_minutos';
+function getTiendaEsperaMinutos() {
+  return parseInt(localStorage.getItem(TIENDA_ESPERA_KEY) || '0', 10);
+}
+function saveTiendaEsperaMinutos(min) {
+  const val = parseInt(min, 10) || 0;
+  localStorage.setItem(TIENDA_ESPERA_KEY, String(val));
+  if (window.fb_saveTiendaEsperaMinutos) window.fb_saveTiendaEsperaMinutos(val).catch(function () {});
+  logActivity('⏱️ Tiempo de espera entre tickets del local: ' + (val ? (val + ' min') : 'desactivado'));
+}
+function loadTiendaEsperaMinutosFromFirebase() {
+  if (!window.fb_listenTiendaEsperaMinutos) return;
+  window.fb_listenTiendaEsperaMinutos(function (min) {
+    localStorage.setItem(TIENDA_ESPERA_KEY, String(min || 0));
+    const sel = document.getElementById('tc-tienda-espera');
+    if (sel) sel.value = String(min || 0);
+  });
+}
+
+// Espera (como mucho timeoutMs) a que los 4 listeners/cargas de config
+// crítica para el precio final hayan tenido su primera oportunidad de
+// llegar desde Firebase — sin esto, un cliente MUY rápido (o con la
+// primera visita del día, antes de que nada tuviera tiempo de cargar)
+// podía confirmar un pedido con getFeeEnabled()/getFee2Enabled()/etc.
+// todavía en su valor por defecto aunque estuvieran configurados de otra
+// forma de verdad. Se usa desde carrito-checkout.js justo antes de armar
+// el pedido final.
+function esperarConfigCriticaLista(timeoutMs) {
+  return new Promise(function (resolve) {
+    const yaListo = function () {
+      return !!(window._feeConfigListo && window._fee2ConfigListo && window._localCodeListo && window._studentDiscountConfigListo);
+    };
+    if (yaListo()) { resolve(); return; }
+    const inicio = Date.now();
+    const intervalo = setInterval(function () {
+      if (yaListo() || (Date.now() - inicio) >= timeoutMs) {
+        clearInterval(intervalo);
+        resolve();
+      }
+    }, 100);
+  });
+}
+
 const SLOTS_KEY = 'dpf_slots';
 // ── CONFIGURACIÓN DEL TICKET ──
 const TICKET_CONFIG_KEY = 'dpf_ticket_config';
