@@ -458,16 +458,67 @@ function isShopBlocked() {
   // 1. Si el banner de cerrado está visible
   const banner = document.getElementById('orders-closed-banner');
   if (banner && banner.style.display === 'block') return true;
-  // 2. Si los pedidos están pausados manualmente
+  // 2. Si los pedidos están pausados manualmente (incluye la auto-pausa por
+  // saturación, que reutiliza este mismo candado — ver _aplicarAutoPausa en
+  // admin-config.js)
   if (!getOrdersOpen()) return true;
   // 3. Si hoy es día cerrado
   if (!isTodayOpen()) return true;
   // 4. Si estamos fuera del horario de apertura
   if (isOutsideHours()) return true;
-  // 5. Fallback: texto del estado
+  // 5. Pausa exprés activa (independiente de ordersOpen, con su propia
+  // cuenta atrás — ver pausarExpres() en admin-config.js)
+  try {
+    const hasta = parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10);
+    if (hasta && Date.now() < hasta) return true;
+  } catch (e) {}
+  // 6. Fallback: texto del estado
   const statusText = ((_document$getElementB = document.getElementById('hero-status-text')) === null || _document$getElementB === void 0 ? void 0 : _document$getElementB.textContent) || '';
   if (statusText.startsWith('Abrimos a las') || statusText === 'Cerrado ahora' || statusText === 'Cerrado hoy') return true;
   return false;
+}
+// Refresca la UI de "pedidos cerrados" cuando cambia pausaExpresHasta (por
+// activarla o por llegar su hora de reapertura) — sin tocar ordersOpen/
+// ordersMsg de verdad (eso es cosa de la pausa manual/auto-pausa, no de
+// esta), pero SÍ hay que reflejar en el candado que ahora mismo está
+// bloqueado por la pausa exprés aunque ordersOpen siga en true, o el
+// cliente vería el formulario normal y solo se enteraría del bloqueo al
+// intentar confirmar (isShopBlocked()/el servidor sí lo rechazan, pero la
+// pantalla no lo estaba avisando de antemano).
+function _actualizarBloqueoPorPausaExpres() {
+  if (typeof updateOrdersUI !== 'function') return;
+  const hasta = parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10);
+  if (hasta && Date.now() < hasta) {
+    updateOrdersUI(false, 'Pausados temporalmente, volvemos enseguida.');
+  } else {
+    updateOrdersUI(getOrdersOpen());
+  }
+}
+// Se reabre sola al pasar el tiempo sin depender de que llegue ningún aviso
+// nuevo de Firebase (un timestamp que ya pasó no dispara ningún listener
+// por sí solo) — comprobación ligera cada 30s, solo hace algo si hay una
+// pausa exprés activa de verdad.
+setInterval(() => {
+  const hasta = parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10);
+  if (hasta && Date.now() >= hasta) {
+    localStorage.setItem('dpf_pausa_expres_hasta', '0');
+    _actualizarBloqueoPorPausaExpres();
+  }
+}, 30000);
+// Banner suave de saturación (no bloquea pedidos) — dirigido por
+// config/avisoSaturacionEstado, que solo puede publicar una sesión de
+// admin/cocina de verdad (ver _actualizarAvisoSaturacion en
+// pedidos-vivo-cocina.js). "busy-mode-banner" es un elemento estático
+// aparte con texto fijo, no se toca aquí.
+function _renderAvisoSaturacionBanner(estado) {
+  const el = document.getElementById('aviso-saturacion-banner');
+  if (!el) return;
+  if (estado && estado.activo && estado.msg) {
+    el.textContent = estado.msg;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
 }
 function changeQty(id, delta) {
   // Bloquear añadir al carrito si hoy es día cerrado o pedidos pausados

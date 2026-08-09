@@ -202,6 +202,40 @@ function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
 }
 
+// ── Tiempo estimado de espera para la pantalla de "pedido confirmado" ──
+// Un cliente anónimo no puede leer stats/ ni orderStatus/ (solo-admin), así
+// que este cálculo lo hace el propio servidor con la cuenta de servicio, y
+// se manda ya hecho en la respuesta del pedido. Misma fórmula que
+// _estimarMinutosEspera() en admin-config.js (JS), para que cliente y panel
+// no digan números distintos si algún día se llega a mostrar en los dos sitios.
+function calcularTiempoEsperaEstimado($databaseURL, $accessToken, $fecha) {
+    $cfgResp = fbGetConEtag($databaseURL, 'config/avisoSaturacionConfig', $accessToken);
+    $cfg = is_array($cfgResp['data']) ? $cfgResp['data'] : null;
+    if (!$cfg || empty($cfg['enabled'])) {
+        return ['pendientesHoy' => null, 'minutosEsperaExtra' => 0];
+    }
+    $statsResp = fbGetConEtag($databaseURL, 'stats/' . $fecha, $accessToken);
+    $stats = is_array($statsResp['data']) ? $statsResp['data'] : null;
+    $orders = ($stats && is_array($stats['orders'] ?? null)) ? $stats['orders'] : [];
+    $statusResp = fbGetConEtag($databaseURL, 'orderStatus/' . $fecha, $accessToken);
+    $statuses = is_array($statusResp['data']) ? $statusResp['data'] : [];
+
+    $pendientes = 0;
+    foreach ($orders as $o) {
+        $key = normOrderKey($o['num'] ?? '');
+        $estado = $statuses[$key] ?? 'nuevo';
+        if ($estado !== 'listo' && $estado !== 'cancelado' && $estado !== 'entregado') $pendientes++;
+    }
+
+    $umbral = is_numeric($cfg['umbral'] ?? null) ? (int)$cfg['umbral'] : 8;
+    $minPorPedido = is_numeric($cfg['minPorPedido'] ?? null) ? (int)$cfg['minPorPedido'] : 3;
+    $minutosExtra = 0;
+    if ($pendientes >= $umbral) {
+        $minutosExtra = max(0, ($pendientes - $umbral + 1) * $minPorPedido);
+    }
+    return ['pendientesHoy' => $pendientes, 'minutosEsperaExtra' => $minutosExtra];
+}
+
 // Quita caracteres de control (todo lo que no sea texto normal, salvo
 // saltos de línea) de un texto libre del cliente. El texto del pedido
 // (nombre, notas, nombres de producto) acaba tal cual en el ticket que
@@ -474,6 +508,17 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
     $ordersOpen = fbGetConEtag($databaseURL, 'config/ordersOpen', $accessToken);
     if ($ordersOpen['data'] === false) {
         return 'No estamos aceptando pedidos en este momento.';
+    }
+    // Pausa exprés (botón manual con cuenta atrás, admin-shell.html) — es
+    // independiente de ordersOpen (que gestiona la pausa manual normal y la
+    // auto-pausa por saturación), así que se comprueba aparte. El navegador
+    // ya la respeta en isShopBlocked() (carta.js) para no dejar ni empezar
+    // el formulario, pero eso no evita que alguien llame a este script
+    // directamente saltándose la web — igual que el resto de comprobaciones
+    // de esta función, esta es la que de verdad no se puede evitar.
+    $pausaExpres = fbGetConEtag($databaseURL, 'config/pausaExpresHasta', $accessToken);
+    if (is_numeric($pausaExpres['data']) && (float)$pausaExpres['data'] > (microtime(true) * 1000)) {
+        return 'Pedidos pausados temporalmente. Inténtalo de nuevo en unos minutos.';
     }
     $horResp = fbGetConEtag($databaseURL, 'config/horario', $accessToken);
     $h = is_array($horResp['data']) ? $horResp['data'] : null;
@@ -1131,7 +1176,16 @@ try {
         }
     }
 
-    echo json_encode(['success' => true]);
+    // No debe poder tumbar un pedido ya guardado con éxito si esto falla por
+    // lo que sea — es solo un dato informativo para la pantalla de éxito.
+    $tiempoEspera = ['pendientesHoy' => null, 'minutosEsperaExtra' => 0];
+    try {
+        $tiempoEspera = calcularTiempoEsperaEstimado($databaseURL, $accessToken, $todayKey);
+    } catch (Exception $e) {
+        error_log('[guardar-pedido] No se pudo calcular el tiempo de espera estimado: ' . $e->getMessage());
+    }
+
+    echo json_encode(['success' => true, 'pendientesHoy' => $tiempoEspera['pendientesHoy'], 'minutosEsperaExtra' => $tiempoEspera['minutosEsperaExtra']]);
 } catch (Exception $e) {
     error_log('[guardar-pedido] Error: ' . $e->getMessage());
     http_response_code(500);

@@ -26,6 +26,8 @@
       "studentDiscountConfig": { ".read": true },
       "localFeeCode": { ".read": true },
       "tiendaEsperaMinutos": { ".read": true },
+      "pausaExpresHasta": { ".read": true },
+      "avisoSaturacionEstado": { ".read": true },
       "bannerDia": { ".read": true },
       "antiSpamCfg": { ".read": true },
       "openManualOverride": { ".read": true },

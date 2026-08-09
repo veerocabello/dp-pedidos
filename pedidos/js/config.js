@@ -292,6 +292,14 @@ function _initFirebase() {
   // AVISO SUAVE DE SATURACIÓN (previo a la auto-pausa)
   window.fb_saveAvisoSaturacionConfig = async function(enabled, umbral, msg, minutosSalto, minPorPedido) { await jset("config/avisoSaturacionConfig", {enabled:enabled, umbral:umbral, msg:msg, minutosSalto:minutosSalto, minPorPedido:minPorPedido}); };
   window.fb_listenAvisoSaturacionConfig = function(cb) { return jlisten("config/avisoSaturacionConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Estado PÚBLICO del aviso (activo/mensaje ahora mismo) — a diferencia de
+  // avisoSaturacionConfig (los umbrales, solo para admin), esto sí lo lee
+  // cualquier visitante anónimo para pintar el banner, porque solo una
+  // sesión de admin/cocina puede contar los pedidos pendientes de verdad
+  // (stats/ y orderStatus/ son de solo-admin) — el admin publica aquí el
+  // resultado ya calculado, nunca los datos en bruto.
+  window.fb_saveAvisoSaturacionEstado = async function(activo, msg) { await jset("config/avisoSaturacionEstado", {activo:activo, msg:msg||''}); };
+  window.fb_listenAvisoSaturacionEstado = function(cb) { return jlisten("config/avisoSaturacionEstado", function(sn){ cb(sn.exists()?sn.val():{activo:false,msg:''}); }); };
   // PAUSA EXPRÉS (pausa temporal con cuenta atrás, independiente de la auto-pausa)
   window.fb_savePausaExpresHasta = async function(ts) { await jset("config/pausaExpresHasta", ts||0); };
   window.fb_listenPausaExpresHasta = function(cb) { return jlisten("config/pausaExpresHasta", function(sn){ cb(sn.exists()?sn.val():0); }); };

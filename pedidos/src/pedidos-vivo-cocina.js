@@ -9,6 +9,37 @@ window._orderStatusCache = window._orderStatusCache || {};
 function _normOrderKey(num) {
   return String(num).replace(/#/g, '').replace(/^T/, '');
 }
+// ── AUTO-PAUSA / AVISO DE SATURACIÓN — evaluación ──
+// Se llama desde 3 sitios (fb_listenStats, fb_listenOrderStatuses,
+// refreshKitchenGrid) cada vez que cambia el nº de pedidos pendientes de
+// verdad (ni listo, ni cancelado, ni entregado) — ver admin-config.js para
+// el resto de la lógica (_aplicarAutoPausa, _setAvisoSaturacionEstado).
+function _comprobarAutoPausaSaturacion(pendientes) {
+  if (typeof getAutoPausaConfig !== 'function' || typeof _aplicarAutoPausa !== 'function') return;
+  const cfg = getAutoPausaConfig();
+  if (!cfg.enabled) return;
+  const umbral = cfg.umbral || 15;
+  // Histéresis: se reactiva sola con bastante menos pendientes de los que
+  // hicieron falta para pausar (no al primer pedido que baje de X) — si no,
+  // con la cola justo en el umbral, pausaría y reabriría sin parar cada vez
+  // que se marca/llega un pedido.
+  const umbralReapertura = Math.max(1, Math.floor(umbral * 0.6));
+  if (pendientes >= umbral) {
+    _aplicarAutoPausa(true);
+  } else if (pendientes <= umbralReapertura) {
+    _aplicarAutoPausa(false);
+  }
+}
+function _actualizarAvisoSaturacion(pendientes) {
+  if (typeof getAvisoSaturacionConfig !== 'function' || typeof _setAvisoSaturacionEstado !== 'function') return;
+  const cfg = getAvisoSaturacionConfig();
+  const activo = !!(cfg.enabled && pendientes >= (cfg.umbral || 8));
+  // Solo escribe de verdad si esta sesión tiene permiso de admin en Firebase
+  // (cualquier otra llamada falla en silencio, ver el .catch en
+  // _setAvisoSaturacionEstado) — no hace falta comprobarlo aquí a mano.
+  _setAvisoSaturacionEstado(activo, activo ? cfg.msg : '');
+}
+
 function getOrderStatuses() {
   return window._orderStatusCache;
 }
@@ -50,6 +81,14 @@ async function loadLiveOrdersWithLocalFirst() {
   await loadLiveOrders();
 }
 async function loadLiveOrders() {
+  // Repintar los paneles de auto-pausa/aviso previo/pausa exprés con lo que
+  // ya haya en caché — sus propios listeners de Firebase (registrados desde
+  // el arranque de la página, antes de que admin-shell.html exista en el
+  // DOM) pueden no volver a dispararse hasta que cambie algo, así que sin
+  // esto se quedarían en "Cargando…" hasta el primer cambio real.
+  if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+  if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
+  if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10));
   // No tocar el overflow del body al recargar pedidos en vivo
   const _savedOverflow = document.body.style.overflow;
   const todayKey = new Date().toISOString().slice(0, 10);

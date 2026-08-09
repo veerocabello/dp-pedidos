@@ -370,29 +370,16 @@ async function showSuccess(orderNum, slotTime) {
     slotInfo.style.display = 'none';
   }
 
-  // Estimación de espera según la cola actual — solo si hay bastante
-  // ambiente (mismo umbral que el aviso previo de saturación), para no
-  // asustar al cliente en un día tranquilo con un aviso que no aplica.
+  // Estimación de espera según la cola actual — un cliente anónimo no puede
+  // leer stats/ ni orderStatus/ (son de solo-admin, ver las reglas de
+  // Firebase), así que aquí NO se calcula nada localmente — solo se oculta
+  // por defecto. El valor real llega un poco después, ya calculado por el
+  // servidor (guardar-pedido.php, que sí tiene acceso completo) en la misma
+  // respuesta del pedido — ver _actualizarTiempoEstimadoTrasGuardar() en
+  // carrito-checkout.js, que rellena este mismo bloque en cuanto responde.
   const tiempoEstEl = document.getElementById('success-tiempo-estimado');
   if (tiempoEstEl) {
-    let _pendientesAhora = 0;
-    try {
-      const todayKey = new Date().toISOString().slice(0, 10);
-      const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-      if (stats && stats.date === todayKey && Array.isArray(stats.orders)) {
-        _pendientesAhora = stats.orders.filter(o => {
-          const s = (typeof getOrderStatus === 'function') ? getOrderStatus(o.num) : 'nuevo';
-          return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
-        }).length;
-      }
-    } catch (e) {}
-    const minutosExtra = (typeof _estimarMinutosEspera === 'function') ? _estimarMinutosEspera(_pendientesAhora) : 0;
-    if (minutosExtra > 0) {
-      tiempoEstEl.textContent = '⏳ Ahora mismo hay ' + _pendientesAhora + ' pedidos en cola — puede tardar unos ' + minutosExtra + ' min más de lo habitual.';
-      tiempoEstEl.style.display = 'block';
-    } else {
-      tiempoEstEl.style.display = 'none';
-    }
+    tiempoEstEl.style.display = 'none';
   }
 
   // Resumen de ítems
@@ -425,6 +412,24 @@ async function showSuccess(orderNum, slotTime) {
       block: 'start'
     });
   }, 50);
+}
+// Rellena el aviso de "tiempo estimado" de la pantalla de éxito una vez
+// responde guardar-pedido.php — se hace aparte de showSuccess() (que ya
+// mostró la pantalla, optimista, antes de que el servidor conteste) porque
+// es el único sitio con acceso real a cuántos pedidos hay pendientes ahora
+// mismo (stats/ y orderStatus/ son de solo-admin, un cliente anónimo no
+// puede calcularlo por su cuenta).
+function _actualizarTiempoEstimadoTrasGuardar(data) {
+  const tiempoEstEl = document.getElementById('success-tiempo-estimado');
+  if (!tiempoEstEl) return;
+  const minutos = Number(data && data.minutosEsperaExtra) || 0;
+  const pendientes = Number(data && data.pendientesHoy) || 0;
+  if (minutos > 0) {
+    tiempoEstEl.textContent = '⏳ Ahora mismo hay ' + pendientes + ' pedidos en cola — puede tardar unos ' + minutos + ' min más de lo habitual.';
+    tiempoEstEl.style.display = 'block';
+  } else {
+    tiempoEstEl.style.display = 'none';
+  }
 }
 function resetOrder() {
   cart = {};

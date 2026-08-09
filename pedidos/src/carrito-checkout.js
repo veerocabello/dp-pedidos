@@ -1449,7 +1449,11 @@ async function _finalizarPedido() {
       .then(res => res.json())
       .then(data => {
         try { localStorage.removeItem('dpf_pedido_en_curso'); } catch (e) {}
-        if (data.success) { console.log('✅ Pedido guardado'); window._pendingTicketData = null; }
+        if (data.success) {
+          console.log('✅ Pedido guardado');
+          window._pendingTicketData = null;
+          if (typeof _actualizarTiempoEstimadoTrasGuardar === 'function') _actualizarTiempoEstimadoTrasGuardar(data);
+        }
         else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
       })
       .catch((e) => {
