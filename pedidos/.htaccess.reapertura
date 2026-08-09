@@ -47,11 +47,17 @@
     # script, dulcepatata.goatcounter.com recibe la visita) — antes no
     # estaban en la lista y se bloqueaban solos, sin que se notara en
     # pantalla ni se contara ninguna visita.
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com https://gc.zgo.at; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org https://dulcepatata.goatcounter.com; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+    #
+    # report-uri: manda aquí un aviso automático del navegador cada vez
+    # que bloquea algo por la CSP (ver csp-report.php) — así un script de
+    # terceros que cambie de dominio, una regla demasiado estricta para
+    # una librería nueva, o un intento real de inyección, deja rastro en
+    # csp-reports.log en vez de solo verse en la consola de quien lo sufre.
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com https://gc.zgo.at; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org https://dulcepatata.goatcounter.com; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'; report-uri /csp-report.php"
 </IfModule>
 
 # ── Bloquear acceso directo a archivos PHP sensibles ──
-<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log)$">
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log)$">
     Require all denied
 </FilesMatch>
 
@@ -72,6 +78,7 @@ RewriteRule ^verify-code\.php$ - [L]
 RewriteRule ^webhook-incidencia\.php$ - [L]
 RewriteRule ^bimba-verify\.php$ - [L]
 RewriteRule ^fichar-pin-check\.php$ - [L]
+RewriteRule ^csp-report\.php$ - [L]
 
 # admin-shell.html: siempre con contraseña — esto NO se quita nunca,
 # ni el día de la reapertura ni después. Es la única puerta (junto con

@@ -1,4 +1,5 @@
 pedidos/.htpasswd
 pedidos/twilio-errores.log
+pedidos/csp-reports.log
 .DS_Store
 node_modules/
