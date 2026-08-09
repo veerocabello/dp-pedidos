@@ -2096,7 +2096,44 @@ async function printCopyConfirmed() {
 /* ══════════════════════════════════════════════════════════════
    AJUSTES
    ══════════════════════════════════════════════════════════════ */
+// Tipografía de la app (solo la pantalla — el ticket impreso siempre sale
+// en el tipo de letra fijo de la impresora térmica, esto no lo toca).
+// Usa fuentes que ya trae cualquier Windows/Mac, así no hace falta
+// descargar ni empaquetar ningún archivo de letra nuevo — la única
+// excepción es "Actual", que sigue usando Oswald/DM Sans (los .woff2 que
+// ya se cargan con la app).
+const FONT_PRESETS = [
+  { id: 'default', name: 'Actual', head: "'Oswald','Arial Narrow','Segoe UI Semibold',Arial,sans-serif", body: "'DM Sans','Segoe UI',Roboto,Arial,sans-serif" },
+  { id: 'clasica', name: 'Clásica', head: "Georgia,'Times New Roman',serif", body: "Verdana,Geneva,sans-serif" },
+  { id: 'moderna', name: 'Moderna y clara', head: "'Segoe UI',system-ui,'Helvetica Neue',Arial,sans-serif", body: "'Segoe UI',system-ui,'Helvetica Neue',Arial,sans-serif" },
+  { id: 'grande', name: 'Grande y directa', head: "'Arial Black','Arial Bold',Arial,sans-serif", body: "Arial,'Helvetica Neue',sans-serif" },
+];
+const FONT_CHOICE_KEY = 'dpf_comandas_font_choice';
+function loadFontChoice() { return localStorage.getItem(FONT_CHOICE_KEY) || 'default'; }
+function applyFontChoice(id) {
+  const preset = FONT_PRESETS.find(f => f.id === id) || FONT_PRESETS[0];
+  document.documentElement.style.setProperty('--font-head', preset.head);
+  document.documentElement.style.setProperty('--font-body', preset.body);
+}
+function selectFont(id) {
+  localStorage.setItem(FONT_CHOICE_KEY, id);
+  applyFontChoice(id);
+  renderFontOptions();
+}
+function renderFontOptions() {
+  const el = document.getElementById('font-options');
+  if (!el) return;
+  const actual = loadFontChoice();
+  el.innerHTML = FONT_PRESETS.map(f => `
+    <div class="font-option-card ${f.id === actual ? 'selected' : ''}" onclick="selectFont('${f.id}')">
+      <div class="font-option-check"></div>
+      <div class="font-option-name">${escapeHtml(f.name)}</div>
+      <div class="font-option-head" style="font-family:${f.head}">Patata Kebab</div>
+      <div class="font-option-body" style="font-family:${f.body}">5,90 € · Salsa de yogur</div>
+    </div>`).join('');
+}
 function openSettings() {
+  renderFontOptions();
   const cfg = getTicketConfig();
   document.getElementById('set-nombre').value = cfg.nombre;
   document.getElementById('set-direccion').value = cfg.direccion;
@@ -2305,6 +2342,7 @@ function toggleCartaNuevo(id) {
    INIT
    ══════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
+  applyFontChoice(loadFontChoice());
   initTabs();
   renderMenu();
   restoreCartDraftIfAny();
