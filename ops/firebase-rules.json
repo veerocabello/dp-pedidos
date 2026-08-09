@@ -1,0 +1,121 @@
+{
+  "rules": {
+    "slots": {
+      ".read": true,
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "tickets": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "usedOrderNums": {
+      ".read": true,
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "config": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      "open": { ".read": true },
+      "menu": { ".read": true },
+      "horario": { ".read": true },
+      "ordersOpen": { ".read": true },
+      "ordersMsg": { ".read": true },
+      "slotConfig": { ".read": true },
+      "feeConfig": { ".read": true },
+      "fee2Config": { ".read": true },
+      "studentDiscountConfig": { ".read": true },
+      "localFeeCode": { ".read": true },
+      "tiendaEsperaMinutos": { ".read": true },
+      "bannerDia": { ".read": true },
+      "antiSpamCfg": { ".read": true },
+      "openManualOverride": { ".read": true },
+      "vacacionesActivo": { ".read": true },
+      "ticketConfig": { ".read": true },
+      "promos": { ".read": true },
+      "juegoActivo": { ".read": true }
+    },
+    "stats": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "ventasProductos": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "gastos": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "marketing": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "facturacion": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "orderStatus": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "stock": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "pp2": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "loginLog": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      "$sid": {
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['ts','fecha','email','resultado','ip','dispositivo']) && newData.child('ts').isNumber() && newData.child('fecha').isString() && newData.child('fecha').val().length <= 100 && newData.child('email').isString() && newData.child('email').val().length <= 200 && newData.child('resultado').isString() && newData.child('resultado').val().length <= 200 && newData.child('ip').isString() && newData.child('ip').val().length <= 100 && newData.child('dispositivo').isString() && newData.child('dispositivo').val().length <= 200"
+      }
+    },
+    "phoneLog": {
+      "$fecha": {
+        "$telefono": {
+          ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+          ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+        }
+      }
+    },
+    "counters": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "activeSessions": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "discounts": {
+      ".read": true,
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "ruleta_config": {
+      ".read": true,
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "ruleta_giros": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "rasca_config": {
+      ".read": true,
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "rasca_giros": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "fidelizacion": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
+    "incidencias": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    }
+  }
+}
