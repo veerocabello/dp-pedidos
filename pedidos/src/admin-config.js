@@ -1383,15 +1383,11 @@ function loadAvisoSaturacionFromFirebase() {
 function _setAvisoSaturacionEstado(activo, msg) {
   if (window.fb_saveAvisoSaturacionEstado) window.fb_saveAvisoSaturacionEstado(!!activo, msg || '').catch(() => {});
 }
-// Estimación de minutos extra de espera para la pantalla de "pedido
-// confirmado" — se calcula con la misma config del aviso (minutosSalto/
-// minPorPedido) para no duplicar otro juego de números en el panel.
-function _estimarMinutosEspera(pendientes) {
-  const cfg = getAvisoSaturacionConfig();
-  if (!cfg.enabled || !pendientes || pendientes < (cfg.umbral || 8)) return 0;
-  const extra = (pendientes - (cfg.umbral || 8) + 1) * (cfg.minPorPedido || 3);
-  return Math.max(0, extra);
-}
+// La estimación de minutos extra para la pantalla de "pedido confirmado" se
+// calcula en el servidor (calcularTiempoEsperaEstimado() en
+// guardar-pedido.php, misma fórmula) — un cliente anónimo no puede leer
+// stats/orderStatus para calcularlo aquí, así que no hace falta esta
+// función en el navegador.
 
 // ── PAUSA EXPRÉS (botón manual con cuenta atrás, se reabre sola) ──
 function pausarExpres(minutos) {
@@ -1442,7 +1438,7 @@ function guardarAutoPausaConfig() {
   const msg = document.getElementById('auto-pausa-msg').value.trim();
   saveAutoPausaConfig(getAutoPausaConfig().enabled, umbral, msg);
   _renderAutoPausaUI();
-  showToast('local-toast');
+  showToast('auto-pausa-toast');
 }
 function _renderAvisoSaturacionUI() {
   const cfg = getAvisoSaturacionConfig();
@@ -1472,7 +1468,7 @@ function guardarAvisoSaturacionConfig() {
   const msg = document.getElementById('aviso-sat-msg').value.trim();
   saveAvisoSaturacionConfig(getAvisoSaturacionConfig().enabled, umbral, msg, salto, minpp);
   _renderAvisoSaturacionUI();
-  showToast('local-toast');
+  showToast('aviso-sat-toast');
 }
 function _renderPausaExpresUI(hasta) {
   const el = document.getElementById('pausa-expres-estado-texto');
