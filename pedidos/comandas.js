@@ -1060,14 +1060,20 @@ function renderExtrasBody(item) {
       html += `<div class="section-label">Cambiar un ingrediente</div>`;
       html += `<div class="swap-card">
         <div class="swap-row">
-          <select id="cambio-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          <select id="cambio-ing-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
           <span class="swap-arrow">→</span>
-          <select id="cambio-to" class="swap-select">
-            <optgroup label="INGREDIENTES">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</optgroup>
-            <optgroup label="SALSAS">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</optgroup>
-          </select>
+          <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
         </div>
-        <button class="swap-add-btn" onclick="addExtraCambio()">+ Añadir cambio</button>
+        <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Añadir cambio</button>
+      </div>`;
+      html += `<div class="section-label">Cambiar salsa</div>`;
+      html += `<div class="swap-card">
+        <div class="swap-row">
+          <select id="cambio-salsa-from" class="swap-select">${baseComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          <span class="swap-arrow">→</span>
+          <select id="cambio-salsa-to" class="swap-select">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        </div>
+        <button class="swap-add-btn" onclick="addExtraCambio('salsa')">+ Añadir cambio</button>
       </div>`;
       if (extrasCambios.length) {
         html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
@@ -1116,16 +1122,24 @@ function renderExtrasBody(item) {
       html += `</div>`;
     }
   }
+  // Guarda y restaura el scroll del modal: sin esto, cada vez que se marca
+  // algo en "Ingredientes extra" / "Salsas extra" (más abajo del todo) el
+  // innerHTML se reconstruye entero y el scroll salta solo hacia arriba —
+  // parece que el modal "se cuelga" porque cada toque te devuelve arriba
+  // en vez de dejarte seguir marcando donde estabas.
+  const modalBox = document.querySelector('#extras-modal .modal-box');
+  const scrollPos = modalBox ? modalBox.scrollTop : 0;
   document.getElementById('extras-options').innerHTML = html;
+  if (modalBox) modalBox.scrollTop = scrollPos;
 }
 function toggleExtraQuitar(comp) {
   extrasQuitados[comp] = !extrasQuitados[comp];
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-function addExtraCambio() {
-  const from = document.getElementById('cambio-from').value;
-  const to = document.getElementById('cambio-to').value;
+function addExtraCambio(tipo) {
+  const from = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-from' : 'cambio-ing-from').value;
+  const to = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-to' : 'cambio-ing-to').value;
   if (!from || !to || from === to) return;
   if (extrasCambios.some(c => c.from === from)) return; // ya hay un cambio para ese ingrediente
   if (extrasCambios.length >= 2) { toast('⚠️ Máximo 2 cambios de ingrediente'); return; }
