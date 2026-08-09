@@ -350,11 +350,11 @@
         </div>
         <div class="form-group">
           <label>Tu nombre y apellido *</label>
-          <input type="text" id="customer-name" placeholder="" maxlength="60" required>
+          <input type="text" id="customer-name" placeholder="" maxlength="60" autocomplete="name" required>
         </div>
         <div class="form-group">
           <label>Teléfono</label>
-          <input type="tel" id="customer-phone" placeholder="" maxlength="11" oninput="formatPhone(this)">
+          <input type="tel" id="customer-phone" placeholder="" maxlength="11" autocomplete="tel" inputmode="tel" oninput="formatPhone(this)">
           <div style="background:var(--white);border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
             <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--warm)">📱</div>
             <p style="font-size:12px;font-weight:700;color:var(--brown);margin:0">Se verificará tu número por SMS</p>

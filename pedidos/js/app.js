@@ -104,11 +104,11 @@ Escribe el nombre exacto del que quieres eliminar:`);if(!o||!o.trim())return;con
     <div style="margin-top:16px">
       <div class="form-group">
         <label>Tu nombre y apellido *</label>
-        <input type="text" id="drawer-customer-name" placeholder="" maxlength="60" value="`.concat(F.replace(/"/g,"&quot;"),`" oninput="document.getElementById('customer-name').value=this.value">
+        <input type="text" id="drawer-customer-name" placeholder="" maxlength="60" autocomplete="name" value="`.concat(F.replace(/"/g,"&quot;"),`" oninput="document.getElementById('customer-name').value=this.value">
       </div>
       <div class="form-group">
         <label>Tel\xE9fono</label>
-        <input type="tel" id="drawer-customer-phone" placeholder="" maxlength="11" value="`).concat(L.replace(/"/g,"&quot;"),`" oninput="formatPhone(this);document.getElementById('customer-phone').value=this.value">
+        <input type="tel" id="drawer-customer-phone" placeholder="" maxlength="11" autocomplete="tel" inputmode="tel" value="`).concat(L.replace(/"/g,"&quot;"),`" oninput="formatPhone(this);document.getElementById('customer-phone').value=this.value">
         `).concat(M,`
         <div style="background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
           <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8">\u{1F4F1}</div>
