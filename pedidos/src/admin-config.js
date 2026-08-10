@@ -1232,30 +1232,17 @@ function loadTiendaEsperaMinutosFromFirebase() {
     if (sel) sel.value = String(min || 0);
   });
 }
-// Reparte la hora que sale en el ticket entre pedidos "desde el local"
-// (código QR del mostrador cuando hay cola) — sin esto todos salían con la
-// hora real del pedido a la vez, como si cocina pudiera hacerlos todos de
-// golpe. El reparto en sí (cola virtual con un contador compartido en
-// Firebase) lo hace guardar-pedido.php con la cuenta de servicio, porque
-// estos pedidos vienen del móvil de cada cliente (auth anónima, sin permiso
-// de escritura directa sobre config/) — ver acción 'asignarHoraTienda'.
-// Devuelve "HH:MM" o null si el reparto está desactivado (0 minutos) o si
-// el servidor no responde a tiempo, para que el ticket caiga de vuelta en
-// "hora del pedido" en vez de dejar slotTime a medias.
-async function _asignarHoraTiendaQR() {
-  if (getTiendaEsperaMinutos() <= 0) return null;
-  try {
-    const resp = await _fetchConTimeout('guardar-pedido.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'asignarHoraTienda' })
-    }, 8000);
-    const data = await resp.json().catch(() => null);
-    return (data && data.success && data.hora) ? data.hora : null;
-  } catch (e) {
-    console.warn('[tienda] _asignarHoraTiendaQR falló:', e);
-    return null;
-  }
+// Hora que sale en el ticket para pedidos "desde el local" (código QR del
+// mostrador): hora del pedido + los minutos configurados, sin más — es el
+// propio dueño quien decide cuánto margen quiere marcando 15/20/25 según
+// hace falta, no un reparto automático que vaya acumulando entre pedidos.
+// Devuelve "HH:MM" o null si está desactivado (0 minutos), para que el
+// ticket caiga de vuelta en "hora del pedido".
+function _asignarHoraTiendaQR() {
+  const minutos = getTiendaEsperaMinutos();
+  if (minutos <= 0) return null;
+  const hora = new Date(Date.now() + minutos * 60000);
+  return String(hora.getHours()).padStart(2, '0') + ':' + String(hora.getMinutes()).padStart(2, '0');
 }
 
 // Espera (como mucho timeoutMs) a que los 4 listeners/cargas de config
