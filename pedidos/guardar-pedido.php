@@ -441,6 +441,81 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [])
     }
 }
 
+// ── ventasProductos/<fecha> — cuántas unidades de cada producto se han
+// vendido hoy, lo que alimenta "Estrellas y perdedores" en Finanzas. Antes
+// lo escribía el propio navegador del cliente justo después de pagar
+// (recordProductSales, fidelizacion-admin.js) o al cancelar/modificar
+// (_revertirVentasProductos, antifraude.js), pero las reglas de Firebase
+// exigen el UID de admin para escribir aquí — así que esa escritura llevaba
+// fallando en silencio en TODOS los pedidos desde que existe la función, y
+// "Estrellas y perdedores" llevaba vacío. Ahora lo hace este script con la
+// cuenta de servicio, igual que el resto de nodos solo-admin. Los items no
+// llevan el id del producto (solo name/qty/subtotal), así que se busca por
+// nombre contra config/menu — igual que comprobarPreciosSospechosos() de
+// abajo.
+function _idsDeProductosPorNombre($databaseURL, $accessToken) {
+    $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
+    $menuData = $menuResp['data'] ?? null;
+    if (is_array($menuData) && isset($menuData['items']) && is_array($menuData['items'])) {
+        $menuItems = $menuData['items'];
+    } elseif (is_array($menuData)) {
+        $menuItems = $menuData;
+    } else {
+        $menuItems = [];
+    }
+    $idPorNombre = [];
+    foreach ($menuItems as $mi) {
+        if (isset($mi['name']) && isset($mi['id'])) $idPorNombre[$mi['name']] = (string)$mi['id'];
+    }
+    return $idPorNombre;
+}
+// Aplica $deltas (id producto => cantidad a sumar, puede ser negativa) sobre
+// ventasProductos/<fecha> con lectura-modificación-escritura condicional
+// (mismo patrón que guardarPedidoEnStats) — nunca baja de 0 ni dispara
+// error si falla tras los reintentos, es puramente informativo y no debe
+// afectar a la respuesta del pedido/cancelación real.
+function _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas) {
+    if (!$deltas) return;
+    $path = 'ventasProductos/' . $fecha;
+    for ($intento = 0; $intento < 8; $intento++) {
+        $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+        $actual = is_array($leido['data']) ? $leido['data'] : [];
+        foreach ($deltas as $id => $delta) {
+            $nuevo = (is_numeric($actual[$id] ?? null) ? (float)$actual[$id] : 0) + $delta;
+            if ($nuevo <= 0) { unset($actual[$id]); } else { $actual[$id] = $nuevo; }
+        }
+        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $actual, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+function registrarVentasProductos($databaseURL, $accessToken, $fecha, $items) {
+    $idPorNombre = _idsDeProductosPorNombre($databaseURL, $accessToken);
+    $deltas = [];
+    foreach ($items as $it) {
+        if (!empty($it['isFee']) || empty($it['name'])) continue;
+        $id = $idPorNombre[$it['name']] ?? null;
+        if ($id === null) continue;
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 0;
+        if ($qty <= 0) continue;
+        $deltas[$id] = ($deltas[$id] ?? 0) + $qty;
+    }
+    _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas);
+}
+function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
+    if (!$items) return;
+    $idPorNombre = _idsDeProductosPorNombre($databaseURL, $accessToken);
+    $deltas = [];
+    foreach ($items as $it) {
+        if (!empty($it['isFee']) || empty($it['name'])) continue;
+        $id = $idPorNombre[$it['name']] ?? null;
+        if ($id === null) continue;
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 0;
+        if ($qty <= 0) continue;
+        $deltas[$id] = ($deltas[$id] ?? 0) - $qty;
+    }
+    _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas);
+}
+
 // ── Comprobación (solo aviso, nunca bloquea el pedido) de que el precio
 // enviado por el navegador coincide con el precio real del menú. Solo
 // compara productos normales de la carta por nombre exacto — los
@@ -921,6 +996,11 @@ try {
             liberarSlot($databaseURL, $accessToken, $cFecha, $cSlotParaLiberar);
         }
 
+        // 4. Revertir lo sumado en ventasProductos/<fecha> para este pedido
+        // (Estrellas y perdedores) — usa $cItems si se encontró en stats/, y
+        // si no los del propio ticket (mismo criterio que el slot de arriba).
+        revertirVentasProductos($databaseURL, $accessToken, $cFecha, $cItems ?: ($cTicket['items'] ?? null));
+
         echo json_encode([
             'success' => true,
             'items'   => $cItems,
@@ -1112,6 +1192,7 @@ try {
         'ts'    => (int)(microtime(true) * 1000),
     ];
     $statsGuardado = guardarPedidoEnStats($databaseURL, $accessToken, $todayKey, $newOrder, $total);
+    registrarVentasProductos($databaseURL, $accessToken, $todayKey, $items);
 
     if (!$statsGuardado) {
         error_log('[guardar-pedido] No se pudo actualizar stats para el pedido ' . $orderNum . ' tras varios intentos.');

@@ -624,37 +624,6 @@ async function renderAccesosLog() {
   }
 }
 
-// Patch recordOrderStats to include items for kitchen display + Firebase sync
-// Usa transacción Firebase para evitar sobreescribir pedidos de otros dispositivos
-// Guarda cuántas unidades de cada producto se vendieron hoy, para "Estrellas y perdedores".
-// Se guarda en ventasProductos/{fecha} = { [productId]: cantidad }
-async function recordProductSales(items) {
-  if (!items || !items.length) return;
-  const fecha = new Date().toISOString().slice(0, 10);
-  const mutator = function (current) {
-    const actual = current || {};
-    items.forEach(it => {
-      if (it.id == null) return;
-      const id = String(it.id);
-      actual[id] = (actual[id] || 0) + (it.qty || 0);
-    });
-    return actual;
-  };
-  try {
-    // Transacción: igual que recordOrderStats justo debajo (que ya lo hace
-    // por el mismo motivo) — dos pedidos completándose casi a la vez podían
-    // pisarse el conteo de ventas por producto con un .set() plano.
-    if (window.fb_transactNative) {
-      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
-    } else {
-      const ref = firebase.database().ref('ventasProductos/' + fecha);
-      const sn = await ref.once('value');
-      await ref.set(mutator(sn.exists() ? sn.val() : null));
-    }
-  } catch (e) {
-    console.warn('[ventasProductos] no se pudo guardar', e);
-  }
-}
 async function recordOrderStats(orderNum, name, total, slotTime) {
   const todayKey = new Date().toISOString().slice(0, 10);
   const items = _lastTicketData ? _lastTicketData.items : [];

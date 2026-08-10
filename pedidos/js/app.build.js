@@ -4730,36 +4730,6 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
   window.currentOrderName = document.getElementById('customer-name') ? document.getElementById('customer-name').value.trim() : '';
-  window.currentOrderTotal = 0;
-  window.currentOrderItems = [];
-  try {
-    // Antes solo se leía `cart` (productos normales del menú) — los
-    // personalizados (Patata Al Gusto, Patata Bomba, vía custCart) y los
-    // complementos sueltos (extrasCart) se quedaban fuera, así que nunca
-    // se contaban en ventasProductos/{fecha}, la analítica que usa
-    // finanzas.js para "Estrellas y perdedores". Si el admin les asigna
-    // coste ahí, aparecían siempre con 0 ventas por mucho que se vendieran.
-    const itemsNormales = Object.entries(cart).map(([id, qty]) => {
-      const item = MENU.find(m => m.id == id);
-      if (!item) return null;
-      return { id: item.id, qty, name: item.name, price: item.price * qty };
-    }).filter(Boolean);
-    const itemsCustom = Object.values(custCart).filter(c => c.qty > 0).map(c => {
-      const item = MENU.find(m => m.id == c.menuId);
-      if (!item) return null;
-      const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
-    }).filter(Boolean);
-    const itemsExtras = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
-      const item = MENU.find(m => m.id == c.menuId);
-      if (!item) return null;
-      const unitPrice = typeof getExtrasItemPrice === 'function' ? getExtrasItemPrice(c) : item.price;
-      return { id: item.id, qty: c.qty, name: item.name, price: unitPrice * c.qty };
-    }).filter(Boolean);
-    window.currentOrderItems = [...itemsNormales, ...itemsCustom, ...itemsExtras];
-    window.currentOrderTotal = window.currentOrderItems.reduce((s, i) => s + i.price, 0);
-  } catch(e) {}
-  recordProductSales(window.currentOrderItems);
   const orderTotal = _lastTicketData ? _lastTicketData.total : 0;
   const name = document.getElementById("customer-name").value.trim();
   const phone = document.getElementById("customer-phone").value.replace(/[\s\-().+]/g, '').trim();
@@ -5068,46 +5038,6 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
-// Resta de ventasProductos/{fecha} lo que sumó recordProductSales() para
-// este pedido — antes, cancelar un pedido (admin) o que el cliente lo
-// modificara (que primero lo borra y luego reenvía uno nuevo) dejaba sus
-// productos contados para siempre en la analítica de "Estrellas y
-// perdedores", aunque el pedido ya no existiera o se hubiera duplicado.
-// pedido.items no lleva el id del producto (solo name/qty/subtotal, tal
-// como lo guarda guardar-pedido.php), así que se busca por nombre.
-async function _revertirVentasProductos(items) {
-  if (!items || !items.length || typeof firebase === 'undefined' || !firebase.database) return;
-  const fecha = new Date().toISOString().slice(0, 10);
-  const mutator = function (current) {
-    const actual = current || {};
-    items.forEach(it => {
-      if (it.isFee || !it.name) return;
-      const menuItem = typeof MENU !== 'undefined' ? MENU.find(m => m.name === it.name) : null;
-      if (!menuItem) return;
-      const id = String(menuItem.id);
-      if (actual[id] == null) return;
-      actual[id] = Math.max(0, actual[id] - (it.qty || 0));
-      if (actual[id] === 0) delete actual[id];
-    });
-    return actual;
-  };
-  try {
-    // Transacción: este mismo nodo lo escribe también cada pedido real de
-    // un cliente al llegar (recordProductSales) — un .set() plano aquí
-    // podía perder esa cuenta si un pedido nuevo llegaba justo mientras se
-    // revertía otro cancelado.
-    if (window.fb_transactNative) {
-      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
-    } else {
-      const ref = firebase.database().ref('ventasProductos/' + fecha);
-      const sn = await ref.once('value');
-      if (!sn.exists()) return;
-      await ref.set(mutator(sn.val()));
-    }
-  } catch (e) {
-    console.warn('[ventasProductos] no se pudo revertir', e);
-  }
-}
 async function _borrarPedidoDeFirebase(orderNum, phone) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -5123,7 +5053,6 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   window._orderStatusCache[_normOrderKey(orderNum)] = 'cancelado';
   try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
 
-  let itemsParaRevertir = null;
   let telefonoParaRevertirSello = phone || null;
   let slotToFree = null;
 
@@ -5144,7 +5073,6 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
     });
     const data = await resp.json();
     if (data && data.success) {
-      if (data.items) itemsParaRevertir = data.items;
       if (data.phone) telefonoParaRevertirSello = data.phone;
       if (data.slot) slotToFree = data.slot;
     } else {
@@ -5160,7 +5088,6 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
     if (local.orders) {
       const pedido = local.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum));
       if (pedido && pedido.slot && !slotToFree) slotToFree = pedido.slot;
-      if (pedido && pedido.items && !itemsParaRevertir) itemsParaRevertir = pedido.items;
       if (pedido && pedido.phone && !telefonoParaRevertirSello) telefonoParaRevertirSello = pedido.phone;
       local.orders = local.orders.filter(o => _normOrderKey(o.num) !== _normOrderKey(orderNum));
       local.count = Math.max(0, (local.count || 1) - 1);
@@ -5168,8 +5095,6 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
       localStorage.setItem(STATS_KEY, JSON.stringify(local));
     }
   } catch {}
-
-  if (itemsParaRevertir) _revertirVentasProductos(itemsParaRevertir);
 
   // Deshacer el sello de fidelización (y el canje del premio, si lo había
   // consumido) si este pedido cancelado/modificado había llegado a
@@ -15106,37 +15031,6 @@ async function renderAccesosLog() {
   }
 }
 
-// Patch recordOrderStats to include items for kitchen display + Firebase sync
-// Usa transacción Firebase para evitar sobreescribir pedidos de otros dispositivos
-// Guarda cuántas unidades de cada producto se vendieron hoy, para "Estrellas y perdedores".
-// Se guarda en ventasProductos/{fecha} = { [productId]: cantidad }
-async function recordProductSales(items) {
-  if (!items || !items.length) return;
-  const fecha = new Date().toISOString().slice(0, 10);
-  const mutator = function (current) {
-    const actual = current || {};
-    items.forEach(it => {
-      if (it.id == null) return;
-      const id = String(it.id);
-      actual[id] = (actual[id] || 0) + (it.qty || 0);
-    });
-    return actual;
-  };
-  try {
-    // Transacción: igual que recordOrderStats justo debajo (que ya lo hace
-    // por el mismo motivo) — dos pedidos completándose casi a la vez podían
-    // pisarse el conteo de ventas por producto con un .set() plano.
-    if (window.fb_transactNative) {
-      await window.fb_transactNative('ventasProductos/' + fecha, mutator);
-    } else {
-      const ref = firebase.database().ref('ventasProductos/' + fecha);
-      const sn = await ref.once('value');
-      await ref.set(mutator(sn.exists() ? sn.val() : null));
-    }
-  } catch (e) {
-    console.warn('[ventasProductos] no se pudo guardar', e);
-  }
-}
 async function recordOrderStats(orderNum, name, total, slotTime) {
   const todayKey = new Date().toISOString().slice(0, 10);
   const items = _lastTicketData ? _lastTicketData.items : [];
