@@ -10284,7 +10284,12 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
       total: order.total,
       time: order.time
     };
-    await imprimirTicketTermico(ticketData);
+    // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
+    // reintento manual podía intercalarse con un pedido nuevo
+    // auto-imprimiéndose justo en ese instante (ver el porqué en
+    // _autoImprimirPedido más abajo).
+    const _ptEjecutarReintento = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+    await _ptEjecutarReintento(() => imprimirTicketTermico(ticketData));
     if (typeof _markAsImpreso === 'function') _markAsImpreso(order.num);
     if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(order.num, true);
     resolverAlerta(ts);
@@ -13299,8 +13304,13 @@ async function imprimirAnulacion(orderNum) {
 }
 
 async function imprimirTicketPrueba() {
+  // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, pulsar
+  // "Probar impresora" justo cuando un pedido nuevo se está auto-imprimiendo
+  // podía intercalar los dos envíos a la vez (ver el porqué más arriba, en
+  // _autoImprimirPedido de historial-export.js).
+  const _ptEjecutarPrueba = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
   try {
-    await imprimirTicketTermico({
+    await _ptEjecutarPrueba(() => imprimirTicketTermico({
       orderNum: 'PRUEBA',
       name: 'Ticket de prueba',
       phone: '',
@@ -13309,7 +13319,7 @@ async function imprimirTicketPrueba() {
       items: [{ name: 'Impresora configurada correctamente', qty: 1, subtotal: 0 }],
       total: 0,
       time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-    });
+    }));
   } catch (e) {
     alert('⚠️ ' + e.message);
   }
@@ -13317,14 +13327,16 @@ async function imprimirTicketPrueba() {
 
 // Reimprime el último ticket normal enviado (no el de prueba, ni una
 // anulación) — para el caso de que se atasque el papel a mitad de
-// impresión, sin tener que ir a buscar el pedido en la lista.
+// impresión, sin tener que ir a buscar el pedido en la lista. Pasa por
+// _ptEnFila() por el mismo motivo que imprimirTicketPrueba() de arriba.
 async function reimprimirUltimoTicketTermico() {
   if (!_ptUltimoTicket) {
     alert('Todavía no se ha impreso ningún ticket en este dispositivo.');
     return;
   }
+  const _ptEjecutarReimpresion = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
   try {
-    await imprimirTicketTermico(_ptUltimoTicket);
+    await _ptEjecutarReimpresion(() => imprimirTicketTermico(_ptUltimoTicket));
   } catch (e) {
     alert('⚠️ No se pudo reimprimir: ' + e.message);
   }

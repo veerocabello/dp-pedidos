@@ -398,7 +398,12 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
       total: order.total,
       time: order.time
     };
-    await imprimirTicketTermico(ticketData);
+    // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
+    // reintento manual podía intercalarse con un pedido nuevo
+    // auto-imprimiéndose justo en ese instante (ver el porqué en
+    // _autoImprimirPedido más abajo).
+    const _ptEjecutarReintento = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+    await _ptEjecutarReintento(() => imprimirTicketTermico(ticketData));
     if (typeof _markAsImpreso === 'function') _markAsImpreso(order.num);
     if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(order.num, true);
     resolverAlerta(ts);
