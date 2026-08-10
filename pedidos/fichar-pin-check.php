@@ -103,6 +103,24 @@ function base64url_encode($data) {
 }
 
 function obtenerTokenAcceso($rutaCredenciales) {
+    // Cache del token compartido entre todos los endpoints (guardar-pedido.php,
+    // fidelizacion.php, juegos.php, fichar-pin-check.php, webhook-incidencia.php,
+    // bimba-verify.php) — dura 1 hora entera, pero sin este cache cada
+    // petición pedía uno nuevo a Google desde cero (una ida y vuelta HTTP
+    // extra, ~100-400ms) aunque el anterior siguiera siendo válido. En una
+    // hora punta con muchos pedidos casi a la vez eso multiplicaba
+    // peticiones externas y mantenía cada proceso PHP abierto más tiempo
+    // del necesario — en un hosting compartido con límite de procesos
+    // simultáneos, eso es justo lo que puede tumbar la web si entra mucha
+    // gente a la vez.
+    $rutaCache = dirname($rutaCredenciales) . '/firebase-token-cache.json';
+    $cache = @json_decode(@file_get_contents($rutaCache), true);
+    // Margen de 5 minutos antes de la caducidad real, para no arriesgarse a
+    // usar un token que caduque a mitad de la petición.
+    if (is_array($cache) && isset($cache['token'], $cache['exp']) && (int)$cache['exp'] > (time() + 300)) {
+        return $cache['token'];
+    }
+
     $creds = json_decode(file_get_contents($rutaCredenciales), true);
     if (!$creds || !isset($creds['private_key'])) {
         throw new Exception('No se pudo leer el archivo de credenciales.');
@@ -134,6 +152,15 @@ function obtenerTokenAcceso($rutaCredenciales) {
     if (!isset($data['access_token'])) {
         throw new Exception('No se pudo obtener el token de acceso: ' . $response);
     }
+
+    // Guardar en cache para las próximas peticiones — best-effort: si falla
+    // escribir el archivo no pasa nada grave, simplemente se pedirá un
+    // token nuevo también la próxima vez.
+    @file_put_contents($rutaCache, json_encode([
+        'token' => $data['access_token'],
+        'exp'   => $now + (int)($data['expires_in'] ?? 3600),
+    ]));
+
     return $data['access_token'];
 }
 
