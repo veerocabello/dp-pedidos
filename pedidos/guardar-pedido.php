@@ -811,6 +811,45 @@ try {
         exit;
     }
 
+    // ── Repartir la hora del ticket entre pedidos "desde el local" (código
+    // QR del mostrador cuando hay cola) — ver TIENDA_ESPERA_KEY en
+    // admin-config.js. Sin turno elegido por el cliente (needsSlot es false
+    // para estos pedidos), así que si llegan varios seguidos todos saldrían
+    // en el ticket como "para ahora mismo" a la vez. Cola virtual con un
+    // único contador (config/tiendaEsperaNext = timestamp del próximo hueco
+    // libre): cada pedido se lleva max(ahora, próximo hueco) + minutos
+    // configurados, con lectura-modificación-escritura condicional (mismo
+    // patrón CAS que reservarSlot arriba) para que dos pedidos casi
+    // simultáneos no se lleven el mismo hueco. Si no ha habido pedidos "de
+    // tienda" en un rato, el hueco guardado queda en el pasado y max()
+    // vuelve a arrancar desde ahora solo — no hace falta limpiarlo aparte.
+    if (($payload['action'] ?? '') === 'asignarHoraTienda') {
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $cfgResp = fbGetConEtag($databaseURL, 'config/tiendaEsperaMinutos', $accessToken);
+        $minutos = is_numeric($cfgResp['data']) ? (int)$cfgResp['data'] : 0;
+        if ($minutos <= 0) {
+            echo json_encode(['success' => true, 'hora' => null]);
+            exit;
+        }
+        $path = 'config/tiendaEsperaNext';
+        $nuevoHueco = null;
+        for ($intento = 0; $intento < 8; $intento++) {
+            $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+            $huecoActual = is_numeric($leido['data']) ? (int)$leido['data'] : 0;
+            $ahoraMs = (int)(microtime(true) * 1000);
+            $nuevoHueco = max($ahoraMs, $huecoActual) + $minutos * 60000;
+            if (fbPutSiCoincide($databaseURL, $path, $accessToken, $nuevoHueco, $leido['etag'])) break;
+            $nuevoHueco = null;
+            usleep(rand(20000, 80000));
+        }
+        if ($nuevoHueco === null) {
+            echo json_encode(['success' => false, 'error' => 'No se pudo asignar hora, inténtalo de nuevo']);
+            exit;
+        }
+        echo json_encode(['success' => true, 'hora' => date('H:i', (int)($nuevoHueco / 1000))]);
+        exit;
+    }
+
     // ── Generar un número de pedido único del día (usedOrderNums/<fecha>) ──
     // Mismo motivo que arriba: antes lo reservaba el navegador
     // (generateOrderNumber() en carrito-checkout.js) escribiendo directo

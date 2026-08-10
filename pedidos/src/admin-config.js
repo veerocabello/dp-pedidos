@@ -1213,10 +1213,7 @@ function loadLocalFeeCodeFromFirebase() {
 }
 
 // ── TIEMPO DE ESPERA ENTRE TICKETS DEL LOCAL (minutos, 0 = desactivado) ──
-// Guarda/lee el valor configurado — no aplica por sí solo ningún reparto de
-// horas en el ticket todavía (eso exige decidir el algoritmo exacto con
-// calma, no en el último momento antes de abrir); de momento el admin ya
-// puede configurarlo y queda guardado listo para cuando se implemente.
+// Guarda/lee el valor configurado.
 const TIENDA_ESPERA_KEY = 'dpf_tienda_espera_minutos';
 function getTiendaEsperaMinutos() {
   return parseInt(localStorage.getItem(TIENDA_ESPERA_KEY) || '0', 10);
@@ -1234,6 +1231,31 @@ function loadTiendaEsperaMinutosFromFirebase() {
     const sel = document.getElementById('tc-tienda-espera');
     if (sel) sel.value = String(min || 0);
   });
+}
+// Reparte la hora que sale en el ticket entre pedidos "desde el local"
+// (código QR del mostrador cuando hay cola) — sin esto todos salían con la
+// hora real del pedido a la vez, como si cocina pudiera hacerlos todos de
+// golpe. El reparto en sí (cola virtual con un contador compartido en
+// Firebase) lo hace guardar-pedido.php con la cuenta de servicio, porque
+// estos pedidos vienen del móvil de cada cliente (auth anónima, sin permiso
+// de escritura directa sobre config/) — ver acción 'asignarHoraTienda'.
+// Devuelve "HH:MM" o null si el reparto está desactivado (0 minutos) o si
+// el servidor no responde a tiempo, para que el ticket caiga de vuelta en
+// "hora del pedido" en vez de dejar slotTime a medias.
+async function _asignarHoraTiendaQR() {
+  if (getTiendaEsperaMinutos() <= 0) return null;
+  try {
+    const resp = await _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'asignarHoraTienda' })
+    }, 8000);
+    const data = await resp.json().catch(() => null);
+    return (data && data.success && data.hora) ? data.hora : null;
+  } catch (e) {
+    console.warn('[tienda] _asignarHoraTiendaQR falló:', e);
+    return null;
+  }
 }
 
 // Espera (como mucho timeoutMs) a que los 4 listeners/cargas de config
