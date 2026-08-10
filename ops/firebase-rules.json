@@ -13,8 +13,8 @@
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
     "config": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
       "open": { ".read": true },
       "menu": { ".read": true },
       "horario": { ".read": true },
@@ -37,8 +37,8 @@
       "juegoActivo": { ".read": true }
     },
     "stats": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'"
     },
     "ventasProductos": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
@@ -57,12 +57,12 @@
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
     "orderStatus": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'"
     },
     "stock": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'"
     },
     "pp2": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
@@ -112,12 +112,12 @@
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
     "fidelizacion": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'"
     },
     "incidencias": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'"
     }
   }
 }
