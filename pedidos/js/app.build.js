@@ -10428,6 +10428,31 @@ async function comprobarEstadoSistema(forzar) {
   // a intentar conectar con ninguna — no es un fallo, solo no aplica aquí.
   const impresoraConectada = typeof _ptIsConnected === 'function' ? _ptIsConnected() : null;
 
+  // Copia de seguridad: la escribe backup-firebase.php (cron nocturno,
+  // fuera de public_html) tras cada intento, éxito o fallo. Si el cron
+  // dejara de ejecutarse del todo (Hostinger lo desactiva, se borra...) no
+  // habría ningún error que reportar — por eso además de mirar "ok" se
+  // comprueba que no lleve demasiado tiempo sin actualizarse. Backup diario
+  // + margen de sobra para que un cron un poco tarde no dispare una alerta
+  // falsa.
+  let backupOk = null, backupTexto = 'Sin datos todavía';
+  try {
+    const bs = window.fb_loadBackupStatus ? await window.fb_loadBackupStatus() : null;
+    if (bs && bs.ts) {
+      const horasDesde = (Date.now() - bs.ts) / 3600000;
+      if (!bs.ok) {
+        backupOk = false;
+        backupTexto = 'Falló: ' + (bs.error || 'error desconocido');
+      } else if (horasDesde > 26) {
+        backupOk = false;
+        backupTexto = 'Sin copia reciente (última hace ' + Math.round(horasDesde) + ' horas)';
+      } else {
+        backupOk = true;
+        backupTexto = 'Hace ' + (horasDesde < 1 ? 'menos de 1 hora' : Math.round(horasDesde) + ' horas');
+      }
+    }
+  } catch (e) {}
+
   const resultados = [
     { nombre: 'Firebase (base de datos)', ok: fbOk },
     { nombre: 'Servidor de pedidos', ok: servidorOk },
@@ -10449,6 +10474,7 @@ async function comprobarEstadoSistema(forzar) {
     return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">' + r.nombre + '</span><span style="font-weight:700;color:' + color + '">' + icono + '</span></div>';
   }).join('')
     + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0"><span style="color:var(--text)">🕓 Último pedido recibido</span><span style="font-weight:700;color:var(--muted)">' + ultimoPedidoTexto + '</span></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 0;gap:8px"><span style="color:var(--text)">💾 Copia de seguridad</span><span style="font-weight:700;color:' + (backupOk === null ? 'var(--muted)' : backupOk ? '#166534' : '#c0392b') + ';text-align:right">' + (backupOk === false ? '❌ ' : backupOk ? '✅ ' : '') + escapeHtml(backupTexto) + '</span></div>'
     + '<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Última comprobación: ' + new Date().toLocaleTimeString('es-ES') + '</div>';
 }
 

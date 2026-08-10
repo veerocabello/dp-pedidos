@@ -396,6 +396,10 @@ function _initFirebase() {
   // ANTISPAM CONFIG (cooldown + dailyLimit)
   window.fb_saveAntiSpamCfg = async function(cfg) { await jset("config/antiSpamCfg", jstr(cfg)); };
   window.fb_loadAntiSpamCfg = async function() { var sn=await jget("config/antiSpamCfg"); return sn.exists()?jparse(sn.val()):null; };
+  // ESTADO DE LA ÚLTIMA COPIA DE SEGURIDAD (lo escribe backup-firebase.php,
+  // fuera de public_html, con la cuenta de servicio tras cada ejecución del
+  // cron — aquí solo se lee para mostrarlo en el panel).
+  window.fb_loadBackupStatus = async function() { var sn=await jget("config/backupStatus"); return sn.exists()?sn.val():null; };
   // PHONE LOG (registro de pedidos por teléfono para cooldown)
   window.fb_logPhoneOrder = async function(phone, ts) {
     var todayKey = new Date().toISOString().slice(0,10);
