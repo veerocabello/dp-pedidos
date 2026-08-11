@@ -1247,7 +1247,7 @@ const TICKET_CONFIG_DEFAULTS = {
   copias: 1,
   autoImprimir: true,
   modoImpresion: 'auto',
-  copiaAutoCada: 10, // 0 = desactivada; ver "Copia automática" más abajo
+  copiaAutoCadaDias: 1, // días entre copias automáticas; 0 = desactivada — ver "Copia automática" más abajo
 };
 function getTicketConfig() {
   try {
@@ -1830,13 +1830,15 @@ function exportarCopiaHoyJSON() {
 }
 
 /* ── Copia automática: igual que el botón manual de arriba, pero se
-   dispara sola cada X comandas impresas (X configurable en Ajustes,
-   0 = desactivada) para no depender de que alguien se acuerde de pulsar
-   "Descargar copia" a media jornada. Va con hora en el nombre del archivo
-   porque cada disparo es una copia nueva del día entero (acumulativa), así
-   que no pisa a la anterior — el navegador las deja todas en Descargas. ── */
-const AUTO_BACKUP_CONTADOR_PREFIX = 'dpf_comandas_autobackup_contador_';
-function getAutoBackupContadorKey(fecha) { return AUTO_BACKUP_CONTADOR_PREFIX + (fecha || todayISO()); }
+   dispara sola por CALENDARIO (cada X días, X configurable en Ajustes,
+   0 = desactivada) en vez de por cantidad de comandas — así un día flojo
+   de ventas también queda protegido, y un día muy movido no genera un
+   aluvión de descargas. Se comprueba con el primer pedido que se imprime
+   cada día: si ya ha pasado X días desde la última copia automática, se
+   dispara una copia del día actual (con lo que haya hasta ese momento) y
+   no se repite hasta que toque de nuevo. Con la opción "cada día"
+   (recomendada) cae siempre en el primer pedido de cada jornada. ── */
+const AUTO_BACKUP_ULTIMA_FECHA_KEY = 'dpf_comandas_autobackup_ultima_fecha';
 function exportarCopiaAutomatica(fecha) {
   const horaCorta = new Date().toTimeString().slice(0, 5).replace(':', '');
   _descargarArchivo('dulce-patata-auto-' + fecha + '-' + horaCorta + '.json', JSON.stringify(construirCopiaJSON(fecha), null, 2), 'application/json');
@@ -1844,16 +1846,15 @@ function exportarCopiaAutomatica(fecha) {
   toast('📥 Copia automática guardada en Descargas', 3200);
 }
 function maybeAutoBackup(fecha) {
-  const cada = parseInt(getTicketConfig().copiaAutoCada, 10) || 0;
-  if (cada <= 0) return;
-  const key = getAutoBackupContadorKey(fecha);
-  const n = (parseInt(localStorage.getItem(key), 10) || 0) + 1;
-  if (n >= cada) {
-    localStorage.setItem(key, '0');
-    exportarCopiaAutomatica(fecha);
-  } else {
-    localStorage.setItem(key, String(n));
+  const cadaDias = parseInt(getTicketConfig().copiaAutoCadaDias, 10) || 0;
+  if (cadaDias <= 0) return; // desactivada
+  const ultima = localStorage.getItem(AUTO_BACKUP_ULTIMA_FECHA_KEY);
+  if (ultima) {
+    const diasPasados = Math.round((new Date(fecha + 'T00:00:00') - new Date(ultima + 'T00:00:00')) / 86400000);
+    if (diasPasados < cadaDias) return;
   }
+  localStorage.setItem(AUTO_BACKUP_ULTIMA_FECHA_KEY, fecha);
+  exportarCopiaAutomatica(fecha);
 }
 
 /* ── Importar copia: recupera un archivo generado por "Descargar copia" /
@@ -2247,7 +2248,7 @@ function openSettings() {
   document.getElementById('set-copias').value = String(cfg.copias);
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
-  document.getElementById('set-copia-auto-cada').value = String(cfg.copiaAutoCada || 0);
+  document.getElementById('set-copia-auto-cada').value = String(cfg.copiaAutoCadaDias != null ? cfg.copiaAutoCadaDias : 1);
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
@@ -2263,7 +2264,7 @@ function saveSettingsForm() {
     copias: Math.max(1, parseInt(document.getElementById('set-copias').value, 10) || 1),
     autoImprimir: document.getElementById('set-auto-imprimir').checked,
     modoImpresion: document.getElementById('set-modo-impresion').value,
-    copiaAutoCada: parseInt(document.getElementById('set-copia-auto-cada').value, 10) || 0,
+    copiaAutoCadaDias: parseInt(document.getElementById('set-copia-auto-cada').value, 10) || 0,
   };
   saveTicketConfig(cfg);
   closeSettings();
