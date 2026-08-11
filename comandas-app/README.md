@@ -47,6 +47,14 @@ página corre dentro de esta app, no en un navegador normal):
   Si hay una versión más nueva y su instalador está en esa misma carpeta,
   ofrece un botón para abrirlo (la app se cierra sola para no bloquear la
   sobrescritura de sus propios archivos durante la instalación).
+- **Carpeta de copias de seguridad**: al elegir una carpeta aquí (botón
+  "📁 Elegir…", selector nativo de carpetas), cada vez que se pulsa
+  "🔒 Cerrar el día" en Hacer Caja se guarda sola una copia de ese día en
+  `<carpeta>/AAAA/MM - Mes/Semana NN (rango de fechas)/comandas-AAAA-MM-DD.json`
+  — organizada por año, mes y semana, escrita de verdad en disco (no
+  depende de la carpeta de Descargas del navegador como la copia manual).
+  También hay un botón "📁 Guardar copia organizada" en Hacer Caja para
+  guardarla a mano en cualquier momento, sin esperar a cerrar el día.
 
 ## Qué cambia respecto a abrirla en el navegador
 

@@ -1908,27 +1908,65 @@ function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX
    sistema de PIN, ver ideas pendientes). ── */
 const DIA_CERRADO_PREFIX = 'dpf_comandas_dia_cerrado_';
 function isDiaCerrado(fecha) { return localStorage.getItem(DIA_CERRADO_PREFIX + (fecha || todayISO())) === '1'; }
-function toggleCierreDia() {
+async function toggleCierreDia() {
   const fecha = cajaFechaSel;
   if (isDiaCerrado(fecha)) {
     if (!confirm('¿Reabrir el ' + fecha + '? Podrás volver a borrar/modificar comandas de ese día.')) return;
     localStorage.removeItem(DIA_CERRADO_PREFIX + fecha);
     toast('🔓 Día reabierto');
+    renderCaja();
+    return;
+  }
+  if (!confirm('¿Cerrar el ' + fecha + '? No se podrán borrar ni modificar sus comandas hasta reabrirlo.')) return;
+
+  // Al cerrar, si hay una carpeta de copias configurada (app de
+  // escritorio), se guarda sola una copia organizada por año/mes/semana —
+  // así "cerrar el día" y "hacer su copia" quedan en un solo paso. Si algo
+  // falla (carpeta desconectada, sin permisos...) o no hay ninguna
+  // configurada, se avisa pero el día se cierra igual — no bloquea el
+  // cierre por un problema de copia, para eso ya está el aviso de arriba.
+  if (isDesktopApp()) {
+    const res = await guardarCopiaOrganizada(fecha);
+    if (res.ok) toast('📁 Copia guardada en la carpeta de copias');
+    else if (res.error !== NO_BACKUP_FOLDER_ERROR) toast('⚠️ No se pudo guardar la copia automática: ' + res.error);
   } else {
     const t = loadCajaTotales(fecha);
-    if (t.count > 0 && !hayBackupHecho(fecha) && !confirm('Todavía no has descargado la copia de este día. ¿Cerrar igualmente?')) return;
-    if (!confirm('¿Cerrar el ' + fecha + '? No se podrán borrar ni modificar sus comandas hasta reabrirlo.')) return;
-    localStorage.setItem(DIA_CERRADO_PREFIX + fecha, '1');
-    toast('🔒 Día cerrado');
+    if (t.count > 0 && !hayBackupHecho(fecha)) toast('⚠️ Recuerda "📥 Descargar copia" — este día no se ha respaldado');
   }
+
+  localStorage.setItem(DIA_CERRADO_PREFIX + fecha, '1');
+  toast('🔒 Día cerrado');
   renderCaja();
 }
+
+/* ── Copia organizada por año/mes/semana (solo app de escritorio, ver
+   comandas-app/main.js) — mismo contenido que "📥 Descargar copia" pero
+   escrita de verdad en una carpeta elegida, en vez de depender de la
+   carpeta de Descargas del navegador. ── */
+const NO_BACKUP_FOLDER_ERROR = 'No hay ninguna carpeta de copias configurada.';
+async function guardarCopiaOrganizada(fecha) {
+  if (!isDesktopApp()) return { ok: false, error: 'Solo disponible en la app de escritorio' };
+  const folder = await window.comandasDesktop.getBackupFolder();
+  if (!folder) return { ok: false, error: NO_BACKUP_FOLDER_ERROR };
+  const contenido = JSON.stringify(construirCopiaJSON(fecha), null, 2);
+  const res = await window.comandasDesktop.saveOrganizedBackup(fecha, contenido);
+  if (res.ok) marcarBackupHecho(fecha);
+  return res;
+}
+async function guardarCopiaOrganizadaManual() {
+  const res = await guardarCopiaOrganizada(cajaFechaSel);
+  if (res.ok) { toast('📁 Copia guardada en la carpeta de copias'); renderCaja(); }
+  else toast('⚠️ ' + res.error);
+}
+
 let cajaFechaSel = todayISO();
 function openCaja() {
   cajaFechaSel = todayISO();
   const fechaInput = document.getElementById('caja-fecha-input');
   if (fechaInput) fechaInput.value = cajaFechaSel;
   document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
+  const btnOrganizada = document.getElementById('btn-copia-organizada');
+  if (btnOrganizada) btnOrganizada.style.display = isDesktopApp() ? '' : 'none';
   renderCaja();
   document.getElementById('caja-modal').classList.add('open');
 }
@@ -2528,16 +2566,26 @@ async function initDesktopSettingsSection() {
   if (!isDesktopApp()) { section.style.display = 'none'; return; }
   section.style.display = '';
   document.getElementById('update-check-result').style.display = 'none';
-  const [version, autoLaunch, kiosk, updatePath] = await Promise.all([
+  const [version, autoLaunch, kiosk, updatePath, backupFolder] = await Promise.all([
     window.comandasDesktop.getAppVersion(),
     window.comandasDesktop.getAutoLaunch(),
     window.comandasDesktop.getKiosk(),
     window.comandasDesktop.getUpdatePath(),
+    window.comandasDesktop.getBackupFolder(),
   ]);
   document.getElementById('set-app-version').textContent = version ? 'v' + version : '';
   document.getElementById('set-auto-launch').checked = !!autoLaunch;
   document.getElementById('set-kiosk').checked = !!kiosk;
   document.getElementById('set-update-path').value = updatePath || '';
+  document.getElementById('set-backup-folder').value = backupFolder || '';
+}
+async function chooseBackupFolder() {
+  if (!isDesktopApp()) return;
+  const res = await window.comandasDesktop.chooseBackupFolder();
+  if (res && res.ok) {
+    document.getElementById('set-backup-folder').value = res.folder;
+    toast('✅ Carpeta de copias configurada');
+  }
 }
 async function toggleAutoLaunch(checked) {
   if (!isDesktopApp()) return;

@@ -19,7 +19,7 @@ const fs = require('fs');
    aparte en la carpeta de datos de la app (fuera de la carpeta de
    instalación, para que sobrevivan a una reinstalación/actualización). ── */
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json');
-const SETTINGS_DEFAULTS = { kiosk: false, updatePath: '' };
+const SETTINGS_DEFAULTS = { kiosk: false, updatePath: '', backupFolder: '' };
 function loadDesktopSettings() {
   try { return Object.assign({}, SETTINGS_DEFAULTS, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); }
   catch (e) { return { ...SETTINGS_DEFAULTS }; }
@@ -170,6 +170,33 @@ if (!gotLock) {
       return desktopSettings.kiosk;
     });
 
+    ipcMain.handle('backup:getFolder', () => desktopSettings.backupFolder || '');
+    ipcMain.handle('backup:chooseFolder', async () => {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Elegir carpeta para las copias de seguridad',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (result.canceled || !result.filePaths[0]) return { ok: false };
+      desktopSettings.backupFolder = result.filePaths[0];
+      saveDesktopSettings(desktopSettings);
+      return { ok: true, folder: desktopSettings.backupFolder };
+    });
+    // Guarda la copia de un día en <carpeta elegida>/AAAA/MM - Mes/Semana
+    // NN (rango)/comandas-AAAA-MM-DD.json — el contenido (mismo formato
+    // que "📥 Descargar copia") lo genera la propia página, aquí solo se
+    // decide la ruta y se escribe de verdad en disco.
+    ipcMain.handle('backup:save', (event, { fecha, contenido }) => {
+      if (!desktopSettings.backupFolder) return { ok: false, error: 'No hay ninguna carpeta de copias configurada.' };
+      try {
+        const filePath = buildBackupPath(desktopSettings.backupFolder, fecha);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, contenido);
+        return { ok: true, path: filePath };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    });
+
     ipcMain.handle('update:getPath', () => desktopSettings.updatePath || '');
     ipcMain.handle('update:setPath', (event, value) => {
       desktopSettings.updatePath = String(value || '').trim();
@@ -212,6 +239,40 @@ if (!gotLock) {
       setTimeout(() => app.quit(), 300);
       return { ok: true };
     });
+  }
+
+  /* ── Copia de seguridad organizada por año/mes/semana ── Esto SÍ puede
+     escribir en cualquier carpeta real del disco (no solo "Descargas" como
+     hacía la versión de navegador) porque aquí, en el proceso principal de
+     Electron, hay acceso de verdad al sistema de archivos. Estructura:
+     <carpeta elegida>/2026/08 - Agosto/Semana 33 (11 a 17 ago)/comandas-2026-08-11.json ── */
+  const MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  function getISOWeek(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = (d.getUTCDay() + 6) % 7; // lunes=0 .. domingo=6
+    d.setUTCDate(d.getUTCDate() - dayNum + 3); // jueves de esa semana (define a qué año/semana ISO pertenece)
+    const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+    firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+    return 1 + Math.round((d - firstThursday) / (7 * 24 * 3600 * 1000));
+  }
+  function getWeekRangeLabel(date) {
+    const dayNum = (date.getDay() + 6) % 7;
+    const monday = new Date(date); monday.setDate(date.getDate() - dayNum);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    const fmt = (d) => d.getDate() + ' ' + MESES_CORTO[d.getMonth()];
+    return fmt(monday) + ' a ' + fmt(sunday);
+  }
+  function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function buildBackupPath(baseFolder, fechaISO) {
+    const [y, m, d] = fechaISO.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const yearFolder = String(y);
+    const monthFolder = String(m).padStart(2, '0') + ' - ' + capitalize(MESES_LARGO[m - 1]);
+    const weekFolder = 'Semana ' + String(getISOWeek(date)).padStart(2, '0') + ' (' + getWeekRangeLabel(date) + ')';
+    const fileName = 'comandas-' + fechaISO + '.json';
+    return path.join(baseFolder, yearFolder, monthFolder, weekFolder, fileName);
   }
 
   // Compara "1.2.10" vs "1.3.0" etc. Devuelve >0 si a es más nueva que b.
