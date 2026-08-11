@@ -2002,6 +2002,41 @@ function renderResumen() {
    ══════════════════════════════════════════════════════════════ */
 let printerDevice = null, printerEndpoint = null;
 
+/* ── Qué dispositivo USB coger cuando hay que reconectar (recarga de
+   página, timeout, desconexión...): antes se cogía a ciegas el primero
+   de navigator.usb.getDevices(), lo que en un mostrador con más de un
+   USB emparejado (lector de códigos de barras, báscula, etc.) podía
+   intentar imprimir en el dispositivo equivocado. Ahora se recuerda el
+   vendorId/productId de la impresora la primera vez que se empareja con
+   "🔌 Conectar impresora directa" y se busca por eso; solo si no hay nada
+   guardado (primer uso de siempre) se cae a buscar un dispositivo con
+   interfaz de clase impresora (7), y como último recurso al primero de
+   la lista, igual que antes. ── */
+const PRINTER_IDS_KEY = 'dpf_comandas_printer_ids';
+function savePrinterIds(device) {
+  try { localStorage.setItem(PRINTER_IDS_KEY, JSON.stringify({ vendorId: device.vendorId, productId: device.productId })); } catch (e) {}
+}
+function loadPrinterIds() {
+  try { return JSON.parse(localStorage.getItem(PRINTER_IDS_KEY) || 'null'); } catch (e) { return null; }
+}
+function isPrinterClassDevice(device) {
+  try {
+    return (device.configurations || []).some(cfg =>
+      (cfg.interfaces || []).some(iface => (iface.alternates || []).some(alt => alt.interfaceClass === 7)));
+  } catch (e) { return false; }
+}
+function pickPrinterDevice(list) {
+  if (!list.length) return null;
+  const saved = loadPrinterIds();
+  if (saved) {
+    const exacto = list.find(d => d.vendorId === saved.vendorId && d.productId === saved.productId);
+    if (exacto) return exacto;
+  }
+  const porClase = list.find(isPrinterClassDevice);
+  if (porClase) return porClase;
+  return list[0]; // último recurso, igual que antes, si no hay forma de distinguir
+}
+
 function updatePrinterStatusUI() {
   const el = document.getElementById('printer-status');
   if (printerDevice) {
@@ -2034,6 +2069,7 @@ async function pairPrinter() {
   try {
     const device = await navigator.usb.requestDevice({ filters: [] });
     await openAndClaim(device);
+    savePrinterIds(device);
     toast('✅ Impresora conectada: ' + (device.productName || 'dispositivo USB'));
     updatePrinterStatusUI();
   } catch (e) {
@@ -2045,7 +2081,8 @@ async function trySilentReconnect() {
   if (!navigator.usb) { updatePrinterStatusUI(); return; }
   try {
     const list = await navigator.usb.getDevices();
-    if (list.length) await openAndClaim(list[0]);
+    const elegido = pickPrinterDevice(list);
+    if (elegido) await openAndClaim(elegido);
   } catch (e) { /* se usará el diálogo de impresión */ }
   updatePrinterStatusUI();
 }
@@ -2068,8 +2105,9 @@ async function sendToPrinter(bytes) {
   if (!printerDevice) {
     if (!navigator.usb) throw new Error('WebUSB no disponible');
     const list = await navigator.usb.getDevices();
-    if (!list.length) throw new Error('No hay impresora emparejada');
-    await openAndClaim(list[0]);
+    const elegido = pickPrinterDevice(list);
+    if (!elegido) throw new Error('No hay impresora emparejada');
+    await openAndClaim(elegido);
   }
   try {
     // 15s de margen (no 8s): WebUSB no deja cancelar transferOut() una vez
