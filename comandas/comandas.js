@@ -276,27 +276,27 @@ function onAddClick(id) {
 function changeQty(id, delta) {
   const current = cart[id] || 0;
   const next = current + delta;
-  if (next <= 0) delete cart[id]; else cart[id] = next;
+  if (next <= 0) { delete cart[id]; clearLineDiscount(simpleLineKey(id)); } else cart[id] = next;
   renderMenu();
   renderCart();
   if (delta > 0) animateAdd(id);
 }
-function removeItem(id) { delete cart[id]; renderMenu(); renderCart(); }
-function removeCustItem(key) { delete custCart[key]; renderCart(); }
-function removeExtrasItem(key) { delete extrasCart[key]; renderCart(); }
+function removeItem(id) { delete cart[id]; clearLineDiscount(simpleLineKey(id)); renderMenu(); renderCart(); }
+function removeCustItem(key) { delete custCart[key]; clearLineDiscount(key); renderCart(); }
+function removeExtrasItem(key) { delete extrasCart[key]; clearLineDiscount(key); renderCart(); }
 
 function changeCustQty(key, delta) {
   const c = custCart[key];
   if (!c) return;
   c.qty += delta;
-  if (c.qty <= 0) delete custCart[key];
+  if (c.qty <= 0) { delete custCart[key]; clearLineDiscount(key); }
   renderCart();
 }
 function changeExtrasQty(key, delta) {
   const c = extrasCart[key];
   if (!c) return;
   c.qty += delta;
-  if (c.qty <= 0) delete extrasCart[key];
+  if (c.qty <= 0) { delete extrasCart[key]; clearLineDiscount(key); }
   renderCart();
 }
 function editCustItem(key) {
@@ -445,20 +445,58 @@ function cartHasAnyItem() {
 /* ══════════════════════════════════════════════════════════════
    DESCUENTO / OFERTA — se aplica como una línea más del pedido
    (con importe negativo), igual que hace la web con la fidelización.
-   ══════════════════════════════════════════════════════════════ */
-let orderDiscount = null; // {type:'percent'|'fixed', value, label}
+   Puede ser de TODO el pedido (orderDiscount, botón "🏷️ Descuento" de
+   la cabecera) o de UN SOLO PRODUCTO (lineDiscounts, botón 🏷️ en cada
+   línea de la comanda) — el mismo modal sirve para los dos casos según
+   discountTargetKey: null = pedido completo, si no, la key de esa línea
+   (mismo formato de key que usa el carrito: 'simple:<id>' para
+   productos sencillos, o la key ya existente de custCart/extrasCart). ── */
+let orderDiscount = null; // {type:'percent'|'fixed', value, label} — todo el pedido
+let lineDiscounts = {};   // key de línea -> {type,value,label} — un solo producto
+let discountTargetKey = null; // objetivo del modal abierto ahora mismo
 
-function openDiscountModal() {
-  document.getElementById('discount-type').value = orderDiscount ? orderDiscount.type : 'percent';
-  document.getElementById('discount-value').value = orderDiscount ? orderDiscount.value : '';
-  document.getElementById('discount-label').value = orderDiscount ? (orderDiscount.label || '') : '';
+function simpleLineKey(id) { return 'simple:' + id; }
+// Quita el descuento de una línea que ya no existe en el carrito (se ha
+// borrado del todo o su cantidad ha llegado a 0) — sin esto quedaría un
+// descuento "huérfano" guardado que reaparecería si se vuelve a añadir
+// ese mismo producto más tarde en la misma comanda.
+function clearLineDiscount(key) { delete lineDiscounts[key]; }
+
+function getActiveDiscount() { return discountTargetKey ? (lineDiscounts[discountTargetKey] || null) : orderDiscount; }
+function setActiveDiscount(d) {
+  if (discountTargetKey) { if (d) lineDiscounts[discountTargetKey] = d; else delete lineDiscounts[discountTargetKey]; }
+  else orderDiscount = d;
+}
+// Nombre del producto de esa línea, para el subtítulo del modal cuando el
+// descuento es de un solo producto (y no de todo el pedido).
+function getLineDiscountContextLabel(key) {
+  if (!key) return null;
+  if (key.indexOf('simple:') === 0) {
+    const item = MENU.find(m => m.id == key.slice('simple:'.length));
+    return item ? item.name : null;
+  }
+  if (custCart[key]) { const item = MENU.find(m => m.id == custCart[key].menuId); return item ? item.name : null; }
+  if (extrasCart[key]) return getExtrasItemLabel(extrasCart[key]);
+  return null;
+}
+
+function openDiscountModal(lineKey) {
+  discountTargetKey = lineKey || null;
+  const current = getActiveDiscount();
+  document.getElementById('discount-type').value = current ? current.type : 'percent';
+  document.getElementById('discount-value').value = current ? current.value : '';
+  document.getElementById('discount-label').value = current ? (current.label || '') : '';
   document.getElementById('discount-error').style.display = 'none';
-  document.getElementById('discount-remove-btn').style.display = orderDiscount ? 'inline-block' : 'none';
+  document.getElementById('discount-remove-btn').style.display = current ? 'inline-block' : 'none';
+  const contextLabel = discountTargetKey ? getLineDiscountContextLabel(discountTargetKey) : null;
+  document.getElementById('discount-modal-subtitle').textContent = contextLabel
+    ? 'Se aplica solo a: ' + contextLabel
+    : 'Se aplica al total de esta comanda.';
   document.getElementById('discount-modal').classList.add('open');
 }
-function closeDiscountModal() { document.getElementById('discount-modal').classList.remove('open'); }
+function closeDiscountModal() { document.getElementById('discount-modal').classList.remove('open'); discountTargetKey = null; }
 function applyPresetDiscount() {
-  orderDiscount = { type: 'percent', value: 10, label: 'ESTUDIANTE/JUBILADO' };
+  setActiveDiscount({ type: 'percent', value: 10, label: 'ESTUDIANTE/JUBILADO' });
   closeDiscountModal();
   renderCart();
   toast('✅ Descuento aplicado');
@@ -478,25 +516,25 @@ function applyDiscount() {
     errEl.style.display = 'block';
     return;
   }
-  orderDiscount = { type, value, label };
+  setActiveDiscount({ type, value, label });
   closeDiscountModal();
   renderCart();
   toast('✅ Descuento aplicado');
 }
 function removeDiscount() {
-  orderDiscount = null;
+  setActiveDiscount(null);
   closeDiscountModal();
   renderCart();
   toast('Descuento eliminado');
 }
-function discountLineLabel(forTicket) {
-  const label = (orderDiscount.label && orderDiscount.label.trim()) || 'Descuento';
-  const suffix = orderDiscount.type === 'percent' ? ' (-' + orderDiscount.value + '%)' : '';
+function discountLabel(discount, forTicket) {
+  const label = (discount.label && discount.label.trim()) || 'Descuento';
+  const suffix = discount.type === 'percent' ? ' (-' + discount.value + '%)' : '';
   return (forTicket ? '' : '🏷️ ') + label + suffix;
 }
-function computeDiscountAmount(subtotal) {
-  if (!orderDiscount || subtotal <= 0) return 0;
-  let amt = orderDiscount.type === 'percent' ? subtotal * orderDiscount.value / 100 : orderDiscount.value;
+function computeDiscountAmount(subtotal, discount) {
+  if (!discount || subtotal <= 0) return 0;
+  let amt = discount.type === 'percent' ? subtotal * discount.value / 100 : discount.value;
   return Math.max(0, Math.min(amt, subtotal));
 }
 
@@ -524,7 +562,10 @@ function renderCart() {
   lines.forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
-    const subtotal = item.price * qty;
+    const key = simpleLineKey(item.id);
+    const raw = item.price * qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[key]);
+    const subtotal = raw - discAmt;
     total += subtotal;
     rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
@@ -534,7 +575,9 @@ function renderCart() {
         <button class="qty-btn-sm" onclick="changeQty(${item.id},1)">+</button>
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
+      <button class="cart-edit" onclick="openDiscountModal('${key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeItem(${item.id})" title="Quitar">🗑️</button>
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLabel(lineDiscounts[key]))} (-${fmt(discAmt)} €)</div>` : ''}
     </div>` });
   });
 
@@ -542,7 +585,9 @@ function renderCart() {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
     const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
-    const subtotal = unitPrice * c.qty;
+    const raw = unitPrice * c.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
+    const subtotal = raw - discAmt;
     total += subtotal;
     const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
@@ -554,14 +599,18 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-edit" onclick="editCustItem('${c.key}')" title="Editar">✏️</button>
+      <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeCustItem('${c.key}')" title="Quitar">🗑️</button>
       <div class="cart-line-extra">${escapeHtml(details)}</div>
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
     </div>` });
   });
 
   extLines.forEach(c => {
     const price = getExtrasItemPrice(c);
-    const subtotal = price * c.qty;
+    const raw = price * c.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
+    const subtotal = raw - discAmt;
     total += subtotal;
     const details = getExtrasItemDetails(c).join(' · ');
     const baseItem = MENU.find(m => m.id == c.menuId);
@@ -574,18 +623,20 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-edit" onclick="editExtrasItem('${c.key}')" title="Editar">✏️</button>
+      <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
     </div>` });
   });
 
   rows.sort((a, b) => a.rank - b.rank);
   let html = rows.map(r => r.html).join('');
 
-  const discountAmount = computeDiscountAmount(total);
+  const discountAmount = computeDiscountAmount(total, orderDiscount);
   if (discountAmount > 0) {
     html += `<div class="cart-line cart-line-discount">
-      <span class="cart-line-name">${escapeHtml(discountLineLabel())}</span>
+      <span class="cart-line-name">${escapeHtml(discountLabel(orderDiscount))}</span>
       <span class="cart-line-price">-${fmt(discountAmount)} €</span>
       <button class="cart-edit" onclick="openDiscountModal()" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeDiscount()" title="Quitar">🗑️</button>
@@ -612,6 +663,7 @@ function saveCartDraft() {
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+      lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: (document.getElementById('order-name') || {}).value || '',
       paid: orderPaid,
       paymentMethod,
@@ -630,6 +682,7 @@ function restoreCartDraftIfAny() {
   custCart = draft.custCart || {};
   extrasCart = draft.extrasCart || {};
   orderDiscount = draft.orderDiscount || null;
+  lineDiscounts = draft.lineDiscounts || {};
   const nameEl = document.getElementById('order-name');
   if (nameEl) nameEl.value = draft.name || '';
   setOrderPaid(!!draft.paid);
@@ -703,12 +756,13 @@ function clearOrder(silent) {
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+      lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: document.getElementById('order-name').value,
       paid: orderPaid,
       paymentMethod,
     };
   }
-  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
+  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('cash-received').value = '';
   cashTotalEdited = false;
@@ -733,6 +787,7 @@ function undoClearOrder() {
   custCart = clearedOrderSnapshot.custCart;
   extrasCart = clearedOrderSnapshot.extrasCart;
   orderDiscount = clearedOrderSnapshot.orderDiscount;
+  lineDiscounts = clearedOrderSnapshot.lineDiscounts || {};
   document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
   setOrderPaid(!!clearedOrderSnapshot.paid);
   setPaymentMethod(clearedOrderSnapshot.paymentMethod || 'efectivo');
@@ -1264,7 +1319,11 @@ function buildOrderObject(preview) {
   Object.entries(cart).forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
-    items.push({ name: item.name, qty, subtotal: item.price * qty, extras: [], _rank: categoryRank(item.cat) });
+    const key = simpleLineKey(item.id);
+    const raw = item.price * qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[key]);
+    const extras = discAmt > 0 ? [{ name: discountLabel(lineDiscounts[key], true), price: -discAmt }] : [];
+    items.push({ name: item.name, qty, subtotal: raw - discAmt, displaySubtotal: raw, extras, _rank: categoryRank(item.cat) });
   });
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
@@ -1272,7 +1331,8 @@ function buildOrderObject(preview) {
     const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas (incluidas y extra),
-    // luego los ingredientes, y el queso/gratinado siempre al final.
+    // luego los ingredientes, el queso/gratinado, y el descuento de esta
+    // línea (si tiene) siempre el último.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
       ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO })),
@@ -1280,27 +1340,34 @@ function buildOrderObject(preview) {
     ];
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1 });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5 });
+    const raw = unitPrice * c.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
+    if (discAmt > 0) extras.push({ name: discountLabel(lineDiscounts[c.key], true), price: -discAmt });
     // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
-    // extra van cada uno en su línea con su propio precio.
-    items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat) });
+    // extra/descuento van cada uno en su línea con su propio precio.
+    items.push({ name: item.name, qty: c.qty, subtotal: raw - discAmt, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat) });
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
     const baseItem = MENU.find(m => m.id == c.menuId);
+    const raw = getExtrasItemPrice(c) * c.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
+    const extras = getExtrasItemTicketExtras(c);
+    if (discAmt > 0) extras.push({ name: discountLabel(lineDiscounts[c.key], true), price: -discAmt });
     items.push({
       name: getExtrasItemLabel(c), qty: c.qty,
-      subtotal: getExtrasItemPrice(c) * c.qty,
+      subtotal: raw - discAmt,
       displaySubtotal: getExtrasItemBaseSubtotal(c) * c.qty,
-      extras: getExtrasItemTicketExtras(c),
+      extras,
       _rank: categoryRank(baseItem ? baseItem.cat : ''),
     });
   });
   items.sort((a, b) => a._rank - b._rank);
   items.forEach(it => delete it._rank);
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
-  const discountAmount = computeDiscountAmount(subtotal);
+  const discountAmount = computeDiscountAmount(subtotal, orderDiscount);
   if (discountAmount > 0) {
-    items.push({ name: discountLineLabel(true), qty: 1, subtotal: -discountAmount, extras: [] });
+    items.push({ name: discountLabel(orderDiscount, true), qty: 1, subtotal: -discountAmount, extras: [] });
   }
   const total = items.reduce((s, it) => s + it.subtotal, 0);
   return {
@@ -1361,8 +1428,10 @@ function formatItemLines(item, width) {
   const lines = twoCol(prefix + nombre, precio, width);
   (item.extras || []).forEach(ex => {
     const label = '  - ' + foldAccents(ex.name).toUpperCase();
-    if (ex.price) lines.push(...twoCol(label, '+' + fmtEur(ex.price), width));
-    else lines.push(label.substring(0, width));
+    if (ex.price) {
+      const signo = ex.price < 0 ? '-' : '+';
+      lines.push(...twoCol(label, signo + fmtEur(Math.abs(ex.price)), width));
+    } else lines.push(label.substring(0, width));
   });
   return lines;
 }
@@ -1714,6 +1783,7 @@ function modifyHistorialOrder(index) {
   custCart = order.rawState.custCart || {};
   extrasCart = order.rawState.extrasCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
+  lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
   setOrderPaid(!!order.paid);
   setPaymentMethod(order.paymentMethod || 'efectivo');
@@ -2201,6 +2271,7 @@ async function handlePrintOrder() {
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
     orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+    lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
   };
   // Se guarda en "Pedidos de hoy" ANTES de intentar imprimir — si el envío
   // a la impresora se queda colgado o falla del todo, la comanda ya está a
