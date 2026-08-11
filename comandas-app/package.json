@@ -1,0 +1,66 @@
+{
+  "name": "dulce-patata-comandas",
+  "version": "1.0.0",
+  "description": "Comandas Dulce Patata Food — app de mostrador, funciona sin conexión",
+  "author": "Dulce Patata Food",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "copy-assets": "node scripts/copy-comandas.js",
+    "make-icon": "node scripts/make-icon.js",
+    "start": "npm run copy-assets && electron .",
+    "dist": "npm run copy-assets && npm run make-icon && electron-builder"
+  },
+  "build": {
+    "appId": "com.dulcepatatafood.comandas",
+    "productName": "Comandas Dulce Patata",
+    "publish": null,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "comandas/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Comandas Dulce Patata"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "identity": null,
+      "category": "public.app-category.business"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^2.1.8",
+    "png2icons": "^2.0.1"
+  }
+}
