@@ -538,6 +538,80 @@ function computeDiscountAmount(subtotal, discount) {
   return Math.max(0, Math.min(amt, subtotal));
 }
 
+/* ══════════════════════════════════════════════════════════════
+   DESLIZAR PARA BORRAR (gesto táctil) — alternativa al icono 🗑️
+   pequeño, más fácil de acertar con el dedo en hora punta. Cada línea
+   del carrito se envuelve en un .cart-line-swipe-wrap con un fondo rojo
+   "🗑️ Quitar" debajo; al deslizar la línea hacia la izquierda más de
+   SWIPE_UMBRAL_BORRAR px se suelta y se borra, igual que si se hubiera
+   tocado el icono. Usa Pointer Events (mismo código para dedo y ratón) y
+   delegación de eventos sobre #cart-body en vez de un listener por línea,
+   porque renderCart() reconstruye todo el HTML del carrito en cada
+   cambio — con delegación no hace falta re-engancharlos cada vez. ── */
+function wrapSwipe(type, key, lineHtml) {
+  return `<div class="cart-line-swipe-wrap" data-swipe-type="${escapeHtml(type)}" data-swipe-key="${escapeHtml(String(key))}">
+    <div class="cart-line-delete-bg">🗑️ Quitar</div>
+    ${lineHtml}
+  </div>`;
+}
+const SWIPE_UMBRAL_BORRAR = 76; // px que hay que deslizar para que se suelte y borre
+const SWIPE_MAX = 120;
+let swipeState = null;
+function initCartSwipeToDelete() {
+  const body = document.getElementById('cart-body');
+  if (!body) return;
+  body.addEventListener('pointerdown', onSwipePointerDown);
+  body.addEventListener('pointermove', onSwipePointerMove);
+  body.addEventListener('pointerup', onSwipePointerUp);
+  body.addEventListener('pointercancel', onSwipePointerUp);
+}
+function onSwipePointerDown(e) {
+  if (e.target.closest('button')) return; // no robarle el toque a +/-, ✏️, 🏷️ o 🗑️
+  const wrap = e.target.closest('.cart-line-swipe-wrap');
+  if (!wrap) return;
+  const line = wrap.querySelector('.cart-line');
+  if (!line) return;
+  swipeState = { wrap, line, startX: e.clientX, startY: e.clientY, dx: 0, dragging: false, pointerId: e.pointerId };
+}
+function onSwipePointerMove(e) {
+  if (!swipeState || e.pointerId !== swipeState.pointerId) return;
+  const dx = e.clientX - swipeState.startX;
+  const dy = e.clientY - swipeState.startY;
+  if (!swipeState.dragging) {
+    // Todavía no está claro si es un swipe horizontal o solo scroll
+    // vertical / un toque que tiembla un poco — hasta que el movimiento
+    // horizontal sea claramente mayor que el vertical no se "roba" el
+    // gesto, para no romper el scroll normal de la lista de la comanda.
+    if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    swipeState.dragging = true;
+    swipeState.line.style.transition = 'none';
+    try { swipeState.line.setPointerCapture(swipeState.pointerId); } catch (err) {}
+  }
+  e.preventDefault();
+  swipeState.dx = Math.max(-SWIPE_MAX, Math.min(0, dx)); // solo se desliza hacia la izquierda
+  swipeState.line.style.transform = 'translateX(' + swipeState.dx + 'px)';
+  swipeState.wrap.classList.toggle('swipe-armed', swipeState.dx <= -SWIPE_UMBRAL_BORRAR);
+}
+function onSwipePointerUp(e) {
+  if (!swipeState || e.pointerId !== swipeState.pointerId) return;
+  const { wrap, line, dx, dragging } = swipeState;
+  swipeState = null;
+  line.style.transition = 'transform .18s ease';
+  if (dragging && dx <= -SWIPE_UMBRAL_BORRAR) {
+    line.style.transform = 'translateX(-100%)';
+    setTimeout(() => swipeRemoveByKey(wrap.dataset.swipeType, wrap.dataset.swipeKey), 170);
+  } else {
+    line.style.transform = 'translateX(0)';
+    wrap.classList.remove('swipe-armed');
+  }
+}
+function swipeRemoveByKey(type, key) {
+  if (type === 'simple') removeItem(parseInt(key, 10));
+  else if (type === 'cust') removeCustItem(key);
+  else if (type === 'extras') removeExtrasItem(key);
+  else if (type === 'discount') removeDiscount();
+}
+
 function renderCart() {
   const bodyEl = document.getElementById('cart-body');
   const totalRowEl = document.getElementById('cart-total-row');
@@ -567,7 +641,7 @@ function renderCart() {
     const discAmt = computeDiscountAmount(raw, lineDiscounts[key]);
     const subtotal = raw - discAmt;
     total += subtotal;
-    rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
+    rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('simple', item.id, `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeQty(${item.id},-1)">−</button>
@@ -578,7 +652,7 @@ function renderCart() {
       <button class="cart-edit" onclick="openDiscountModal('${key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeItem(${item.id})" title="Quitar">🗑️</button>
       ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLabel(lineDiscounts[key]))} (-${fmt(discAmt)} €)</div>` : ''}
-    </div>` });
+    </div>`) });
   });
 
   custLines.forEach(c => {
@@ -590,7 +664,7 @@ function renderCart() {
     const subtotal = raw - discAmt;
     total += subtotal;
     const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
-    rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
+    rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
@@ -603,7 +677,7 @@ function renderCart() {
       <button class="cart-remove" onclick="removeCustItem('${c.key}')" title="Quitar">🗑️</button>
       <div class="cart-line-extra">${escapeHtml(details)}</div>
       ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
-    </div>` });
+    </div>`) });
   });
 
   extLines.forEach(c => {
@@ -614,7 +688,7 @@ function renderCart() {
     total += subtotal;
     const details = getExtrasItemDetails(c).join(' · ');
     const baseItem = MENU.find(m => m.id == c.menuId);
-    rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: `<div class="cart-line">
+    rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: wrapSwipe('extras', c.key, `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(getExtrasItemLabel(c))}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',-1)">−</button>
@@ -627,7 +701,7 @@ function renderCart() {
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
       ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
-    </div>` });
+    </div>`) });
   });
 
   rows.sort((a, b) => a.rank - b.rank);
@@ -635,12 +709,12 @@ function renderCart() {
 
   const discountAmount = computeDiscountAmount(total, orderDiscount);
   if (discountAmount > 0) {
-    html += `<div class="cart-line cart-line-discount">
+    html += wrapSwipe('discount', '', `<div class="cart-line cart-line-discount">
       <span class="cart-line-name">${escapeHtml(discountLabel(orderDiscount))}</span>
       <span class="cart-line-price">-${fmt(discountAmount)} €</span>
       <button class="cart-edit" onclick="openDiscountModal()" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeDiscount()" title="Quitar">🗑️</button>
-    </div>`;
+    </div>`);
   }
 
   bodyEl.innerHTML = html;
@@ -2559,6 +2633,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyFontChoice(loadFontChoice());
   initTabs();
   renderMenu();
+  initCartSwipeToDelete();
   restoreCartDraftIfAny();
   renderCart();
   trySilentReconnect();
