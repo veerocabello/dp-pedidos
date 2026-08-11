@@ -480,17 +480,31 @@ async function smsVerifyCode() {
       body: JSON.stringify({ phone: pendingPhone, code })
     }, 8000);
     const data = await res.json();
-    if (data.verified) {
+    // El servidor ahora exige smsToken para aceptar el pedido (ver
+    // validarSmsToken en guardar-pedido.php) — sin guardarlo aquí,
+    // _finalizarPedido() lo mandaría vacío y el pedido se rechazaría
+    // aunque el código fuera correcto.
+    if (data.verified && data.smsToken && window._pendingOrderData) {
+      window._pendingOrderData.smsToken = data.smsToken;
       await _finalizarPedido();
+    } else if (data.verified) {
+      const errEl = document.getElementById('sms-error-msg');
+      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     } else {
       const errEl = document.getElementById('sms-error-msg');
       if (errEl) { errEl.textContent = '❌ Código incorrecto. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
       if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     }
   } catch (e) {
+    // Ya no se deja pasar el pedido si esto falla (antes sí, "por si
+    // acaso") — el servidor ahora exige el comprobante de verdad, así que
+    // dejarlo pasar aquí solo terminaría en un pedido rechazado más
+    // adelante con un mensaje más confuso. Mejor decirlo claro ya.
     console.warn('[SMS] verify error:', e);
-    // Fallback: si falla la verificación, dejar pasar igualmente
-    await _finalizarPedido();
+    const errEl = document.getElementById('sms-error-msg');
+    if (errEl) { errEl.textContent = '❌ No se pudo verificar el código (fallo de conexión). Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
   }
 }
 

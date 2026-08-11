@@ -4181,15 +4181,15 @@ async function _submitOrderInner() {
     discountCode: _discountCodeUsado
   };
 
-  if (window._skipSmsVerification) {
-    btn.disabled = false;
-    btn.textContent = 'Confirmar pedido →';
-    await _finalizarPedido();
-    return;
-  }
-
-  // Intentar enviar SMS de verificación
+  // Intentar enviar SMS de verificación — ya no hay atajo que se la salte
+  // (ni el antiguo _skipSmsVerification del navegador, ni dejar pasar el
+  // pedido si el envío falla): guardar-pedido.php ahora exige de verdad un
+  // comprobante firmado de que este teléfono verificó su código con
+  // Twilio (ver validarSmsToken), así que sin verificación real el pedido
+  // se rechazaría de todas formas más adelante — mejor decirlo claro aquí
+  // que dejar avanzar algo que va a fallar solo.
   let smsOk = false;
+  let smsError = null;
   try {
     const smsRes = await _fetchConTimeout('/send-code.php', {
       method: 'POST',
@@ -4200,9 +4200,11 @@ async function _submitOrderInner() {
     if (smsData.success) {
       smsOk = true;
     } else {
+      smsError = smsData.error;
       console.warn('[SMS] send-code error:', smsData.error);
     }
   } catch (e) {
+    smsError = e.message;
     console.warn('[SMS] fetch error:', e);
   }
 
@@ -4227,9 +4229,8 @@ async function _submitOrderInner() {
       if (firstInput) firstInput.focus();
     }
   } else {
-    // Si falla el SMS, dejar pasar el pedido igualmente (fallback)
-    console.warn('[SMS] No se pudo enviar SMS, completando pedido sin verificación');
-    await _finalizarPedido();
+    showAlert('No se pudo enviar el código de verificación por SMS (' + (smsError || 'error desconocido') + '). Inténtalo de nuevo en unos minutos.');
+    window._pendingOrderData = null;
   }
   return; // El pedido se finaliza desde smsVerifyCode()
 }
@@ -4237,7 +4238,7 @@ async function _submitOrderInner() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -4268,6 +4269,10 @@ async function _finalizarPedido() {
       items: window._pendingTicketData.items,
       total: window._pendingTicketData.total,
       discountCode: discountCode || null,
+      // Comprobante de verificación SMS que exige guardar-pedido.php ahora
+      // (ver validarSmsToken allí) — lo genera verify-code.php tras
+      // confirmar el código de verdad con Twilio.
+      smsToken: smsToken || null,
       upsellMostrado: window._pendingTicketData.upsellMostrado || false,
       upsellAnadido: window._pendingTicketData.upsellAnadido || false,
       esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,
@@ -17285,17 +17290,31 @@ async function smsVerifyCode() {
       body: JSON.stringify({ phone: pendingPhone, code })
     }, 8000);
     const data = await res.json();
-    if (data.verified) {
+    // El servidor ahora exige smsToken para aceptar el pedido (ver
+    // validarSmsToken en guardar-pedido.php) — sin guardarlo aquí,
+    // _finalizarPedido() lo mandaría vacío y el pedido se rechazaría
+    // aunque el código fuera correcto.
+    if (data.verified && data.smsToken && window._pendingOrderData) {
+      window._pendingOrderData.smsToken = data.smsToken;
       await _finalizarPedido();
+    } else if (data.verified) {
+      const errEl = document.getElementById('sms-error-msg');
+      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     } else {
       const errEl = document.getElementById('sms-error-msg');
       if (errEl) { errEl.textContent = '❌ Código incorrecto. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
       if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     }
   } catch (e) {
+    // Ya no se deja pasar el pedido si esto falla (antes sí, "por si
+    // acaso") — el servidor ahora exige el comprobante de verdad, así que
+    // dejarlo pasar aquí solo terminaría en un pedido rechazado más
+    // adelante con un mensaje más confuso. Mejor decirlo claro ya.
     console.warn('[SMS] verify error:', e);
-    // Fallback: si falla la verificación, dejar pasar igualmente
-    await _finalizarPedido();
+    const errEl = document.getElementById('sms-error-msg');
+    if (errEl) { errEl.textContent = '❌ No se pudo verificar el código (fallo de conexión). Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
   }
 }
 

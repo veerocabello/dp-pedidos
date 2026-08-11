@@ -2,11 +2,11 @@
 // ═══════════════════════════════════════════════════════════
 //  GUARDAR PEDIDO — Dulce Patata Food
 //
-//  Qué hace: cuando un cliente confirma un pedido (tras la
-//  verificación SMS, o si esta falla y se deja pasar igualmente,
-//  como ya hacía la web), este script guarda el ticket completo y
-//  actualiza las estadísticas del día en Firebase, usando la cuenta
-//  de servicio.
+//  Qué hace: cuando un cliente confirma un pedido (tras verificar
+//  su teléfono por SMS de verdad — ver validarSmsToken más abajo,
+//  obligatorio, no solo un paso visual del navegador), este script
+//  guarda el ticket completo y actualiza las estadísticas del día
+//  en Firebase, usando la cuenta de servicio.
 //
 //  Por qué hace falta: tickets/ y stats/ exigen en las reglas de
 //  seguridad el UID exacto del admin, tanto para leer como para
@@ -128,8 +128,36 @@ if (!dpf_check_limit($ip_file, $max_ip, $window)) {
 $rutaCredenciales = __DIR__ . '/../../firebase-credenciales.json';
 $databaseURL = 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app';
 
+// Para comprobar el comprobante de verificación SMS (ver validarSmsToken
+// más abajo) — reutiliza TWILIO_AUTH_TOKEN como clave de firma, el mismo
+// secreto que ya usan send-code.php/verify-code.php, sin necesidad de
+// gestionar uno nuevo aparte.
+require_once __DIR__ . '/twilio-config.php';
+
 function base64url_encode($data) {
     return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+// ── Comprobante de verificación SMS (ver verify-code.php, que lo genera
+// tras confirmar el código de verdad con Twilio) — SÍ bloquea el pedido.
+// Antes, "verificar el SMS" solo cambiaba lo que mostraba el navegador:
+// este script nunca comprobaba que hubiera pasado de verdad, así que
+// cualquiera podía llamar aquí directamente saltándose el SMS entero (se
+// demostró con una prueba de carga real). Formato del token:
+// "<9 dígitos>|<caducidad unix>|<firma HMAC>" — plano, no hace falta
+// ocultar el contenido, solo que no se pueda falsificar ni reutilizar
+// pasada la caducidad (15 min desde que se generó en verify-code.php) ni
+// para un teléfono distinto del que lo generó.
+function validarSmsToken($token, $telefonoEsperado) {
+    if (!defined('TWILIO_AUTH_TOKEN') || !TWILIO_AUTH_TOKEN) return false; // sin secreto no se puede validar nada, mejor bloquear
+    if (!$token || !is_string($token)) return false;
+    $partes = explode('|', $token);
+    if (count($partes) !== 3) return false;
+    list($tel, $exp, $firma) = $partes;
+    if (!is_numeric($exp) || (int)$exp < time()) return false;
+    if ($tel !== $telefonoEsperado) return false;
+    $firmaEsperada = hash_hmac('sha256', $tel . '|' . $exp, TWILIO_AUTH_TOKEN);
+    return hash_equals($firmaEsperada, (string)$firma);
 }
 
 function obtenerTokenAcceso($rutaCredenciales) {
@@ -1174,6 +1202,17 @@ try {
         echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
+
+    // ── VERIFICACIÓN SMS: SÍ bloquea el pedido (ver validarSmsToken arriba) ──
+    // Solo se comprueba aquí, en el camino de un ticket genuinamente nuevo —
+    // un reenvío de un pedido YA guardado (justo arriba) no necesita volver
+    // a demostrar nada, porque ya lo demostró la primera vez.
+    $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
+    if (!validarSmsToken($smsToken, $phoneClean)) {
+        echo json_encode(['success' => false, 'error' => 'No se ha podido verificar tu teléfono. Vuelve a intentarlo desde el principio del pedido.']);
+        exit;
+    }
+
     $ticketData = [
         'orderNum' => $orderNum,
         'name'     => $name,

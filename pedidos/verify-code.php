@@ -136,7 +136,22 @@ curl_close($ch);
 $result = json_decode($response, true);
 
 if (isset($result['status']) && $result['status'] === 'approved') {
-    echo json_encode(['success' => true, 'verified' => true]);
+    // Comprobante firmado de que ESTE teléfono verificó su código de
+    // verdad con Twilio — guardar-pedido.php lo exige antes de aceptar
+    // cualquier pedido (ver validarSmsToken allí). Sin esto, verificar
+    // el SMS solo cambiaba lo que mostraba el navegador: el servidor
+    // nunca comprobaba que hubiera pasado de verdad, así que cualquiera
+    // podía llamar a guardar-pedido.php directamente saltándose el SMS
+    // entero. Caduca a los 15 minutos — de sobra para terminar de
+    // confirmar el pedido, poco margen para reutilizarlo más tarde.
+    // $phone aquí siempre lleva el prefijo "+34" (se añade más arriba si
+    // faltaba), así que quitarlo dan los mismos 9 dígitos que usa el
+    // resto de la web para este número.
+    $telefonoLimpio = preg_replace('/^\+34/', '', $phone);
+    $exp = time() + (15 * 60);
+    $firma = hash_hmac('sha256', $telefonoLimpio . '|' . $exp, TWILIO_AUTH_TOKEN);
+    $smsToken = $telefonoLimpio . '|' . $exp . '|' . $firma;
+    echo json_encode(['success' => true, 'verified' => true, 'smsToken' => $smsToken]);
 } else {
     if ($http_code !== 200) {
         $log_line = '[' . date('Y-m-d H:i:s') . "] [verify-code] Twilio ERROR — phone=$phone http_code=$http_code response=$response" . PHP_EOL;
