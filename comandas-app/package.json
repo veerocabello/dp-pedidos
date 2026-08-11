@@ -1,6 +1,6 @@
 {
   "name": "dulce-patata-comandas",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Comandas Dulce Patata Food — app de mostrador, funciona sin conexión",
   "author": "Dulce Patata Food",
   "private": true,
@@ -20,6 +20,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "comandas/**/*"
     ],
     "win": {

@@ -1830,6 +1830,7 @@ function renderHistorial() {
       }).join('');
 }
 function deleteHistorialOrder(index) {
+  if (isDiaCerrado(historialFechaSel)) { toast('🔒 Este día está cerrado — reábrelo desde "Hacer caja" para poder borrar algo'); return; }
   const list = getHistorial(historialFechaSel);
   const order = list[index];
   if (!order) return;
@@ -1847,6 +1848,7 @@ function deleteHistorialOrder(index) {
 // pedido de un día anterior no tiene sentido "recuperarlo" en la comanda
 // de hoy como si fuera uno sin terminar todavía.
 function modifyHistorialOrder(index) {
+  if (isDiaCerrado(historialFechaSel)) { toast('🔒 Este día está cerrado — reábrelo desde "Hacer caja" para poder modificar algo'); return; }
   const list = getHistorial(historialFechaSel);
   const order = list[index];
   if (!order || !order.rawState) { toast('⚠️ Este pedido no se puede recuperar para modificar'); return; }
@@ -1890,10 +1892,37 @@ function viewHistorialOrder(index) {
    de fecha, para poder cuadrar caja de un día anterior si hizo falta. ── */
 function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || todayISO()); }
 function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? 0 : v; }
-function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
+function saveCajaFondo() {
+  if (isDiaCerrado(cajaFechaSel)) return; // el input ya está bloqueado, esto es solo por si acaso
+  localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0');
+}
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
 function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
 function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX + fecha) === '1'; }
+
+/* ── Cerrar el día: una vez cuadrada la caja, marca ese día como cerrado
+   para no tocarlo por error luego — bloquea borrar/modificar comandas de
+   ese día (ver deleteHistorialOrder/modifyHistorialOrder) y el fondo de
+   caja. Se puede reabrir en cualquier momento si hace falta corregir algo
+   (sin PIN ni confirmación reforzada — de momento esta app no tiene un
+   sistema de PIN, ver ideas pendientes). ── */
+const DIA_CERRADO_PREFIX = 'dpf_comandas_dia_cerrado_';
+function isDiaCerrado(fecha) { return localStorage.getItem(DIA_CERRADO_PREFIX + (fecha || todayISO())) === '1'; }
+function toggleCierreDia() {
+  const fecha = cajaFechaSel;
+  if (isDiaCerrado(fecha)) {
+    if (!confirm('¿Reabrir el ' + fecha + '? Podrás volver a borrar/modificar comandas de ese día.')) return;
+    localStorage.removeItem(DIA_CERRADO_PREFIX + fecha);
+    toast('🔓 Día reabierto');
+  } else {
+    const t = loadCajaTotales(fecha);
+    if (t.count > 0 && !hayBackupHecho(fecha) && !confirm('Todavía no has descargado la copia de este día. ¿Cerrar igualmente?')) return;
+    if (!confirm('¿Cerrar el ' + fecha + '? No se podrán borrar ni modificar sus comandas hasta reabrirlo.')) return;
+    localStorage.setItem(DIA_CERRADO_PREFIX + fecha, '1');
+    toast('🔒 Día cerrado');
+  }
+  renderCaja();
+}
 let cajaFechaSel = todayISO();
 function openCaja() {
   cajaFechaSel = todayISO();
@@ -1921,8 +1950,15 @@ function renderCaja() {
   const facturado = efectivo + tarjeta + pendiente;
   const esperadoCajon = fondo + efectivo;
   const esHoy = cajaFechaSel === todayISO();
+  const cerrado = isDiaCerrado(cajaFechaSel);
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
+  const fondoInput = document.getElementById('caja-fondo');
+  if (fondoInput) fondoInput.disabled = cerrado;
+  const estadoEl = document.getElementById('caja-cierre-estado');
+  const btnEl = document.getElementById('caja-cierre-btn');
+  if (estadoEl) estadoEl.innerHTML = cerrado ? '🔒 Día cerrado' : '🔓 Día abierto';
+  if (btnEl) btnEl.textContent = cerrado ? '🔓 Reabrir día' : '🔒 Cerrar el día';
   const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
   const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
     ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
@@ -2275,7 +2311,18 @@ async function sendToPrinter(bytes) {
 
 if (navigator.usb) {
   navigator.usb.addEventListener('disconnect', (e) => {
-    if (printerDevice && e.device === printerDevice) { printerDevice = null; printerEndpoint = null; updatePrinterStatusUI(); }
+    // Sin este aviso, si la impresora se desconecta a media jornada (se
+    // suelta el cable, se apaga sola...) lo único que cambiaba era el
+    // textito "🖨️ Impresora conectada" de la cabecera — fácil de no ver
+    // entre comanda y comanda, y la siguiente impresión fallaría sin
+    // avisar hasta que ya fuera tarde (cliente esperando el ticket).
+    if (printerDevice && e.device === printerDevice) {
+      printerDevice = null;
+      printerEndpoint = null;
+      updatePrinterStatusUI();
+      toast('⚠️ Se ha desconectado la impresora', 5000);
+      playDisconnectAlert();
+    }
   });
 }
 
@@ -2307,6 +2354,18 @@ function playPrintSound(ok) {
     if (ctx.state === 'suspended') ctx.resume();
     if (ok) { playTone(880, 0.11, 0, 0.18); playTone(1320, 0.14, 0.1, 0.18); }
     else { playTone(220, 0.22, 0, 0.22); playTone(160, 0.28, 0.2, 0.22); }
+  } catch (e) { /* sin sonido, no pasa nada */ }
+}
+// Tres pitidos graves, distinto del sonido de "impresión fallida" (2
+// pitidos) — para que un vistazo rápido sin mirar la pantalla ya diga si
+// es solo un ticket que ha fallado o si la impresora se ha ido del todo.
+function playDisconnectAlert() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    playTone(200, 0.18, 0, 0.22);
+    playTone(200, 0.18, 0.25, 0.22);
+    playTone(200, 0.18, 0.5, 0.22);
   } catch (e) { /* sin sonido, no pasa nada */ }
 }
 
@@ -2432,6 +2491,7 @@ function openSettings() {
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
   document.getElementById('set-copia-auto-cada').value = String(cfg.copiaAutoCadaDias != null ? cfg.copiaAutoCadaDias : 1);
+  initDesktopSettingsSection();
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
@@ -2452,6 +2512,76 @@ function saveSettingsForm() {
   saveTicketConfig(cfg);
   closeSettings();
   toast('✅ Ajustes guardados');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   APP DE ESCRITORIO (Electron) — arranque automático, modo kiosco y
+   comprobación de actualizaciones. Todo esto solo existe si la página se
+   abre dentro de comandas-app (ver comandas-app/preload.js) — si se abre
+   en un navegador normal, window.comandasDesktop no existe y esta sección
+   de Ajustes se queda oculta sin romper nada.
+   ══════════════════════════════════════════════════════════════ */
+function isDesktopApp() { return !!(window.comandasDesktop && window.comandasDesktop.isDesktopApp); }
+
+async function initDesktopSettingsSection() {
+  const section = document.getElementById('settings-desktop-section');
+  if (!isDesktopApp()) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  document.getElementById('update-check-result').style.display = 'none';
+  const [version, autoLaunch, kiosk, updatePath] = await Promise.all([
+    window.comandasDesktop.getAppVersion(),
+    window.comandasDesktop.getAutoLaunch(),
+    window.comandasDesktop.getKiosk(),
+    window.comandasDesktop.getUpdatePath(),
+  ]);
+  document.getElementById('set-app-version').textContent = version ? 'v' + version : '';
+  document.getElementById('set-auto-launch').checked = !!autoLaunch;
+  document.getElementById('set-kiosk').checked = !!kiosk;
+  document.getElementById('set-update-path').value = updatePath || '';
+}
+async function toggleAutoLaunch(checked) {
+  if (!isDesktopApp()) return;
+  const result = await window.comandasDesktop.setAutoLaunch(checked);
+  document.getElementById('set-auto-launch').checked = !!result;
+  toast(result ? '✅ Se abrirá sola al encender el PC' : 'Arranque automático desactivado');
+}
+async function toggleKiosk(checked) {
+  if (!isDesktopApp()) return;
+  const result = await window.comandasDesktop.setKiosk(checked);
+  document.getElementById('set-kiosk').checked = !!result;
+  toast(result ? '✅ Modo kiosco activado (Ctrl+Shift+Alt+S para salir)' : 'Modo kiosco desactivado');
+}
+let updatePathDebounceTimer = null;
+function saveUpdatePathDebounced() {
+  if (!isDesktopApp()) return;
+  clearTimeout(updatePathDebounceTimer);
+  updatePathDebounceTimer = setTimeout(() => {
+    window.comandasDesktop.setUpdatePath(document.getElementById('set-update-path').value);
+  }, 500);
+}
+let pendingUpdateInstallerPath = null;
+async function checkForAppUpdate() {
+  if (!isDesktopApp()) return;
+  const resultEl = document.getElementById('update-check-result');
+  resultEl.style.display = 'block';
+  resultEl.textContent = 'Buscando…';
+  pendingUpdateInstallerPath = null;
+  const res = await window.comandasDesktop.checkForUpdate();
+  if (!res.ok) { resultEl.textContent = '⚠️ ' + res.error; return; }
+  if (!res.hayNueva) { resultEl.textContent = '✅ Ya tienes la última versión (v' + res.actual + ').'; return; }
+  if (!res.instaladorPath) {
+    resultEl.textContent = '🆕 Hay una versión nueva (v' + res.disponible + ') pero no se encuentra su instalador en esa carpeta.';
+    return;
+  }
+  pendingUpdateInstallerPath = res.instaladorPath;
+  resultEl.innerHTML = '🆕 Versión ' + escapeHtml(res.disponible) + ' disponible (tienes v' + escapeHtml(res.actual) + ').'
+    + (res.notas ? '<br>' + escapeHtml(res.notas) : '')
+    + '<br><button class="btn-secondary" style="margin-top:8px" onclick="installAppUpdate()">⬇️ Instalar ahora</button>';
+}
+async function installAppUpdate() {
+  if (!isDesktopApp() || !pendingUpdateInstallerPath) return;
+  if (!confirm('La app se cerrará para instalar la actualización. ¿Continuar?')) return;
+  await window.comandasDesktop.installUpdate(pendingUpdateInstallerPath);
 }
 
 /* ── Gestionar carta: añadir/quitar productos sencillos y poner/quitar

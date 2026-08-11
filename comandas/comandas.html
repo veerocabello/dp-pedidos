@@ -218,6 +218,26 @@
       </select>
     </div>
 
+    <div id="settings-desktop-section" style="display:none">
+      <div class="section-label">App de escritorio <span id="set-app-version" style="font-weight:400;color:var(--muted);font-size:11px"></span></div>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Abrir automáticamente al encender este ordenador</div><div class="option-sub">Así no hay que buscarla ni abrirla a mano cada mañana</div></div>
+        <input type="checkbox" id="set-auto-launch" style="width:20px;height:20px;flex-shrink:0" onchange="toggleAutoLaunch(this.checked)">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Modo kiosco (pantalla completa fija)</div><div class="option-sub">Bloquea cerrar la app sin querer (Alt+F4). Para salir de verdad: Ctrl+Shift+Alt+S</div></div>
+        <input type="checkbox" id="set-kiosk" style="width:20px;height:20px;flex-shrink:0" onchange="toggleKiosk(this.checked)">
+      </label>
+      <div class="form-group">
+        <label>Carpeta de actualizaciones (ruta de red o USB, opcional)</label>
+        <input id="set-update-path" type="text" placeholder="Ej. \\SERVIDOR\comandas-updates" oninput="saveUpdatePathDebounced()">
+      </div>
+      <div class="settings-actions">
+        <button class="btn-secondary" onclick="checkForAppUpdate()">🔎 Buscar actualización ahora</button>
+      </div>
+      <div id="update-check-result" class="settings-help" style="display:none"></div>
+    </div>
+
     <div class="settings-actions">
       <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
@@ -329,6 +349,10 @@
     <div class="form-group">
       <label>Fondo de caja inicial (con el que abriste ese día)</label>
       <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">
+      <span id="caja-cierre-estado" style="font-weight:700;font-size:13px"></span>
+      <button class="btn-secondary" id="caja-cierre-btn" style="flex:0 0 auto" onclick="toggleCierreDia()"></button>
     </div>
     <div id="caja-summary" class="summary-box"></div>
     <div class="settings-actions">

@@ -28,6 +28,26 @@ a partir de `../comandas/` — no se editan a mano ni se suben a git (ver
 `.gitignore` en la raíz del repo). Si cambia algo en `../comandas/`, solo
 hay que volver a ejecutar `npm run dist`.
 
+## Ajustes propios de la app de escritorio
+
+Dentro de Ajustes (⚙️), sección "App de escritorio" (solo aparece cuando la
+página corre dentro de esta app, no en un navegador normal):
+
+- **Arranque automático**: se activa solo la primera vez que se abre la app
+  en un PC (guardado en `desktop-settings.json` dentro de la carpeta de
+  datos de la app). Se puede desactivar/activar a mano después.
+- **Modo kiosco**: pantalla completa fija y bloquea cerrar por error
+  (Alt+F4). Para salir de verdad: **Ctrl+Shift+Alt+S** (pide confirmación).
+- **Buscar actualización**: lee un `version.json` de la carpeta indicada
+  (una ruta de red local tipo `\\SERVIDOR\comandas-updates`, o un
+  pendrive — nunca internet). Formato esperado:
+  ```json
+  { "version": "1.1.0", "instalador": "Comandas Dulce Patata Setup 1.1.0.exe", "notas": "Qué ha cambiado" }
+  ```
+  Si hay una versión más nueva y su instalador está en esa misma carpeta,
+  ofrece un botón para abrirlo (la app se cierra sola para no bloquear la
+  sobrescritura de sus propios archivos durante la instalación).
+
 ## Qué cambia respecto a abrirla en el navegador
 
 Todo el comportamiento (carta, comanda, caja, historial, impresión...) es
