@@ -14,10 +14,14 @@
 #  Antes de renombrarlo, borra a mano estos ficheros huérfanos del
 #  servidor si todavía siguen ahí (no forman parte de este .htaccess,
 #  pero conviene quitarlos antes de abrir):
-#   - pedidos/img/js/         (copia vieja del bundle, sin usar)
-#   - pedidos/src/js/         (otra copia vieja del bundle, sin usar)
-#   - pedidos/adminshell.html (duplicado obsoleto de admin-shell.html)
-#   - pedidos/src/htaccess    (borrador suelto, sin punto inicial)
+#   - pedidos/img/js/            (copia vieja del bundle, sin usar)
+#   - pedidos/src/js/            (otra copia vieja del bundle, sin usar)
+#   - pedidos/adminshell.html    (duplicado obsoleto de admin-shell.html)
+#   - pedidos/src/htaccess       (borrador suelto, sin punto inicial)
+#   - pedidos/fichar-publico.html (copia vieja y desactualizada de
+#     index.html de un intento anterior — ya no la usa nada, los
+#     enlaces de fichar van a fichar-standalone.html; se quitó del
+#     repo pero puede seguir en el servidor de una subida anterior)
 # ═══════════════════════════════════════════════════════════
 
 # ── Las credenciales de Twilio ya NO viven aquí.

@@ -187,10 +187,12 @@ function empGenFicharToken() {
   const toast = document.getElementById('emp-fichar-toast');
   if (toast) { toast.textContent = '✅ Token generado'; toast.style.display = 'block'; setTimeout(() => toast.style.display = 'none', 2000); }
 }
-// TEMPORAL mientras la web está cerrada con Basic Auth: los enlaces de
-// fichar apuntan a fichar-publico.html (copia de index.html, accesible sin
-// contraseña) en vez de a la página normal. BORRAR esta función y volver a
-// usar location.pathname directamente el día de la reapertura.
+// fichar-standalone.html es una página propia, solo con la pantalla de
+// fichar (sin carta ni carrito detrás) — un empleado no necesita cargar
+// media web ni ver la lista completa de compañeros solo para comprobar su
+// propio PIN. Esto NO es un parche temporal del Basic Auth de "cerrado por
+// obras": se queda para siempre, también después de la reapertura (ver
+// .htaccess.reapertura, que ya lo mantiene en la lista de excepciones).
 function _ficharBaseUrl() {
   return location.origin + location.pathname.replace(/[^/]*$/, '') + 'fichar-standalone.html';
 }
