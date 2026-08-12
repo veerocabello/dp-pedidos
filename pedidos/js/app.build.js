@@ -10769,8 +10769,13 @@ async function doEncryptExport() {
   const pwd = document.getElementById('encrypt-pwd').value;
   const pwd2 = document.getElementById('encrypt-pwd2').value;
   const errEl = document.getElementById('encrypt-error');
-  if (!pwd || pwd.length < 4) {
-    errEl.textContent = 'La contraseña debe tener al menos 4 caracteres';
+  // Antes el mínimo eran 4 caracteres — con AES-GCM + PBKDF2 (100.000
+  // iteraciones, ver más abajo) una contraseña tan corta se prueba entera
+  // por fuerza bruta en poco tiempo si el archivo cifrado cae en malas
+  // manos. 8 caracteres no la hace irrompible, pero sí mucho más cara de
+  // atacar sin ser incómoda de recordar para un backup ocasional.
+  if (!pwd || pwd.length < 8) {
+    errEl.textContent = 'La contraseña debe tener al menos 8 caracteres';
     errEl.style.display = 'block';
     return;
   }
