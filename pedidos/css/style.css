@@ -504,6 +504,7 @@
     font-weight: 700;
     color: var(--gold);
     letter-spacing: 0.05em;
+    margin: 0;
   }
   .menu-cat-emoji {
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
