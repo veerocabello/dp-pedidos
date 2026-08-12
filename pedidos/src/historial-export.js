@@ -1126,6 +1126,11 @@ function initFirebaseListeners() {
   // Pausa exprés (cuenta atrás) y aviso suave previo a la auto-pausa
   if (typeof loadPausaExpresFromFirebase === 'function') loadPausaExpresFromFirebase();
   if (typeof loadAvisoSaturacionFromFirebase === 'function') loadAvisoSaturacionFromFirebase();
+  // Oferta relámpago (descuento por tiempo limitado) — mismo listener sirve
+  // para pintar el banner del cliente y, si el panel admin está abierto, su
+  // propio estado con cuenta atrás (ver loadOfertaRelampagoFromFirebase en
+  // admin-turnos-descuentos.js).
+  if (typeof loadOfertaRelampagoFromFirebase === 'function') loadOfertaRelampagoFromFirebase();
 
   // Aviso de "sin conexión" en la pantalla de cocina — la lista de pedidos
   // ya sigue mostrando lo último que se vio (localStorage/último render) si

@@ -44,7 +44,7 @@ function _updateCartFab(count, total) {
     repeatFab.classList.toggle('hidden', count !== 0 || successVisible || !hayUltimoPedido);
   }
 }
-function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota) {
+function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota, ofertaTotalAmt, ofertaTotalPct) {
   const drawerBody = document.getElementById('cart-drawer-body');
   if (!drawerBody) return;
   const ordersOpen = getOrdersOpen();
@@ -107,7 +107,11 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   if (studentDiscountAmt > 0) {
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\uD83E\uDEAA Estudiante/jubilado (-".concat(studentDiscountPctCfg, "%)</span><span>-").concat(studentDiscountAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
-  const _ahorroDrawer = discountAmt + fidelizacionAmt + studentDiscountAmt;
+  ofertaTotalAmt = ofertaTotalAmt || 0;
+  if (ofertaTotalAmt > 0) {
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700\"><span>\u26A1 Oferta rel\u00E1mpago (-".concat(ofertaTotalPct, "%)</span><span>-").concat(ofertaTotalAmt.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+  }
+  const _ahorroDrawer = discountAmt + fidelizacionAmt + studentDiscountAmt + ofertaTotalAmt;
   if (_ahorroDrawer > 0) {
     html += "<div style=\"margin:2px 0 4px\"><span class=\"cart-savings-pill\">\uD83C\uDF89 \u00A1Ahorras ".concat(_ahorroDrawer.toFixed(2).replace('.', ','), " \u20AC!</span></div>");
   }
@@ -451,7 +455,7 @@ async function generateOrderNumber() {
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento) {
+function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento, ofertaTotalAmt, ofertaTotalPct) {
   const tc = getTicketConfig();
   const lines = Object.entries(cart).map(_ref5 => {
     let _ref6 = _slicedToArray(_ref5, 2),
@@ -462,7 +466,7 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
       console.error('buildTicketText: producto no encontrado id=' + id);
       return '';
     }
-    return "".concat(qty, "x ").concat(item.name, " \u2014 ").concat((item.price * qty).toFixed(2), " \u20AC");
+    return "".concat(qty, "x ").concat(item.name, " \u2014 ").concat((_precioConOferta(item) * qty).toFixed(2), " \u20AC");
   });
   const custLines = Object.values(custCart).filter(c => c.qty > 0).map(c => {
     const item = MENU.find(m => m.id == c.menuId);
@@ -489,7 +493,7 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
       id = _ref8[0],
       q = _ref8[1];
     const it = MENU.find(m => m.id == id);
-    return s + (it ? it.price * q : 0);
+    return s + (it ? _precioConOferta(it) * q : 0);
   }, 0) + Object.values(custCart).filter(c => c.qty > 0).reduce((s, c) => {
     const it = MENU.find(m => m.id == c.menuId);
     if (!it) return s;
@@ -500,6 +504,7 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
   const extraLineas = [];
   if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
   if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
+  if (ofertaTotalAmt > 0) extraLineas.push('Oferta rel\u00E1mpago (-' + ofertaTotalPct + '%): -' + ofertaTotalAmt.toFixed(2) + ' \u20AC');
   if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
   const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
   const now = new Date().toLocaleString('es-ES');
@@ -1061,7 +1066,7 @@ async function _submitOrderInner() {
       id = _ref0[0],
       q = _ref0[1];
     const it = MENU.find(m => m.id == id);
-    return s + (it ? it.price * q : 0);
+    return s + (it ? _precioConOferta(it) * q : 0);
   }, 0);
   const custTotal = Object.values(custCart).filter(c => c.qty > 0).reduce((s, c) => {
     const item = MENU.find(m => m.id == c.menuId);
@@ -1107,23 +1112,33 @@ async function _submitOrderInner() {
   const _esEstudianteJubiladoRaw = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled()
     && !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const _studentDiscountPctSubmit = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
-  // No se combinan estudiante/jubilado con el código de descuento (ni
-  // manual ni de ruleta/rasca) — se aplica solo el mayor de los dos,
-  // nunca la suma, igual que ya decide el carrito en renderCart()
-  // (carta.js). La fidelización no entra en este conflicto: se sigue
-  // sumando siempre, sin condición.
+  // No se combinan entre sí el código de descuento (manual o de ruleta/
+  // rasca), el de estudiante/jubilado ni la oferta relámpago sobre el
+  // pedido entero — se aplica solo el mayor de los tres, nunca la suma,
+  // igual que ya decide el carrito en renderCart() (carta.js). La
+  // fidelización no entra en este conflicto: se sigue sumando siempre, sin
+  // condición. La oferta relámpago de tipo "producto" tampoco entra aquí:
+  // ya va incluida en subTotal, porque regularTotal (más arriba) se calculó
+  // con _precioConOferta().
+  const _ofertaTotalSubmit = window._ofertaRelampagoActiva;
+  const _ofertaTotalPctSubmit = (_ofertaTotalSubmit && _ofertaTotalSubmit.tipo === 'total' && _ofertaRelampagoVigente(_ofertaTotalSubmit)) ? _ofertaTotalSubmit.pct : 0;
   let _discountAmt = getDiscountAmount(subTotal);
   let _studentDiscountAmt = _esEstudianteJubiladoRaw ? Math.round(subTotal * _studentDiscountPctSubmit) / 100 : 0;
+  let _ofertaTotalAmt = _ofertaTotalPctSubmit > 0 ? Math.round(subTotal * _ofertaTotalPctSubmit) / 100 : 0;
   let _esEstudianteJubiladoSubmit = _esEstudianteJubiladoRaw;
-  if (_discountAmt > 0 && _studentDiscountAmt > 0) {
-    if (_discountAmt >= _studentDiscountAmt) {
-      _studentDiscountAmt = 0;
-      _esEstudianteJubiladoSubmit = false; // no se aplicó de verdad: no se marca el pedido ni se avisa de verificar carné
-    } else {
-      _discountAmt = 0;
-    }
+  const _candidatosSubmit = [
+    { tipo: 'codigo', amt: _discountAmt },
+    { tipo: 'estudiante', amt: _studentDiscountAmt },
+    { tipo: 'oferta', amt: _ofertaTotalAmt }
+  ].filter(c => c.amt > 0);
+  if (_candidatosSubmit.length > 1) {
+    _candidatosSubmit.sort((a, b) => b.amt - a.amt);
+    const _ganadorSubmit = _candidatosSubmit[0].tipo;
+    if (_ganadorSubmit !== 'codigo') _discountAmt = 0;
+    if (_ganadorSubmit !== 'estudiante') { _studentDiscountAmt = 0; _esEstudianteJubiladoSubmit = false; } // no se aplicó de verdad: no se marca el pedido ni se avisa de verificar carné
+    if (_ganadorSubmit !== 'oferta') _ofertaTotalAmt = 0;
   }
-  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento - _studentDiscountAmt);
+  const orderTotal = Math.max(0, subTotal + feeAmount + fee2Amount - _discountAmt - _fidelizacionDescuento - _studentDiscountAmt - _ofertaTotalAmt);
   const regularItems = Object.entries(cart).map(_ref1 => {
     let _ref10 = _slicedToArray(_ref1, 2),
       id = _ref10[0],
@@ -1136,7 +1151,7 @@ async function _submitOrderInner() {
     return {
       name: item.name,
       qty,
-      subtotal: item.price * qty
+      subtotal: _precioConOferta(item) * qty
     };
   }).filter(Boolean);
   const custItems = Object.values(custCart).filter(c => c.qty > 0).map(c => {
@@ -1215,6 +1230,13 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: -_studentDiscountAmt
   }] : [];
+  // La oferta relámpago de tipo "producto" no necesita línea aparte: ya se
+  // ve reflejada en el precio de esa línea de comida (_precioConOferta).
+  const ofertaRelampagoItems = _ofertaTotalAmt > 0 ? [{
+    name: '⚡ Oferta relámpago (-' + _ofertaTotalPctSubmit + '%)',
+    qty: 1,
+    subtotal: -_ofertaTotalAmt
+  }] : [];
   // Si este pedido es el que completa el ciclo de 10 sellos, añadimos una
   // línea informativa en el ticket (sin afectar al precio) para que se
   // imprima y se vea en cocina/caja que hay que avisar al cliente.
@@ -1230,7 +1252,7 @@ async function _submitOrderInner() {
   // van siempre después, tal cual ya estaban.
   const foodItems = [...regularItems, ...custItems, ...extItems];
   foodItems.sort((a, b) => _ticketCategoriaRank(a.name) - _ticketCategoriaRank(b.name));
-  const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...fidelizacionAvisoItems];
+  const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...ofertaRelampagoItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Estadística "¿le metes algo dulce/de beber?": si se llegó a mostrar
@@ -1283,7 +1305,7 @@ async function _submitOrderInner() {
   window._pendingTicketData = ticketData;
 
   // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento);
+  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento, _ofertaTotalAmt, _ofertaTotalPctSubmit);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";

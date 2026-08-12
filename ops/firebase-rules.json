@@ -34,7 +34,8 @@
       "vacacionesActivo": { ".read": true },
       "ticketConfig": { ".read": true },
       "promos": { ".read": true },
-      "juegoActivo": { ".read": true }
+      "juegoActivo": { ".read": true },
+      "ofertaRelampago": { ".read": true }
     },
     "stats": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'EMPLEADO_UID_AQUI'",

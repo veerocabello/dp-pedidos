@@ -960,6 +960,11 @@
             <div class="row-text"><div class="row-title">Códigos de descuento</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
+          <div id="mkt-row-oferta-relampago" class="row" onclick="(function(btn){var c=document.getElementById('or-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'or-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){orPoblarSelectorProductos();orCambiarAlcance();_bimbaScrollAbierto(c);}})(this)">
+            <span class="row-icon">⚡</span>
+            <div class="row-text"><div class="row-title">Oferta relámpago</div></div>
+            <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
+          </div>
           <div id="mkt-row-ruleta" class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'ruleta-admin-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRuletaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎡</span>
             <div class="row-text"><div class="row-title">Ruleta de premios</div></div>
@@ -1023,6 +1028,38 @@
             <div id="dc-buscar-resultado" style="font-size:13px;color:var(--muted)"></div>
           </div>
         </div><!-- /dc-panel -->
+
+        <div id="or-panel" style="display:none;margin-top:-2px;margin-bottom:16px;padding:14px;border:1.5px solid var(--warm);border-top:none;border-radius:0 0 14px 14px;background:var(--cream)">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Lánzala ya mismo para un día flojo — sobre todo el pedido, o solo sobre un producto para vaciar stock. Se cancela sola al acabar el tiempo.</div>
+          <div id="or-form">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <select id="or-alcance" onchange="orCambiarAlcance()" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+                <option value="total">Todo el pedido</option>
+                <option value="producto">Un producto concreto</option>
+              </select>
+              <input id="or-pct" type="number" placeholder="%" min="1" max="90" style="width:70px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            </div>
+            <div id="or-producto-group" style="display:none;margin-bottom:8px">
+              <select id="or-producto" style="width:100%;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;box-sizing:border-box">
+                <option value="">Elige un producto…</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
+              <select id="or-duracion" onchange="orCambiarDuracion()" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+                <option value="30">30 minutos</option>
+                <option value="60" selected>1 hora</option>
+                <option value="120">2 horas</option>
+                <option value="custom">Personalizado…</option>
+              </select>
+              <input id="or-duracion-custom" type="number" placeholder="min" min="1" style="display:none;width:70px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            </div>
+            <button onclick="orLanzar()" style="width:100%;padding:10px;background:#c0392b;color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🚀 Lanzar oferta ahora</button>
+          </div>
+          <div id="or-estado" style="display:none">
+            <div id="or-estado-texto" style="font-size:14px;font-weight:700;color:#c0392b;background:#fdf0ee;border:1.5px solid #c0392b;border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:center"></div>
+            <button onclick="orCancelar()" style="width:100%;padding:8px;background:#fff;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar oferta</button>
+          </div>
+        </div><!-- /or-panel -->
 
         <div id="ruleta-admin-panel" style="display:none;margin-top:-2px;margin-bottom:16px;padding:14px;border:1.5px solid var(--warm);border-top:none;border-radius:0 0 14px 14px;background:var(--cream)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:var(--white);border-radius:10px">

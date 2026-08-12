@@ -537,6 +537,13 @@ function renderMenu() {
     } else {
       controls = '<button class="add-btn" onclick="changeQty(' + item.id + ',+1)" title="Añadir">+</button>';
     }
+    // Precio rebajado por una oferta relámpago activa en este producto en
+    // concreto (ver _precioConOferta en carta.js) — se muestra el original
+    // tachado junto al rebajado, para que se note el "chollo" de un vistazo.
+    const _precioOferta = (typeof _precioConOferta === 'function') ? _precioConOferta(item) : item.price;
+    const priceHtml = _precioOferta < item.price
+      ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2) + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2) + ' € ⚡</span>'
+      : item.price.toFixed(2) + ' €';
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
@@ -547,7 +554,7 @@ function renderMenu() {
       + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
-      + '<div class="item-price">' + item.price.toFixed(2) + ' €</div>'
+      + '<div class="item-price">' + priceHtml + '</div>'
       + '<div class="item-controls">' + controls + '</div>'
       + '</div>';
   }).join('');

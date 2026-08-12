@@ -520,6 +520,71 @@ function _renderAvisoSaturacionBanner(estado) {
     el.style.display = 'none';
   }
 }
+// ── OFERTA RELÁMPAGO (descuento por tiempo limitado, ver admin-turnos-
+// descuentos.js para quien la lanza/cancela) ── window._ofertaRelampagoActiva
+// guarda { tipo:'total'|'producto', productoId, pct, fin } o null. "Vigente"
+// se decide comparando fin contra la hora actual en cada sitio que lo usa,
+// nunca con un booleano guardado — así una pestaña abierta desde antes de
+// que acabara la oferta la deja de aplicar sola, sin depender de que llegue
+// ningún aviso nuevo de Firebase justo en ese instante.
+window._ofertaRelampagoActiva = null;
+let _ofertaRelampagoTickInterval = null;
+function _ofertaRelampagoVigente(o) {
+  return !!(o && o.fin && o.pct > 0 && Date.now() < o.fin);
+}
+// Precio real de un producto del menú, aplicando la oferta relámpago si está
+// vigente y es justo ese producto. Todo lo que calcula un total a partir de
+// MENU (renderMenu en admin-config.js, renderCart de aquí abajo, y el envío
+// del pedido en carrito-checkout.js) pasa por aquí en vez de leer item.price
+// directamente — así el descuento se refleja en todos lados con un único
+// cambio, sin mutar el propio array MENU (que también lo usa finanzas.js
+// para calcular márgenes, y no debe ver precios rebajados temporalmente).
+function _precioConOferta(item) {
+  const o = window._ofertaRelampagoActiva;
+  if (o && o.tipo === 'producto' && o.productoId === item.id && _ofertaRelampagoVigente(o)) {
+    return Math.round(item.price * (1 - o.pct / 100) * 100) / 100;
+  }
+  return item.price;
+}
+function _renderOfertaRelampagoBanner() {
+  const el = document.getElementById('oferta-relampago-banner');
+  const o = window._ofertaRelampagoActiva;
+  if (!el) return;
+  if (!_ofertaRelampagoVigente(o)) {
+    el.style.display = 'none';
+    return;
+  }
+  const restante = Math.max(0, o.fin - Date.now());
+  const m = Math.floor(restante / 60000);
+  const s = Math.floor((restante % 60000) / 1000);
+  const destino = o.tipo === 'producto' ? ((typeof MENU !== 'undefined' && MENU.find(mi => mi.id === o.productoId) || {}).name || 'este producto') : 'todo el pedido';
+  el.textContent = '⚡ Oferta relámpago: -' + o.pct + '% en ' + destino + ' · acaba en ' + m + ':' + String(s).padStart(2, '0');
+  el.style.display = 'block';
+}
+// Se llama al recibir cada cambio desde Firebase (ver loadOfertaRelampagoFromFirebase
+// en admin-turnos-descuentos.js) y también cada segundo mientras esté
+// vigente, para que la cuenta atrás avance y el precio se restaure solo en
+// cuanto expire, sin recargar la página.
+function _actualizarOfertaRelampago(oferta) {
+  const eraVigente = _ofertaRelampagoVigente(window._ofertaRelampagoActiva);
+  window._ofertaRelampagoActiva = oferta;
+  const esVigente = _ofertaRelampagoVigente(oferta);
+  _renderOfertaRelampagoBanner();
+  if (eraVigente !== esVigente || (eraVigente && esVigente)) {
+    if (typeof renderMenu === 'function') renderMenu();
+    if (typeof renderCart === 'function') renderCart();
+  }
+  if (_ofertaRelampagoTickInterval) { clearInterval(_ofertaRelampagoTickInterval); _ofertaRelampagoTickInterval = null; }
+  if (esVigente) {
+    _ofertaRelampagoTickInterval = setInterval(function () {
+      if (!_ofertaRelampagoVigente(window._ofertaRelampagoActiva)) {
+        _actualizarOfertaRelampago(null);
+        return;
+      }
+      _renderOfertaRelampagoBanner();
+    }, 1000);
+  }
+}
 function changeQty(id, delta) {
   // Bloquear añadir al carrito si hoy es día cerrado o pedidos pausados
   if (delta > 0 && isShopBlocked()) {
@@ -822,7 +887,7 @@ function renderCart() {
       console.error('renderCart: producto no encontrado id=' + id);
       return '';
     }
-    const subtotal = item.price * qty;
+    const subtotal = _precioConOferta(item) * qty;
     total += subtotal;
     return "\n    <div class=\"cart-line\">\n      <span class=\"cart-line-name\">".concat(item.name, "</span>\n      <span class=\"cart-line-qty\">x").concat(qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeItem(").concat(id, ")\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
@@ -922,18 +987,31 @@ function renderCart() {
   const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
   const studentDiscountAmtRaw = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
+  // Oferta relámpago sobre el pedido entero (ver window._ofertaRelampagoActiva
+  // en carta.js) — entra en el mismo "no se combinan, gana el mayor" que ya
+  // tenían código de descuento y estudiante/jubilado. La de tipo "producto"
+  // no entra aquí: ya va incluida en `total` porque _precioConOferta() la
+  // aplicó al calcular cada línea, más arriba.
+  const _ofertaTotal = window._ofertaRelampagoActiva;
+  const ofertaTotalPct = (_ofertaTotal && _ofertaTotal.tipo === 'total' && _ofertaRelampagoVigente(_ofertaTotal)) ? _ofertaTotal.pct : 0;
+  const ofertaTotalAmtRaw = ofertaTotalPct > 0 ? Math.round(total * ofertaTotalPct) / 100 : 0;
 
   let discountAmt = discountAmtRaw;
   let studentDiscountAmt = studentDiscountAmtRaw;
+  let ofertaTotalAmt = ofertaTotalAmtRaw;
   let conflictoDescuentosNota = '';
-  if (discountAmtRaw > 0 && studentDiscountAmtRaw > 0) {
-    if (discountAmtRaw >= studentDiscountAmtRaw) {
-      studentDiscountAmt = 0;
-      conflictoDescuentosNota = 'ℹ️ El descuento de estudiante/jubilado no se combina con el código de descuento — se aplica el código "' + discountCode + '" por ser mayor.';
-    } else {
-      discountAmt = 0;
-      conflictoDescuentosNota = 'ℹ️ El código de descuento no se combina con el de estudiante/jubilado — se aplica este último por ser mayor.';
-    }
+  const _candidatosDescuento = [
+    { tipo: 'codigo', amt: discountAmtRaw, label: 'el código "' + discountCode + '"' },
+    { tipo: 'estudiante', amt: studentDiscountAmtRaw, label: 'el descuento de estudiante/jubilado' },
+    { tipo: 'oferta', amt: ofertaTotalAmtRaw, label: 'la oferta relámpago' }
+  ].filter(c => c.amt > 0);
+  if (_candidatosDescuento.length > 1) {
+    _candidatosDescuento.sort((a, b) => b.amt - a.amt);
+    const ganador = _candidatosDescuento[0];
+    if (ganador.tipo !== 'codigo') discountAmt = 0;
+    if (ganador.tipo !== 'estudiante') studentDiscountAmt = 0;
+    if (ganador.tipo !== 'oferta') ofertaTotalAmt = 0;
+    conflictoDescuentosNota = 'ℹ️ Los descuentos no se combinan entre sí — se aplica ' + ganador.label + ' por ser el mayor.';
   }
   const conflictoEl = document.getElementById('discount-conflict-notice');
   if (conflictoEl) {
@@ -954,6 +1032,19 @@ function renderCart() {
       document.getElementById('cart-discount-amount').textContent = '-' + discountAmt.toFixed(2).replace('.', ',') + ' €';
     } else {
       discountEl.style.display = 'none';
+    }
+  }
+  // Oferta relámpago sobre el pedido entero (fila propia, separada del
+  // código de descuento — pueden coexistir en el tiempo aunque solo uno de
+  // los dos gane el conflicto de arriba, y así queda claro cuál fue).
+  const ofertaTotalEl = document.getElementById('cart-oferta-relampago-row');
+  if (ofertaTotalEl) {
+    if (ofertaTotalAmt > 0) {
+      ofertaTotalEl.style.display = 'flex';
+      document.getElementById('cart-oferta-relampago-label').textContent = '⚡ Oferta relámpago (-' + ofertaTotalPct + '%)';
+      document.getElementById('cart-oferta-relampago-amount').textContent = '-' + ofertaTotalAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      ofertaTotalEl.style.display = 'none';
     }
   }
   // Premio de fidelización (patata gratis) — mismo cálculo que usa
@@ -994,12 +1085,12 @@ function renderCart() {
       studentDiscountEl.style.display = 'none';
     }
   }
-  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt - studentDiscountAmt);
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt - studentDiscountAmt - ofertaTotalAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
   // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
   // la línea verde de cada uno ya existía, pero un badge aparte resalta
   // más el ahorro real que solo ver un número distinto en el total.
-  const totalAhorro = discountAmt + fidelizacionAmt + studentDiscountAmt;
+  const totalAhorro = discountAmt + fidelizacionAmt + studentDiscountAmt + ofertaTotalAmt;
   const savingsEl = document.getElementById('cart-savings-badge');
   if (savingsEl) {
     if (totalAhorro > 0) {
@@ -1028,7 +1119,7 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota, ofertaTotalAmt, ofertaTotalPct);
 
   // Repintar la tarjeta de sellos DESPUÉS de sincronizar el cajón móvil —
   // _syncCartDrawer() reconstruye todo el HTML del carrito (incluido el

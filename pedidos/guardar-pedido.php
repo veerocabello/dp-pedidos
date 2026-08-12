@@ -750,12 +750,25 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
             $margenEstudiante = $itemsSum * ($pctSeguro2 / 100);
         }
     }
-    // El código de descuento y el de estudiante/jubilado NO se combinan (a
-    // petición expresa) — el navegador ya envía como máximo uno de los dos
-    // "activo" a la vez, pero por si alguien llamara a este endpoint
-    // directamente saltándose esa lógica, aquí se admite como margen el
-    // mayor de los dos, nunca la suma de ambos.
-    $margen = $maxPatataUnit + max($descuentoCodigo, $margenEstudiante) + 0.05;
+    // Oferta relámpago sobre el pedido entero (config/ofertaRelampago) — se
+    // comprueba con el reloj del propio servidor, no con lo que diga el
+    // navegador, para que no se pueda colar un pedido con el margen de una
+    // oferta que ya haya acabado. La de tipo "producto" no necesita nada
+    // aquí: ya se refleja sola en itemsSum, porque el precio por unidad que
+    // manda el cliente para ese producto ya viene rebajado.
+    $margenOfertaRelampago = 0;
+    $orResp = fbGetConEtag($databaseURL, 'config/ofertaRelampago', $accessToken);
+    $oferta = is_array($orResp['data']) ? $orResp['data'] : null;
+    if ($oferta && ($oferta['tipo'] ?? null) === 'total' && is_numeric($oferta['fin'] ?? null) && (float)$oferta['fin'] > (microtime(true) * 1000) && is_numeric($oferta['pct'] ?? null)) {
+        $pctOfertaSeguro = max(0, min(100, (float)$oferta['pct']));
+        $margenOfertaRelampago = $itemsSum * ($pctOfertaSeguro / 100);
+    }
+    // El código de descuento, el de estudiante/jubilado y la oferta
+    // relámpago NO se combinan entre sí (a petición expresa) — el navegador
+    // ya envía como máximo uno de los tres "activo" a la vez, pero por si
+    // alguien llamara a este endpoint directamente saltándose esa lógica,
+    // aquí se admite como margen el mayor de los tres, nunca la suma.
+    $margen = $maxPatataUnit + max($descuentoCodigo, $margenEstudiante, $margenOfertaRelampago) + 0.05;
     if ($total < ($itemsSum - $margen)) {
         return sprintf('total enviado %.2f€, suma de productos %.2f€ (margen de descuentos/premio admitido: %.2f€)', $total, $itemsSum, $margen);
     }

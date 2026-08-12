@@ -303,6 +303,12 @@ function _initFirebase() {
   // PAUSA EXPRÉS (pausa temporal con cuenta atrás, independiente de la auto-pausa)
   window.fb_savePausaExpresHasta = async function(ts) { await jset("config/pausaExpresHasta", ts||0); };
   window.fb_listenPausaExpresHasta = function(cb) { return jlisten("config/pausaExpresHasta", function(sn){ cb(sn.exists()?sn.val():0); }); };
+  // OFERTA RELÁMPAGO (descuento por tiempo limitado, lanzada a mano desde el
+  // panel). null = sin oferta activa; "activa" se decide comparando el campo
+  // fin contra la hora actual (nunca un booleano aparte), así que cancelarla
+  // es simplemente borrar el nodo.
+  window.fb_saveOfertaRelampago = async function(oferta) { await jset("config/ofertaRelampago", oferta); };
+  window.fb_listenOfertaRelampago = function(cb) { return jlisten("config/ofertaRelampago", function(sn){ cb(sn.exists()?sn.val():null); }); };
   // TOKENS
   window.fb_saveUrlToken = async function(t) { await jset("config/urlToken",t); };
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };

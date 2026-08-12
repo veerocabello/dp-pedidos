@@ -872,6 +872,7 @@ function _bimbaScrollAbierto(el) {
 const _bimbaGrupoMkt = [
   { panel: 'bimba-promos-body', row: 'mkt-row-promos' },
   { panel: 'dc-panel', row: 'mkt-row-codigos' },
+  { panel: 'or-panel', row: 'mkt-row-oferta-relampago' },
   { panel: 'ruleta-admin-panel', row: 'mkt-row-ruleta' },
   { panel: 'rasca-admin-panel', row: 'mkt-row-rasca' },
 ];

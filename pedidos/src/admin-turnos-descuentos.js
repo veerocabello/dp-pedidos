@@ -737,3 +737,111 @@ function getDiscountAmount(subtotal) {
   return Math.round(subtotal * _activeDiscount.pct) / 100;
 }
 
+// ── OFERTA RELÁMPAGO ──────────────────────────────────────────────────────
+// Descuento por tiempo limitado, lanzado a mano desde el panel para un día
+// flojo — sobre todo el pedido o sobre un producto concreto (p.ej. para
+// vaciar stock de algo puntual). No hay campo "activa" separado: está
+// vigente mientras Date.now() < fin, igual en el cliente (ver
+// _actualizarOfertaRelampago en carta.js) y en el servidor
+// (comprobarTotalSospechoso en guardar-pedido.php, con su propio reloj) —
+// así que cancelarla es simplemente borrar el nodo entero de Firebase, sin
+// riesgo de que quede un "activa:true" residual desincronizado del "fin".
+let _orTickInterval = null;
+
+function orPoblarSelectorProductos() {
+  const sel = document.getElementById('or-producto');
+  if (!sel || sel.options.length > 1) return; // ya poblado
+  // Solo productos "simples" (cantidad directa en el carrito) — las
+  // Patatas Al Gusto/Bomba y los extras se gestionan aparte (custCart/
+  // extrasCart) y no pasan por el precio base de MENU al calcular el
+  // carrito, así que un descuento aquí no llegaría a reflejarse en ellos.
+  const productos = MENU.filter(function (i) {
+    return i.id !== 15 && i.id !== 16 && !(typeof ALL_EXTRAS_IDS !== 'undefined' && ALL_EXTRAS_IDS.has(i.id)) && !(typeof CHEDDAR_ID !== 'undefined' && i.id === CHEDDAR_ID);
+  });
+  productos.forEach(function (p) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+}
+
+function orCambiarAlcance() {
+  const alcance = document.getElementById('or-alcance').value;
+  const prodGroup = document.getElementById('or-producto-group');
+  if (prodGroup) prodGroup.style.display = alcance === 'producto' ? 'block' : 'none';
+}
+
+function orCambiarDuracion() {
+  const sel = document.getElementById('or-duracion').value;
+  const custom = document.getElementById('or-duracion-custom');
+  if (custom) custom.style.display = sel === 'custom' ? 'inline-block' : 'none';
+}
+
+async function orLanzar() {
+  const alcance = document.getElementById('or-alcance').value; // 'total' | 'producto'
+  const pct = parseInt(document.getElementById('or-pct').value, 10);
+  const duracionSel = document.getElementById('or-duracion').value;
+  const minutos = duracionSel === 'custom' ? parseInt(document.getElementById('or-duracion-custom').value, 10) : parseInt(duracionSel, 10);
+  if (!pct || pct < 1 || pct > 90) { alert('Introduce un % válido (1-90)'); return; }
+  if (!minutos || minutos < 1) { alert('Introduce una duración válida (minutos)'); return; }
+  let productoId = null;
+  if (alcance === 'producto') {
+    productoId = parseInt(document.getElementById('or-producto').value, 10);
+    if (!productoId) { alert('Elige un producto'); return; }
+  }
+  if (!window.fb_saveOfertaRelampago) { alert('Firebase no disponible'); return; }
+  const fin = Date.now() + minutos * 60000;
+  const oferta = { tipo: alcance, productoId, pct, fin };
+  await window.fb_saveOfertaRelampago(oferta);
+  const destino = alcance === 'producto' ? ((MENU.find(function (m) { return m.id === productoId; }) || {}).name || '?') : 'todo el pedido';
+  logActivity('⚡ Oferta relámpago lanzada: -' + pct + '% en ' + destino + ' durante ' + minutos + ' min');
+  orRenderEstado(oferta);
+}
+
+async function orCancelar() {
+  if (!confirm('¿Cancelar la oferta relámpago activa?')) return;
+  if (window.fb_saveOfertaRelampago) await window.fb_saveOfertaRelampago(null);
+  logActivity('⚡ Oferta relámpago cancelada a mano');
+  orRenderEstado(null);
+}
+
+// Pinta el propio panel admin (formulario para lanzar una nueva, o el
+// estado + cuenta atrás de la que esté activa). Aparte de esto,
+// _actualizarOfertaRelampago() en carta.js pinta el banner que ve el
+// cliente — ambas se disparan desde el mismo listener de Firebase, ver
+// loadOfertaRelampagoFromFirebase() más abajo.
+function orRenderEstado(oferta) {
+  const form = document.getElementById('or-form');
+  const estadoEl = document.getElementById('or-estado');
+  if (!form || !estadoEl) return;
+  if (_orTickInterval) { clearInterval(_orTickInterval); _orTickInterval = null; }
+  const vigente = !!(oferta && oferta.fin && Date.now() < oferta.fin);
+  if (!vigente) {
+    form.style.display = 'block';
+    estadoEl.style.display = 'none';
+    return;
+  }
+  form.style.display = 'none';
+  estadoEl.style.display = 'block';
+  const destino = oferta.tipo === 'producto' ? ((MENU.find(function (m) { return m.id === oferta.productoId; }) || {}).name || '?') : 'todo el pedido';
+  const pintar = function () {
+    const restante = oferta.fin - Date.now();
+    if (restante <= 0) { orRenderEstado(null); return; }
+    const m = Math.floor(restante / 60000);
+    const s = Math.floor((restante % 60000) / 1000);
+    const txt = document.getElementById('or-estado-texto');
+    if (txt) txt.textContent = '⚡ -' + oferta.pct + '% en ' + destino + ' — acaba en ' + m + ':' + String(s).padStart(2, '0');
+  };
+  pintar();
+  _orTickInterval = setInterval(pintar, 1000);
+}
+
+function loadOfertaRelampagoFromFirebase() {
+  if (!window.fb_listenOfertaRelampago) return;
+  window.fb_listenOfertaRelampago(function (oferta) {
+    orRenderEstado(oferta);
+    if (typeof _actualizarOfertaRelampago === 'function') _actualizarOfertaRelampago(oferta);
+  });
+}
+
