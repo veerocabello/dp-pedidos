@@ -1040,9 +1040,8 @@
               <input id="or-pct" type="number" placeholder="%" min="1" max="90" style="width:70px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
             </div>
             <div id="or-producto-group" style="display:none;margin-bottom:8px">
-              <select id="or-producto" style="width:100%;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;box-sizing:border-box">
-                <option value="">Elige un producto…</option>
-              </select>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Puedes marcar varios.</div>
+              <div id="or-producto-lista" style="max-height:220px;overflow-y:auto;border:1.5px solid var(--warm);border-radius:8px;padding:8px 12px;background:var(--white)"></div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
               <select id="or-duracion" onchange="orCambiarDuracion()" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">

@@ -2287,7 +2287,7 @@ function _ofertaRelampagoVigente(o) {
 // para calcular márgenes, y no debe ver precios rebajados temporalmente).
 function _precioConOferta(item) {
   const o = window._ofertaRelampagoActiva;
-  if (o && o.tipo === 'producto' && o.productoId === item.id && _ofertaRelampagoVigente(o)) {
+  if (o && o.tipo === 'producto' && Array.isArray(o.productoIds) && o.productoIds.includes(item.id) && _ofertaRelampagoVigente(o)) {
     return Math.round(item.price * (1 - o.pct / 100) * 100) / 100;
   }
   return item.price;
@@ -2303,7 +2303,11 @@ function _renderOfertaRelampagoBanner() {
   const restante = Math.max(0, o.fin - Date.now());
   const m = Math.floor(restante / 60000);
   const s = Math.floor((restante % 60000) / 1000);
-  const destino = o.tipo === 'producto' ? ((typeof MENU !== 'undefined' && MENU.find(mi => mi.id === o.productoId) || {}).name || 'este producto') : 'todo el pedido';
+  let destino = 'todo el pedido';
+  if (o.tipo === 'producto' && Array.isArray(o.productoIds)) {
+    const nombres = o.productoIds.map(id => (MENU.find(mi => mi.id === id) || {}).name).filter(Boolean);
+    destino = nombres.length ? nombres.join(', ') : 'este producto';
+  }
   el.textContent = '⚡ Oferta relámpago: -' + o.pct + '% en ' + destino + ' · acaba en ' + m + ':' + String(s).padStart(2, '0');
   el.style.display = 'block';
 }
@@ -6258,8 +6262,8 @@ function getDiscountAmount(subtotal) {
 let _orTickInterval = null;
 
 function orPoblarSelectorProductos() {
-  const sel = document.getElementById('or-producto');
-  if (!sel || sel.options.length > 1) return; // ya poblado
+  const cont = document.getElementById('or-producto-lista');
+  if (!cont || cont.children.length > 0) return; // ya poblado
   // Solo productos "simples" (cantidad directa en el carrito) — las
   // Patatas Al Gusto/Bomba y los extras se gestionan aparte (custCart/
   // extrasCart) y no pasan por el precio base de MENU al calcular el
@@ -6267,12 +6271,20 @@ function orPoblarSelectorProductos() {
   const productos = MENU.filter(function (i) {
     return i.id !== 15 && i.id !== 16 && !(typeof ALL_EXTRAS_IDS !== 'undefined' && ALL_EXTRAS_IDS.has(i.id)) && !(typeof CHEDDAR_ID !== 'undefined' && i.id === CHEDDAR_ID);
   });
+  // Agrupados por categoría (mismo orden en que aparecen en la carta), con
+  // una casilla por producto — se puede marcar más de uno a la vez.
+  let html = '';
+  let lastCat = null;
   productos.forEach(function (p) {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.name;
-    sel.appendChild(opt);
+    if (p.cat !== lastCat) {
+      lastCat = p.cat;
+      html += '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:' + (html ? '10px' : '0') + ' 0 4px">' + p.cat + '</div>';
+    }
+    html += '<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px;color:var(--text);cursor:pointer">'
+      + '<input type="checkbox" class="or-producto-check" value="' + p.id + '" style="width:16px;height:16px;flex-shrink:0;accent-color:var(--brown)">'
+      + p.name + '</label>';
   });
+  cont.innerHTML = html;
 }
 
 function orCambiarAlcance() {
@@ -6294,18 +6306,25 @@ async function orLanzar() {
   const minutos = duracionSel === 'custom' ? parseInt(document.getElementById('or-duracion-custom').value, 10) : parseInt(duracionSel, 10);
   if (!pct || pct < 1 || pct > 90) { alert('Introduce un % válido (1-90)'); return; }
   if (!minutos || minutos < 1) { alert('Introduce una duración válida (minutos)'); return; }
-  let productoId = null;
+  let productoIds = null;
   if (alcance === 'producto') {
-    productoId = parseInt(document.getElementById('or-producto').value, 10);
-    if (!productoId) { alert('Elige un producto'); return; }
+    productoIds = Array.from(document.querySelectorAll('.or-producto-check:checked')).map(function (c) { return parseInt(c.value, 10); });
+    if (!productoIds.length) { alert('Elige al menos un producto'); return; }
   }
   if (!window.fb_saveOfertaRelampago) { alert('Firebase no disponible'); return; }
   const fin = Date.now() + minutos * 60000;
-  const oferta = { tipo: alcance, productoId, pct, fin };
+  const oferta = { tipo: alcance, productoIds, pct, fin };
   await window.fb_saveOfertaRelampago(oferta);
-  const destino = alcance === 'producto' ? ((MENU.find(function (m) { return m.id === productoId; }) || {}).name || '?') : 'todo el pedido';
+  const destino = alcance === 'producto' ? _orNombresProductos(productoIds) : 'todo el pedido';
   logActivity('⚡ Oferta relámpago lanzada: -' + pct + '% en ' + destino + ' durante ' + minutos + ' min');
   orRenderEstado(oferta);
+}
+
+// Nombres legibles de una lista de ids de producto, para el log de
+// actividad, el estado del panel admin y el banner del cliente.
+function _orNombresProductos(productoIds) {
+  const nombres = (productoIds || []).map(function (id) { return (MENU.find(function (m) { return m.id === id; }) || {}).name || '?'; });
+  return nombres.join(', ');
 }
 
 async function orCancelar() {
@@ -6333,7 +6352,7 @@ function orRenderEstado(oferta) {
   }
   form.style.display = 'none';
   estadoEl.style.display = 'block';
-  const destino = oferta.tipo === 'producto' ? ((MENU.find(function (m) { return m.id === oferta.productoId; }) || {}).name || '?') : 'todo el pedido';
+  const destino = oferta.tipo === 'producto' ? _orNombresProductos(oferta.productoIds) : 'todo el pedido';
   const pintar = function () {
     const restante = oferta.fin - Date.now();
     if (restante <= 0) { orRenderEstado(null); return; }

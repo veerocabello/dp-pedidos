@@ -541,7 +541,7 @@ function _ofertaRelampagoVigente(o) {
 // para calcular márgenes, y no debe ver precios rebajados temporalmente).
 function _precioConOferta(item) {
   const o = window._ofertaRelampagoActiva;
-  if (o && o.tipo === 'producto' && o.productoId === item.id && _ofertaRelampagoVigente(o)) {
+  if (o && o.tipo === 'producto' && Array.isArray(o.productoIds) && o.productoIds.includes(item.id) && _ofertaRelampagoVigente(o)) {
     return Math.round(item.price * (1 - o.pct / 100) * 100) / 100;
   }
   return item.price;
@@ -557,7 +557,11 @@ function _renderOfertaRelampagoBanner() {
   const restante = Math.max(0, o.fin - Date.now());
   const m = Math.floor(restante / 60000);
   const s = Math.floor((restante % 60000) / 1000);
-  const destino = o.tipo === 'producto' ? ((typeof MENU !== 'undefined' && MENU.find(mi => mi.id === o.productoId) || {}).name || 'este producto') : 'todo el pedido';
+  let destino = 'todo el pedido';
+  if (o.tipo === 'producto' && Array.isArray(o.productoIds)) {
+    const nombres = o.productoIds.map(id => (MENU.find(mi => mi.id === id) || {}).name).filter(Boolean);
+    destino = nombres.length ? nombres.join(', ') : 'este producto';
+  }
   el.textContent = '⚡ Oferta relámpago: -' + o.pct + '% en ' + destino + ' · acaba en ' + m + ':' + String(s).padStart(2, '0');
   el.style.display = 'block';
 }
