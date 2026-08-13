@@ -453,10 +453,11 @@ async function smsVerifyCode() {
     } else if (data.verified) {
       // DIAGNÓSTICO TEMPORAL — mismo motivo que arriba: esta rama solo
       // debería darse si falta smsToken o se perdió _pendingOrderData;
-      // mostrar cuál de las dos para saber qué está pasando de verdad.
+      // mostrar cuál de las dos, y el JSON crudo, para saber qué está
+      // pasando de verdad en el servidor.
       const motivo = !data.smsToken ? 'sin smsToken del servidor' : 'sin datos de pedido pendiente en el navegador';
       const errEl = document.getElementById('sms-error-msg');
-      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono (' + motivo + '). Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono (' + motivo + '). JSON: ' + rawText.slice(0, 300); errEl.style.display = 'block'; }
       if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     } else {
       // DIAGNÓSTICO TEMPORAL — igual, mostrar el error real del servidor
