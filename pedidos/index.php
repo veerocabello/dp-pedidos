@@ -1,3 +1,9 @@
+<?php
+require_once __DIR__ . '/menu-render.php';
+$dpf_menu = dpf_menu_actual();
+$dpf_menu_html = dpf_menu_html($dpf_menu);
+$dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -93,6 +99,7 @@
     "menu": "https://pedidos.dulcepatatafood.es/#carta"
   }
   </script>
+  <?= $dpf_menu_jsonld ?>
 </head>
 <body>
 
@@ -275,7 +282,7 @@
     </div>
     <div class="tabs" id="tabs"></div>
     <div id="promos-container"></div>
-    <div class="menu-grid" id="menu-grid"></div>
+    <div class="menu-grid" id="menu-grid"><?= $dpf_menu_html ?></div>
   </div>
 
   <!-- RIGHT: ORDER PANEL -->
@@ -922,7 +929,7 @@
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1786522396000" defer></script>
-<script src="js/app.js?v=1786558226000" defer></script>
+<script src="js/app.js?v=1786603895000" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
   // Carga diferida del admin-shell: solo cuando se necesita

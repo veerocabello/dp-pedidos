@@ -64,7 +64,6 @@ function _cargarDatosEmpleadosPrivados() {
 loadSavedMenu();
 initTabs(); // re-renderizar pestañas con el menú guardado
 renderMenu(); // re-renderizar carta con los datos de localStorage
-if (typeof _generarMenuJsonLd === 'function') _generarMenuJsonLd(); // SEO: listado de productos/precios para buscadores
 loadConfig();
 applyAutoDelete(); // auto-borrado del historial al cargar
 

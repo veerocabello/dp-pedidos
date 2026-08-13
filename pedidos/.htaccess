@@ -3,6 +3,12 @@
 #    (fuera de public_html, no accesible por web).
 #    Ver twilio-config.php.
 
+# ── index.php es ahora la página real (antes index.html) — genera el
+#    menú y sus datos estructurados en el propio HTML, leyendo el menú
+#    real desde Firebase (ver menu-render.php), en vez de depender de
+#    que el navegador ejecute JavaScript para que un buscador lo vea.
+DirectoryIndex index.php index.html
+
 # ── Compresión (gzip/deflate) — reduce mucho el peso de JS/CSS/HTML al viajar ──
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain image/svg+xml
@@ -35,7 +41,7 @@
 </IfModule>
 
 # ── Bloquear acceso directo a archivos PHP sensibles ──
-<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log)$">
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|menu-render\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log|menu-cache\.json)$">
     Require all denied
 </FilesMatch>
 
@@ -57,6 +63,11 @@ RewriteRule ^src/ - [F,L]
 RewriteRule ^scripts/ - [F,L]
 RewriteRule ^package\.json$ - [F,L]
 RewriteRule ^package-lock\.json$ - [F,L]
+
+# ── index.html ya no existe (sustituido por index.php) — si algún enlace
+#    viejo o marcador apunta directo a index.html, se redirige a la home
+#    de verdad en vez de servir dos URLs distintas con el mismo contenido.
+RewriteRule ^index\.html$ / [R=301,L]
 
 # ── Excepciones: estos PHP SÍ son accesibles públicamente ──
 RewriteRule ^send-code\.php$ - [L]

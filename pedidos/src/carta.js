@@ -324,54 +324,12 @@ const MENU = [
   desc: "",
   price: 2.50
 }];
-// Datos estructurados (schema.org Menu) para que los buscadores vean el
-// listado real de productos y precios sin depender de ejecutar JavaScript
-// para "verlo" — se genera aquí, a partir del propio MENU, en vez de
-// mantener un JSON-LD escrito a mano en index.html, para que nunca se
-// desincronice de los precios/productos reales (loadSavedMenu() en
-// init.js ya pudo haber aplicado cambios guardados antes de llamar a
-// esto — ver el orden de arranque en init.js). Se llama una sola vez, al
-// cargar la página: lo único que importa es lo que haya cuando un
-// buscador rastree la página, no mantenerlo al segundo mientras alguien
-// compra.
-function _generarMenuJsonLd() {
-  try {
-    const porCategoria = {};
-    MENU.filter(i => !i.hidden).forEach(i => {
-      if (!porCategoria[i.cat]) porCategoria[i.cat] = [];
-      porCategoria[i.cat].push(i);
-    });
-    const hasMenuSection = Object.keys(porCategoria).map(cat => ({
-      '@type': 'MenuSection',
-      name: cat,
-      hasMenuItem: porCategoria[cat].map(item => ({
-        '@type': 'MenuItem',
-        name: item.name,
-        description: item.desc || undefined,
-        offers: {
-          '@type': 'Offer',
-          price: item.price.toFixed(2),
-          priceCurrency: 'EUR'
-        }
-      }))
-    }));
-    const jsonLd = {
-      '@context': 'https://schema.org',
-      '@type': 'Menu',
-      name: 'Carta Dulce Patata Food',
-      hasMenuSection
-    };
-    const existente = document.getElementById('menu-json-ld');
-    if (existente) existente.remove();
-    const script = document.createElement('script');
-    script.type = 'application/ld+json';
-    script.id = 'menu-json-ld';
-    script.textContent = JSON.stringify(jsonLd);
-    document.head.appendChild(script);
-  } catch (e) {
-    console.warn('[SEO] No se pudo generar el JSON-LD del menú:', e);
-  }
-}
+// El JSON-LD del menú (schema.org Menu) y el listado de productos ya no se
+// generan aquí por JavaScript — los genera el servidor en el propio HTML
+// (ver menu-render.php / index.php), para que un buscador los vea sin
+// depender de que se ejecute ningún script. renderMenu() (admin-config.js)
+// simplemente sustituye ese contenido inicial por la versión interactiva
+// en cuanto carga la página, como ya hacía antes.
 let cart = {};
 window._adminLoggedIn = false;
 let _adminLoggedIn = false; // true solo cuando hay sesión de admin activa
