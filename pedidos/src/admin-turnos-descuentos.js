@@ -82,356 +82,10 @@ function saveSlotConfig() {
 }
 
 // ══════════════════════════════════════════
-//  EXTRAS — QUESO Y GRATINADO EN PATATAS
+//  BLOQUEAR CATEGORÍAS — parte de admin (elegir qué se bloquea). Aplicar
+//  el bloqueo guardado al cargar la página (getBlockedCats/initCatBlocks)
+//  vive en nucleo-compartido.js, porque eso lo necesita cualquier visitante.
 // ══════════════════════════════════════════
-
-// IDs que tienen queso YA incluido → solo ofrecen gratinado (+0,50€)
-const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]);
-// IDs que pueden añadir queso (+1€) y/o gratinado (+0,50€)
-const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
-// IDs al gusto / bomba tienen su propio modal — excluir de extras
-const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
-
-// extrasCart: key → { menuId, qty, queso, gratinado, key }
-const extrasCart = {};
-let _extrasCurrentId = null;
-let _extrasQueso = false;
-let _extrasGratinado = false;
-let _extrasIngredientes = {}; // { name: true/false }
-
-const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
-const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort'];
-const EXTRAS_SALSA_PRECIO = 0.90;
-let _extrasSalsas = {}; // { nombre: true/false }
-function openExtrasModal(itemId) {
-  // Asegurar que el modal está en el body directamente
-  const em = document.getElementById('extras-modal');
-  if (em && em.parentElement !== document.body) document.body.appendChild(em);
-  _extrasCurrentId = itemId;
-  _extrasQueso = false;
-  _extrasGratinado = false;
-  _extrasIngredientes = {};
-  _extrasSalsas = {};
-  const item = MENU.find(m => m.id == itemId);
-  if (!item) return;
-  document.getElementById('extras-title').textContent = item.name;
-  document.getElementById('extras-base-price').textContent = 'Base: ' + item.price.toFixed(2).replace('.', ',') + ' €';
-  const onlySoloGratinado = EXTRAS_SOLO_GRATINADO.has(itemId);
-  let optionsHtml = '';
-  if (!onlySoloGratinado) {
-    optionsHtml += "\n      <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('queso')\">\n        <div>\n          <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F9C0; A\xF1adir queso mozzarella</div>\n          <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+1,00 \u20AC</div>\n        </div>\n        <div id=\"extra-check-queso\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n      </label>";
-  }
-  optionsHtml += "\n    <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('gratinado')\">\n      <div>\n        <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F525; Gratinar".concat(onlySoloGratinado ? '' : ' (con queso)', "</div>\n        <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+0,50 \u20AC").concat(onlySoloGratinado ? '' : ' · incluye gratinado del queso', "</div>\n      </div>\n      <div id=\"extra-check-gratinado\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n    </label>");
-
-  // Ingredientes extra +1€
-  optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">INGREDIENTES EXTRA</div>";
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_ING_PRECIO1.forEach(ing => {
-    const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 \u20AC</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
-  // Ingredientes extra +0,70€
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_ING_PRECIO07.forEach(ing => {
-    const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+0,70 \u20AC</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
-  // Salsas extra +0,90€
-  optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">SALSAS EXTRA</div>";
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_SALSAS.forEach(salsa => {
-    const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraSalsa('").concat(salsa.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(salsa, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(EXTRAS_SALSA_PRECIO.toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
-  document.getElementById('extras-options').innerHTML = optionsHtml;
-  updateExtrasTotal();
-  document.getElementById('extras-modal').style.display = 'block';
-  document.body.style.overflow = 'hidden';
-}
-function toggleExtra(type) {
-  if (type === 'queso') {
-    _extrasQueso = !_extrasQueso;
-    // Si quita queso, quitar también gratinado si solo gratinado no aplica
-    if (!_extrasQueso && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) {
-      // Keep gratinado independent — user can still want it without queso? No: gratinado requiere queso
-      _extrasGratinado = false;
-      updateExtraCheckUI('gratinado', false);
-    }
-  } else {
-    _extrasGratinado = !_extrasGratinado;
-    // Si activa gratinado y no es solo-gratinado, activar queso también automáticamente
-    if (_extrasGratinado && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId) && !_extrasQueso) {
-      _extrasQueso = true;
-      updateExtraCheckUI('queso', true);
-    }
-  }
-  updateExtraCheckUI(type, type === 'queso' ? _extrasQueso : _extrasGratinado);
-  updateExtrasTotal();
-}
-function toggleExtraIng(ing) {
-  _extrasIngredientes[ing] = !_extrasIngredientes[ing];
-  const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-  const el = document.getElementById(eid);
-  const lbl = document.getElementById('lbl-' + eid);
-  const active = _extrasIngredientes[ing];
-  if (el) {
-    el.style.background = active ? '#3D1F0D' : '#fff';
-    el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    el.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-  }
-  if (lbl) {
-    lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
-  }
-  updateExtrasTotal();
-}
-function toggleExtraSalsa(salsa) {
-  _extrasSalsas[salsa] = !_extrasSalsas[salsa];
-  const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-  const el = document.getElementById(eid);
-  const lbl = document.getElementById('lbl-' + eid);
-  const active = _extrasSalsas[salsa];
-  if (el) {
-    el.style.background = active ? '#3D1F0D' : '#fff';
-    el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    el.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-  }
-  if (lbl) {
-    lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
-  }
-  updateExtrasTotal();
-}
-function updateExtraCheckUI(type, active) {
-  const el = document.getElementById('extra-check-' + type);
-  if (!el) return;
-  const label = el.closest('label');
-  if (active) {
-    el.style.background = '#3D1F0D';
-    el.style.borderColor = '#3D1F0D';
-    el.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-    if (label) {
-      label.style.borderColor = '#3D1F0D';
-      label.style.background = 'rgba(244,196,48,0.08)';
-    }
-  } else {
-    el.style.background = '#fff';
-    el.style.borderColor = '#F5E6C8';
-    el.innerHTML = '';
-    if (label) {
-      label.style.borderColor = '#F5E6C8';
-      label.style.background = '#fff';
-    }
-  }
-}
-function updateExtrasTotal() {
-  const item = MENU.find(m => m.id == _extrasCurrentId);
-  if (!item) return;
-  let total = item.price;
-  if (_extrasQueso) total += 1.00;
-  if (_extrasGratinado) total += 0.50;
-  Object.entries(_extrasIngredientes).forEach(_ref11 => {
-    let _ref12 = _slicedToArray(_ref11, 2),
-      ing = _ref12[0],
-      active = _ref12[1];
-    if (!active) return;
-    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 0.70;
-  });
-  Object.values(_extrasSalsas).forEach(active => { if (active) total += EXTRAS_SALSA_PRECIO; });
-  document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
-}
-function closeExtrasModal() {
-  document.getElementById('extras-modal').style.display = 'none';
-  document.body.style.overflow = '';
-  _extrasCurrentId = null;
-}
-function confirmExtras() {
-  if (isShopBlocked()) {
-    showClosedToast();
-    closeExtrasModal();
-    return;
-  }
-  const itemId = _extrasCurrentId;
-  const item = MENU.find(m => m.id == itemId);
-  if (!item) return;
-  const ingKeys = Object.entries(_extrasIngredientes).filter(_ref13 => {
-    let _ref14 = _slicedToArray(_ref13, 2),
-      v = _ref14[1];
-    return v;
-  }).map(_ref15 => {
-    let _ref16 = _slicedToArray(_ref15, 1),
-      k = _ref16[0];
-    return k;
-  }).sort().join('|');
-  const salsaKeys = Object.entries(_extrasSalsas).filter(_ref17s => {
-    let _ref18s = _slicedToArray(_ref17s, 2),
-      v = _ref18s[1];
-    return v;
-  }).map(_ref19s => {
-    let _ref20s = _slicedToArray(_ref19s, 1),
-      k = _ref20s[0];
-    return k;
-  }).sort().join('|');
-  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') || 'BASE';
-  const cartKey = 'ext:' + itemId + ':' + fingerprint;
-  if (!extrasCart[cartKey]) {
-    extrasCart[cartKey] = {
-      menuId: itemId,
-      qty: 0,
-      queso: _extrasQueso,
-      gratinado: _extrasGratinado,
-      ingredientesExtra: Object.entries(_extrasIngredientes).filter(_ref17 => {
-        let _ref18 = _slicedToArray(_ref17, 2),
-          v = _ref18[1];
-        return v;
-      }).map(_ref19 => {
-        let _ref20 = _slicedToArray(_ref19, 1),
-          k = _ref20[0];
-        return k;
-      }),
-      salsasExtra: Object.entries(_extrasSalsas).filter(_ref17b => {
-        let _ref18b = _slicedToArray(_ref17b, 2),
-          v = _ref18b[1];
-        return v;
-      }).map(_ref19b => {
-        let _ref20b = _slicedToArray(_ref19b, 1),
-          k = _ref20b[0];
-        return k;
-      }),
-      key: cartKey,
-      basePrice: item.price
-    };
-  }
-  extrasCart[cartKey].qty++;
-  closeExtrasModal();
-  renderMenu();
-  renderCart();
-}
-function removeExtrasItem(key) {
-  if (extrasCart[key]) {
-    extrasCart[key].qty--;
-    if (extrasCart[key].qty <= 0) delete extrasCart[key];
-  }
-  renderMenu();
-  renderCart();
-}
-function getExtrasItemPrice(c) {
-  let p = c.basePrice + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
-  (c.ingredientesExtra || []).forEach(ing => {
-    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
-  });
-  (c.salsasExtra || []).forEach(() => { p += EXTRAS_SALSA_PRECIO; });
-  return p;
-}
-function getExtrasItemLabel(c) {
-  const item = MENU.find(m => m.id == c.menuId);
-  if (!item) {
-    console.error('getExtrasItemLabel: producto no encontrado menuId=' + c.menuId);
-    return 'Producto desconocido';
-  }
-  if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
-  const extras = [];
-  if (c.queso) extras.push('Extra Queso');
-  (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
-  (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
-  // El gratinado siempre va el último, sea cual sea el resto de extras.
-  if (c.gratinado) extras.push('Gratinado');
-  return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
-}
-
-// ══════════════════════════════════════════
-//  PATATA CHEDDAR-BACON — SELECTOR DE CARNE
-// ══════════════════════════════════════════
-const CHEDDAR_ID = 50;
-let _cheddarCarne = null; // 'picada' | 'kebab'
-
-function openCheddarModal() {
-  _cheddarCarne = null;
-  // Reset UI
-  ['picada', 'kebab'].forEach(opt => {
-    const check = document.getElementById('cheddar-check-' + opt);
-    const label = document.getElementById('cheddar-opt-' + opt);
-    if (check) {
-      check.style.background = '#fff';
-      check.style.borderColor = '#F5E6C8';
-      check.innerHTML = '';
-    }
-    if (label) {
-      label.style.borderColor = '#F5E6C8';
-      label.style.background = '#fff';
-    }
-  });
-  document.getElementById('cheddar-error').style.display = 'none';
-  document.getElementById('cheddar-modal').style.display = 'block';
-  document.body.style.overflow = 'hidden';
-}
-function closeCheddarModal() {
-  document.getElementById('cheddar-modal').style.display = 'none';
-  document.body.style.overflow = '';
-  _cheddarCarne = null;
-}
-function selectCheddarCarne(opt) {
-  _cheddarCarne = opt;
-  document.getElementById('cheddar-error').style.display = 'none';
-  ['picada', 'kebab'].forEach(o => {
-    const check = document.getElementById('cheddar-check-' + o);
-    const label = document.getElementById('cheddar-opt-' + o);
-    const active = o === opt;
-    if (check) {
-      check.style.background = active ? '#3D1F0D' : '#fff';
-      check.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-      check.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-    }
-    if (label) {
-      label.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-      label.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
-    }
-  });
-}
-function confirmCheddar() {
-  if (isShopBlocked()) {
-    showClosedToast();
-    closeCheddarModal();
-    return;
-  }
-  if (!_cheddarCarne) {
-    document.getElementById('cheddar-error').style.display = 'block';
-    return;
-  }
-  const carneLabel = _cheddarCarne === 'picada' ? 'Carne Picada' : 'Carne Kebab';
-  const key = 'cheddar:' + _cheddarCarne;
-  if (!extrasCart[key]) {
-    extrasCart[key] = {
-      menuId: CHEDDAR_ID,
-      qty: 0,
-      queso: false,
-      gratinado: false,
-      key,
-      basePrice: 8.50,
-      cheddarCarne: carneLabel
-    };
-  }
-  extrasCart[key].qty++;
-  closeCheddarModal();
-  renderMenu();
-  renderCart();
-}
-
-// ══════════════════════════════════════════
-//  BLOQUEAR CATEGORÍAS
-// ══════════════════════════════════════════
-const CAT_BLOCK_KEY = 'dpf_blocked_cats';
-function getBlockedCats() {
-  try {
-    return JSON.parse(localStorage.getItem(CAT_BLOCK_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
 function saveBlockedCats(cats) {
   localStorage.setItem(CAT_BLOCK_KEY, JSON.stringify(cats));
   if (window.fb_saveBlockedCats) window.fb_saveBlockedCats(cats).catch(e => console.warn('Firebase blockedCats error', e));
@@ -461,13 +115,6 @@ function toggleCatBlock(cat) {
   loadCatBlockUI();
   renderMenu();
   logActivity((blocked.includes(cat) ? '🚫' : '✅') + ' Categoría ' + (blocked.includes(cat) ? 'bloqueada' : 'desbloqueada') + ': ' + cat);
-}
-function initCatBlocks() {
-  // Apply saved blocked cats on load
-  const blocked = getBlockedCats();
-  MENU.forEach(item => {
-    if (blocked.includes(item.cat)) item.hidden = true;
-  });
 }
 
 // ══════════════════════════════════════════
@@ -582,21 +229,6 @@ function checkLogSecret(val) {
 // Single unified secret key buffer
 window._secretKeyBuf = '';
 // Acceso por teclado bimba desactivado — usar URL ?bimba=TOKEN
-// INIT
-initCatBlocks();
-initTabs();
-renderMenu();
-renderPromos();
-renderCart();
-
-// ═══════════════════════════════════════
-//  PANEL DE ADMINISTRACIÓN
-// ═══════════════════════════════════════
-
-const MENU_KEY = 'dpf_menu';
-const CONFIG_KEY = 'dpf_config';
-const OPEN_KEY = 'dpf_open';
-const HORARIO_KEY = 'dpf_horario';
 
 // (Antes había aquí un sistema de "contraseña de administración" propio,
 // con su hash en localStorage/Firebase y un botón "Cambiar contraseña" en
@@ -607,26 +239,9 @@ const HORARIO_KEY = 'dpf_horario';
 // cambiado algo, sin tocar su credencial real. Ver también admin-config.js
 // (changePwd) y admin-shell.html (sección #admin-pwd).)
 
-// ── Búsqueda en la carta ──────────────────────────────────
-function filterMenuBySearch(query) {
-  const q = query.toLowerCase().trim();
-  document.querySelectorAll('.item-card').forEach(card => {
-    const name = (card.dataset.name || '').toLowerCase();
-    const desc = (card.dataset.desc || '').toLowerCase();
-    card.style.display = (!q || name.includes(q) || desc.includes(q)) ? '' : 'none';
-  });
-  // category sections not used, skip
-  if(false) document.querySelectorAll('.menu-category-section').forEach(sec => {
-    const visible = Array.from(sec.querySelectorAll('.menu-item-card')).some(c => c.style.display !== 'none');
-    sec.style.display = visible ? '' : 'none';
-  });
-}
-
-
-
-// ── CÓDIGOS DE DESCUENTO ──────────────────────────────────────────────────────
-let _activeDiscount = null; // { code, pct }
-
+// ── CÓDIGOS DE DESCUENTO — crear/eliminar/buscar (solo admin). Aplicar un
+// código al pedir (dcAplicar/getDiscountAmount/_activeDiscount) vive en
+// nucleo-compartido.js, porque eso lo hace cualquier cliente. ──
 async function dcCargar() {
   const el = document.getElementById('dc-list');
   if (!el) return;
@@ -704,43 +319,10 @@ async function dcEliminar(code) {
   dcCargar();
 }
 
-async function dcAplicar(code) {
-  if (!code) { _activeDiscount = null; renderCart(); return; }
-  code = code.trim().toUpperCase();
-  if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
-  const d = await window.fb_getDiscount(code).catch(() => null);
-  if (!d) { showDiscountError('Código no válido'); return; }
-  // Los premios de la ruleta/rasca caducan a las 48h (expiraEn) — los
-  // códigos creados a mano desde el panel no llevan ese campo, así que
-  // esta comprobación no les afecta.
-  if (d.expiraEn && Date.now() > d.expiraEn) { showDiscountError('Este código ha caducado'); return; }
-  if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
-  _activeDiscount = { code, pct: d.pct };
-  showDiscountOk(code, d.pct);
-  renderCart();
-}
-
-function showDiscountError(msg) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#c0392b'; el.textContent = '❌ ' + msg; }
-  _activeDiscount = null;
-  renderCart();
-}
-
-function showDiscountOk(code, pct) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#27855a'; el.textContent = '✅ Código ' + code + ' aplicado — ' + pct + '% de descuento'; }
-}
-
-function getDiscountAmount(subtotal) {
-  if (!_activeDiscount) return 0;
-  return Math.round(subtotal * _activeDiscount.pct) / 100;
-}
-
-// ── OFERTA RELÁMPAGO ──────────────────────────────────────────────────────
-// Descuento por tiempo limitado, lanzado a mano desde el panel para un día
-// flojo — sobre todo el pedido o sobre un producto concreto (p.ej. para
-// vaciar stock de algo puntual). No hay campo "activa" separado: está
+// ── OFERTA RELÁMPAGO — panel admin (lanzar/cancelar/ver estado). El
+// listener que hace que el cliente vea el banner/precio rebajado en vivo
+// (loadOfertaRelampagoFromFirebase) vive en nucleo-compartido.js — ver el
+// comentario ahí para el porqué. No hay campo "activa" separado: está
 // vigente mientras Date.now() < fin, igual en el cliente (ver
 // _actualizarOfertaRelampago en carta.js) y en el servidor
 // (comprobarTotalSospechoso en guardar-pedido.php, con su propio reloj) —
@@ -825,7 +407,7 @@ async function orCancelar() {
 // estado + cuenta atrás de la que esté activa). Aparte de esto,
 // _actualizarOfertaRelampago() en carta.js pinta el banner que ve el
 // cliente — ambas se disparan desde el mismo listener de Firebase, ver
-// loadOfertaRelampagoFromFirebase() más abajo.
+// loadOfertaRelampagoFromFirebase() en nucleo-compartido.js.
 function orRenderEstado(oferta) {
   const form = document.getElementById('or-form');
   const estadoEl = document.getElementById('or-estado');
@@ -851,12 +433,3 @@ function orRenderEstado(oferta) {
   pintar();
   _orTickInterval = setInterval(pintar, 1000);
 }
-
-function loadOfertaRelampagoFromFirebase() {
-  if (!window.fb_listenOfertaRelampago) return;
-  window.fb_listenOfertaRelampago(function (oferta) {
-    orRenderEstado(oferta);
-    if (typeof _actualizarOfertaRelampago === 'function') _actualizarOfertaRelampago(oferta);
-  });
-}
-

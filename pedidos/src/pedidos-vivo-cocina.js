@@ -1,14 +1,8 @@
 // ── PEDIDOS EN VIVO ──
-const ORDER_STATUS_KEY = 'dpf_order_status';
+// ORDER_STATUS_KEY, _normOrderKey, getOrderStatus, getOrderStatuses viven en
+// nucleo-compartido.js (bundle de cliente) — el aviso de saturación los
+// necesita para cualquier visitante, no solo para admin.
 
-// In-memory cache for order statuses, synced from Firebase — global para acceso entre funciones
-window._orderStatusCache = window._orderStatusCache || {};
-
-// Normaliza la clave del pedido igual que hace Firebase: quita '#' y 'T' (con regex global para prefijos dobles)
-// Ej: '#T42' → '42', '##T42' → '42', '#42' → '42', 'T42' → '42', '42' → '42'
-function _normOrderKey(num) {
-  return String(num).replace(/#/g, '').replace(/^T/, '');
-}
 // ── AUTO-PAUSA / AVISO DE SATURACIÓN — evaluación ──
 // Se llama desde 3 sitios (fb_listenStats, fb_listenOrderStatuses,
 // refreshKitchenGrid) cada vez que cambia el nº de pedidos pendientes de
@@ -40,14 +34,6 @@ function _actualizarAvisoSaturacion(pendientes) {
   _setAvisoSaturacionEstado(activo, activo ? cfg.msg : '');
 }
 
-function getOrderStatuses() {
-  return window._orderStatusCache;
-}
-
-// Wrapper para leer el estado de un pedido usando clave normalizada
-function getOrderStatus(num) {
-  return window._orderStatusCache[_normOrderKey(num)] || 'nuevo';
-}
 async function setOrderStatus(num, status) {
   const key = _normOrderKey(num);
   window._orderStatusCache[key] = status;
@@ -514,7 +500,9 @@ function refreshKitchenGrid() {
 }
 
 // ── SONIDO CONFIGURABLE ──
-const SOUND_KEY = 'dpf_sound_config';
+// SOUND_KEY vive en nucleo-compartido.js (bundle de cliente) — init.js
+// cachea la config de sonido para cualquier visitante nada más cargar,
+// aunque solo la USE el panel de admin/cocina.
 function getSoundConfig() {
   try {
     return JSON.parse(localStorage.getItem(SOUND_KEY) || '{}');
@@ -819,7 +807,10 @@ function updateTabTitle(newOrderCount) {
 }
 
 // ── ALERTA NUEVO PEDIDO ──
-let _lastKnownOrderCount = null;
+// _lastKnownOrderCount vive en nucleo-compartido.js (bundle de cliente) —
+// lo actualiza también el listener en tiempo real de Firebase para
+// cualquier visitante (initFirebaseListeners), no solo este polling de
+// respaldo cuando Firebase no está disponible.
 function checkForNewOrders(statsOverride) {
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats = statsOverride || null;

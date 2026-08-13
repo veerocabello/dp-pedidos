@@ -1,8 +1,12 @@
-// Script de construcción: une los archivos de src/ en el orden correcto
-// y genera js/app.js — el único archivo que se sube al servidor (dentro
-// de js/, no los 16 de src/ sueltos: las const/let de cada módulo no se
-// comparten entre <script> tags distintas, solo funcionan unidas en un
-// único archivo).
+// Script de construcción: une los archivos de src/ en el orden correcto y
+// genera DOS bundles — js/app.js (núcleo, lo descarga cualquier visitante
+// nada más entrar) y js/app-admin.js (panel de admin, solo se descarga
+// cuando alguien abre el panel — ver loadAdminShell() en index.php). Los
+// 21 archivos de src/ sueltos NO se suben al servidor: las const/let de
+// cada módulo solo se comparten entre sí dentro del mismo bundle (o entre
+// bundles ya cargados, gracias al scope léxico global que comparten los
+// <script> clásicos de una misma página — por eso nucleo-compartido.js
+// tiene que cargar siempre antes que app-admin.js).
 //
 // Uso: node scripts/build.js
 
@@ -10,16 +14,31 @@ const fs = require('fs');
 const path = require('path');
 const esbuild = require('esbuild');
 
-// ── ORDEN DE LOS MÓDULOS ─────────────────────────────────────
-// El orden importa: JavaScript ejecuta esto de arriba a abajo,
-// igual que si fuera un único archivo. Al añadir nuevos módulos,
-// se van agregando a esta lista en el orden que corresponda.
-const MODULOS = [
-  'vacaciones.js',
-  'proveedores.js',
+// ── NÚCLEO (bundle de cliente) ───────────────────────────────
+// Todo lo que necesita CUALQUIER visitante: carta, carrito, checkout,
+// antifraude, banner del día, oferta relámpago, juegos (ruleta/rasca),
+// fidelización, aviso de saturación, arranque general... nucleo-compartido.js
+// va SIEMPRE primero: reúne las piezas de cliente que antes vivían
+// repartidas en archivos que ahora son mayormente de admin, y varias de
+// las otras piezas de este bundle dependen de sus consts/funciones.
+const CORE_MODULOS = [
+  'nucleo-compartido.js',
   'carta.js',
   'carrito-checkout.js',
   'antifraude.js',
+  'init.js',
+];
+
+// ── ADMIN (bundle del panel) ──────────────────────────────────
+// Todo lo que solo usa la dueña/el personal desde el panel: gestión de
+// productos, turnos, descuentos, empleados, fichajes, estadísticas,
+// impresora térmica, exportaciones, configuración de juegos... Se carga de
+// forma diferida (ver loadAdminShell() en index.php) la primera vez que se
+// abre el panel, no al entrar a la web.
+const ADMIN_MODULOS = [
+  'vacaciones.js',
+  'proveedores.js',
+  'admin-antispam-stats.js',
   'admin-turnos-descuentos.js',
   'finanzas.js',
   'admin-accesos.js',
@@ -32,34 +51,36 @@ const MODULOS = [
   'fidelizacion-admin.js',
   'stock-empleados.js',
   'juegos.js',
-  'init.js',
   'buscador.js',
+  'empleados-fichajes.js',
 ];
 
 const srcDir = path.join(__dirname, '..', 'src');
 const outDir = path.join(__dirname, '..', 'js');
 const rootDir = path.join(__dirname, '..');
 
-// 1. Concatenar todos los módulos en orden
-let unido = MODULOS.map(nombre => {
-  const contenido = fs.readFileSync(path.join(srcDir, nombre), 'utf8');
-  return contenido;
-}).join('\n');
+function construirBundle(nombreBundle, modulos, buildFile, minFile) {
+  const unido = modulos.map(nombre => fs.readFileSync(path.join(srcDir, nombre), 'utf8')).join('\n');
+  fs.writeFileSync(path.join(outDir, buildFile), unido);
+  return esbuild.transform(unido, { minify: true, loader: 'js' }).then(result => {
+    fs.writeFileSync(path.join(outDir, minFile), result.code);
+    console.log('✅ Construido: js/' + minFile + ' (' + result.code.length + ' bytes, ' + modulos.length + ' módulos)');
+    return result.code.length;
+  });
+}
 
-// 2. Guardar versión sin minificar (para comparar / depurar)
-fs.writeFileSync(path.join(outDir, 'app.build.js'), unido);
-
-// 3. Minificar con esbuild y guardar como app.js (el que se sube)
-esbuild.transform(unido, { minify: true, loader: 'js' }).then(result => {
-  fs.writeFileSync(path.join(outDir, 'app.js'), result.code);
-  console.log('✅ Construido: js/app.js (' + result.code.length + ' bytes)');
-  console.log('   Versión legible en js/app.build.js para revisar si algo falla.');
+Promise.all([
+  construirBundle('núcleo', CORE_MODULOS, 'app.build.js', 'app.js'),
+  construirBundle('admin', ADMIN_MODULOS, 'app-admin.build.js', 'app-admin.js'),
+]).then(([coreBytes, adminBytes]) => {
+  console.log('   Versiones legibles en js/app.build.js y js/app-admin.build.js para revisar si algo falla.');
+  console.log('   Total: ' + (coreBytes + adminBytes) + ' bytes (antes, un único bundle con todo).');
 }).catch(err => {
   console.error('❌ Error al construir:', err);
   process.exit(1);
 });
 
-// 4. menu-default.json — copia limpia (JSON de verdad, no JS) del array MENU
+// menu-default.json — copia limpia (JSON de verdad, no JS) del array MENU
 // de carta.js, para que index.php pueda leer el menú "de fábrica" sin tener
 // que parsear JavaScript. Es el mismo papel que ya cumplen app.js/app.build.js:
 // un artefacto derivado que se regenera solo en cada build, así carta.js

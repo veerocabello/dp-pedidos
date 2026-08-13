@@ -57,7 +57,7 @@ DirectoryIndex index.php index.html
 # con comentarios que explican rutas de secretos, umbrales antifraude y el
 # resto de la arquitectura de seguridad — información que solo debe estar
 # donde ya la protege el .htaccess (fuera de public_html) o compilada/
-# minificada en js/app.js.
+# minificada en js/app.js y js/app-admin.js.
 RewriteEngine On
 RewriteRule ^src/ - [F,L]
 RewriteRule ^scripts/ - [F,L]

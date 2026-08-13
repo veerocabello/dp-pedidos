@@ -921,28 +921,48 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <!-- defer: el navegador descarga todos estos en paralelo, pero los ejecuta
      siempre en este orden exacto — sustituye al cargador manual secuencial
      que había antes (uno esperaba a que el anterior terminara del todo).
-     NOTA: app.js tiene que seguir siendo el bundle único generado por
-     `node scripts/build.js` — las constantes (HORARIO_KEY, MENU_KEY...)
-     de los 16 módulos de src/ NO se comparten entre sí si se cargan como
-     etiquetas <script> sueltas, solo funcionan juntas dentro de un único
-     archivo. -->
+     NOTA: app.js es el bundle de NÚCLEO generado por `node scripts/build.js`
+     (nucleo-compartido.js + carta.js + carrito-checkout.js + antifraude.js +
+     init.js) — todo lo que necesita cualquier visitante. El panel de admin
+     (16 módulos más) vive aparte en js/app-admin.js y se carga diferido,
+     solo cuando alguien de verdad abre el panel (ver loadAdminShell más
+     abajo) — así un cliente que solo viene a pedir patatas nunca lo
+     descarga. Las constantes (HORARIO_KEY, MENU_KEY...) de los módulos de
+     un mismo bundle NO se comparten si se cargan como etiquetas <script>
+     sueltas, solo funcionan juntas dentro del mismo archivo unido — por eso
+     nucleo-compartido.js va siempre primero dentro de app.js, y por lo que
+     app-admin.js tiene que cargarse DESPUÉS de app.js (ambos son <script>
+     clásicos de la misma página, así que comparten el mismo ámbito global:
+     app-admin.js puede usar sin problema las funciones/consts de app.js
+     una vez este ya se ha ejecutado). -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1786522396000" defer></script>
-<script src="js/app.js?v=1786603895000" defer></script>
+<script src="js/app.js?v=1786608313983" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
-  // Carga diferida del admin-shell: solo cuando se necesita
-  var _adminShellLoaded = false;
-  var _adminShellPromise = null;
-  function loadAdminShell(callback) {
-    if (_adminShellLoaded) { if (callback) callback(); return; }
-    if (!_adminShellPromise) {
-      _adminShellPromise = fetch('admin-shell.html?v=' + Date.now(), {cache: 'no-store'})
+  // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
+  // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
+  // las dos antes de dar el panel por "listo" — loadAdminShell(callback)
+  // es el punto único de entrada que usa el resto del código (openAdmin,
+  // secureLockConfirm, checkUrlToken...) y solo llama a callback cuando
+  // ambas han terminado, para que ninguna función "de admin de verdad"
+  // (isTrustedDevice, dcCargar, empRenderAdmin...) se llame antes de que
+  // exista todavía.
+  window._adminShellLoaded = false; // true solo cuando HTML + JS del admin están listos del todo
+  var _adminHtmlLoaded = false;
+  var _adminHtmlPromise = null;
+  var _adminBundleLoaded = false;
+  var _adminBundlePromise = null;
+
+  function _loadAdminHtml(callback) {
+    if (_adminHtmlLoaded) { if (callback) callback(); return; }
+    if (!_adminHtmlPromise) {
+      _adminHtmlPromise = fetch('admin-shell.html?v=' + Date.now(), {cache: 'no-store'})
         .then(function(r) { return r.text(); })
         .then(function(html) {
           document.getElementById('admin-shell-container').innerHTML = html;
-          _adminShellLoaded = true;
+          _adminHtmlLoaded = true;
           // Fix: mover modales de empleados fuera de admin-stock-config
           ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal','emp-import-modal'].forEach(function(id) {
             var el = document.getElementById(id);
@@ -950,14 +970,48 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
               document.body.appendChild(el);
             }
           });
-          document.dispatchEvent(new Event('adminShellLoaded'));
         })
-        .catch(function(e) { console.error('[admin-shell] Error cargando:', e); });
+        .catch(function(e) { console.error('[admin-shell] Error cargando el HTML:', e); });
     }
-    _adminShellPromise.then(function() { if (callback) callback(); });
+    _adminHtmlPromise.then(function() { if (callback) callback(); });
   }
-  // Precargar en segundo plano tras 2 segundos para que el acceso al panel funcione siempre
-  setTimeout(function() { loadAdminShell(); }, 2000);
+
+  function _loadAdminBundle(callback) {
+    if (_adminBundleLoaded) { if (callback) callback(); return; }
+    if (!_adminBundlePromise) {
+      _adminBundlePromise = new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'js/app-admin.js?v=' + Date.now();
+        s.onload = function() { _adminBundleLoaded = true; resolve(); };
+        // Si falla la descarga (red caída, etc.) no dejamos la promesa
+        // colgada para siempre — se resuelve igual, y las funciones de
+        // admin simplemente seguirán sin existir (los guardas typeof===
+        // 'function' repartidos por el núcleo ya cubren ese caso).
+        s.onerror = function(e) { console.error('[admin-bundle] Error cargando js/app-admin.js:', e); resolve(); };
+        document.body.appendChild(s);
+      });
+    }
+    _adminBundlePromise.then(function() { if (callback) callback(); });
+  }
+
+  function loadAdminShell(callback) {
+    Promise.all([
+      new Promise(function(resolve) { _loadAdminHtml(resolve); }),
+      new Promise(function(resolve) { _loadAdminBundle(resolve); })
+    ]).then(function() {
+      window._adminShellLoaded = true;
+      document.dispatchEvent(new Event('adminShellLoaded'));
+      if (callback) callback();
+    });
+  }
+
+  // Precargar en segundo plano tras 2 segundos SOLO el HTML del panel (es
+  // ligero, y así el candado/triple-tap de acceso responde al instante) —
+  // el bundle de JavaScript del admin NO se precarga aquí a propósito: se
+  // descarga solo cuando de verdad se intenta entrar al panel (ver
+  // loadAdminShell arriba), para no obligar a cada visitante a bajarse
+  // ~370KB que nunca va a usar.
+  setTimeout(function() { _loadAdminHtml(); }, 2000);
 </script>
 
 <script>

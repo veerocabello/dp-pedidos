@@ -624,83 +624,8 @@ async function renderAccesosLog() {
   }
 }
 
-async function recordOrderStats(orderNum, name, total, slotTime) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const items = _lastTicketData ? _lastTicketData.items : [];
-  const phone = _lastTicketData ? _lastTicketData.phone || '' : '';
-  const notes = _lastTicketData ? _lastTicketData.notes || '' : '';
-  const newOrder = {
-    num: orderNum,
-    name,
-    phone,
-    notes,
-    total,
-    items,
-    time: new Date().toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-    slot: slotTime || null,
-    ts: Date.now()
-  };
-
-  // Intentar transacción atómica en Firebase para no perder pedidos de otros dispositivos
-  if (typeof firebase !== 'undefined' && firebase.database) {
-    try {
-      await firebase.database().ref('stats/' + todayKey).transaction(function (current) {
-        if (!current || current.date !== todayKey) {
-          return {
-            date: todayKey,
-            count: 1,
-            total: parseFloat(total.toFixed(2)),
-            orders: [newOrder]
-          };
-        }
-        current.count = (current.count || 0) + 1;
-        current.total = parseFloat(((current.total || 0) + total).toFixed(2));
-        if (!current.orders) current.orders = [];
-        // Evitar duplicados si el pedido ya existe (reintento) — comparar con clave normalizada
-        if (!current.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum))) {
-          current.orders.unshift(newOrder);
-        }
-        return current;
-      });
-      // Leer resultado final y actualizar localStorage
-      const snap = await firebase.database().ref('stats/' + todayKey).once('value');
-      if (snap.exists()) localStorage.setItem(STATS_KEY, JSON.stringify(snap.val()));
-      return;
-    } catch (e) {
-      console.warn('[DPF] Firebase transaction failed, usando fallback:', e);
-    }
-  }
-
-  // Fallback sin Firebase: solo localStorage
-  let stats;
-  try {
-    stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-  } catch {
-    stats = {};
-  }
-  if (stats.date !== todayKey) {
-    if (stats.date && stats.count > 0) saveToHistorial(stats);
-    stats = {
-      date: todayKey,
-      count: 0,
-      total: 0,
-      orders: []
-    };
-  }
-  stats.count++;
-  stats.total = parseFloat((stats.total + total).toFixed(2));
-  if (!stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum))) stats.orders.unshift(newOrder);
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
-}
-scheduleSlotMidnightReset();
+// recordOrderStats vive en nucleo-compartido.js (bundle de cliente) — es la
+// función que registra cada pedido nuevo, se llama desde antifraude.js al
+// confirmar el checkout de cualquier visitante, no solo de admin.
+// El arranque de scheduleSlotMidnightReset() también se movió allí.
 

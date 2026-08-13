@@ -1,91 +1,8 @@
 // ── HISTORIAL MEJORADO ──
-// ── BANNER DEL DÍA ───────────────────────────────────────────────────────────
-const BANNER_KEY = 'dpf_banner_dia';
-function getBannerDia() {
-  try {
-    return JSON.parse(localStorage.getItem(BANNER_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-const BANNER_TIPOS = {
-  promo: {
-    bg: '#FFF8EE',
-    border: '#3D1F0D',
-    iconBg: '#3D1F0D',
-    labelColor: '#3D1F0D',
-    titleColor: '#3D1F0D',
-    subColor: '#8A6A4E',
-    label: 'Oferta del día',
-    emoji: '🎉'
-  },
-  aviso: {
-    bg: '#fff3cd',
-    border: '#3D1F0D',
-    iconBg: '#3D1F0D',
-    labelColor: '#b36a00',
-    titleColor: '#5a3e1b',
-    subColor: '#8a6530',
-    label: 'Aviso importante',
-    emoji: '⚠️'
-  },
-  urgente: {
-    bg: '#fdf0ee',
-    border: '#c0392b',
-    iconBg: '#c0392b',
-    labelColor: '#c0392b',
-    titleColor: '#7a1a0e',
-    subColor: '#a03020',
-    label: 'Urgente',
-    emoji: '🔴'
-  },
-  info: {
-    bg: '#e8f4fd',
-    border: '#2980b9',
-    iconBg: '#2980b9',
-    labelColor: '#2980b9',
-    titleColor: '#1a3a52',
-    subColor: '#2c5f7a',
-    label: 'Novedad',
-    emoji: '📢'
-  }
-};
-function _applyBannerDia(data) {
-  const el = document.getElementById('banner-dia');
-  const inner = document.getElementById('banner-dia-inner');
-  const iconEl = document.getElementById('banner-dia-icon');
-  const labelEl = document.getElementById('banner-dia-label');
-  const textEl = document.getElementById('banner-dia-text');
-  const subEl = document.getElementById('banner-dia-sub');
-  if (!el) return;
-  if (data && data.active && data.text) {
-    const tipo = BANNER_TIPOS[data.tipo || 'promo'];
-    el.style.display = 'block';
-    inner.style.background = tipo.bg;
-    inner.style.border = '2px solid ' + tipo.border;
-    iconEl.style.background = tipo.iconBg;
-    iconEl.textContent = tipo.emoji;
-    labelEl.textContent = tipo.label;
-    labelEl.style.color = tipo.labelColor;
-    textEl.textContent = data.text;
-    textEl.style.color = tipo.titleColor;
-    if (subEl) {
-      subEl.textContent = data.sub || '';
-      subEl.style.color = tipo.subColor;
-      subEl.style.display = data.sub ? 'block' : 'none';
-    }
-  } else {
-    el.style.display = 'none';
-  }
-}
-function _updateBannerToggleBtn(active) {
-  const btn = document.getElementById('banner-toggle-btn');
-  if (!btn) return;
-  btn.textContent = active ? '🟢 Banner activo' : '🔴 Banner inactivo';
-  btn.style.background = active ? '#27855a' : '#c0392b';
-  btn.style.color = '#fff';
-  btn.style.border = 'none';
-}
+// BANNER_KEY, BANNER_TIPOS, getBannerDia, _applyBannerDia,
+// _updateBannerToggleBtn y loadBannerDia viven en nucleo-compartido.js
+// (bundle de cliente) — el banner se pinta para cualquier visitante, no
+// solo para admin.
 async function toggleBannerDia() {
   const data = getBannerDia();
   data.active = !data.active;
@@ -108,48 +25,6 @@ async function saveBannerDia() {
   _applyBannerDia(data);
   showToast('banner-toast');
 }
-function loadBannerDia() {
-  // Mostrar estado local inmediatamente mientras carga Firebase
-  const localBanner = getBannerDia();
-  _updateBannerToggleBtn(localBanner.active);
-  if (window.fb_listenBannerDia) {
-    window.fb_listenBannerDia(data => {
-      if (data) localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-      const d = data || getBannerDia();
-      _applyBannerDia(d);
-      _updateBannerToggleBtn(d.active);
-      const input = document.getElementById('banner-dia-input');
-      const subIn = document.getElementById('banner-dia-sub-input');
-      const tipoIn = document.getElementById('banner-dia-tipo');
-      if (input && d.text) input.value = d.text;
-      if (subIn && d.sub) subIn.value = d.sub;
-      if (tipoIn && d.tipo) tipoIn.value = d.tipo;
-    });
-    return;
-  }
-  // Fallback: leer directamente de Firebase si el listener no está listo aún
-  if (window.firebase && window.firebase.database) {
-    try {
-      window.firebase.database().ref('config/bannerDia').once('value').then(sn => {
-        let data = null;
-        if (sn.exists()) {
-          try {
-            data = typeof sn.val() === 'string' ? JSON.parse(sn.val()) : sn.val();
-          } catch {}
-        }
-        if (data) localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-        _applyBannerDia(data || getBannerDia());
-      }).catch(() => _applyBannerDia(getBannerDia()));
-    } catch (e) {
-      _applyBannerDia(getBannerDia());
-    }
-    return;
-  }
-  // Último fallback: localStorage
-  _applyBannerDia(getBannerDia());
-  _updateBannerToggleBtn(getBannerDia().active);
-}
-
 // ── EXPORTAR PDF ─────────────────────────────────────────────────────────────
 
 function _pdfStyles() {
