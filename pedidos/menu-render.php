@@ -38,11 +38,21 @@ function dpf_menu_actual() {
         if (is_array($cacheado) && count($cacheado)) return $cacheado;
     }
 
-    // Timeout corto a propósito: si Firebase tarda, esta página no puede
-    // quedarse esperando — mejor servir algo (caché vieja o el menú por
-    // defecto) que dejar a un visitante mirando una pantalla en blanco.
-    $ctx = stream_context_create(['http' => ['timeout' => 2]]);
-    $respuesta = @file_get_contents(DPF_MENU_DATABASE_URL . '/config/menu.json', false, $ctx);
+    // cURL, no file_get_contents() — igual que el resto de llamadas a
+    // Firebase de este proyecto (ver fbGetConEtag en guardar-pedido.php):
+    // no todos los hostings compartidos tienen activado allow_url_fopen,
+    // y esto ya está probado que funciona en el hosting real. Timeout
+    // corto a propósito: si Firebase tarda, esta página no puede quedarse
+    // esperando — mejor servir algo (caché vieja o el menú por defecto)
+    // que dejar a un visitante mirando una pantalla en blanco.
+    $respuesta = false;
+    $ch = curl_init(DPF_MENU_DATABASE_URL . '/config/menu.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+    $curlResult = curl_exec($ch);
+    if ($curlResult !== false && curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) $respuesta = $curlResult;
+    curl_close($ch);
     if ($respuesta !== false) {
         // config/menu se guarda con jstr() (JSON.stringify) — el valor real
         // en Firebase es un STRING que contiene JSON, no un array directo.
