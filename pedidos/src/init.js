@@ -428,21 +428,7 @@ async function smsVerifyCode() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: pendingPhone, code })
     }, 8000);
-    let data;
-    let rawText = '';
-    try {
-      rawText = await res.clone().text();
-      data = await res.json();
-    } catch (parseErr) {
-      // DIAGNÓSTICO TEMPORAL — quitar en cuanto se resuelva el fallo de
-      // verificación SMS que se está investigando (ago-2026). Muestra en
-      // pantalla lo que de verdad respondió el servidor, en vez de un
-      // "fallo de conexión" genérico que no ayuda a diagnosticar.
-      const errEl = document.getElementById('sms-error-msg');
-      if (errEl) { errEl.textContent = '❌ Respuesta rara del servidor (HTTP ' + res.status + '): ' + rawText.slice(0, 200); errEl.style.display = 'block'; }
-      if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
-      return;
-    }
+    const data = await res.json();
     // El servidor ahora exige smsToken para aceptar el pedido (ver
     // validarSmsToken en guardar-pedido.php) — sin guardarlo aquí,
     // _finalizarPedido() lo mandaría vacío y el pedido se rechazaría
@@ -451,21 +437,12 @@ async function smsVerifyCode() {
       window._pendingOrderData.smsToken = data.smsToken;
       await _finalizarPedido();
     } else if (data.verified) {
-      // DIAGNÓSTICO TEMPORAL — mismo motivo que arriba: esta rama solo
-      // debería darse si falta smsToken o se perdió _pendingOrderData;
-      // mostrar cuál de las dos, y el JSON crudo, para saber qué está
-      // pasando de verdad en el servidor.
-      const motivo = !data.smsToken ? 'sin smsToken del servidor' : 'sin datos de pedido pendiente en el navegador';
       const errEl = document.getElementById('sms-error-msg');
-      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono (' + motivo + '). JSON: ' + rawText.slice(0, 300); errEl.style.display = 'block'; }
+      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
       if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     } else {
-      // DIAGNÓSTICO TEMPORAL — igual, mostrar el error real del servidor
-      // (p.ej. "Demasiados intentos...") en vez de asumir siempre "código
-      // incorrecto", que puede confundir si la causa es otra (límite de
-      // intentos, teléfono mal formado, etc.).
       const errEl = document.getElementById('sms-error-msg');
-      if (errEl) { errEl.textContent = '❌ ' + (data.error || 'Código incorrecto') + '. Inténtalo de nuevo. [HTTP ' + res.status + ']'; errEl.style.display = 'block'; }
+      if (errEl) { errEl.textContent = '❌ ' + (data.error || 'Código incorrecto') + '. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
       if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     }
   } catch (e) {
@@ -475,8 +452,7 @@ async function smsVerifyCode() {
     // adelante con un mensaje más confuso. Mejor decirlo claro ya.
     console.warn('[SMS] verify error:', e);
     const errEl = document.getElementById('sms-error-msg');
-    // DIAGNÓSTICO TEMPORAL — se añade el texto real de la excepción.
-    if (errEl) { errEl.textContent = '❌ No se pudo verificar el código (fallo de conexión: ' + (e && e.message || e) + '). Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+    if (errEl) { errEl.textContent = '❌ No se pudo verificar el código (fallo de conexión). Inténtalo de nuevo.'; errEl.style.display = 'block'; }
     if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
   }
 }
