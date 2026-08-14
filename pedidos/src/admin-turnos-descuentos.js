@@ -15,31 +15,42 @@ function renderSlotTurnosList(turnos) {
   }
   list.innerHTML = turnos.map((t, i) => "\n    <div style=\"display:flex;align-items:center;flex-wrap:wrap;background:#F4F2EE;border-radius:8px;padding:10px 12px;margin-bottom:8px\">\n      <span style=\"font-size:12px;font-weight:700;color:#8A6A4E;min-width:20px\">".concat(i + 1, ".</span>\n      <label style=\"font-size:12px;color:#8A6A4E\">Desde</label>\n      <input type=\"time\" value=\"").concat(t.start, "\" onchange=\"updateSlotTurno(").concat(i, ",'start',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Hasta</label>\n      <input type=\"time\" value=\"").concat(t.end, "\" onchange=\"updateSlotTurno(").concat(i, ",'end',this.value)\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n      <label style=\"font-size:12px;color:#8A6A4E\">Cada</label>\n      <select onchange=\"updateSlotTurno(").concat(i, ",'interval',parseInt(this.value))\"\n        style=\"padding:5px 8px;border:1.5px solid #E2DED7;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:#2A1506;background:#fff;outline:none\">\n        <option value=\"15\" ").concat(t.interval === 15 ? 'selected' : '', ">15 min</option>\n        <option value=\"20\" ").concat(t.interval === 20 ? 'selected' : '', ">20 min</option>\n        <option value=\"30\" ").concat(!t.interval || t.interval === 30 ? 'selected' : '', ">30 min</option>\n        <option value=\"45\" ").concat(t.interval === 45 ? 'selected' : '', ">45 min</option>\n        <option value=\"60\" ").concat(t.interval === 60 ? 'selected' : '', ">60 min</option>\n      </select>\n      <button onclick=\"removeSlotTurno(").concat(i, ")\"\n        style=\"margin-left:auto;background:#fff;border:1.5px solid #e74c3c;color:#c0392b;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">&#128465;</button>\n    </div>")).join('');
 }
-function _syncSlotTurnos(turnos) {
+// mutatorFn recibe el array de turnos actual (local o el más reciente de
+// Firebase, según el intento) y lo modifica in-place. Evita que dos
+// ediciones de turnos casi simultáneas (dos dispositivos) se pisen entre
+// sí — igual que el resto de escrituras "leer todo, modificar, guardar
+// todo" arregladas en esta misma pasada.
+function _mutateSlotTurnos(mutatorFn) {
+  const turnos = getSlotTurnos();
+  mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  const max = getSlotMax();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+      mutatorFn(t);
+      return { turnos: t, max: (current && current.max) || getSlotMax() };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
+  }
+  return turnos;
 }
 function addSlotTurno() {
-  const turnos = getSlotTurnos();
-  turnos.push({
-    start: '19:30',
-    end: '23:30',
-    interval: 30
+  const turnos = _mutateSlotTurnos(function (t) {
+    t.push({ start: '19:30', end: '23:30', interval: 30 });
   });
-  _syncSlotTurnos(turnos);
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
-  const turnos = getSlotTurnos();
-  turnos.splice(idx, 1);
-  _syncSlotTurnos(turnos);
+  const turnos = _mutateSlotTurnos(function (t) {
+    if (idx < t.length) t.splice(idx, 1);
+  });
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
-  const turnos = getSlotTurnos();
-  turnos[idx][field] = value;
-  _syncSlotTurnos(turnos);
+  _mutateSlotTurnos(function (t) {
+    if (t[idx]) t[idx][field] = value;
+  });
 }
 function saveSlotConfig() {
   const maxInp = document.getElementById('slot-max-input');
@@ -50,313 +61,31 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
-  const turnos = getSlotTurnos();
-  if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(turnos, max).catch(e => console.warn('Firebase slotConfig error', e));
+  const turnosLocal = getSlotTurnos();
+  // Transacción real en vez de leer-modificar-guardar sin más — antes, si
+  // otro dispositivo acababa de añadir/quitar un turno justo antes de este
+  // guardado (que solo cambia el número máximo por turno), se escribía
+  // encima con la copia de turnos que este dispositivo tenía en caché,
+  // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
+  // patrón para las demás ediciones de turnos.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('config/slotConfig', function (current) {
+      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+      return { turnos: t, max: max };
+    }).catch(e => console.warn('Firebase slotConfig error', e));
+  } else if (window.fb_saveSlotConfig) {
+    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
+  }
   showToast('slot-config-toast');
-  logActivity('🕐 Turnos actualizados — ' + turnos.length + ' franjas · max ' + max + ' pedidos/turno');
+  logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
 }
 
 // ══════════════════════════════════════════
-//  EXTRAS — QUESO Y GRATINADO EN PATATAS
+//  BLOQUEAR CATEGORÍAS — parte de admin (elegir qué se bloquea). Aplicar
+//  el bloqueo guardado al cargar la página (getBlockedCats/initCatBlocks)
+//  vive en nucleo-compartido.js, porque eso lo necesita cualquier visitante.
 // ══════════════════════════════════════════
-
-// IDs que tienen queso YA incluido → solo ofrecen gratinado (+0,50€)
-const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]);
-// IDs que pueden añadir queso (+1€) y/o gratinado (+0,50€)
-const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
-// IDs al gusto / bomba tienen su propio modal — excluir de extras
-const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
-
-// extrasCart: key → { menuId, qty, queso, gratinado, key }
-const extrasCart = {};
-let _extrasCurrentId = null;
-let _extrasQueso = false;
-let _extrasGratinado = false;
-let _extrasIngredientes = {}; // { name: true/false }
-
-const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
-const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-function openExtrasModal(itemId) {
-  // Asegurar que el modal está en el body directamente
-  const em = document.getElementById('extras-modal');
-  if (em && em.parentElement !== document.body) document.body.appendChild(em);
-  _extrasCurrentId = itemId;
-  _extrasQueso = false;
-  _extrasGratinado = false;
-  _extrasIngredientes = {};
-  const item = MENU.find(m => m.id == itemId);
-  if (!item) return;
-  document.getElementById('extras-title').textContent = item.name;
-  document.getElementById('extras-base-price').textContent = 'Base: ' + item.price.toFixed(2).replace('.', ',') + ' €';
-  const onlySoloGratinado = EXTRAS_SOLO_GRATINADO.has(itemId);
-  let optionsHtml = '';
-  if (!onlySoloGratinado) {
-    optionsHtml += "\n      <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('queso')\">\n        <div>\n          <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F9C0; A\xF1adir queso mozzarella</div>\n          <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+1,00 \u20AC</div>\n        </div>\n        <div id=\"extra-check-queso\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n      </label>";
-  }
-  optionsHtml += "\n    <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('gratinado')\">\n      <div>\n        <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F525; Gratinar".concat(onlySoloGratinado ? '' : ' (con queso)', "</div>\n        <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+0,50 \u20AC").concat(onlySoloGratinado ? '' : ' · incluye gratinado del queso', "</div>\n      </div>\n      <div id=\"extra-check-gratinado\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n    </label>");
-
-  // Ingredientes extra +1€
-  optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">INGREDIENTES EXTRA</div>";
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_ING_PRECIO1.forEach(ing => {
-    const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 \u20AC</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
-  // Ingredientes extra +0,70€
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_ING_PRECIO07.forEach(ing => {
-    const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+0,70 \u20AC</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
-  document.getElementById('extras-options').innerHTML = optionsHtml;
-  updateExtrasTotal();
-  document.getElementById('extras-modal').style.display = 'block';
-  document.body.style.overflow = 'hidden';
-}
-function toggleExtra(type) {
-  if (type === 'queso') {
-    _extrasQueso = !_extrasQueso;
-    // Si quita queso, quitar también gratinado si solo gratinado no aplica
-    if (!_extrasQueso && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) {
-      // Keep gratinado independent — user can still want it without queso? No: gratinado requiere queso
-      _extrasGratinado = false;
-      updateExtraCheckUI('gratinado', false);
-    }
-  } else {
-    _extrasGratinado = !_extrasGratinado;
-    // Si activa gratinado y no es solo-gratinado, activar queso también automáticamente
-    if (_extrasGratinado && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId) && !_extrasQueso) {
-      _extrasQueso = true;
-      updateExtraCheckUI('queso', true);
-    }
-  }
-  updateExtraCheckUI(type, type === 'queso' ? _extrasQueso : _extrasGratinado);
-  updateExtrasTotal();
-}
-function toggleExtraIng(ing) {
-  _extrasIngredientes[ing] = !_extrasIngredientes[ing];
-  const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-  const el = document.getElementById(eid);
-  const lbl = document.getElementById('lbl-' + eid);
-  const active = _extrasIngredientes[ing];
-  if (el) {
-    el.style.background = active ? '#3D1F0D' : '#fff';
-    el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    el.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-  }
-  if (lbl) {
-    lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
-  }
-  updateExtrasTotal();
-}
-function updateExtraCheckUI(type, active) {
-  const el = document.getElementById('extra-check-' + type);
-  if (!el) return;
-  const label = el.closest('label');
-  if (active) {
-    el.style.background = '#3D1F0D';
-    el.style.borderColor = '#3D1F0D';
-    el.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-    if (label) {
-      label.style.borderColor = '#3D1F0D';
-      label.style.background = 'rgba(244,196,48,0.08)';
-    }
-  } else {
-    el.style.background = '#fff';
-    el.style.borderColor = '#F5E6C8';
-    el.innerHTML = '';
-    if (label) {
-      label.style.borderColor = '#F5E6C8';
-      label.style.background = '#fff';
-    }
-  }
-}
-function updateExtrasTotal() {
-  const item = MENU.find(m => m.id == _extrasCurrentId);
-  if (!item) return;
-  let total = item.price;
-  if (_extrasQueso) total += 1.00;
-  if (_extrasGratinado) total += 0.50;
-  Object.entries(_extrasIngredientes).forEach(_ref11 => {
-    let _ref12 = _slicedToArray(_ref11, 2),
-      ing = _ref12[0],
-      active = _ref12[1];
-    if (!active) return;
-    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 0.70;
-  });
-  document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
-}
-function closeExtrasModal() {
-  document.getElementById('extras-modal').style.display = 'none';
-  document.body.style.overflow = '';
-  _extrasCurrentId = null;
-}
-function confirmExtras() {
-  if (isShopBlocked()) {
-    showClosedToast();
-    closeExtrasModal();
-    return;
-  }
-  const itemId = _extrasCurrentId;
-  const item = MENU.find(m => m.id == itemId);
-  if (!item) return;
-  const ingKeys = Object.entries(_extrasIngredientes).filter(_ref13 => {
-    let _ref14 = _slicedToArray(_ref13, 2),
-      v = _ref14[1];
-    return v;
-  }).map(_ref15 => {
-    let _ref16 = _slicedToArray(_ref15, 1),
-      k = _ref16[0];
-    return k;
-  }).sort().join('|');
-  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') || 'BASE';
-  const cartKey = 'ext:' + itemId + ':' + fingerprint;
-  if (!extrasCart[cartKey]) {
-    extrasCart[cartKey] = {
-      menuId: itemId,
-      qty: 0,
-      queso: _extrasQueso,
-      gratinado: _extrasGratinado,
-      ingredientesExtra: Object.entries(_extrasIngredientes).filter(_ref17 => {
-        let _ref18 = _slicedToArray(_ref17, 2),
-          v = _ref18[1];
-        return v;
-      }).map(_ref19 => {
-        let _ref20 = _slicedToArray(_ref19, 1),
-          k = _ref20[0];
-        return k;
-      }),
-      key: cartKey,
-      basePrice: item.price
-    };
-  }
-  extrasCart[cartKey].qty++;
-  closeExtrasModal();
-  renderMenu();
-  renderCart();
-}
-function removeExtrasItem(key) {
-  if (extrasCart[key]) {
-    extrasCart[key].qty--;
-    if (extrasCart[key].qty <= 0) delete extrasCart[key];
-  }
-  renderMenu();
-  renderCart();
-}
-function getExtrasItemPrice(c) {
-  let p = c.basePrice + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
-  (c.ingredientesExtra || []).forEach(ing => {
-    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
-  });
-  return p;
-}
-function getExtrasItemLabel(c) {
-  const item = MENU.find(m => m.id == c.menuId);
-  if (!item) {
-    console.error('getExtrasItemLabel: producto no encontrado menuId=' + c.menuId);
-    return 'Producto desconocido';
-  }
-  if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
-  const extras = [];
-  if (c.queso) extras.push('Queso');
-  if (c.gratinado) extras.push('Gratinado');
-  (c.ingredientesExtra || []).forEach(ing => extras.push(ing));
-  return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
-}
-
-// ══════════════════════════════════════════
-//  PATATA CHEDDAR-BACON — SELECTOR DE CARNE
-// ══════════════════════════════════════════
-const CHEDDAR_ID = 50;
-let _cheddarCarne = null; // 'picada' | 'kebab'
-
-function openCheddarModal() {
-  _cheddarCarne = null;
-  // Reset UI
-  ['picada', 'kebab'].forEach(opt => {
-    const check = document.getElementById('cheddar-check-' + opt);
-    const label = document.getElementById('cheddar-opt-' + opt);
-    if (check) {
-      check.style.background = '#fff';
-      check.style.borderColor = '#F5E6C8';
-      check.innerHTML = '';
-    }
-    if (label) {
-      label.style.borderColor = '#F5E6C8';
-      label.style.background = '#fff';
-    }
-  });
-  document.getElementById('cheddar-error').style.display = 'none';
-  document.getElementById('cheddar-modal').style.display = 'block';
-  document.body.style.overflow = 'hidden';
-}
-function closeCheddarModal() {
-  document.getElementById('cheddar-modal').style.display = 'none';
-  document.body.style.overflow = '';
-  _cheddarCarne = null;
-}
-function selectCheddarCarne(opt) {
-  _cheddarCarne = opt;
-  document.getElementById('cheddar-error').style.display = 'none';
-  ['picada', 'kebab'].forEach(o => {
-    const check = document.getElementById('cheddar-check-' + o);
-    const label = document.getElementById('cheddar-opt-' + o);
-    const active = o === opt;
-    if (check) {
-      check.style.background = active ? '#3D1F0D' : '#fff';
-      check.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-      check.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-    }
-    if (label) {
-      label.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-      label.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
-    }
-  });
-}
-function confirmCheddar() {
-  if (isShopBlocked()) {
-    showClosedToast();
-    closeCheddarModal();
-    return;
-  }
-  if (!_cheddarCarne) {
-    document.getElementById('cheddar-error').style.display = 'block';
-    return;
-  }
-  const carneLabel = _cheddarCarne === 'picada' ? 'Carne Picada' : 'Carne Kebab';
-  const key = 'cheddar:' + _cheddarCarne;
-  if (!extrasCart[key]) {
-    extrasCart[key] = {
-      menuId: CHEDDAR_ID,
-      qty: 0,
-      queso: false,
-      gratinado: false,
-      key,
-      basePrice: 8.50,
-      cheddarCarne: carneLabel
-    };
-  }
-  extrasCart[key].qty++;
-  closeCheddarModal();
-  renderMenu();
-  renderCart();
-}
-
-// ══════════════════════════════════════════
-//  BLOQUEAR CATEGORÍAS
-// ══════════════════════════════════════════
-const CAT_BLOCK_KEY = 'dpf_blocked_cats';
-function getBlockedCats() {
-  try {
-    return JSON.parse(localStorage.getItem(CAT_BLOCK_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
 function saveBlockedCats(cats) {
   localStorage.setItem(CAT_BLOCK_KEY, JSON.stringify(cats));
   if (window.fb_saveBlockedCats) window.fb_saveBlockedCats(cats).catch(e => console.warn('Firebase blockedCats error', e));
@@ -387,13 +116,6 @@ function toggleCatBlock(cat) {
   renderMenu();
   logActivity((blocked.includes(cat) ? '🚫' : '✅') + ' Categoría ' + (blocked.includes(cat) ? 'bloqueada' : 'desbloqueada') + ': ' + cat);
 }
-function initCatBlocks() {
-  // Apply saved blocked cats on load
-  const blocked = getBlockedCats();
-  MENU.forEach(item => {
-    if (blocked.includes(item.cat)) item.hidden = true;
-  });
-}
 
 // ══════════════════════════════════════════
 //  MODO FIN DE NOCHE
@@ -407,6 +129,9 @@ async function activarFinDeNoche() {
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
   if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
+  // no la "reabra sola" pensando que fue ella quien la puso.
+  if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día
@@ -424,7 +149,19 @@ async function activarFinDeNoche() {
   }
   const pedidos = ((_stats = stats) === null || _stats === void 0 ? void 0 : _stats.count) || 0;
   const total = ((_stats2 = stats) === null || _stats2 === void 0 || (_stats2 = _stats2.total) === null || _stats2 === void 0 ? void 0 : _stats2.toFixed(2)) || '0.00';
+  // Antes esto se quedaba siempre vacío — el HTML de abajo ya estaba
+  // preparado para pintar el top 3 con medallas, pero nadie lo rellenaba.
   const topSorted = [];
+  if (stats && Array.isArray(stats.orders)) {
+    const conteoProductos = {};
+    stats.orders.forEach(o => {
+      (o.items || []).forEach(it => {
+        if (it.isFee || !it.name) return;
+        conteoProductos[it.name] = (conteoProductos[it.name] || 0) + (it.qty || 0);
+      });
+    });
+    topSorted.push(...Object.entries(conteoProductos).sort((a, b) => b[1] - a[1]).slice(0, 3));
+  }
 
   // 3. Resetear turnos
   _slotsCache = {};
@@ -492,100 +229,69 @@ function checkLogSecret(val) {
 // Single unified secret key buffer
 window._secretKeyBuf = '';
 // Acceso por teclado bimba desactivado — usar URL ?bimba=TOKEN
-// INIT
-initCatBlocks();
-initTabs();
-renderMenu();
-renderPromos();
-renderCart();
 
-// ═══════════════════════════════════════
-//  PANEL DE ADMINISTRACIÓN
-// ═══════════════════════════════════════
+// (Antes había aquí un sistema de "contraseña de administración" propio,
+// con su hash en localStorage/Firebase y un botón "Cambiar contraseña" en
+// el panel — se ha quitado por completo: no protegía nada de verdad desde
+// que el acceso admin real pasó a Firebase Auth (checkAdminPwd() en
+// slots-alertas.js, vía window.fb_adminLogin), así que "cambiar" esa
+// contraseña le daba al admin una confirmación falsa de que había
+// cambiado algo, sin tocar su credencial real. Ver también admin-config.js
+// (changePwd) y admin-shell.html (sección #admin-pwd).)
 
-const ADMIN_PWD_KEY = 'dpf_admin_pwd';
-const MENU_KEY = 'dpf_menu';
-const CONFIG_KEY = 'dpf_config';
-const OPEN_KEY = 'dpf_open';
-const HORARIO_KEY = 'dpf_horario';
-
-// Hash SHA-256 de la contraseña por defecto: "dulcepatata2024"
-// Para generar el hash de otra contraseña, ejecuta en la consola del navegador:
-//   hashAdminPwd('TuNuevaContraseña').then(h => console.log(h))
-// y pega el resultado en ADMIN_PWD_DEFAULT_HASH
-const ADMIN_PWD_DEFAULT_HASH = '53e3e30b4ba11c28d4c0729bcacbd343a0bef168947da71f90a7c0b06322c277';
-async function hashAdminPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-function isHex64(s) {
-  return typeof s === 'string' && s.length === 64 && /^[0-9a-f]+$/.test(s);
-}
-function getAdminPwd() {
-  // Devuelve el hash guardado en localStorage, o el hash por defecto si no hay ninguno.
-  // NUNCA devuelve null → elimina el flujo de "primera vez" que era el agujero de seguridad.
-  return localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH;
-}
-
-// Migración: si hay una contraseña en texto plano de la versión anterior, la hashea al vuelo.
-async function migrateAdminPwdIfNeeded() {
-  const stored = localStorage.getItem(ADMIN_PWD_KEY);
-  if (stored && !isHex64(stored)) {
-    const h = await hashAdminPwd(stored);
-    localStorage.setItem(ADMIN_PWD_KEY, h);
-    if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(h).catch(() => {});
-  } else if (!stored && window.fb_loadAdminPwd) {
-    // No hay nada en local → intentar cargar desde Firebase
-    try {
-      const fbHash = await window.fb_loadAdminPwd();
-      if (fbHash && isHex64(fbHash)) localStorage.setItem(ADMIN_PWD_KEY, fbHash);
-    } catch {}
-  }
-}
-
-// Flush pending migration if DOMContentLoaded fired before this script ran
-if (window._pendingMigrateAdmin) {
-  window._pendingMigrateAdmin = false;
-  migrateAdminPwdIfNeeded();
-}
-
-
-// ── Búsqueda en la carta ──────────────────────────────────
-function filterMenuBySearch(query) {
-  const q = query.toLowerCase().trim();
-  document.querySelectorAll('.item-card').forEach(card => {
-    const name = (card.dataset.name || '').toLowerCase();
-    const desc = (card.dataset.desc || '').toLowerCase();
-    card.style.display = (!q || name.includes(q) || desc.includes(q)) ? '' : 'none';
-  });
-  // category sections not used, skip
-  if(false) document.querySelectorAll('.menu-category-section').forEach(sec => {
-    const visible = Array.from(sec.querySelectorAll('.menu-item-card')).some(c => c.style.display !== 'none');
-    sec.style.display = visible ? '' : 'none';
-  });
-}
-
-
-
-// ── CÓDIGOS DE DESCUENTO ──────────────────────────────────────────────────────
-let _activeDiscount = null; // { code, pct }
-
+// ── CÓDIGOS DE DESCUENTO — crear/eliminar/buscar (solo admin). Aplicar un
+// código al pedir (dcAplicar/getDiscountAmount/_activeDiscount) vive en
+// nucleo-compartido.js, porque eso lo hace cualquier cliente. ──
 async function dcCargar() {
   const el = document.getElementById('dc-list');
   if (!el) return;
   if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
   const discounts = await window.fb_loadDiscounts().catch(() => ({}));
-  const keys = Object.keys(discounts || {});
+  // Los códigos RAS-/RUL- los genera juegos.php para cada premio ganado en
+  // la Ruleta o el Rasca (origen: 'ruleta'|'rasca') — de un solo uso y
+  // caducan solos a las 48h. No son códigos que el admin haya creado a
+  // mano, así que no se listan aquí para no ahogar la lista.
+  const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
     const remaining = d.maxUses - (d.uses || 0);
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
+    return '<div id="dc-row-' + escapeAttr(code) + '" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
       + '<div><strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
       + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
       + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes</span></div>'
       + '<button data-code="' + escapeAttr(code) + '" onclick="dcEliminar(this.dataset.code)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Eliminar</button>'
+      + '</div>';
+  }).join('');
+}
+
+// Los premios de la Ruleta/Rasca (RAS-/RUL-) no aparecen en la lista de
+// arriba, pero siguen guardados en discounts/ con el teléfono con el que
+// jugó el cliente — esto permite encontrarlos si el cliente pierde su
+// código y llama pidiéndolo.
+async function dcBuscarPorTelefono() {
+  const el = document.getElementById('dc-buscar-resultado');
+  if (!el) return;
+  const tel = (document.getElementById('dc-buscar-tel').value || '').replace(/\D/g, '');
+  if (!/^\d{9}$/.test(tel)) { el.innerHTML = '<span style="color:#c0392b">Introduce un teléfono válido (9 dígitos)</span>'; return; }
+  if (!window.fb_loadDiscounts) { el.innerHTML = 'Firebase no disponible'; return; }
+  el.innerHTML = 'Buscando…';
+  const discounts = await window.fb_loadDiscounts().catch(() => ({}));
+  const ahoraMs = Date.now();
+  const codigos = Object.keys(discounts || {}).filter(code => discounts[code].telefono === tel);
+  if (!codigos.length) { el.innerHTML = '<span style="color:#8A6A4E">No se encontró ningún código de premio para ese teléfono</span>'; return; }
+  el.innerHTML = codigos.map(code => {
+    const d = discounts[code];
+    const usado = (d.uses || 0) >= d.maxUses;
+    const caducado = d.expiraEn && ahoraMs > d.expiraEn;
+    let estado = 'disponible', color = '#2e7d32';
+    if (usado) { estado = 'ya usado'; color = '#c0392b'; }
+    else if (caducado) { estado = 'caducado'; color = '#c0392b'; }
+    return '<div style="padding:6px 0;border-bottom:1px solid #F5E6C8">'
+      + '<strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
+      + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
+      + ' <span style="font-size:11px;font-weight:700;color:' + color + '">' + estado + '</span>'
+      + (d.origen ? ' <span style="font-size:11px;color:#8A6A4E">(' + escapeHtml(d.origen) + ')</span>' : '')
       + '</div>';
   }).join('');
 }
@@ -613,32 +319,117 @@ async function dcEliminar(code) {
   dcCargar();
 }
 
-async function dcAplicar(code) {
-  if (!code) { _activeDiscount = null; renderCart(); return; }
-  code = code.trim().toUpperCase();
-  if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
-  const d = await window.fb_getDiscount(code).catch(() => null);
-  if (!d) { showDiscountError('Código no válido'); return; }
-  if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
-  _activeDiscount = { code, pct: d.pct };
-  showDiscountOk(code, d.pct);
-  renderCart();
+// ── OFERTA RELÁMPAGO — panel admin (lanzar/cancelar/ver estado). El
+// listener que hace que el cliente vea el banner/precio rebajado en vivo
+// (loadOfertaRelampagoFromFirebase) vive en nucleo-compartido.js — ver el
+// comentario ahí para el porqué. No hay campo "activa" separado: está
+// vigente mientras Date.now() < fin, igual en el cliente (ver
+// _actualizarOfertaRelampago en carta.js) y en el servidor
+// (comprobarTotalSospechoso en guardar-pedido.php, con su propio reloj) —
+// así que cancelarla es simplemente borrar el nodo entero de Firebase, sin
+// riesgo de que quede un "activa:true" residual desincronizado del "fin".
+let _orTickInterval = null;
+
+function orPoblarSelectorProductos() {
+  const cont = document.getElementById('or-producto-lista');
+  if (!cont || cont.children.length > 0) return; // ya poblado
+  // Solo productos "simples" (cantidad directa en el carrito) — las
+  // Patatas Al Gusto/Bomba y los extras se gestionan aparte (custCart/
+  // extrasCart) y no pasan por el precio base de MENU al calcular el
+  // carrito, así que un descuento aquí no llegaría a reflejarse en ellos.
+  const productos = MENU.filter(function (i) {
+    return i.id !== 15 && i.id !== 16 && !(typeof ALL_EXTRAS_IDS !== 'undefined' && ALL_EXTRAS_IDS.has(i.id)) && !(typeof CHEDDAR_ID !== 'undefined' && i.id === CHEDDAR_ID);
+  });
+  // Agrupados por categoría (mismo orden en que aparecen en la carta), con
+  // una casilla por producto — se puede marcar más de uno a la vez.
+  let html = '';
+  let lastCat = null;
+  productos.forEach(function (p) {
+    if (p.cat !== lastCat) {
+      lastCat = p.cat;
+      html += '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:' + (html ? '10px' : '0') + ' 0 4px">' + p.cat + '</div>';
+    }
+    html += '<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px;color:var(--text);cursor:pointer">'
+      + '<input type="checkbox" class="or-producto-check" value="' + p.id + '" style="width:16px;height:16px;flex-shrink:0;accent-color:var(--brown)">'
+      + p.name + '</label>';
+  });
+  cont.innerHTML = html;
 }
 
-function showDiscountError(msg) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#c0392b'; el.textContent = '❌ ' + msg; }
-  _activeDiscount = null;
-  renderCart();
+function orCambiarAlcance() {
+  const alcance = document.getElementById('or-alcance').value;
+  const prodGroup = document.getElementById('or-producto-group');
+  if (prodGroup) prodGroup.style.display = alcance === 'producto' ? 'block' : 'none';
 }
 
-function showDiscountOk(code, pct) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#27855a'; el.textContent = '✅ Código ' + code + ' aplicado — ' + pct + '% de descuento'; }
+function orCambiarDuracion() {
+  const sel = document.getElementById('or-duracion').value;
+  const custom = document.getElementById('or-duracion-custom');
+  if (custom) custom.style.display = sel === 'custom' ? 'inline-block' : 'none';
 }
 
-function getDiscountAmount(subtotal) {
-  if (!_activeDiscount) return 0;
-  return Math.round(subtotal * _activeDiscount.pct) / 100;
+async function orLanzar() {
+  const alcance = document.getElementById('or-alcance').value; // 'total' | 'producto'
+  const pct = parseInt(document.getElementById('or-pct').value, 10);
+  const duracionSel = document.getElementById('or-duracion').value;
+  const minutos = duracionSel === 'custom' ? parseInt(document.getElementById('or-duracion-custom').value, 10) : parseInt(duracionSel, 10);
+  if (!pct || pct < 1 || pct > 90) { alert('Introduce un % válido (1-90)'); return; }
+  if (!minutos || minutos < 1) { alert('Introduce una duración válida (minutos)'); return; }
+  let productoIds = null;
+  if (alcance === 'producto') {
+    productoIds = Array.from(document.querySelectorAll('.or-producto-check:checked')).map(function (c) { return parseInt(c.value, 10); });
+    if (!productoIds.length) { alert('Elige al menos un producto'); return; }
+  }
+  if (!window.fb_saveOfertaRelampago) { alert('Firebase no disponible'); return; }
+  const fin = Date.now() + minutos * 60000;
+  const oferta = { tipo: alcance, productoIds, pct, fin };
+  await window.fb_saveOfertaRelampago(oferta);
+  const destino = alcance === 'producto' ? _orNombresProductos(productoIds) : 'todo el pedido';
+  logActivity('⚡ Oferta relámpago lanzada: -' + pct + '% en ' + destino + ' durante ' + minutos + ' min');
+  orRenderEstado(oferta);
 }
 
+// Nombres legibles de una lista de ids de producto, para el log de
+// actividad, el estado del panel admin y el banner del cliente.
+function _orNombresProductos(productoIds) {
+  const nombres = (productoIds || []).map(function (id) { return (MENU.find(function (m) { return m.id === id; }) || {}).name || '?'; });
+  return nombres.join(', ');
+}
+
+async function orCancelar() {
+  if (!confirm('¿Cancelar la oferta relámpago activa?')) return;
+  if (window.fb_saveOfertaRelampago) await window.fb_saveOfertaRelampago(null);
+  logActivity('⚡ Oferta relámpago cancelada a mano');
+  orRenderEstado(null);
+}
+
+// Pinta el propio panel admin (formulario para lanzar una nueva, o el
+// estado + cuenta atrás de la que esté activa). Aparte de esto,
+// _actualizarOfertaRelampago() en carta.js pinta el banner que ve el
+// cliente — ambas se disparan desde el mismo listener de Firebase, ver
+// loadOfertaRelampagoFromFirebase() en nucleo-compartido.js.
+function orRenderEstado(oferta) {
+  const form = document.getElementById('or-form');
+  const estadoEl = document.getElementById('or-estado');
+  if (!form || !estadoEl) return;
+  if (_orTickInterval) { clearInterval(_orTickInterval); _orTickInterval = null; }
+  const vigente = !!(oferta && oferta.fin && Date.now() < oferta.fin);
+  if (!vigente) {
+    form.style.display = 'block';
+    estadoEl.style.display = 'none';
+    return;
+  }
+  form.style.display = 'none';
+  estadoEl.style.display = 'block';
+  const destino = oferta.tipo === 'producto' ? _orNombresProductos(oferta.productoIds) : 'todo el pedido';
+  const pintar = function () {
+    const restante = oferta.fin - Date.now();
+    if (restante <= 0) { orRenderEstado(null); return; }
+    const m = Math.floor(restante / 60000);
+    const s = Math.floor((restante % 60000) / 1000);
+    const txt = document.getElementById('or-estado-texto');
+    if (txt) txt.textContent = '⚡ -' + oferta.pct + '% en ' + destino + ' — acaba en ' + m + ':' + String(s).padStart(2, '0');
+  };
+  pintar();
+  _orTickInterval = setInterval(pintar, 1000);
+}

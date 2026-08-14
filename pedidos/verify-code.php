@@ -22,26 +22,63 @@ $tmp_dir = sys_get_temp_dir();
 $window  = 600; // 10 minutos en segundos
 $max_attempts = 5;
 
-$ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
+// quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
+// fije de verdad), así que confiar en él permite saltarse el límite de
+// intentos mandando un valor distinto en cada petición. REMOTE_ADDR es
+// la IP real de quien conecta — no se puede falsificar en la capa TCP.
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 
 $ip_file = $tmp_dir . '/dpf_verify_ip_' . md5($ip) . '.json';
 
-function dpf_check_limit($file, $max, $window) {
-    $now = time();
-    $log = [];
-    if (file_exists($file)) {
-        $log = json_decode(file_get_contents($file), true) ?: [];
+// Limpieza ocasional: sin esto se acumula un archivo por cada IP/teléfono
+// distinto para siempre (solo se filtran las entradas de dentro, nunca se
+// borra el archivo en sí). Se ejecuta con baja probabilidad para no
+// penalizar cada petición, y borra archivos sin tocar hace más de 1 hora
+// (bastante más que cualquier ventana de límite usada en esta web).
+function dpf_gc_rate_limit_files() {
+    if (mt_rand(1, 50) !== 1) return; // ~2% de las peticiones
+    $ahora = time();
+    foreach (glob(sys_get_temp_dir() . '/dpf_*.json') ?: [] as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime !== false && ($ahora - $mtime) > 3600) {
+            @unlink($f);
+        }
     }
+}
+dpf_gc_rate_limit_files();
+
+// Todo esto (leer, contar, decidir, escribir) pasa con el lock exclusivo
+// abierto de principio a fin — si no, dos peticiones a la vez podían leer
+// el mismo estado antes de que ninguna escribiera y saltarse el límite.
+function dpf_check_limit($file, $max, $window) {
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return true; // no bloquear tráfico real por un fallo de disco
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return true;
+    }
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
     // Borrar entradas antiguas
-    $log = array_filter($log, function($ts) use ($now, $window) {
+    $log = array_values(array_filter($log, function($ts) use ($now, $window) {
         return ($now - $ts) < $window;
-    });
+    }));
     if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return false; // bloqueado
     }
     $log[] = $now;
-    file_put_contents($file, json_encode(array_values($log)), LOCK_EX);
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
     return true;
 }
 
@@ -99,7 +136,22 @@ curl_close($ch);
 $result = json_decode($response, true);
 
 if (isset($result['status']) && $result['status'] === 'approved') {
-    echo json_encode(['success' => true, 'verified' => true]);
+    // Comprobante firmado de que ESTE teléfono verificó su código de
+    // verdad con Twilio — guardar-pedido.php lo exige antes de aceptar
+    // cualquier pedido (ver validarSmsToken allí). Sin esto, verificar
+    // el SMS solo cambiaba lo que mostraba el navegador: el servidor
+    // nunca comprobaba que hubiera pasado de verdad, así que cualquiera
+    // podía llamar a guardar-pedido.php directamente saltándose el SMS
+    // entero. Caduca a los 15 minutos — de sobra para terminar de
+    // confirmar el pedido, poco margen para reutilizarlo más tarde.
+    // $phone aquí siempre lleva el prefijo "+34" (se añade más arriba si
+    // faltaba), así que quitarlo dan los mismos 9 dígitos que usa el
+    // resto de la web para este número.
+    $telefonoLimpio = preg_replace('/^\+34/', '', $phone);
+    $exp = time() + (15 * 60);
+    $firma = hash_hmac('sha256', $telefonoLimpio . '|' . $exp, TWILIO_AUTH_TOKEN);
+    $smsToken = $telefonoLimpio . '|' . $exp . '|' . $firma;
+    echo json_encode(['success' => true, 'verified' => true, 'smsToken' => $smsToken]);
 } else {
     if ($http_code !== 200) {
         $log_line = '[' . date('Y-m-d H:i:s') . "] [verify-code] Twilio ERROR — phone=$phone http_code=$http_code response=$response" . PHP_EOL;

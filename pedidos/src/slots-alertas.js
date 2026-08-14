@@ -110,8 +110,13 @@ function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
@@ -171,6 +176,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -180,13 +192,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -242,18 +250,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
@@ -277,10 +278,10 @@ function importarConfig(input) {
       if (backup.cif !== undefined) {
         localStorage.setItem(EMP_CIF_KEY, backup.cif);
       }
-      if (backup.adminPwd && isHex64(backup.adminPwd)) {
-        localStorage.setItem(ADMIN_PWD_KEY, backup.adminPwd);
-        if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(backup.adminPwd).catch(() => {});
-      }
+      // adminPwd de un backup antiguo se ignora a propósito — el comentario
+      // de arriba ya decía que no se restauraba, y ahora además el sistema
+      // de "contraseña de administración" propio se ha quitado del todo
+      // (no protegía nada real, ver admin-turnos-descuentos.js).
 
       // Refrescar UI
       loadAdminConfig();
@@ -431,6 +432,7 @@ async function checkAdminPwd() {
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();

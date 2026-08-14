@@ -7,7 +7,7 @@
 //  para que el menú, precios y pedidos estén siempre al día.
 // ═══════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'dpf-static-v5'; // súbelo a v6, v7... si algún día cambias esta lógica
+const CACHE_NAME = 'dpf-static-v6'; // subida por optimizar img/icon-512.png — súbelo otra vez si cambias otra imagen
 //
 // ⚠️ IMPORTANTE: las imágenes de img/ y js/firebase-auth-compat.js NO llevan
 // ?v= en su URL (a diferencia de css/style.css y los módulos de src/, que sí).

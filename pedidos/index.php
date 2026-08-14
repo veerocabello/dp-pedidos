@@ -1,12 +1,28 @@
+<?php
+require_once __DIR__ . '/menu-render.php';
+$dpf_menu = dpf_menu_actual();
+$dpf_menu_html = dpf_menu_html($dpf_menu);
+$dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<!-- Sentry: captura errores reales de JavaScript en el navegador de clientes
+     de verdad (con traza completa) — lo más arriba posible para no perderse
+     errores tempranos. El dominio ya estaba permitido en la CSP desde que
+     se preparó, pero nunca se llegó a activar hasta ahora. -->
+<script src="https://js-de.sentry-cdn.com/65861694625070a6ae9c01293f5017e8.min.js" crossorigin="anonymous"></script>
+<script>
+  Sentry.onLoad(function () {
+    Sentry.init({ environment: 'cliente' });
+  });
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Dulce Patata Food — Pedidos Online</title>
+<title>Dulce Patata Food — Pedidos Online en Granada</title>
 <meta name="description" content="Haz tu pedido online en Dulce Patata Food. Patatas rellenas artesanales con los mejores ingredientes. Recoge en tienda y paga al recoger.">
 <meta name="keywords" content="dulce patata, patatas rellenas, pedidos online, comida para llevar, patatas artesanales">
 <meta name="author" content="Dulce Patata Food">
@@ -16,7 +32,7 @@
 <!-- Open Graph (WhatsApp, Facebook, LinkedIn) -->
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://pedidos.dulcepatatafood.es/">
-<meta property="og:title" content="Dulce Patata Food — Pedidos Online">
+<meta property="og:title" content="Dulce Patata Food — Pedidos Online en Granada">
 <meta property="og:description" content="Patatas rellenas artesanales. Haz tu pedido online y recoge en tienda.">
 <meta property="og:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
 <meta property="og:locale" content="es_ES">
@@ -24,12 +40,12 @@
 
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Dulce Patata Food — Pedidos Online">
+<meta name="twitter:title" content="Dulce Patata Food — Pedidos Online en Granada">
 <meta name="twitter:description" content="Patatas rellenas artesanales. Haz tu pedido online y recoge en tienda.">
 <meta name="twitter:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
 
 <!-- Tema color navegador móvil -->
-<meta name="theme-color" content="var(--brown)">
+<meta name="theme-color" content="#3D1F0D">
 <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Dulce Patata">
@@ -37,7 +53,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600&family=Oswald:wght@300;400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=1784404563445">
+<link rel="stylesheet" href="css/style.css?v=1786558226000">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -79,9 +95,11 @@
     ],
     "hasMenu": "https://pedidos.dulcepatatafood.es/#carta",
     "acceptsReservations": false,
+    "sameAs": ["https://www.instagram.com/dulcepatatafood"],
     "menu": "https://pedidos.dulcepatatafood.es/#carta"
   }
   </script>
+  <?= $dpf_menu_jsonld ?>
 </head>
 <body>
 
@@ -112,7 +130,7 @@
 <header>
   <div class="header-inner">
     <div style="display:flex;align-items:center;gap:10px;">
-      <img src="img/logo.png" alt="" style="height:52px;width:auto;display:block;">
+      <img src="img/logo.png" alt="Dulce Patata Food" style="height:52px;width:auto;display:block;">
       <div class="logo" id="logo-secret" style="cursor:default;user-select:none;font-family:Anton,sans-serif;letter-spacing:0.05em;text-transform:uppercase">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
     </div>
     <div class="header-badge">🥔 Paga en tienda</div>
@@ -133,7 +151,7 @@
 
   <div style="flex:none;width:380px;max-width:100%">
     <div class="pickup-card">
-      <div class="pickup-icon"><img src="img/pin-mapa-dulce-patata.png" alt=""></div>
+      <div class="pickup-icon"><img src="img/pin-mapa-dulce-patata.png" alt="Ubicación de Dulce Patata Food en el mapa"></div>
       <div class="pickup-text">
         <div class="pickup-title">Web solo para recogida en tienda</div>
         <div class="pickup-sub">efectivo o tarjeta, tú decides en caja</div>
@@ -211,11 +229,22 @@
   }
 </style>
 
+<!-- AVISO DE PROBLEMA DE CONEXIÓN (Firebase caído/inaccesible) -->
+<div id="firebase-conexion-banner" style="display:none; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
+  ⚠️ Problema de conexión ahora mismo. Si tu pedido no se confirma, recarga la página o avísanos en el mostrador.
+</div>
+
 <!-- BANNER PEDIDOS CERRADOS -->
 <div id="orders-closed-banner" style="display:none; background:var(--brown); color:var(--cream); text-align:center; padding:18px 24px;">
   <div style="font-size:22px; margin-bottom:6px">🔒</div>
   <div id="orders-closed-msg" style="font-family:'Oswald',sans-serif; font-size:18px; font-weight:900; margin-bottom:4px"></div>
 </div>
+
+<!-- AVISO SUAVE DE SATURACIÓN (no bloquea, solo informa) -->
+<div id="aviso-saturacion-banner" style="display:none; background:#FFF7ED; color:#92400e; text-align:center; padding:12px 20px; border-bottom:1.5px solid #FCD34D; font-size:13.5px; font-weight:700"></div>
+
+<!-- OFERTA RELÁMPAGO (descuento por tiempo limitado, lanzada a mano desde el panel) -->
+<div id="oferta-relampago-banner" style="display:none; background:#c0392b; color:#fff; text-align:center; padding:12px 20px; border-bottom:1.5px solid #7a1a0e; font-size:13.5px; font-weight:700"></div>
 
 <!-- BANNER DEL DÍA -->
 <div id="banner-dia" style="display:none;padding:16px 20px;background:var(--cream)">
@@ -231,7 +260,7 @@
 
 <main>
   <!-- LEFT: MENU -->
-  <div>
+  <div id="carta">
     <div id="mobile-top" style="display:none">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
     <div id="busy-mode-banner" style="display:none;background:#FFFBE9;border:1.5px solid #F0C040;border-radius:12px;padding:12px 16px;margin-bottom:14px;align-items:center;gap:10px">
       <span style="font-size:22px">🔥</span>
@@ -240,14 +269,20 @@
         <div style="font-size:12px;color:var(--muted)">Los pedidos pueden tardar un poco más de lo normal — gracias por la paciencia 💛 🥔</div>
       </div>
     </div>
-    <div class="section-title">Nuestra carta</div>
-    <div style="padding:0 0 10px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h2 class="section-title" style="margin-top:0;margin-bottom:0;flex:none">Carta</h2>
       <input type="search" id="menu-search-input" placeholder="🔍 Buscar en la carta…" autocomplete="off" oninput="filterMenuBySearch(this.value)"
-        style="width:100%;padding:10px 14px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--brown);background:var(--cream);box-sizing:border-box;outline:none">
+        style="flex:1;min-width:0;padding:9px 14px;border:1.5px solid var(--gold);border-radius:99px;font-size:13.5px;font-family:'DM Sans',sans-serif;color:var(--brown);background:var(--white);box-sizing:border-box;outline:none">
+    </div>
+    <div style="text-align:right;margin-bottom:12px">
+      <a href="https://wa.me/?text=Mira%20la%20carta%20de%20Dulce%20Patata%20Food%20y%20haz%20tu%20pedido%3A%20https%3A%2F%2Fdulcepatatafood.es%2F" target="_blank" rel="noopener" class="wa-bubble">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m0 1.67a8.2 8.2 0 0 1 5.83 2.42 8.19 8.19 0 0 1 2.41 5.82c0 4.55-3.7 8.24-8.25 8.24a8.2 8.2 0 0 1-4.17-1.14l-.3-.17-3.12.82.83-3.04-.2-.32a8.2 8.2 0 0 1-1.26-4.39c0-4.55 3.7-8.24 8.23-8.24m-4.53 4.7c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.03s.87 2.36.99 2.52c.12.16 1.7 2.72 4.2 3.71 2.08.82 2.5.66 2.95.62.45-.04 1.46-.6 1.66-1.17.2-.58.2-1.08.14-1.18-.06-.1-.22-.16-.46-.28-.24-.12-1.46-.72-1.68-.8-.23-.09-.39-.13-.56.13-.16.24-.64.8-.78.97-.15.16-.29.18-.53.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.35-1.67-.14-.24-.02-.37.11-.5.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.56-1.35-.77-1.85-.2-.48-.4-.42-.56-.43z"/></svg>
+        Compartir carta
+      </a>
     </div>
     <div class="tabs" id="tabs"></div>
     <div id="promos-container"></div>
-    <div class="menu-grid" id="menu-grid"></div>
+    <div class="menu-grid" id="menu-grid"><?= $dpf_menu_html ?></div>
   </div>
 
   <!-- RIGHT: ORDER PANEL -->
@@ -271,7 +306,8 @@
       <div id="cart-body">
         <div class="cart-empty">
           <div class="cart-empty-icon">🥔</div>
-          Añade productos de la carta
+          <div class="cart-empty-title">Tu carrito está en ayunas</div>
+          <div class="cart-empty-sub">dale algo de comer, anda...</div>
         </div>
       </div>
 
@@ -279,9 +315,36 @@
         <span id="cart-fee-label">Gastos de gestión online</span>
         <span id="cart-fee-amount">0,50 €</span>
       </div>
+      <div id="cart-fee2-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:var(--muted);">
+        <span id="cart-fee2-label">Otro gasto fijo</span>
+        <span id="cart-fee2-amount">0,50 €</span>
+      </div>
+      <div id="local-fee-code-row" style="display:none;padding:4px 0 8px">
+        <a href="#" onclick="event.preventDefault();var b=document.getElementById('local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';" style="font-size:11.5px;color:var(--muted);text-decoration:underline">¿Estás pidiendo desde el local?</a>
+        <div id="local-fee-code-box" style="display:none;gap:6px;margin-top:6px;align-items:center">
+          <input id="local-fee-code-input" type="text" maxlength="8" placeholder="Código" oninput="this.value=this.value.toUpperCase();comprobarCodigoLocal()" style="flex:1;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none">
+        </div>
+        <div id="local-fee-code-feedback" style="font-size:11.5px;margin-top:4px"></div>
+      </div>
       <div id="cart-discount-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
         <span id="cart-discount-label">Descuento</span>
         <span id="cart-discount-amount">-0,00 €</span>
+      </div>
+      <div id="discount-conflict-notice" style="display:none;font-size:11px;color:var(--muted);font-style:italic;padding:2px 0 4px"></div>
+      <div id="cart-student-discount-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span id="cart-student-discount-label">🪪 Estudiante/jubilado</span>
+        <span id="cart-student-discount-amount">-0,00 €</span>
+      </div>
+      <div id="cart-fidelizacion-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span>🎁 Patata gratis (fidelización)</span>
+        <span id="cart-fidelizacion-amount">-0,00 €</span>
+      </div>
+      <div id="cart-oferta-relampago-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span id="cart-oferta-relampago-label">⚡ Oferta relámpago</span>
+        <span id="cart-oferta-relampago-amount">-0,00 €</span>
+      </div>
+      <div id="cart-savings-badge" style="display:none;margin:2px 0 4px;">
+        <span class="cart-savings-pill">🎉 <span id="cart-savings-amount">¡Ahorras 0,00 €!</span></span>
       </div>
       <div id="cart-total-row" style="display:none" class="cart-total">
         <span>Total</span>
@@ -302,39 +365,45 @@
         </div>
         <div class="form-group">
           <label>Tu nombre y apellido *</label>
-          <input type="text" id="customer-name" placeholder="" maxlength="60" required>
+          <input type="text" id="customer-name" placeholder="" maxlength="60" autocomplete="name" required>
         </div>
         <div class="form-group">
           <label>Teléfono</label>
-          <input type="tel" id="customer-phone" placeholder="" maxlength="11" oninput="formatPhone(this)">
-          <div style="border:1.5px solid var(--warm);background:var(--cream);border-radius:10px;padding:10px 12px;margin-top:8px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <span style="font-size:16px">📱</span>
-              <p style="font-size:12px;font-weight:700;color:var(--brown);margin:0">Se verificará tu número por SMS</p>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <p style="font-size:12px;color:var(--muted);margin:0;padding-left:4px">Solo para confirmar el pedido</p>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:13px">🔒</span>
-              <p style="font-size:12px;color:var(--muted);margin:0">No lo compartimos con nadie</p>
-            </div>
+          <input type="tel" id="customer-phone" placeholder="" maxlength="11" autocomplete="tel" inputmode="tel" oninput="formatPhone(this)">
+          <div style="background:var(--white);border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
+            <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--warm)">📱</div>
+            <p style="font-size:12px;font-weight:700;color:var(--brown);margin:0">Se verificará tu número por SMS</p>
+            <p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Solo para confirmar el pedido</p>
+            <p style="font-size:11.5px;color:var(--muted);margin:1px 0 0">🔒 No lo compartimos con nadie</p>
           </div>
         </div>
         <div class="form-group">
           <label>Notas del pedido</label>
-          <textarea id="customer-notes" placeholder="" maxlength="300"></textarea>
+          <textarea id="customer-notes" placeholder="" maxlength="300" oninput="_actualizarContadorNotas('customer-notes','notes-char-count')"></textarea>
+          <div id="notes-char-count" style="text-align:right;font-size:11px;color:var(--muted);margin-top:2px">300 caracteres restantes</div>
         </div>
 
         <!-- HORA DE RECOGIDA (solo visible si el pedido incluye patatas en horario 19:30-23:30) -->
         <!-- Campo código de descuento -->
-        <div style="margin-bottom:16px">
-          <label style="font-size:11px;font-weight:700;color:var(--brown);letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px">🎁 Código de descuento (opcional)</label>
+        <div style="background:var(--white);border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:16px">
+          <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--warm)">🏷️</div>
+          <label style="font-size:11px;font-weight:700;color:var(--brown);letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px">Código de descuento (opcional)</label>
           <div style="display:flex;gap:8px">
-            <input id="discount-input" type="text" placeholder="" style="flex:1;padding:10px 14px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none" oninput="this.value=this.value.toUpperCase()">
-            <button type="button" onclick="dcAplicar(document.getElementById('discount-input').value)" style="padding:10px 16px;background:var(--brown);color:var(--white);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aplicar</button>
+            <input id="discount-input" type="text" placeholder="" style="flex:1;padding:9px 12px;border:1px solid rgba(61,31,13,.10);border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none;background:var(--white)" oninput="this.value=this.value.toUpperCase()">
+            <button type="button" onclick="dcAplicar(document.getElementById('discount-input').value)" style="padding:9px 14px;background:var(--brown);color:var(--white);border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aplicar</button>
           </div>
           <div id="discount-feedback" style="font-size:12px;margin-top:6px;min-height:18px"></div>
+        </div>
+
+        <!-- Descuento estudiante/jubilado -->
+        <div id="student-discount-row" style="display:none;margin-bottom:16px">
+          <div id="student-discount-box" style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:11px 14px;transition:border-color .18s">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="student-discount-checkbox" onchange="renderCart()" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--brown)">
+              <span style="font-size:13px;color:var(--brown);font-weight:600">🪪 Soy estudiante o jubilado</span>
+            </label>
+            <div id="student-discount-warn" style="display:none;font-size:12px;color:var(--muted);line-height:1.45;margin-top:8px;padding-left:28px">⚠️ Se pedirá el carné en el mostrador.<br><b style="color:var(--amber-dark)">Si no se presenta, el descuento no se aplicará</b> y se cobrará el precio normal.</div>
+          </div>
         </div>
 
         <div id="slot-picker-group" style="display:none; margin-top:14px">
@@ -362,7 +431,7 @@
 
     <!-- SUCCESS -->
     <div id="success-screen">
-      <div class="success-icon">🥔</div>
+      <div class="success-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12 L10 18 L20 6"/></svg></div>
       <div class="success-title">¡Pedido confirmado!</div>
       <div class="success-rule"></div>
       <div class="success-sub">Te esperamos en el local</div>
@@ -371,7 +440,10 @@
       <div style="background:var(--brown);border-radius:16px;padding:18px 24px;margin-bottom:16px;display:inline-block;min-width:200px;position:relative;overflow:hidden">
         <div style="position:absolute;top:0;left:0;right:0;height:4px;background:var(--gold)"></div>
         <div style="font-family:'Oswald',sans-serif;font-size:11px;color:rgba(244,196,48,0.85);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Tu número de pedido</div>
-        <div id="order-num-display" style="font-size:30px;font-weight:700;color:var(--gold);letter-spacing:.04em;font-family:'Oswald',sans-serif">#0000</div>
+        <div onclick="copiarTexto(document.getElementById('order-num-display').textContent, '✅ Número copiado')" title="Toca para copiar" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <div id="order-num-display" style="font-size:42px;font-weight:400;color:var(--gold);letter-spacing:.02em;font-family:'Anton',sans-serif;text-transform:uppercase">#0000</div>
+          <span style="font-size:16px;opacity:.65">📋</span>
+        </div>
         <div id="success-customer-info" style="font-size:16px;font-weight:700;color:var(--cream);margin-top:8px">👤 <span id="success-customer-name">–</span></div>
       </div>
 
@@ -383,6 +455,9 @@
           <div style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:700;color:var(--cream)"><span id="success-slot-time"></span> h</div>
         </div>
       </div>
+
+      <!-- Estimación de espera según la cola actual (oculto si no hay saturación) -->
+      <div id="success-tiempo-estimado" style="display:none;background:#FFF7ED;border:1.5px solid #FCD34D;border-radius:12px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#92400e;font-weight:600"></div>
 
       <!-- Avisos de la pantalla de éxito (ocultos por defecto, JS los muestra si aplica) -->
       <div id="success-sms-warning" style="display:none;background:var(--white)3cd;border:1.5px solid #D9A441;border-radius:12px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#5a3e1b;font-weight:600">
@@ -402,7 +477,7 @@
         <div id="order-modify-timer" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:10px"></div>
         <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
           <button onclick="modificarPedido()" id="btn-modificar-pedido"
-            style="padding:11px 20px;background:var(--amber);color:var(--white);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
+            style="padding:11px 20px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
             ✏️ Modificar pedido
           </button>
           <button onclick="cancelarPedido()" id="btn-cancelar-pedido"
@@ -427,6 +502,18 @@
   <span id="cart-fab-total" style="white-space:nowrap">0,00 €</span>
   <span id="cart-fab-count">0</span>
 </button>
+
+<!-- ── REPETIR ÚLTIMO PEDIDO (solo móvil, solo si el carrito está vacío) ── -->
+<button id="repeat-order-fab" class="hidden" onclick="repetirUltimoPedido()">
+  🔁 Repetir tu último pedido
+</button>
+
+<button id="juego-fab" class="hidden" onclick="abrirJuegoActivo()" aria-label="Jugar y ganar un premio">
+  <span id="juego-fab-icon">🎡</span>
+  <span class="juego-fab-dot"></span>
+</button>
+
+<button id="back-to-top-fab" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Subir arriba">↑</button>
 
 <!-- ── DRAWER CARRITO ── -->
 <div id="cart-drawer-overlay" onclick="closeCartDrawer()"></div>
@@ -468,6 +555,11 @@
   <!-- Reseña -->
   <div style="display:flex;justify-content:center;margin-bottom:20px;">
     <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:10px 22px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;">⭐ Déjanos una reseña</a>
+  </div>
+
+  <!-- Formulario de incidencias -->
+  <div style="display:flex;justify-content:center;margin-bottom:20px;">
+    <a href="https://tally.so/r/zxvMMq" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--brown);text-decoration:none;padding:9px 18px;border-radius:99px;border:1.5px solid var(--brown);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;">🚩 ¿Algún problema con tu pedido?</a>
   </div>
 
   <!-- Copyright -->
@@ -535,6 +627,11 @@
       <div class="ruleta-title">🎡 ¡Gira y gana!</div>
       <p class="ruleta-sub">Una vuelta gratis al día. A ver qué te toca hoy 👇</p>
 
+      <div class="juego-tel-group">
+        <input type="tel" id="ruleta-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+        <div class="juego-tel-error" id="ruleta-tel-error">Introduce un teléfono válido de 9 dígitos</div>
+      </div>
+
       <div class="ruleta-wheel-wrap">
         <div class="ruleta-pointer">▼</div>
         <canvas id="ruleta-canvas" width="280" height="280"></canvas>
@@ -544,8 +641,8 @@
     </div>
 
     <div id="ruleta-resultado" style="display:none">
-      <div class="ruleta-resultado-emoji" id="ruleta-resultado-emoji">🎉</div>
-      <div class="ruleta-resultado-titulo" id="ruleta-resultado-titulo">¡Enhorabuena!</div>
+      <div class="ruleta-resultado-emoji premio-emoji" id="ruleta-resultado-emoji">🎉</div>
+      <div class="ruleta-resultado-titulo premio-titulo" id="ruleta-resultado-titulo">¡Enhorabuena!</div>
       <p class="ruleta-resultado-desc" id="ruleta-resultado-desc"></p>
       <button class="ruleta-spin-btn" id="ruleta-aplicar-btn" onclick="aplicarPremioRuleta()">Ver mi pedido</button>
       <button class="ruleta-cerrar-btn" onclick="closeRuleta()">Seguir mirando la carta</button>
@@ -569,19 +666,29 @@
       <div class="rasca-title">🎫 ¡Rasca y gana!</div>
       <p class="rasca-sub">Rasca la tarjeta con el dedo o el ratón y descubre tu premio 👇</p>
 
-      <div class="rasca-card-wrap">
-        <div class="rasca-premio-debajo">
-          <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
-          <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+      <div id="rasca-tel-paso">
+        <div class="juego-tel-group">
+          <input type="tel" id="rasca-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+          <div class="juego-tel-error" id="rasca-tel-error">Introduce un teléfono válido de 9 dígitos</div>
         </div>
-        <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        <button class="ruleta-spin-btn" id="rasca-empezar-btn" onclick="empezarRasca()">Destapar mi tarjeta</button>
       </div>
-      <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+
+      <div id="rasca-tarjeta-paso" style="display:none">
+        <div class="rasca-card-wrap">
+          <div class="rasca-premio-debajo">
+            <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
+            <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+          </div>
+          <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        </div>
+        <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+      </div>
     </div>
 
     <div id="rasca-resultado" style="display:none">
-      <div class="rasca-resultado-emoji" id="rasca-resultado-emoji">🎉</div>
-      <div class="rasca-resultado-titulo" id="rasca-resultado-titulo">¡Enhorabuena!</div>
+      <div class="rasca-resultado-emoji premio-emoji" id="rasca-resultado-emoji">🎉</div>
+      <div class="rasca-resultado-titulo premio-titulo" id="rasca-resultado-titulo">¡Enhorabuena!</div>
       <p class="rasca-resultado-desc" id="rasca-resultado-desc"></p>
       <button class="rasca-aplicar-btn" id="rasca-aplicar-btn" onclick="aplicarPremioRasca()">Ver mi pedido</button>
       <button class="rasca-cerrar-btn" onclick="closeRasca()">Seguir mirando la carta</button>
@@ -779,17 +886,17 @@
   <div style="background:var(--cream);border-radius:20px;width:100%;max-width:540px;max-height:88vh;overflow-y:auto;padding:28px 24px;position:relative">
     <button onclick="document.getElementById('privacy-modal').style.display='none'" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">✕</button>
     <h2 style="font-family:'Oswald',sans-serif;font-size:20px;font-weight:900;color:var(--brown);margin-bottom:4px">Política de privacidad</h2>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Última actualización: junio 2025</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Última actualización: agosto 2026</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">1. Responsable del tratamiento</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px"><strong>Dulce Patata Food</strong><br>NIF/CIF: [AÑADIR]<br>Dirección: Carretera de Málaga 111, Granada<br>Teléfono: 604 82 31 80<br>Contacto: a través del teléfono indicado</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px"><strong>Dulce Patata Food</strong><br>NIF/CIF: 77558832A<br>Dirección: Carretera de Málaga 111, Granada<br>Teléfono: 604 82 31 80<br>Contacto: a través del teléfono indicado</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">2. Datos que recogemos</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Al realizar un pedido recogemos tu <strong>nombre</strong> y <strong>número de teléfono</strong>. Las notas del pedido (alergias, preferencias) son opcionales.</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Al realizar un pedido recogemos tu <strong>nombre</strong> y <strong>número de teléfono</strong>. Las notas del pedido (alergias, preferencias) son opcionales. Si se produce un error técnico en la web, se puede recoger también información técnica del dispositivo (navegador, sistema operativo) para poder solucionarlo — nunca tu nombre ni tu teléfono junto con ese error.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">3. Finalidad y base legal</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Usamos tus datos exclusivamente para <strong>gestionar tu pedido</strong> y <strong>contactarte si surge algún problema</strong> con él. La base legal es la ejecución del contrato (art. 6.1.b RGPD).</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Usamos tus datos exclusivamente para <strong>gestionar tu pedido</strong>, <strong>contactarte si surge algún problema</strong> con él, y para el <strong>programa de fidelización</strong> si participas en él. La base legal es la ejecución del contrato (art. 6.1.b RGPD).</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">4. Conservación</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se conservan durante el tiempo necesario para gestionar el pedido y, como máximo, 30 días en nuestros sistemas internos.</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los pedidos se conservan mientras sea necesario para la gestión del negocio (atención de incidencias, fidelización, contabilidad) y no se eliminan de forma automática pasado un plazo fijo; puedes solicitar su supresión en cualquier momento (ver "Tus derechos" más abajo). Las copias de seguridad técnicas internas se conservan un máximo de 30 días, tras los cuales se eliminan automáticamente.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">5. Destinatarios</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE) y se envían al correo del local mediante <strong>EmailJS</strong>. No cedemos datos a terceros para fines comerciales.</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE) y se envían al correo del local mediante <strong>EmailJS</strong>. Usamos <strong>GoatCounter</strong> para estadísticas de visitas de forma anónima (sin cookies de rastreo) y <strong>Sentry</strong> para detectar errores técnicos de la web (sin tu nombre ni tu teléfono asociados). No cedemos datos a terceros para fines comerciales.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">6. Tus derechos</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición y portabilidad contactando por teléfono al <strong>604 82 31 80</strong>. También puedes reclamar ante la <a href="https://www.aepd.es" target="_blank" style="color:var(--brown);text-decoration:underline">Agencia Española de Protección de Datos (aepd.es)</a>.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">7. Almacenamiento local</h3>
@@ -814,55 +921,97 @@
 <!-- defer: el navegador descarga todos estos en paralelo, pero los ejecuta
      siempre en este orden exacto — sustituye al cargador manual secuencial
      que había antes (uno esperaba a que el anterior terminara del todo).
-     NOTA: app.js tiene que seguir siendo el bundle único generado por
-     `node scripts/build.js` — las constantes (HORARIO_KEY, MENU_KEY...)
-     de los 16 módulos de src/ NO se comparten entre sí si se cargan como
-     etiquetas <script> sueltas, solo funcionan juntas dentro de un único
-     archivo. -->
+     NOTA: app.js es el bundle de NÚCLEO generado por `node scripts/build.js`
+     (nucleo-compartido.js + carta.js + carrito-checkout.js + antifraude.js +
+     init.js) — todo lo que necesita cualquier visitante. El panel de admin
+     (16 módulos más) vive aparte en js/app-admin.js y se carga diferido,
+     solo cuando alguien de verdad abre el panel (ver loadAdminShell más
+     abajo) — así un cliente que solo viene a pedir patatas nunca lo
+     descarga. Las constantes (HORARIO_KEY, MENU_KEY...) de los módulos de
+     un mismo bundle NO se comparten si se cargan como etiquetas <script>
+     sueltas, solo funcionan juntas dentro del mismo archivo unido — por eso
+     nucleo-compartido.js va siempre primero dentro de app.js, y por lo que
+     app-admin.js tiene que cargarse DESPUÉS de app.js (ambos son <script>
+     clásicos de la misma página, así que comparten el mismo ámbito global:
+     app-admin.js puede usar sin problema las funciones/consts de app.js
+     una vez este ya se ha ejecutado). -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1784203617352" defer></script>
-<script src="js/app.js?v=1784404563445" defer></script>
-<script src="js/auth.js?v=20260708c" defer></script>
+<script src="js/config.js?v=1786522396000" defer></script>
+<script src="js/app.js?v=1786623281645" defer></script>
+<script src="js/auth.js?v=1786522396000" defer></script>
 <script>
-  // Activa el Service Worker (sw.js) para cachear assets estáticos y que la
-  // web cargue más rápido con conexión floja. No cachea HTML, Firebase ni
-  // los PHP, así que el menú/precios/pedidos siempre están al día.
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('sw.js').catch(function(err) {
-        console.warn('No se pudo registrar el Service Worker:', err);
-      });
-    });
-  }
-</script>
-<script>
-  // Carga diferida del admin-shell: solo cuando se necesita
-  var _adminShellLoaded = false;
-  var _adminShellPromise = null;
-  function loadAdminShell(callback) {
-    if (_adminShellLoaded) { if (callback) callback(); return; }
-    if (!_adminShellPromise) {
-      _adminShellPromise = fetch('admin-shell.html?v=' + Date.now(), {cache: 'no-store'})
+  // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
+  // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
+  // las dos antes de dar el panel por "listo" — loadAdminShell(callback)
+  // es el punto único de entrada que usa el resto del código (openAdmin,
+  // secureLockConfirm, checkUrlToken...) y solo llama a callback cuando
+  // ambas han terminado, para que ninguna función "de admin de verdad"
+  // (isTrustedDevice, dcCargar, empRenderAdmin...) se llame antes de que
+  // exista todavía.
+  window._adminShellLoaded = false; // true solo cuando HTML + JS del admin están listos del todo
+  var _adminHtmlLoaded = false;
+  var _adminHtmlPromise = null;
+  var _adminBundleLoaded = false;
+  var _adminBundlePromise = null;
+
+  function _loadAdminHtml(callback) {
+    if (_adminHtmlLoaded) { if (callback) callback(); return; }
+    if (!_adminHtmlPromise) {
+      _adminHtmlPromise = fetch('admin-shell.html?v=' + Date.now(), {cache: 'no-store'})
         .then(function(r) { return r.text(); })
         .then(function(html) {
           document.getElementById('admin-shell-container').innerHTML = html;
-          _adminShellLoaded = true;
+          _adminHtmlLoaded = true;
           // Fix: mover modales de empleados fuera de admin-stock-config
-          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal'].forEach(function(id) {
+          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal','emp-import-modal'].forEach(function(id) {
             var el = document.getElementById(id);
             if (el && el.parentElement && el.parentElement.id === 'admin-stock-config') {
               document.body.appendChild(el);
             }
           });
-          document.dispatchEvent(new Event('adminShellLoaded'));
         })
-        .catch(function(e) { console.error('[admin-shell] Error cargando:', e); });
+        .catch(function(e) { console.error('[admin-shell] Error cargando el HTML:', e); });
     }
-    _adminShellPromise.then(function() { if (callback) callback(); });
+    _adminHtmlPromise.then(function() { if (callback) callback(); });
   }
-  // Precargar en segundo plano tras 2 segundos para que el acceso al panel funcione siempre
-  setTimeout(function() { loadAdminShell(); }, 2000);
+
+  function _loadAdminBundle(callback) {
+    if (_adminBundleLoaded) { if (callback) callback(); return; }
+    if (!_adminBundlePromise) {
+      _adminBundlePromise = new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'js/app-admin.js?v=' + Date.now();
+        s.onload = function() { _adminBundleLoaded = true; resolve(); };
+        // Si falla la descarga (red caída, etc.) no dejamos la promesa
+        // colgada para siempre — se resuelve igual, y las funciones de
+        // admin simplemente seguirán sin existir (los guardas typeof===
+        // 'function' repartidos por el núcleo ya cubren ese caso).
+        s.onerror = function(e) { console.error('[admin-bundle] Error cargando js/app-admin.js:', e); resolve(); };
+        document.body.appendChild(s);
+      });
+    }
+    _adminBundlePromise.then(function() { if (callback) callback(); });
+  }
+
+  function loadAdminShell(callback) {
+    Promise.all([
+      new Promise(function(resolve) { _loadAdminHtml(resolve); }),
+      new Promise(function(resolve) { _loadAdminBundle(resolve); })
+    ]).then(function() {
+      window._adminShellLoaded = true;
+      document.dispatchEvent(new Event('adminShellLoaded'));
+      if (callback) callback();
+    });
+  }
+
+  // Precargar en segundo plano tras 2 segundos SOLO el HTML del panel (es
+  // ligero, y así el candado/triple-tap de acceso responde al instante) —
+  // el bundle de JavaScript del admin NO se precarga aquí a propósito: se
+  // descarga solo cuando de verdad se intenta entrar al panel (ver
+  // loadAdminShell arriba), para no obligar a cada visitante a bajarse
+  // ~370KB que nunca va a usar.
+  setTimeout(function() { _loadAdminHtml(); }, 2000);
 </script>
 
 <script>
@@ -929,5 +1078,10 @@ setInterval(function() {
     <button onclick="smsCancelVerify()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
   </div>
 </div>
+<!-- Generación de PDF real (historial/tickets en el panel de admin) -->
+<script src="js/html2pdf.bundle.min.js?v=1785893700000" defer></script>
+<!-- Analítica (GoatCounter — sin cookies, sin banner de consentimiento) -->
+<script data-goatcounter="https://dulcepatata.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

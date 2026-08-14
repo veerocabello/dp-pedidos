@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin-shell.html
+Disallow: /fichar-publico.html
+Disallow: /fichar-standalone.html
+Disallow: /*.php$
+Disallow: /backup-pedidos/
+Disallow: /src/
+
+Sitemap: https://pedidos.dulcepatatafood.es/sitemap.xml
