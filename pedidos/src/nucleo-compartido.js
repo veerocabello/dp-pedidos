@@ -3166,16 +3166,17 @@ function initFirebaseListeners() {
   // 2. Stats / pedidos — sync orders across all devices
   if (window.fb_listenStats) {
     // Semilla del contador con el último valor que esta misma tablet ya
-    // tenía guardado en localStorage para hoy (no siempre null) — así, si
-    // la pantalla se recarga a media jornada con pedidos ya pendientes de
-    // antes, el primer pedido NUEVO que llegue después de la recarga
-    // sigue sonando/imprimiendo. Antes, el primer aviso de Firebase tras
-    // CUALQUIER recarga fijaba el contador en silencio sin comparar con
-    // nada, así que justo el pedido siguiente a cada recarga se perdía
-    // (sin sonido y sin imprimir) — daba la sensación de que "el primer
-    // pedido" nunca avisaba, porque literalmente era así cada vez que se
-    // reabría la pantalla de cocina/admin.
-    let _fbLastCount = null;
+    // tenía guardado en localStorage para hoy, o 0 si no hay nada —
+    // NUNCA null. Antes, la primera lectura de Firebase de cada carga de
+    // página se trataba como "arranque en frío" y fijaba el contador en
+    // silencio sin comparar con nada — eso significaba que el pedido
+    // realmente NUEVO que disparaba esa primera lectura (incluido el
+    // primerísimo pedido del día, cuando antes de él no hay nada que
+    // escuchar) nunca sonaba ni se imprimía, solo el siguiente. Al partir
+    // siempre de un número real (0, o lo último visto antes de recargar)
+    // no hace falta ningún caso especial: cualquier subida de verdad se
+    // trata igual, sea la primera lectura o la número cien.
+    let _fbLastCount = 0;
     try {
       const _statsCacheInicial = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
       if (_statsCacheInicial && _statsCacheInicial.date === todayKey && typeof _statsCacheInicial.count === 'number') {
@@ -3206,15 +3207,6 @@ function initFirebaseListeners() {
         if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientes);
       }
 
-      // First call — set baseline, don't alert, but refresh UI
-      if (_fbLastCount === null) {
-        var _document$getElementB1, _document$getElementB10;
-        _fbLastCount = newCount;
-        _lastKnownOrderCount = newCount;
-        if ((_document$getElementB1 = document.getElementById('admin-pedidos')) !== null && _document$getElementB1 !== void 0 && _document$getElementB1.classList.contains('active')) loadLiveOrders();
-        if ((_document$getElementB10 = document.getElementById('admin-stats')) !== null && _document$getElementB10 !== void 0 && _document$getElementB10.classList.contains('active')) loadDayStats();
-        return;
-      }
       // New order arrived
       if (newCount > _fbLastCount) {
         const diff = newCount - _fbLastCount;
