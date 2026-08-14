@@ -867,7 +867,12 @@ async function submitOrder() {
     slotTime: needsSlot ? selectedSlot : null,
     phone,
     phoneClean,
-    ticketData: ticketData
+    ticketData: ticketData,
+    // Solo se pone a true cuando el cliente introduce el código SMS correcto
+    // (ver smsVerifyCode() en init.js). Cualquier otra vía para llegar a
+    // _finalizarPedido() (SMS fallido, teléfono de prueba, etc.) deja esto
+    // en false para poder distinguir esos pedidos en el panel.
+    smsVerificado: false
   };
 
   // Teléfonos de prueba que saltan la verificación SMS
@@ -928,7 +933,7 @@ async function submitOrder() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, smsVerificado } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -949,7 +954,7 @@ async function _finalizarPedido() {
     console.warn('⚠️ fb_saveTicket no disponible o _pendingTicketData vacío', !!window.fb_saveTicket, !!window._pendingTicketData);
   }
 
-  await showSuccess(orderNum, slotTime);
+  await showSuccess(orderNum, slotTime, smsVerificado);
   // Registrar teléfono en Firebase para cooldown/límite diario server-side
   if (window.fb_logPhoneOrder && phone) {
     window.fb_logPhoneOrder(phoneClean, Date.now()).catch(() => {});

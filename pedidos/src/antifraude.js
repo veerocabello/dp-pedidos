@@ -246,7 +246,7 @@ async function resetDayStats() {
   if (window.fb_resetOrderStatuses) window.fb_resetOrderStatuses().catch(() => {});
   loadDayStats();
 }
-async function showSuccess(orderNum, slotTime) {
+async function showSuccess(orderNum, slotTime, smsVerificado) {
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -267,7 +267,7 @@ async function showSuccess(orderNum, slotTime) {
   const phone = document.getElementById("customer-phone").value.replace(/[\s\-().+]/g, '').trim();
   const notes = document.getElementById("customer-notes").value.trim();
   // Await so ticket data is saved before admin can print
-  await recordOrderStats(orderNum, name, orderTotal, slotTime);
+  await recordOrderStats(orderNum, name, orderTotal, slotTime, smsVerificado === false);
 
   // Guardar snapshot del pedido para poder modificarlo/cancelarlo
   window._lastOrderData = {

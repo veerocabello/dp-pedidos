@@ -3256,7 +3256,12 @@ async function submitOrder() {
     slotTime: needsSlot ? selectedSlot : null,
     phone,
     phoneClean,
-    ticketData: ticketData
+    ticketData: ticketData,
+    // Solo se pone a true cuando el cliente introduce el código SMS correcto
+    // (ver smsVerifyCode() en init.js). Cualquier otra vía para llegar a
+    // _finalizarPedido() (SMS fallido, teléfono de prueba, etc.) deja esto
+    // en false para poder distinguir esos pedidos en el panel.
+    smsVerificado: false
   };
 
   // Teléfonos de prueba que saltan la verificación SMS
@@ -3317,7 +3322,7 @@ async function submitOrder() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, smsVerificado } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -3338,7 +3343,7 @@ async function _finalizarPedido() {
     console.warn('⚠️ fb_saveTicket no disponible o _pendingTicketData vacío', !!window.fb_saveTicket, !!window._pendingTicketData);
   }
 
-  await showSuccess(orderNum, slotTime);
+  await showSuccess(orderNum, slotTime, smsVerificado);
   // Registrar teléfono en Firebase para cooldown/límite diario server-side
   if (window.fb_logPhoneOrder && phone) {
     window.fb_logPhoneOrder(phoneClean, Date.now()).catch(() => {});
@@ -3692,7 +3697,7 @@ async function resetDayStats() {
   if (window.fb_resetOrderStatuses) window.fb_resetOrderStatuses().catch(() => {});
   loadDayStats();
 }
-async function showSuccess(orderNum, slotTime) {
+async function showSuccess(orderNum, slotTime, smsVerificado) {
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -3713,7 +3718,7 @@ async function showSuccess(orderNum, slotTime) {
   const phone = document.getElementById("customer-phone").value.replace(/[\s\-().+]/g, '').trim();
   const notes = document.getElementById("customer-notes").value.trim();
   // Await so ticket data is saved before admin can print
-  await recordOrderStats(orderNum, name, orderTotal, slotTime);
+  await recordOrderStats(orderNum, name, orderTotal, slotTime, smsVerificado === false);
 
   // Guardar snapshot del pedido para poder modificarlo/cancelarlo
   window._lastOrderData = {
@@ -9154,6 +9159,7 @@ function _renderLiveOrders(stats, todayKey) {
 
   function _buildCard(o, isNuevo) {
     const slotBadge = o.slot ? '<span style="background:rgba(244,196,48,0.08);color:#3D1F0D;border:0.5px solid #3D1F0D;border-radius:99px;padding:2px 8px;font-size:12px">' + escapeHtml(o.slot) + '</span>' : '';
+    const sinVerificarBadge = o.sinVerificar ? '<span title="El SMS de verificación falló o no se completó" style="background:#FEF2F2;color:#991B1B;border:0.5px solid #FCA5A5;border-radius:99px;padding:2px 8px;font-size:12px;font-weight:700">⚠️ Sin verificar</span>' : '';
     const border = isNuevo ? '#3D1F0D' : '#3B82F6';
     const btns = isNuevo
       ? '<button class="kbtn kbtn-delete" data-print-num="' + escapeAttr(o.num) + '" data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}">' + (_printedOrders.has(o.num) ? '🖨️ Impreso' : '🖨️ Imprimir') + '</button>'
@@ -9166,7 +9172,7 @@ function _renderLiveOrders(stats, todayKey) {
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">'
         + '<div><span style="font-size:22px;font-weight:700;font-family:Georgia,serif;color:#3D1F0D">' + escapeHtml(o.num) + '</span>'
         + '<span style="font-size:13px;color:#2A1506;margin-left:6px">' + escapeHtml(o.name) + '</span></div>'
-        + slotBadge
+        + slotBadge + sinVerificarBadge
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-top:4px">' + escapeHtml(o.time) + ' · <span id="total-display-' + escapeAttr(o.num.replace('#','')) + '" data-num="' + escapeAttr(o.num) + '" onclick="startEditOrderTotal(this.dataset.num)" style="cursor:pointer;text-decoration:underline dotted">' + o.total.toFixed(2).replace('.',',') + ' €</span></div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + btns + '</div>'
@@ -11055,7 +11061,7 @@ async function recordProductSales(items) {
     console.warn('[ventasProductos] no se pudo guardar', e);
   }
 }
-async function recordOrderStats(orderNum, name, total, slotTime) {
+async function recordOrderStats(orderNum, name, total, slotTime, sinVerificar) {
   const todayKey = new Date().toISOString().slice(0, 10);
   const items = _lastTicketData ? _lastTicketData.items : [];
   const phone = _lastTicketData ? _lastTicketData.phone || '' : '';
@@ -11072,7 +11078,8 @@ async function recordOrderStats(orderNum, name, total, slotTime) {
       minute: '2-digit'
     }),
     slot: slotTime || null,
-    ts: Date.now()
+    ts: Date.now(),
+    sinVerificar: !!sinVerificar
   };
 
   // Intentar transacción atómica en Firebase para no perder pedidos de otros dispositivos
@@ -12561,6 +12568,7 @@ async function smsVerifyCode() {
     });
     const data = await res.json();
     if (data.verified) {
+      if (window._pendingOrderData) window._pendingOrderData.smsVerificado = true;
       await _finalizarPedido();
     } else {
       const errEl = document.getElementById('sms-error-msg');

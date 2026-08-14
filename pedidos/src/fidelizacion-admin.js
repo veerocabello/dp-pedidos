@@ -401,7 +401,7 @@ async function recordProductSales(items) {
     console.warn('[ventasProductos] no se pudo guardar', e);
   }
 }
-async function recordOrderStats(orderNum, name, total, slotTime) {
+async function recordOrderStats(orderNum, name, total, slotTime, sinVerificar) {
   const todayKey = new Date().toISOString().slice(0, 10);
   const items = _lastTicketData ? _lastTicketData.items : [];
   const phone = _lastTicketData ? _lastTicketData.phone || '' : '';
@@ -418,7 +418,8 @@ async function recordOrderStats(orderNum, name, total, slotTime) {
       minute: '2-digit'
     }),
     slot: slotTime || null,
-    ts: Date.now()
+    ts: Date.now(),
+    sinVerificar: !!sinVerificar
   };
 
   // Intentar transacción atómica en Firebase para no perder pedidos de otros dispositivos

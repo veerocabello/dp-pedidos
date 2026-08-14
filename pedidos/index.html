@@ -825,6 +825,18 @@
 <script src="js/app.js?v=1784404563445" defer></script>
 <script src="js/auth.js?v=20260708c" defer></script>
 <script>
+  // Activa el Service Worker (sw.js) para cachear assets estáticos y que la
+  // web cargue más rápido con conexión floja. No cachea HTML, Firebase ni
+  // los PHP, así que el menú/precios/pedidos siempre están al día.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(function(err) {
+        console.warn('No se pudo registrar el Service Worker:', err);
+      });
+    });
+  }
+</script>
+<script>
   // Carga diferida del admin-shell: solo cuando se necesita
   var _adminShellLoaded = false;
   var _adminShellPromise = null;

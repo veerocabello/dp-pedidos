@@ -402,6 +402,7 @@ async function smsVerifyCode() {
     });
     const data = await res.json();
     if (data.verified) {
+      if (window._pendingOrderData) window._pendingOrderData.smsVerificado = true;
       await _finalizarPedido();
     } else {
       const errEl = document.getElementById('sms-error-msg');
