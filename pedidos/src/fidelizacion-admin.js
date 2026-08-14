@@ -3,19 +3,127 @@ const FIDELIZACION_META_ADMIN = 10;
 // Umbral para marcar ritmo sospechoso: 2+ sellos separados por menos de
 // esto se considera posible abuso (pedidos reales no suelen ir tan seguidos).
 const FIDELIZACION_MINUTOS_SOSPECHOSO = 10;
+// Con 3 o más premios pendientes sin canjear, algo raro pasa (lo normal es
+// canjear pronto) — merece revisarse antes de que se acumule más.
+const FIDELIZACION_TOPE_PREMIOS_PENDIENTES = 3;
+// Con 3 o más nombres distintos usados por el mismo teléfono, puede que se
+// esté compartiendo/reutilizando el número entre varias personas para
+// sumar sellos más rápido de lo normal.
+const FIDELIZACION_TOPE_NOMBRES_DISTINTOS = 3;
 let _fidelizacionDataCache = null;
 
+// Comprueba que "veces que ha completado el ciclo" cuadra con "premios ya
+// canjeados + premios todavía pendientes de entregar" — si no cuadra, es
+// señal de que se ha tocado algo a mano de forma rara (o hay un fallo),
+// no solo de un ritmo de pedidos sospechoso.
+function _clienteConNumerosQueNoCuadran(c) {
+  const vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
+  const canjes = Array.isArray(c.historialCanjes) ? c.historialCanjes.length : 0;
+  const premiosPendientes = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+  return (canjes + premiosPendientes) !== vecesCompletado;
+}
+
 // Devuelve true si el cliente tiene 2 o más sellos consecutivos separados
-// por menos de FIDELIZACION_MINUTOS_SOSPECHOSO minutos.
-function _clienteConRitmoSospechoso(historialSellos) {
+// por menos de FIDELIZACION_MINUTOS_SOSPECHOSO minutos. Si el admin ya
+// revisó y descartó un ritmo sospechoso (marcarRitmoRevisado), solo se
+// tienen en cuenta los sellos posteriores a esa revisión — así un patrón
+// ya comprobado como legítimo no se queda marcado en rojo para siempre,
+// pero si vuelve a pasar algo raro DESPUÉS, sí se vuelve a avisar.
+function _clienteConRitmoSospechoso(historialSellos, revisadoHastaTs) {
   if (!historialSellos || historialSellos.length < 2) return false;
   const umbralMs = FIDELIZACION_MINUTOS_SOSPECHOSO * 60 * 1000;
-  for (let i = 1; i < historialSellos.length; i++) {
-    const prev = historialSellos[i - 1] && historialSellos[i - 1].ts;
-    const curr = historialSellos[i] && historialSellos[i].ts;
+  const desde = revisadoHastaTs || 0;
+  const relevantes = historialSellos.filter(h => h && h.ts > desde);
+  if (relevantes.length < 2) return false;
+  for (let i = 1; i < relevantes.length; i++) {
+    const prev = relevantes[i - 1] && relevantes[i - 1].ts;
+    const curr = relevantes[i] && relevantes[i].ts;
     if (prev && curr && (curr - prev) < umbralMs) return true;
   }
   return false;
+}
+async function marcarRitmoRevisado(telefono) {
+  try {
+    const mutator = function (current) {
+      const c = current || {};
+      const historialSellos = Array.isArray(c.historialSellos) ? c.historialSellos : [];
+      const ultimoTs = historialSellos.length ? historialSellos[historialSellos.length - 1].ts : Date.now();
+      c.sospechosoRevisadoHastaTs = ultimoTs;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      const cliente = await window.fb_loadFidelizacionCliente(telefono);
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
+    renderFidelizacionList();
+  } catch (e) {
+    alert('Error al marcar como revisado: ' + e.message);
+  }
+}
+async function sumarSelloFidelizacionRapido(telefono) {
+  try {
+    const mutator = function (current) {
+      const c = current || {};
+      let sellos = typeof c.sellos === 'number' ? c.sellos : 0;
+      let premiosPendientes = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+      let vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
+      sellos += 1;
+      if (sellos >= FIDELIZACION_META_ADMIN) {
+        sellos = 0;
+        premiosPendientes += 1;
+        vecesCompletado += 1;
+      }
+      c.sellos = sellos;
+      c.premiosPendientes = premiosPendientes;
+      c.vecesCompletado = vecesCompletado;
+      delete c.premioDisponible;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      const cliente = await window.fb_loadFidelizacionCliente(telefono);
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
+    renderFidelizacionList();
+  } catch (e) {
+    alert('Error al sumar el sello: ' + e.message);
+  }
+}
+async function entregarPremioFidelizacionRapido(telefono) {
+  const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || {};
+  const premiosPendientes = typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : (cliente.premioDisponible ? 1 : 0);
+  if (premiosPendientes <= 0) {
+    alert('Este cliente no tiene premios pendientes.');
+    return;
+  }
+  if (!confirm('¿Marcar 1 premio como entregado a ' + (cliente.nombre || telefono) + '?')) return;
+  try {
+    const mutator = function (current) {
+      const c = current || {};
+      let premios = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
+      if (premios > 0) {
+        premios -= 1;
+        const historialCanjes = Array.isArray(c.historialCanjes) ? c.historialCanjes : [];
+        historialCanjes.push({ fecha: new Date().toISOString(), ticket: null });
+        c.historialCanjes = historialCanjes;
+      }
+      c.premiosPendientes = premios;
+      delete c.premioDisponible;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      const cliente2 = await window.fb_loadFidelizacionCliente(telefono);
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente2));
+    }
+    renderFidelizacionList();
+  } catch (e) {
+    alert('Error al marcar el premio como entregado: ' + e.message);
+  }
 }
 async function renderFidelizacionList() {
   const el = document.getElementById('fidelizacion-list');
@@ -45,8 +153,6 @@ function filtrarFidelizacionPorTipo(tipo) {
   _filtrarYPintarFidelizacion();
 }
 function mostrarFidelizacionCanjes() {
-  const data = _fidelizacionDataCache;
-  if (!data) return;
   const listEl = document.getElementById('fidelizacion-list');
   const iconEl = document.getElementById('fidelizacion-lista-toggle-icon');
   if (!listEl) return;
@@ -56,6 +162,14 @@ function mostrarFidelizacionCanjes() {
   window._fidelizacionFiltroTipo = null;
   const searchEl = document.getElementById('fidelizacion-search');
   if (searchEl) searchEl.value = '';
+  window._fidelizacionCanjesDesde = '';
+  window._fidelizacionCanjesHasta = '';
+  _pintarFidelizacionCanjes();
+}
+function _pintarFidelizacionCanjes() {
+  const data = _fidelizacionDataCache;
+  const listEl = document.getElementById('fidelizacion-list');
+  if (!data || !listEl) return;
 
   let eventos = [];
   Object.entries(data).forEach(([telefono, c]) => {
@@ -63,12 +177,24 @@ function mostrarFidelizacionCanjes() {
       eventos.push({ telefono, nombre: c.nombre || 'Sin nombre', fecha: canje.fecha || '-', ticket: canje.ticket || null });
     });
   });
+
+  const desde = window._fidelizacionCanjesDesde || '';
+  const hasta = window._fidelizacionCanjesHasta || '';
+  if (desde) eventos = eventos.filter(ev => (ev.fecha || '').slice(0, 10) >= desde);
+  if (hasta) eventos = eventos.filter(ev => (ev.fecha || '').slice(0, 10) <= hasta);
+  eventos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+  const filtroHtml = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;font-size:12px;color:#8A6A4E">'
+    + '<span>Desde</span><input type="date" value="' + escapeAttr(desde) + '" onchange="window._fidelizacionCanjesDesde=this.value;_pintarFidelizacionCanjes()" style="padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px">'
+    + '<span>Hasta</span><input type="date" value="' + escapeAttr(hasta) + '" onchange="window._fidelizacionCanjesHasta=this.value;_pintarFidelizacionCanjes()" style="padding:5px 8px;border:1.5px solid #F5E6C8;border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:12px">'
+    + ((desde || hasta) ? '<span onclick="window._fidelizacionCanjesDesde=\'\';window._fidelizacionCanjesHasta=\'\';_pintarFidelizacionCanjes()" style="cursor:pointer;color:#c0392b;font-weight:700">✕ Quitar filtro</span>' : '')
+    + '</div>';
+
   if (!eventos.length) {
-    listEl.innerHTML = '<div style="font-size:13px;color:#8A6A4E">Sin premios canjeados todavía.</div>';
+    listEl.innerHTML = filtroHtml + '<div style="font-size:13px;color:#8A6A4E">Sin premios canjeados' + ((desde || hasta) ? ' en ese rango de fechas.' : ' todavía.') + '</div>';
     return;
   }
-  eventos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-  listEl.innerHTML = '<div style="font-weight:700;color:#3D1F0D;margin-bottom:8px;font-size:13px">🎁 Historial de premios canjeados (' + eventos.length + ')</div>' +
+  listEl.innerHTML = filtroHtml + '<div style="font-weight:700;color:#3D1F0D;margin-bottom:8px;font-size:13px">🎁 Historial de premios canjeados (' + eventos.length + ')</div>' +
     eventos.map(ev => {
       const nombreMostrar = escapeHtml(ev.nombre);
       const telMostrar = escapeHtml(ev.telefono);
@@ -145,7 +271,9 @@ function _filtrarYPintarFidelizacion() {
     premiosPendientes: typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0),
     vecesCompletado: typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0,
     historialCanjes: c.historialCanjes || [],
-    sospechoso: _clienteConRitmoSospechoso(c.historialSellos)
+    historialNombres: Array.isArray(c.historialNombres) ? c.historialNombres : [],
+    sospechoso: _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs),
+    noCuadra: _clienteConNumerosQueNoCuadran(c)
   }));
 
   // Filtro de búsqueda por nombre o teléfono
@@ -159,19 +287,31 @@ function _filtrarYPintarFidelizacion() {
     clientes = clientes.filter(c => c.premiosPendientes > 0);
   } else if (window._fidelizacionFiltroTipo === 'sospechoso') {
     clientes = clientes.filter(c => c.sospechoso);
+  } else if (window._fidelizacionFiltroTipo === 'noCuadra') {
+    clientes = clientes.filter(c => c.noCuadra);
+  } else if (window._fidelizacionFiltroTipo === 'topePremios') {
+    clientes = clientes.filter(c => c.premiosPendientes >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES);
+  } else if (window._fidelizacionFiltroTipo === 'nombresDistintos') {
+    clientes = clientes.filter(c => c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS);
   }
 
-  // Resumen: total clientes, con premio pendiente, total canjes, sospechosos
+  // Resumen: total clientes, con premio pendiente, total canjes, sospechosos...
   const totalClientes = Object.keys(data).length;
   const conPremio = Object.values(data).filter(c => (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0)) > 0).length;
   const totalCanjes = Object.values(data).reduce((s, c) => s + ((c.historialCanjes || []).length), 0);
-  const totalSospechosos = Object.values(data).filter(c => _clienteConRitmoSospechoso(c.historialSellos)).length;
+  const totalSospechosos = Object.values(data).filter(c => _clienteConRitmoSospechoso(c.historialSellos, c.sospechosoRevisadoHastaTs)).length;
+  const totalNoCuadran = Object.values(data).filter(c => _clienteConNumerosQueNoCuadran(c)).length;
+  const totalTopePremios = Object.values(data).filter(c => (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0)) >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES).length;
+  const totalNombresDistintos = Object.values(data).filter(c => Array.isArray(c.historialNombres) && c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS).length;
   if (resumenEl) {
     const chip = (label, val, color, onclickAttr) => "<div onclick=\"".concat(onclickAttr, "\" style=\"flex:1;min-width:110px;cursor:pointer;background:#fff;border:1.5px solid ").concat(color, ";border-radius:10px;padding:10px 16px;font-size:12px;color:#3D1F0D;text-align:center\"><div style=\"font-weight:900;font-size:18px\">").concat(val, "</div><div style=\"color:#8A6A4E\">").concat(label, "</div></div>");
     resumenEl.innerHTML = chip('Clientes en el programa', totalClientes, '#F5E6C8', "filtrarFidelizacionPorTipo('todos')")
       + chip('Con premio pendiente', conPremio, '#D9A441', "filtrarFidelizacionPorTipo('premio')")
       + chip('Premios canjeados', totalCanjes, '#F5E6C8', "mostrarFidelizacionCanjes()")
-      + (totalSospechosos > 0 ? chip('🚨 Ritmo sospechoso', totalSospechosos, '#c0392b', "filtrarFidelizacionPorTipo('sospechoso')") : '');
+      + (totalSospechosos > 0 ? chip('🚨 Ritmo sospechoso', totalSospechosos, '#c0392b', "filtrarFidelizacionPorTipo('sospechoso')") : '')
+      + (totalNoCuadran > 0 ? chip('🔍 Números que no cuadran', totalNoCuadran, '#8e44ad', "filtrarFidelizacionPorTipo('noCuadra')") : '')
+      + (totalTopePremios > 0 ? chip('📦 Muchos premios sin canjear', totalTopePremios, '#c0392b', "filtrarFidelizacionPorTipo('topePremios')") : '')
+      + (totalNombresDistintos > 0 ? chip('👥 Varios nombres, mismo tel.', totalNombresDistintos, '#c0392b', "filtrarFidelizacionPorTipo('nombresDistintos')") : '');
   }
 
   // Ordenar: primero los que tienen premio pendiente, luego por sellos descendente
@@ -187,24 +327,48 @@ function _filtrarYPintarFidelizacion() {
 
   el.innerHTML = clientes.map(c => {
     const destacado = c.premiosPendientes > 0;
-    const bg = c.sospechoso ? '#FDEDEC' : (destacado ? '#FFF3CD' : '#fff');
-    const border = c.sospechoso ? '#c0392b' : (destacado ? '#D9A441' : '#F5E6C8');
+    const tienePremiosDeSobra = c.premiosPendientes >= FIDELIZACION_TOPE_PREMIOS_PENDIENTES;
+    const tieneNombresDistintos = c.historialNombres.length >= FIDELIZACION_TOPE_NOMBRES_DISTINTOS;
+    const conAviso = c.sospechoso || c.noCuadra || tienePremiosDeSobra || tieneNombresDistintos;
+    const bg = conAviso ? '#FDEDEC' : (destacado ? '#FFF3CD' : '#fff');
+    const border = conAviso ? '#c0392b' : (destacado ? '#D9A441' : '#F5E6C8');
     const sellosTexto = c.sellos + '/' + FIDELIZACION_META_ADMIN;
     const premioTexto = destacado
       ? '🎁 ' + c.premiosPendientes + (c.premiosPendientes > 1 ? ' premios pendientes' : ' premio pendiente')
       : (c.sellos === FIDELIZACION_META_ADMIN - 1 ? '🎉 1 sello para el premio' : '');
     const vecesTexto = c.vecesCompletado > 0 ? ' · 🏅 ha completado el ciclo ' + c.vecesCompletado + (c.vecesCompletado > 1 ? ' veces' : ' vez') : '';
     const sospechosoTexto = c.sospechoso ? ' · 🚨 ritmo sospechoso (sellos muy seguidos)' : '';
+    const noCuadraTexto = c.noCuadra ? ' · 🔍 números que no cuadran' : '';
+    const topePremiosTexto = tienePremiosDeSobra ? ' · 📦 muchos premios sin canjear' : '';
+    const nombresDistintosTexto = tieneNombresDistintos ? ' · 👥 ' + c.historialNombres.length + ' nombres distintos' : '';
     const nombreMostrar = escapeHtml(c.nombre || 'Sin nombre');
     const telMostrar = escapeHtml(c.telefono);
+    // escapeHtml no basta dentro de un onclick="fn('...')": el navegador
+    // decodifica las entidades HTML (incluida &#39;) ANTES de ejecutar el
+    // JS del atributo, así que una comilla simple sobrevivía y rompía la
+    // llamada — escapeAttr la escapa también para el propio string de JS.
+    const telAttr = escapeAttr(c.telefono);
     let h = '<div style="background:' + bg + ';border:1.5px solid ' + border + ';border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
-    h += '<div>';
+    // Tocar el nombre/sellos del cliente despliega directamente sus canjes Y
+    // sus pedidos (fecha + número) — antes había que abrir el detalle y
+    // encima pulsar otro botón aparte para ver los pedidos, dos pasos para
+    // algo que se usa sobre todo para comprobar ritmos sospechosos.
+    h += '<div onclick="toggleFidelizacionDetalle(\'' + telAttr + '\')" style="cursor:pointer;flex:1;min-width:160px">';
     h += '<div style="font-weight:700;color:#3D1F0D;font-size:14px">' + nombreMostrar + ' <span style="color:#8A6A4E;font-weight:500">(' + telMostrar + ')</span></div>';
-    h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + '</div>';
+    h += '<div style="font-size:13px;color:#5a3e1b;margin-top:2px">' + sellosTexto + ' sellos' + (premioTexto ? ' · ' + premioTexto : '') + vecesTexto + sospechosoTexto + noCuadraTexto + topePremiosTexto + nombresDistintosTexto + '</div>';
+    h += '<div style="font-size:11px;color:#8A6A4E;margin-top:2px">👇 Toca para ver sus pedidos y canjes</div>';
     h += '</div>';
-    h += '<button onclick="cargarFidelizacionParaEditar(\'' + telMostrar + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✏️ Editar</button>';
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">';
+    h += '<button onclick="event.stopPropagation();sumarSelloFidelizacionRapido(\'' + telAttr + '\')" style="padding:7px 12px;background:#fff;color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">➕ Sello</button>';
+    if (destacado) {
+      h += '<button onclick="event.stopPropagation();entregarPremioFidelizacionRapido(\'' + telAttr + '\')" style="padding:7px 12px;background:#D9A441;color:#3D1F0D;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🎁 Entregar premio</button>';
+    }
+    if (c.sospechoso) {
+      h += '<button onclick="event.stopPropagation();marcarRitmoRevisado(\'' + telAttr + '\')" style="padding:7px 12px;background:#fff;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Ya lo revisé</button>';
+    }
+    h += '<button onclick="event.stopPropagation();abrirFidelizacionAjustesModal(\'' + telAttr + '\')" style="padding:7px 14px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⚙️ Ajustes</button>';
     h += '</div>';
-    h += '<div onclick="toggleFidelizacionDetalle(\'' + telMostrar + '\')" style="cursor:pointer;font-size:12px;color:#8A6A4E;padding:4px 16px 8px;border-bottom:1.5px solid ' + border + '">👇 Ver canjes y pedidos</div>';
+    h += '</div>';
     h += '<div id="fidel-detalle-' + telMostrar + '" style="display:none;padding:10px 16px;border-bottom:1.5px solid ' + border + ';font-size:12px;background:#FFFDF8"></div>';
     return h;
   }).join('<div style="height:2px"></div>');
@@ -219,17 +383,21 @@ function toggleFidelizacionDetalle(telefono) {
   el.style.display = 'block';
   const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || {};
   const canjes = cliente.historialCanjes || [];
+  const telAttr = escapeAttr(telefono);
   let h = '';
   if (canjes.length) {
     h += '<div style="font-weight:700;color:#3D1F0D;margin-bottom:6px">🎁 Premios canjeados (' + canjes.length + ')</div>';
-    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telefono + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
+    h += canjes.map((c, i) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;color:#5a3e1b;margin-bottom:3px"><span>· ' + escapeHtml(c.fecha || '-') + (c.ticket ? ' — Ticket ' + escapeHtml(c.ticket) : '') + '</span><span onclick="anularCanjeFidelizacion(\'' + telAttr + '\',' + i + ')" style="cursor:pointer;color:#c0392b;font-size:11px;font-weight:700;white-space:nowrap">↩️ Anular</span></div>').join('');
   } else {
     h += '<div style="color:#8A6A4E;margin-bottom:8px">Sin premios canjeados todavía.</div>';
   }
-  h += '<button onclick="cargarPedidosClienteFidelizacion(\'' + telefono + '\')" style="margin-top:8px;padding:6px 14px;background:#fff;border:1.5px solid #3D1F0D;color:#3D1F0D;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Ver todos sus pedidos</button>';
   h += '<div id="fidel-pedidos-' + telefono + '" style="margin-top:8px"></div>';
-  h += '<button onclick="borrarClienteFidelizacion(\'' + telefono + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
+  h += '<button onclick="borrarClienteFidelizacion(\'' + telAttr + '\')" style="margin-top:10px;padding:6px 14px;background:#fff;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Eliminar del programa</button>';
   el.innerHTML = h;
+  // Se cargan solos al desplegar, sin necesitar un botón aparte — para
+  // comprobar rápido si un ritmo de sellos "sospechoso" se corresponde con
+  // pedidos reales o no.
+  cargarPedidosClienteFidelizacion(telefono);
 }
 async function anularCanjeFidelizacion(telefono, indice) {
   if (!confirm('¿Anular este canje?\n\nSe quitará del historial y se le devolverá el premio como pendiente de entregar (por si se marcó por error).')) return;
@@ -239,9 +407,23 @@ async function anularCanjeFidelizacion(telefono, indice) {
       alert('No se ha encontrado ese canje (puede que la lista esté desactualizada). Pulsa Actualizar e inténtalo de nuevo.');
       return;
     }
-    cliente.historialCanjes.splice(indice, 1);
-    cliente.premiosPendientes = (typeof cliente.premiosPendientes === 'number' ? cliente.premiosPendientes : 0) + 1;
-    await window.fb_saveFidelizacionCliente(telefono, cliente);
+    // Transacción: fidelizacion/<telefono> también lo escribe fidelizacion.php
+    // cada vez que ese cliente gana un sello o canjea un premio de verdad —
+    // un .set() plano aquí podía perder ese cambio si pasaba justo mientras
+    // el admin anulaba este canje.
+    const mutator = function (current) {
+      const c = current || {};
+      if (Array.isArray(c.historialCanjes) && c.historialCanjes[indice]) {
+        c.historialCanjes.splice(indice, 1);
+      }
+      c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
+      return c;
+    };
+    if (window.fb_transactJsonString) {
+      await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+    } else {
+      await window.fb_saveFidelizacionCliente(telefono, mutator(cliente));
+    }
     renderFidelizacionList();
   } catch (e) {
     alert('Error al anular el canje: ' + e.message);
@@ -315,33 +497,95 @@ function cargarFidelizacionParaEditar(telefono) {
     document.getElementById('fidel-edit-phone').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 }
+// Escritura compartida por el formulario de la pestaña "Editar manualmente"
+// y por el modal de ajustes rápidos (⚙️) de cada tarjeta — los dos ajustan
+// los mismos 4 campos (nombre/sellos/premiosPendientes/vecesCompletado) de
+// la misma forma, así que viven en un único sitio para que no se
+// desincronicen si mañana hay que cambiar algo de esta lógica.
+// Transacción: nombre/sellos/premiosPendientes/vecesCompletado son lo que
+// el admin ha editado a propósito en el formulario, pero historialCanjes/
+// historialSellos deben venir siempre de lo último de verdad en Firebase
+// (no de una lectura que pudo quedarse desfasada mientras el admin
+// rellenaba el formulario) — si no, un sello o canje real de ese cliente
+// llegado justo en medio se perdía sin aviso al guardar.
+async function _guardarFidelizacionValores(telefono, nombre, sellos, premiosPendientes, vecesCompletado) {
+  const mutator = function (current) {
+    const existente = current || {};
+    return {
+      nombre: nombre || existente.nombre || '',
+      sellos,
+      premiosPendientes,
+      vecesCompletado,
+      historialCanjes: existente.historialCanjes || [],
+      historialSellos: existente.historialSellos || [],
+      // No pisar esto al editar a mano — si no, se borraba en silencio el
+      // "ya lo revisé" de ritmo sospechoso y el historial de nombres
+      // distintos usados con este teléfono.
+      sospechosoRevisadoHastaTs: existente.sospechosoRevisadoHastaTs,
+      historialNombres: existente.historialNombres || []
+    };
+  };
+  if (window.fb_transactJsonString) {
+    await window.fb_transactJsonString('fidelizacion/' + telefono, mutator);
+  } else {
+    let existente = null;
+    try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
+    await window.fb_saveFidelizacionCliente(telefono, mutator(existente));
+  }
+}
+function _leerValoresFormularioFidelizacion(prefijo) {
+  const telefono = document.getElementById(prefijo + '-phone').value.replace(/\D/g, '');
+  const nombre = document.getElementById(prefijo + '-nombre').value.trim();
+  let sellos = parseInt(document.getElementById(prefijo + '-sellos').value, 10);
+  if (isNaN(sellos) || sellos < 0) sellos = 0;
+  if (sellos >= FIDELIZACION_META_ADMIN) sellos = FIDELIZACION_META_ADMIN - 1;
+  let premiosPendientes = parseInt(document.getElementById(prefijo + '-premios-pendientes').value, 10);
+  if (isNaN(premiosPendientes) || premiosPendientes < 0) premiosPendientes = 0;
+  let vecesCompletado = parseInt(document.getElementById(prefijo + '-veces-completado').value, 10);
+  if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
+  return { telefono, nombre, sellos, premiosPendientes, vecesCompletado };
+}
 async function guardarFidelizacionManual() {
-  const telInput = document.getElementById('fidel-edit-phone');
-  const telefono = telInput.value.replace(/\D/g, '');
-  if (telefono.length !== 9) {
+  const v = _leerValoresFormularioFidelizacion('fidel-edit');
+  if (v.telefono.length !== 9) {
     alert('Introduce un teléfono válido de 9 dígitos.');
     return;
   }
-  const nombre = document.getElementById('fidel-edit-nombre').value.trim();
-  let sellos = parseInt(document.getElementById('fidel-edit-sellos').value, 10);
-  if (isNaN(sellos) || sellos < 0) sellos = 0;
-  if (sellos >= FIDELIZACION_META_ADMIN) sellos = FIDELIZACION_META_ADMIN - 1;
-  let premiosPendientes = parseInt(document.getElementById('fidel-edit-premios-pendientes').value, 10);
-  if (isNaN(premiosPendientes) || premiosPendientes < 0) premiosPendientes = 0;
-  let vecesCompletado = parseInt(document.getElementById('fidel-edit-veces-completado').value, 10);
-  if (isNaN(vecesCompletado) || vecesCompletado < 0) vecesCompletado = 0;
-
-  let existente = null;
-  try { existente = await window.fb_loadFidelizacionCliente(telefono); } catch (e) {}
-  const cliente = {
-    nombre: nombre || (existente && existente.nombre) || '',
-    sellos,
-    premiosPendientes,
-    vecesCompletado,
-    historialCanjes: (existente && existente.historialCanjes) || []
-  };
-  await window.fb_saveFidelizacionCliente(telefono, cliente);
+  await _guardarFidelizacionValores(v.telefono, v.nombre, v.sellos, v.premiosPendientes, v.vecesCompletado);
   showToast('fidel-toast');
+  renderFidelizacionList();
+}
+
+// ── MODAL DE AJUSTES RÁPIDOS (⚙️ desde cada tarjeta de la lista) ──
+// Mismo formulario que "Editar manualmente", pero como ventana emergente
+// sobre la propia lista, ya rellena con los datos del cliente — para
+// corregir algo puntual (o simplemente comprobar qué hay guardado de
+// verdad, como "veces completado", sin confundirlo con un fallo) sin
+// perder de vista la lista ni tener que volver a escribir el teléfono.
+function abrirFidelizacionAjustesModal(telefono) {
+  const cliente = (_fidelizacionDataCache && _fidelizacionDataCache[telefono]) || null;
+  document.getElementById('fidel-ajustes-phone').value = telefono;
+  document.getElementById('fidel-ajustes-nombre').value = (cliente && cliente.nombre) || '';
+  document.getElementById('fidel-ajustes-sellos').value = (cliente && typeof cliente.sellos === 'number') ? cliente.sellos : 0;
+  document.getElementById('fidel-ajustes-premios-pendientes').value = (cliente && typeof cliente.premiosPendientes === 'number') ? cliente.premiosPendientes : ((cliente && cliente.premioDisponible) ? 1 : 0);
+  document.getElementById('fidel-ajustes-veces-completado').value = (cliente && typeof cliente.vecesCompletado === 'number') ? cliente.vecesCompletado : 0;
+  const infoEl = document.getElementById('fidel-ajustes-cliente-info');
+  if (infoEl) infoEl.textContent = ((cliente && cliente.nombre) ? cliente.nombre + ' — ' : '') + telefono;
+  const modal = document.getElementById('fidel-ajustes-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function cerrarFidelizacionAjustesModal() {
+  const modal = document.getElementById('fidel-ajustes-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function guardarFidelizacionAjustesModal() {
+  const v = _leerValoresFormularioFidelizacion('fidel-ajustes');
+  if (v.telefono.length !== 9) {
+    alert('Teléfono inválido — ciérralo y ábrelo de nuevo desde la tarjeta del cliente.');
+    return;
+  }
+  await _guardarFidelizacionValores(v.telefono, v.nombre, v.sellos, v.premiosPendientes, v.vecesCompletado);
+  cerrarFidelizacionAjustesModal();
   renderFidelizacionList();
 }
 
@@ -380,104 +624,8 @@ async function renderAccesosLog() {
   }
 }
 
-// Patch recordOrderStats to include items for kitchen display + Firebase sync
-// Usa transacción Firebase para evitar sobreescribir pedidos de otros dispositivos
-// Guarda cuántas unidades de cada producto se vendieron hoy, para "Estrellas y perdedores".
-// Se guarda en ventasProductos/{fecha} = { [productId]: cantidad }
-async function recordProductSales(items) {
-  if (!items || !items.length) return;
-  const fecha = new Date().toISOString().slice(0, 10);
-  try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    items.forEach(it => {
-      if (it.id == null) return;
-      const id = String(it.id);
-      actual[id] = (actual[id] || 0) + (it.qty || 0);
-    });
-    await ref.set(actual);
-  } catch (e) {
-    console.warn('[ventasProductos] no se pudo guardar', e);
-  }
-}
-async function recordOrderStats(orderNum, name, total, slotTime) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const items = _lastTicketData ? _lastTicketData.items : [];
-  const phone = _lastTicketData ? _lastTicketData.phone || '' : '';
-  const notes = _lastTicketData ? _lastTicketData.notes || '' : '';
-  const newOrder = {
-    num: orderNum,
-    name,
-    phone,
-    notes,
-    total,
-    items,
-    time: new Date().toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-    slot: slotTime || null,
-    ts: Date.now()
-  };
-
-  // Intentar transacción atómica en Firebase para no perder pedidos de otros dispositivos
-  if (typeof firebase !== 'undefined' && firebase.database) {
-    try {
-      await firebase.database().ref('stats/' + todayKey).transaction(function (current) {
-        if (!current || current.date !== todayKey) {
-          return {
-            date: todayKey,
-            count: 1,
-            total: parseFloat(total.toFixed(2)),
-            orders: [newOrder]
-          };
-        }
-        current.count = (current.count || 0) + 1;
-        current.total = parseFloat(((current.total || 0) + total).toFixed(2));
-        if (!current.orders) current.orders = [];
-        // Evitar duplicados si el pedido ya existe (reintento) — comparar con clave normalizada
-        if (!current.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum))) {
-          current.orders.unshift(newOrder);
-        }
-        return current;
-      });
-      // Leer resultado final y actualizar localStorage
-      const snap = await firebase.database().ref('stats/' + todayKey).once('value');
-      if (snap.exists()) localStorage.setItem(STATS_KEY, JSON.stringify(snap.val()));
-      return;
-    } catch (e) {
-      console.warn('[DPF] Firebase transaction failed, usando fallback:', e);
-    }
-  }
-
-  // Fallback sin Firebase: solo localStorage
-  let stats;
-  try {
-    stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-  } catch {
-    stats = {};
-  }
-  if (stats.date !== todayKey) {
-    if (stats.date && stats.count > 0) saveToHistorial(stats);
-    stats = {
-      date: todayKey,
-      count: 0,
-      total: 0,
-      orders: []
-    };
-  }
-  stats.count++;
-  stats.total = parseFloat((stats.total + total).toFixed(2));
-  if (!stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum))) stats.orders.unshift(newOrder);
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
-}
-scheduleSlotMidnightReset();
+// recordOrderStats vive en nucleo-compartido.js (bundle de cliente) — es la
+// función que registra cada pedido nuevo, se llama desde antifraude.js al
+// confirmar el checkout de cualquier visitante, no solo de admin.
+// El arranque de scheduleSlotMidnightReset() también se movió allí.
 

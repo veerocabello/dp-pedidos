@@ -324,14 +324,24 @@ const MENU = [
   desc: "",
   price: 2.50
 }];
+// El JSON-LD del menú (schema.org Menu) y el listado de productos ya no se
+// generan aquí por JavaScript — los genera el servidor en el propio HTML
+// (ver menu-render.php / index.php), para que un buscador los vea sin
+// depender de que se ejecute ningún script. renderMenu() (admin-config.js)
+// simplemente sustituye ese contenido inicial por la versión interactiva
+// en cuanto carga la página, como ya hacía antes.
 let cart = {};
 window._adminLoggedIn = false;
 let _adminLoggedIn = false; // true solo cuando hay sesión de admin activa
 let activeCategory = "Todos";
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
+const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
 function initTabs() {
   const tabsEl = document.getElementById("tabs");
-  tabsEl.innerHTML = categories.map(c => "<button class=\"tab ".concat(c === activeCategory ? 'active' : '', "\" onclick=\"setCategory('").concat(c, "')\">").concat(c, "</button>")).join('');
+  tabsEl.innerHTML = categories.map(c => {
+    const icon = CATEGORY_ICONS[c] || '🍽️';
+    return "<button class=\"tab ".concat(c === activeCategory ? 'active' : '', "\" onclick=\"setCategory('").concat(c, "')\"><span class=\"tab-icon\">").concat(icon, "</span><span>").concat(c, "</span></button>");
+  }).join('');
 }
 function setCategory(cat) {
   activeCategory = cat;
@@ -356,21 +366,234 @@ function showClosedToast() {
     t.style.opacity = "0";
   }, 2800);
 }
+// Toast genérico reutilizable — mismo patrón que showClosedToast(), para
+// confirmar visualmente acciones rápidas (copiar algo al portapapeles, etc.)
+// que antes no daban ningún feedback.
+function showCopyToast(msg) {
+  var t = document.getElementById("copy-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "copy-toast";
+    t.style.cssText = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:14px 24px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = msg;
+  clearTimeout(t._timer);
+  t.style.opacity = "1";
+  t._timer = setTimeout(function () {
+    t.style.opacity = "0";
+  }, 1800);
+}
+function copiarTexto(text, mensajeExito) {
+  function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(function () {
+      _copiarConExecCommand(text);
+      onOk();
+    });
+  } else {
+    _copiarConExecCommand(text);
+    onOk();
+  }
+}
+function _copiarConExecCommand(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  document.body.removeChild(ta);
+}
+// Contador de caracteres restantes para el campo de notas — antes solo se
+// sabía que se había llegado al límite de 300 cuando el textarea dejaba de
+// aceptar más texto, sin ningún aviso previo.
+function _actualizarContadorNotas(textareaId, counterId) {
+  const ta = document.getElementById(textareaId);
+  const counter = document.getElementById(counterId);
+  if (!ta || !counter) return;
+  const max = parseInt(ta.getAttribute('maxlength'), 10) || 300;
+  const restantes = max - ta.value.length;
+  counter.textContent = restantes + ' caracteres restantes';
+  counter.style.color = restantes <= 20 ? '#c0392b' : 'var(--muted, #8A6A4E)';
+}
+// Muestra el aviso de dato que falta/es inválido Y desplaza hasta el campo
+// correspondiente, resaltándolo un instante — antes solo salía la alerta,
+// sin llevar al cliente hasta dónde está el problema (con el formulario
+// largo, tocaba buscarlo a ojo). Detecta si el cliente está en el drawer
+// móvil (donde los campos visibles son drawer-customer-*, no los del
+// formulario de escritorio que solo se sincronizan por debajo) para
+// desplazarse al campo que de verdad se ve en pantalla.
+function _alertaConFoco(msg, fieldIdBase) {
+  showAlert(msg);
+  const drawer = document.getElementById('cart-drawer');
+  const enDrawer = drawer && drawer.classList.contains('open');
+  const fieldId = enDrawer ? ('drawer-' + fieldIdBase) : fieldIdBase;
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  field.classList.add('campo-con-error');
+  setTimeout(() => field.classList.remove('campo-con-error'), 2000);
+  setTimeout(() => { if (typeof field.focus === 'function') field.focus(); }, 350);
+}
+// Un único "ding" suave al confirmar el pedido — mismo patrón (Web Audio,
+// sin archivos externos) que ya usa _sonidoCelebracion() en la ruleta, pero
+// una sola nota discreta en vez del arpegio de premio.
+function _sonidoConfirmacionPedido() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880; // La5
+    const start = ctx.currentTime;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.13, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.55);
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador bloquea el audio, no pasa nada — solo se pierde el sonido */ }
+}
 function isShopBlocked() {
   var _document$getElementB;
   // 1. Si el banner de cerrado está visible
   const banner = document.getElementById('orders-closed-banner');
   if (banner && banner.style.display === 'block') return true;
-  // 2. Si los pedidos están pausados manualmente
+  // 2. Si los pedidos están pausados manualmente (incluye la auto-pausa por
+  // saturación, que reutiliza este mismo candado — ver _aplicarAutoPausa en
+  // admin-config.js)
   if (!getOrdersOpen()) return true;
   // 3. Si hoy es día cerrado
   if (!isTodayOpen()) return true;
   // 4. Si estamos fuera del horario de apertura
   if (isOutsideHours()) return true;
-  // 5. Fallback: texto del estado
+  // 5. Pausa exprés activa (independiente de ordersOpen, con su propia
+  // cuenta atrás — ver pausarExpres() en admin-config.js)
+  try {
+    const hasta = parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10);
+    if (hasta && Date.now() < hasta) return true;
+  } catch (e) {}
+  // 6. Fallback: texto del estado
   const statusText = ((_document$getElementB = document.getElementById('hero-status-text')) === null || _document$getElementB === void 0 ? void 0 : _document$getElementB.textContent) || '';
   if (statusText.startsWith('Abrimos a las') || statusText === 'Cerrado ahora' || statusText === 'Cerrado hoy') return true;
   return false;
+}
+// Refresca la UI de "pedidos cerrados" cuando cambia pausaExpresHasta (por
+// activarla o por llegar su hora de reapertura) — sin tocar ordersOpen/
+// ordersMsg de verdad (eso es cosa de la pausa manual/auto-pausa, no de
+// esta), pero SÍ hay que reflejar en el candado que ahora mismo está
+// bloqueado por la pausa exprés aunque ordersOpen siga en true, o el
+// cliente vería el formulario normal y solo se enteraría del bloqueo al
+// intentar confirmar (isShopBlocked()/el servidor sí lo rechazan, pero la
+// pantalla no lo estaba avisando de antemano).
+function _actualizarBloqueoPorPausaExpres() {
+  if (typeof updateOrdersUI !== 'function') return;
+  const hasta = parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10);
+  if (hasta && Date.now() < hasta) {
+    updateOrdersUI(false, 'Pausados temporalmente, volvemos enseguida.');
+  } else {
+    updateOrdersUI(getOrdersOpen());
+  }
+}
+// Se reabre sola al pasar el tiempo sin depender de que llegue ningún aviso
+// nuevo de Firebase (un timestamp que ya pasó no dispara ningún listener
+// por sí solo) — comprobación ligera cada 30s, solo hace algo si hay una
+// pausa exprés activa de verdad.
+setInterval(() => {
+  const hasta = parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10);
+  if (hasta && Date.now() >= hasta) {
+    localStorage.setItem('dpf_pausa_expres_hasta', '0');
+    _actualizarBloqueoPorPausaExpres();
+  }
+}, 30000);
+// Banner suave de saturación (no bloquea pedidos) — dirigido por
+// config/avisoSaturacionEstado, que solo puede publicar una sesión de
+// admin/cocina de verdad (ver _actualizarAvisoSaturacion en
+// pedidos-vivo-cocina.js). "busy-mode-banner" es un elemento estático
+// aparte con texto fijo, no se toca aquí.
+function _renderAvisoSaturacionBanner(estado) {
+  const el = document.getElementById('aviso-saturacion-banner');
+  if (!el) return;
+  if (estado && estado.activo && estado.msg) {
+    el.textContent = estado.msg;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+// ── OFERTA RELÁMPAGO (descuento por tiempo limitado, ver admin-turnos-
+// descuentos.js para quien la lanza/cancela) ── window._ofertaRelampagoActiva
+// guarda { tipo:'total'|'producto', productoId, pct, fin } o null. "Vigente"
+// se decide comparando fin contra la hora actual en cada sitio que lo usa,
+// nunca con un booleano guardado — así una pestaña abierta desde antes de
+// que acabara la oferta la deja de aplicar sola, sin depender de que llegue
+// ningún aviso nuevo de Firebase justo en ese instante.
+window._ofertaRelampagoActiva = null;
+let _ofertaRelampagoTickInterval = null;
+function _ofertaRelampagoVigente(o) {
+  return !!(o && o.fin && o.pct > 0 && Date.now() < o.fin);
+}
+// Precio real de un producto del menú, aplicando la oferta relámpago si está
+// vigente y es justo ese producto. Todo lo que calcula un total a partir de
+// MENU (renderMenu en admin-config.js, renderCart de aquí abajo, y el envío
+// del pedido en carrito-checkout.js) pasa por aquí en vez de leer item.price
+// directamente — así el descuento se refleja en todos lados con un único
+// cambio, sin mutar el propio array MENU (que también lo usa finanzas.js
+// para calcular márgenes, y no debe ver precios rebajados temporalmente).
+function _precioConOferta(item) {
+  const o = window._ofertaRelampagoActiva;
+  if (o && o.tipo === 'producto' && Array.isArray(o.productoIds) && o.productoIds.includes(item.id) && _ofertaRelampagoVigente(o)) {
+    return Math.round(item.price * (1 - o.pct / 100) * 100) / 100;
+  }
+  return item.price;
+}
+function _renderOfertaRelampagoBanner() {
+  const el = document.getElementById('oferta-relampago-banner');
+  const o = window._ofertaRelampagoActiva;
+  if (!el) return;
+  if (!_ofertaRelampagoVigente(o)) {
+    el.style.display = 'none';
+    return;
+  }
+  const restante = Math.max(0, o.fin - Date.now());
+  const m = Math.floor(restante / 60000);
+  const s = Math.floor((restante % 60000) / 1000);
+  let destino = 'todo el pedido';
+  if (o.tipo === 'producto' && Array.isArray(o.productoIds)) {
+    const nombres = o.productoIds.map(id => (MENU.find(mi => mi.id === id) || {}).name).filter(Boolean);
+    destino = nombres.length ? nombres.join(', ') : 'este producto';
+  }
+  el.textContent = '⚡ Oferta relámpago: -' + o.pct + '% en ' + destino + ' · acaba en ' + m + ':' + String(s).padStart(2, '0');
+  el.style.display = 'block';
+}
+// Se llama al recibir cada cambio desde Firebase (ver loadOfertaRelampagoFromFirebase
+// en admin-turnos-descuentos.js) y también cada segundo mientras esté
+// vigente, para que la cuenta atrás avance y el precio se restaure solo en
+// cuanto expire, sin recargar la página.
+function _actualizarOfertaRelampago(oferta) {
+  const eraVigente = _ofertaRelampagoVigente(window._ofertaRelampagoActiva);
+  window._ofertaRelampagoActiva = oferta;
+  const esVigente = _ofertaRelampagoVigente(oferta);
+  _renderOfertaRelampagoBanner();
+  if (eraVigente !== esVigente || (eraVigente && esVigente)) {
+    if (typeof renderMenu === 'function') renderMenu();
+    if (typeof renderCart === 'function') renderCart();
+  }
+  if (_ofertaRelampagoTickInterval) { clearInterval(_ofertaRelampagoTickInterval); _ofertaRelampagoTickInterval = null; }
+  if (esVigente) {
+    _ofertaRelampagoTickInterval = setInterval(function () {
+      if (!_ofertaRelampagoVigente(window._ofertaRelampagoActiva)) {
+        _actualizarOfertaRelampago(null);
+        return;
+      }
+      _renderOfertaRelampagoBanner();
+    }, 1000);
+  }
 }
 function changeQty(id, delta) {
   // Bloquear añadir al carrito si hoy es día cerrado o pedidos pausados
@@ -390,6 +613,16 @@ function changeQty(id, delta) {
     openExtrasModal(id);
     return;
   }
+  // Defensa en profundidad: renderMenu() ya oculta los controles +/- de un
+  // producto agotado/oculto, así que hoy esto no es alcanzable desde la UI
+  // normal — pero changeQty() en sí no comprobaba nada, así que cualquier
+  // otra vía de llamarla (consola, un botón que quede con el id viejo tras
+  // marcar el producto agotado mientras la página ya estaba abierta, un
+  // futuro caller) podía seguir añadiendo un producto agotado al carrito.
+  if (delta > 0) {
+    const _item = typeof MENU !== 'undefined' ? MENU.find(m => m.id == id) : null;
+    if (_item && (_item.hidden || _item.soldout)) return;
+  }
   const current = cart[id] || 0;
   const next = current + delta;
   if (next <= 0) delete cart[id];else cart[id] = next;
@@ -408,6 +641,16 @@ function _animateAddToCart(id) {
       btn.addEventListener('animationend', () => btn.classList.remove('popping'), {
         once: true
       });
+      // Confirmación visual más clara que solo el rebote: el botón muestra
+      // un ✓ un instante y una miniatura "vuela" hasta el carrito/FAB.
+      btn.classList.add('add-check');
+      btn.textContent = '✓';
+      clearTimeout(btn._addCheckTimer);
+      btn._addCheckTimer = setTimeout(() => {
+        btn.classList.remove('add-check');
+        btn.textContent = '+';
+      }, 550);
+      _lanzarFlyGhost(btn);
     }
     card.classList.remove('flashing');
     void card.offsetWidth;
@@ -435,6 +678,30 @@ function _animateAddToCart(id) {
     });
   }
 }
+// Crea una miniatura que "vuela" desde el botón pulsado hasta el carrito
+// (el FAB en móvil, o el contador de "Tu pedido" en escritorio, donde no
+// hay FAB) — refuerzo visual de que el producto se ha añadido, más allá
+// del rebote del propio botón.
+function _lanzarFlyGhost(btn) {
+  const fab = document.getElementById('cart-fab');
+  const target = (fab && !fab.classList.contains('hidden')) ? fab : document.getElementById('cart-count');
+  if (!target) return;
+  const btnRect = btn.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  if (!btnRect.width || !targetRect.width) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'fly-ghost';
+  ghost.textContent = '🥔';
+  const size = 26;
+  ghost.style.left = (btnRect.left + btnRect.width / 2 - size / 2) + 'px';
+  ghost.style.top = (btnRect.top + btnRect.height / 2 - size / 2) + 'px';
+  const dx = (targetRect.left + targetRect.width / 2) - (btnRect.left + btnRect.width / 2);
+  const dy = (targetRect.top + targetRect.height / 2) - (btnRect.top + btnRect.height / 2);
+  ghost.style.setProperty('--fly-target', 'translate(' + dx + 'px,' + dy + 'px)');
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => ghost.classList.add('flying'));
+  setTimeout(() => ghost.remove(), 650);
+}
 // ── 🍰 Venta sugerida: dulce de postre ──────────────────────────────────────
 // Siempre sugiere tarta o galleta (nunca bebida). Varía según lo que ya
 // lleve el pedido: cantidad de patatas/boniatos (singular/plural) y, si
@@ -445,19 +712,28 @@ const UPSELL_TARTA_IDS = { 34: 'La Viña', 35: 'Tres Chocolates', 36: 'de la Abu
 const UPSELL_GALLETA_IDS = [27, 28, 29, 30, 31, 32, 33]; // Pistacho, Lotus, Oreo, Kit Kat, Nutella, Kinder, Huesitos
 const UPSELL_SABOR_TARTA = { 'lotus': 37, 'pistacho': 38, 'dinosaurio': 39, 'kinder': 40 };
 const UPSELL_PESADAS = ['cheddar-bacon', 'carnívora', '4 quesos'];
+// Solo bebidas individuales sin alcohol para el upsell — nada de cerveza
+// (la web no verifica la edad de quien pide) ni de garrafas de 1,5-2L, que
+// no pegan como "añade algo de beber" de un solo trago.
+const UPSELL_BEBIDA_IDS = [41, 43, 44, 46]; // Refresco lata, Agua pequeña, Refresco 500ml, Monster/Red Bull
 
-function _upsellDismissedThisSession() {
-  try { return sessionStorage.getItem('upsell_dulce_dismissed') === '1'; } catch (e) { return false; }
-}
-function dismissUpsellDulce() {
-  try { sessionStorage.setItem('upsell_dulce_dismissed', '1'); } catch (e) {}
+// "No, gracias" ahora solo vale para ESTE pedido (antes se guardaba en
+// sessionStorage y se recordaba para toda la visita a la web, aunque el
+// cliente hiciera otro pedido justo después) — se guarda por tipo
+// (dulce/bebida) para no descartar los dos a la vez si solo dice que no a
+// uno. Se resetea al confirmar/cancelar el pedido (ver antifraude.js).
+window._upsellDismissed = window._upsellDismissed || { dulce: false, bebida: false };
+function dismissUpsellDulce(tipo) {
+  window._upsellDismissed[tipo || 'dulce'] = true;
   renderCart();
 }
 
-// Devuelve { id, name, price, copy } o null si no toca mostrar sugerencia
-function getUpsellDulce() {
-  if (_upsellDismissedThisSession()) return null;
-
+// Devuelve { tipo, pregunta, opciones: [{id, name, price, emoji}, ...] } o
+// null si no toca mostrar ninguna sugerencia. Primero comprueba el postre;
+// si ya no aplica (porque ya hay uno en el carrito, o el cliente lo
+// descartó), pasa a comprobar la bebida — así solo se ve una tarjeta cada
+// vez, no las dos a la vez.
+function getUpsellCarrito() {
   // Cantidad de patatas/boniatos en el pedido: cart normal + custCart (Al Gusto/Bomba)
   // + extrasCart (patatas con queso/gratinado, como Philadelphia, Carbonara, Carnívora, etc.)
   const papasIdsCart = Object.entries(cart).filter(([id, qty]) => {
@@ -477,58 +753,116 @@ function getUpsellDulce() {
 
   const papasQty = papasCartQty + papasCustQty + papasExtrasQty;
 
-  if (papasQty === 0) return null; // sin patatas/boniato, no aplica
+  if (papasQty === 0) return null; // sin patatas/boniato, no aplica ningún upsell
+  const esPlural = papasQty >= 2;
 
-  // Si ya hay tarta o galleta en el carrito, ya está "vendido" → no mostrar
+  // ── 1. ¿Postre? ──
   const yaHayDulce = Object.keys(cart).some(id => {
     const item = MENU.find(m => m.id == id);
     return item && (item.cat === 'Tartas' || item.cat === 'Cookies') && cart[id] > 0;
   });
-  if (yaHayDulce) return null;
+  if (!yaHayDulce && !window._upsellDismissed.dulce) {
+    const pregunta = esPlural ? '¿Le metéis algo dulce de postre?' : '¿Le metes algo dulce de postre?';
 
-  const esPlural = papasQty >= 2;
-  const pregunta = esPlural ? '¿Le metéis algo dulce de postre?' : '¿Le metes algo dulce de postre?';
+    // ¿Algún producto del carrito (cart o extrasCart) tiene sabor con tarta a juego?
+    const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
+    const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
+    const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
+    let tartaSaborId = null;
+    for (const sabor in UPSELL_SABOR_TARTA) {
+      if (nombresEnCarrito.includes(sabor)) {
+        tartaSaborId = UPSELL_SABOR_TARTA[sabor];
+        break;
+      }
+    }
 
-  // ¿Algún producto del carrito (cart o extrasCart) tiene sabor con tarta a juego?
-  const nombresCart = papasIdsCart.map(([id]) => (MENU.find(m => m.id == id) || {}).name || '');
-  const nombresExtras = extrasPatatas.map(c => (MENU.find(m => m.id == c.menuId) || {}).name || '');
-  const nombresEnCarrito = [...nombresCart, ...nombresExtras].join(' ').toLowerCase();
-  let sugerido = null;
-  for (const sabor in UPSELL_SABOR_TARTA) {
-    if (nombresEnCarrito.includes(sabor)) {
-      const tartaId = UPSELL_SABOR_TARTA[sabor];
-      sugerido = MENU.find(m => m.id === tartaId);
-      break;
+    // Se eligen 2-3 opciones (tarta con sabor a juego primero, si aplica) y
+    // se guardan en caché para no volver a sortear otras al repintar el
+    // carrito (p.ej. tras comprobar fidelización mientras el cliente sigue
+    // escribiendo) — eso daba la sensación de que las tarjetas "parpadeaban".
+    // Si cambia de singular a plural (añade una segunda patata) sí se
+    // recalcula, porque el fondo de opciones a elegir es distinto.
+    window._upsellOpcionesElegidas = window._upsellOpcionesElegidas || {};
+    const cacheDulce = window._upsellOpcionesElegidas.dulce;
+    if (!cacheDulce || cacheDulce.esPlural !== esPlural) {
+      const elegidos = [];
+      if (tartaSaborId) elegidos.push(tartaSaborId);
+      const pool = (esPlural ? Object.keys(UPSELL_TARTA_IDS).map(Number) : UPSELL_GALLETA_IDS)
+        .filter(id => !elegidos.includes(id));
+      // Barajar el resto del fondo y completar hasta 3 opciones en total
+      const barajado = pool.slice().sort(() => Math.random() - 0.5);
+      for (const id of barajado) {
+        if (elegidos.length >= 3) break;
+        elegidos.push(id);
+      }
+      window._upsellOpcionesElegidas.dulce = { esPlural, ids: elegidos.slice(0, 3) };
+    }
+
+    const opciones = window._upsellOpcionesElegidas.dulce.ids
+      .map(id => MENU.find(m => m.id === id))
+      .filter(Boolean)
+      .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: it.cat === 'Tartas' ? '🎂' : '🍪' }));
+    if (opciones.length) {
+      // Se usa en submitOrder() para saber si el aviso llegó a mostrarse de
+      // verdad (para las estadísticas de "mostrado vs añadido").
+      window._upsellFueMostrado = true;
+      return { tipo: 'dulce', pregunta, opciones };
     }
   }
 
-  // Sin sabor a juego: galleta si es 1 unidad, tarta clásica si son 2+
-  if (!sugerido) {
-    if (esPlural) {
-      sugerido = MENU.find(m => m.id === 34); // Tarta de Queso La Viña, clásica
-    } else {
-      const galletaId = UPSELL_GALLETA_IDS[Math.floor(Math.random() * UPSELL_GALLETA_IDS.length)];
-      sugerido = MENU.find(m => m.id === galletaId);
+  // ── 2. ¿Bebida? (solo si el postre ya no toca, para no amontonar dos tarjetas a la vez) ──
+  const yaHayBebida = Object.keys(cart).some(id => {
+    const item = MENU.find(m => m.id == id);
+    return item && item.cat === 'Bebidas' && cart[id] > 0;
+  });
+  if (!yaHayBebida && !window._upsellDismissed.bebida) {
+    const pregunta = esPlural ? '¿Le añadís algo de beber?' : '¿Le añades algo de beber?';
+
+    window._upsellOpcionesElegidas = window._upsellOpcionesElegidas || {};
+    if (!window._upsellOpcionesElegidas.bebida) {
+      const barajado = UPSELL_BEBIDA_IDS.slice().sort(() => Math.random() - 0.5);
+      window._upsellOpcionesElegidas.bebida = { ids: barajado.slice(0, 3) };
+    }
+
+    const opciones = window._upsellOpcionesElegidas.bebida.ids
+      .map(id => MENU.find(m => m.id === id))
+      .filter(Boolean)
+      .map(it => ({ id: it.id, name: it.name, price: it.price, emoji: '🥤' }));
+    if (opciones.length) {
+      window._upsellFueMostrado = true;
+      return { tipo: 'bebida', pregunta, opciones };
     }
   }
-  if (!sugerido) return null;
 
-  const esTarta = sugerido.cat === 'Tartas';
-  const emoji = esTarta ? '🎂' : '🍪';
-  return { id: sugerido.id, name: sugerido.name, price: sugerido.price, pregunta, emoji };
+  return null;
 }
 
 function renderUpsellDulce() {
-  const sug = getUpsellDulce();
+  const sug = getUpsellCarrito();
   if (!sug) return '';
-  return '<div class="upsell-dulce">'
-    + '<div class="upsell-dulce-row1">'
-    + '<div class="upsell-dulce-icon">' + sug.emoji + '</div>'
-    + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'
-    + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce()" title="No, gracias">&#10005;</button>'
+  const opcionesHtml = sug.opciones.map(op =>
+    '<div class="upsell-dulce-opcion">'
+    + '<span class="upsell-dulce-opcion-name">' + escapeHtml(op.name) + '</span>'
+    + '<span class="upsell-dulce-opcion-price">' + op.price.toFixed(2).replace('.', ',') + ' €</span>'
+    + '<button class="upsell-dulce-opcion-add" onclick="changeQty(' + op.id + ',1)">+ Añadir</button>'
     + '</div>'
-    + '<div class="upsell-dulce-product">' + escapeHtml(sug.name) + ' · ' + sug.price.toFixed(2).replace('.', ',') + ' €</div>'
-    + '<button class="upsell-dulce-add" onclick="changeQty(' + sug.id + ',1)">+ Añadir</button>'
+  ).join('');
+  // La tarjeta lleva una animación de entrada (CSS), pero el carrito entero
+  // se repinta muchas veces mientras el cliente escribe (teléfono, notas...)
+  // — como renderCart() reconstruye el HTML entero cada vez, sin esto la
+  // tarjeta se recreaba como un elemento nuevo en cada repintado y la
+  // animación volvía a arrancar desde cero, dando la sensación de que
+  // "parpadeaba" sola mientras escribía. Solo se anima la primera vez que
+  // se muestra en este pedido; se resetea al confirmar/cancelar el pedido.
+  const primeraVez = !window._upsellYaAnimado;
+  window._upsellYaAnimado = true;
+  return '<div class="upsell-dulce' + (primeraVez ? '' : ' upsell-dulce-sin-animar') + '">'
+    + '<div class="upsell-dulce-row1">'
+    + '<div class="upsell-dulce-icon">' + sug.opciones[0].emoji + '</div>'
+    + '<div class="upsell-dulce-question">' + sug.pregunta + '</div>'
+    + '<button class="upsell-dulce-dismiss" onclick="dismissUpsellDulce(\'' + sug.tipo + '\')" title="No, gracias">&#10005;</button>'
+    + '</div>'
+    + '<div class="upsell-dulce-opciones">' + opcionesHtml + '</div>'
     + '</div>';
 }
 
@@ -547,9 +881,10 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div>A\xF1ade productos de la carta</div>";
+    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
+    _updateCartFab(0, 0);
     return;
   }
   let total = 0;
@@ -562,7 +897,7 @@ function renderCart() {
       console.error('renderCart: producto no encontrado id=' + id);
       return '';
     }
-    const subtotal = item.price * qty;
+    const subtotal = _precioConOferta(item) * qty;
     total += subtotal;
     return "\n    <div class=\"cart-line\">\n      <span class=\"cart-line-name\">".concat(item.name, "</span>\n      <span class=\"cart-line-qty\">x").concat(qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeItem(").concat(id, ")\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
@@ -575,7 +910,7 @@ function renderCart() {
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients].join(', ');
+    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
@@ -589,17 +924,36 @@ function renderCart() {
     }
     const itemName = _extItem.name;
     const extras = [];
-    if (c.queso) extras.push('+ Queso +1,00€');
+    if (c.queso) extras.push('+ Extra Queso +1,00€');
+    (c.ingredientesExtra || []).forEach(ing => {
+      const _precioIng = (typeof EXTRAS_ING_PRECIO1 !== 'undefined' && EXTRAS_ING_PRECIO1.includes(ing)) ? '1,00' : '0,70';
+      extras.push('+ Extra ' + ing + ' +' + _precioIng + '€');
+    });
+    (c.salsasExtra || []).forEach(salsa => extras.push('+ Extra salsa ' + salsa + ' +0,90€'));
+    // El gratinado siempre va el último de la lista, sea cual sea el
+    // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
 
-  // Mostrar línea de gastos de gestión si está activa
-  const feeEnabled = getFeeEnabled();
-  const feeAmount = getFeeAmount();
+  // Mostrar línea de gastos de gestión si está activa — salvo que el
+  // cliente haya metido el código de "pedido desde el local" (para cuando
+  // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
+  const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
+  // El código local exime SIEMPRE al gasto fijo que sea "de gestión" —
+  // puede ser el 1º o el 2º según cómo estén configurados ahora mismo, así
+  // que se identifica por su etiqueta, no por su posición. Si ninguno de
+  // los dos menciona "gestión" (p.ej. se renombraron del todo), se exime
+  // el primero por defecto para no perder la exención.
+  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
+  const _fee2LabelParaExencion = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(_fee2LabelParaExencion);
+  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
+  const feeAmount = getFeeAmount();
   const feeEl = document.getElementById('cart-fee-row');
   if (feeEl) {
     if (feeEnabled) {
@@ -610,8 +964,152 @@ function renderCart() {
       feeEl.style.display = 'none';
     }
   }
-  const grandTotal = feeEnabled ? total + feeAmount : total;
+  // El enlace de "código del local" solo tiene sentido si hay algún gasto
+  // de gestión activo que quitar (con el código puesto o sin él) — puede
+  // ser el 1º o el 2º gasto fijo, según cuál esté etiquetado como gestión.
+  const localCodeRowEl = document.getElementById('local-fee-code-row');
+  const _hayGestionQueQuitar = getFeeEnabled() || ((typeof getFee2Enabled === 'function') && getFee2Enabled());
+  if (localCodeRowEl) localCodeRowEl.style.display = (_hayGestionQueQuitar && getLocalFeeCode()) ? 'block' : 'none';
+  // Segundo gasto fijo, independiente del anterior (su propio interruptor) —
+  // también se exime con el código local si es este el que está etiquetado
+  // como "de gestión" (ver arriba).
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
+  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee2El = document.getElementById('cart-fee2-row');
+  if (fee2El) {
+    if (fee2Enabled) {
+      fee2El.style.display = 'flex';
+      document.getElementById('cart-fee2-label').textContent = fee2Label;
+      document.getElementById('cart-fee2-amount').textContent = fee2Amount.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fee2El.style.display = 'none';
+    }
+  }
+  // Descuentos que pueden aplicar a la vez: código de descuento (manual o
+  // ganado en la ruleta/rasca) y estudiante/jubilado. A petición expresa,
+  // estos dos NO se combinan entre sí — si ambos aplicarían, se queda solo
+  // el mayor de los dos, nunca la suma. La fidelización (patata gratis) es
+  // aparte y SÍ se sigue sumando siempre, sin entrar en este conflicto.
+  const discountAmtRaw = (typeof getDiscountAmount === 'function') ? getDiscountAmount(total) : 0;
+  const discountCode = (typeof _activeDiscount !== 'undefined' && _activeDiscount) ? _activeDiscount.code : null;
+  const studentDiscountEnabledCfg = (typeof getStudentDiscountEnabled === 'function') && getStudentDiscountEnabled();
+  const studentDiscountChecked = studentDiscountEnabledCfg && !!(document.getElementById('student-discount-checkbox') || {}).checked;
+  const studentDiscountPctCfg = (typeof getStudentDiscountPct === 'function') ? getStudentDiscountPct() : 0;
+  const studentDiscountAmtRaw = studentDiscountChecked ? Math.round(total * studentDiscountPctCfg) / 100 : 0;
+  // Oferta relámpago sobre el pedido entero (ver window._ofertaRelampagoActiva
+  // en carta.js) — entra en el mismo "no se combinan, gana el mayor" que ya
+  // tenían código de descuento y estudiante/jubilado. La de tipo "producto"
+  // no entra aquí: ya va incluida en `total` porque _precioConOferta() la
+  // aplicó al calcular cada línea, más arriba.
+  const _ofertaTotal = window._ofertaRelampagoActiva;
+  const ofertaTotalPct = (_ofertaTotal && _ofertaTotal.tipo === 'total' && _ofertaRelampagoVigente(_ofertaTotal)) ? _ofertaTotal.pct : 0;
+  const ofertaTotalAmtRaw = ofertaTotalPct > 0 ? Math.round(total * ofertaTotalPct) / 100 : 0;
+
+  let discountAmt = discountAmtRaw;
+  let studentDiscountAmt = studentDiscountAmtRaw;
+  let ofertaTotalAmt = ofertaTotalAmtRaw;
+  let conflictoDescuentosNota = '';
+  const _candidatosDescuento = [
+    { tipo: 'codigo', amt: discountAmtRaw, label: 'el código "' + discountCode + '"' },
+    { tipo: 'estudiante', amt: studentDiscountAmtRaw, label: 'el descuento de estudiante/jubilado' },
+    { tipo: 'oferta', amt: ofertaTotalAmtRaw, label: 'la oferta relámpago' }
+  ].filter(c => c.amt > 0);
+  if (_candidatosDescuento.length > 1) {
+    _candidatosDescuento.sort((a, b) => b.amt - a.amt);
+    const ganador = _candidatosDescuento[0];
+    if (ganador.tipo !== 'codigo') discountAmt = 0;
+    if (ganador.tipo !== 'estudiante') studentDiscountAmt = 0;
+    if (ganador.tipo !== 'oferta') ofertaTotalAmt = 0;
+    conflictoDescuentosNota = 'ℹ️ Los descuentos no se combinan entre sí — se aplica ' + ganador.label + ' por ser el mayor.';
+  }
+  const conflictoEl = document.getElementById('discount-conflict-notice');
+  if (conflictoEl) {
+    conflictoEl.textContent = conflictoDescuentosNota;
+    conflictoEl.style.display = conflictoDescuentosNota ? 'block' : 'none';
+  }
+
+  // Mostrar línea de descuento si hay un código aplicado (y no ha perdido
+  // el conflicto de arriba) — antes el total mostrado en el carrito nunca
+  // reflejaba el descuento (solo se calculaba al confirmar el pedido), así
+  // que aunque el código sí se aplicaba de verdad, la clienta no veía
+  // ningún cambio en el número y parecía que no había pasado nada.
+  const discountEl = document.getElementById('cart-discount-row');
+  if (discountEl) {
+    if (discountAmt > 0 && discountCode) {
+      discountEl.style.display = 'flex';
+      document.getElementById('cart-discount-label').textContent = 'Descuento (' + discountCode + ')';
+      document.getElementById('cart-discount-amount').textContent = '-' + discountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      discountEl.style.display = 'none';
+    }
+  }
+  // Oferta relámpago sobre el pedido entero (fila propia, separada del
+  // código de descuento — pueden coexistir en el tiempo aunque solo uno de
+  // los dos gane el conflicto de arriba, y así queda claro cuál fue).
+  const ofertaTotalEl = document.getElementById('cart-oferta-relampago-row');
+  if (ofertaTotalEl) {
+    if (ofertaTotalAmt > 0) {
+      ofertaTotalEl.style.display = 'flex';
+      document.getElementById('cart-oferta-relampago-label').textContent = '⚡ Oferta relámpago (-' + ofertaTotalPct + '%)';
+      document.getElementById('cart-oferta-relampago-amount').textContent = '-' + ofertaTotalAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      ofertaTotalEl.style.display = 'none';
+    }
+  }
+  // Premio de fidelización (patata gratis) — mismo cálculo que usa
+  // submitOrder() al confirmar (getFidelizacionDescuento en
+  // carrito-checkout.js), para que el total mostrado mientras se compra
+  // ya lo refleje en vez de solo cambiar al confirmar el pedido.
+  const _fidTelInput = document.getElementById('customer-phone');
+  const _fidPhoneClean = _fidTelInput ? _fidTelInput.value.replace(/\D/g, '').slice(0, 9) : '';
+  const fidelizacionAmt = (typeof getFidelizacionDescuento === 'function') ? getFidelizacionDescuento(_fidPhoneClean) : 0;
+  const fidelizacionEl = document.getElementById('cart-fidelizacion-row');
+  if (fidelizacionEl) {
+    if (fidelizacionAmt > 0) {
+      fidelizacionEl.style.display = 'flex';
+      document.getElementById('cart-fidelizacion-amount').textContent = '-' + fidelizacionAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      fidelizacionEl.style.display = 'none';
+    }
+  }
+  // Descuento estudiante/jubilado — el cliente lo marca él mismo (se
+  // comprueba el carné al cobrar en caja, ver comentario junto a la
+  // casilla en index.html).
+  const studentDiscountRowEl = document.getElementById('student-discount-row');
+  if (studentDiscountRowEl) studentDiscountRowEl.style.display = studentDiscountEnabledCfg ? 'block' : 'none';
+  // El aviso de "se comprobará el carné" solo se despliega dentro de la
+  // misma caja al marcar la casilla — compacto (una sola línea) mientras
+  // nadie la usa, en vez de mostrarlo siempre para todo el mundo.
+  const studentDiscountBoxEl = document.getElementById('student-discount-box');
+  const studentDiscountWarnEl = document.getElementById('student-discount-warn');
+  if (studentDiscountBoxEl) studentDiscountBoxEl.style.borderColor = studentDiscountChecked ? 'var(--amber)' : 'var(--warm)';
+  if (studentDiscountWarnEl) studentDiscountWarnEl.style.display = studentDiscountChecked ? 'block' : 'none';
+  const studentDiscountEl = document.getElementById('cart-student-discount-row');
+  if (studentDiscountEl) {
+    if (studentDiscountAmt > 0) {
+      studentDiscountEl.style.display = 'flex';
+      document.getElementById('cart-student-discount-label').textContent = '🪪 Estudiante/jubilado (-' + studentDiscountPctCfg + '%)';
+      document.getElementById('cart-student-discount-amount').textContent = '-' + studentDiscountAmt.toFixed(2).replace('.', ',') + ' €';
+    } else {
+      studentDiscountEl.style.display = 'none';
+    }
+  }
+  const grandTotal = Math.max(0, total + (feeEnabled ? feeAmount : 0) + (fee2Enabled ? fee2Amount : 0) - discountAmt - fidelizacionAmt - studentDiscountAmt - ofertaTotalAmt);
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
+  // Etiqueta de ahorro total (código de descuento + fidelización juntos) —
+  // la línea verde de cada uno ya existía, pero un badge aparte resalta
+  // más el ahorro real que solo ver un número distinto en el total.
+  const totalAhorro = discountAmt + fidelizacionAmt + studentDiscountAmt + ofertaTotalAmt;
+  const savingsEl = document.getElementById('cart-savings-badge');
+  if (savingsEl) {
+    if (totalAhorro > 0) {
+      savingsEl.style.display = 'block';
+      document.getElementById('cart-savings-amount').textContent = '¡Ahorras ' + totalAhorro.toFixed(2).replace('.', ',') + ' €!';
+    } else {
+      savingsEl.style.display = 'none';
+    }
+  }
 
   // Only show total and form if orders are open
   // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
@@ -631,6 +1129,68 @@ function renderCart() {
 
   // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
   _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal, discountAmt, discountCode, fidelizacionAmt, studentDiscountAmt, studentDiscountEnabledCfg, studentDiscountPctCfg, conflictoDescuentosNota, ofertaTotalAmt, ofertaTotalPct);
+
+  // Repintar la tarjeta de sellos DESPUÉS de sincronizar el cajón móvil —
+  // _syncCartDrawer() reconstruye todo el HTML del carrito (incluido el
+  // campo de teléfono), lo que borra la tarjeta si se hubiera pintado antes
+  // (se insertó con appendChild, fuera de esa plantilla). Repintarla aquí,
+  // en cada renderCart(), hace que sobreviva a todos los repintados en vez
+  // de desaparecer en el primero que llega después de mostrarse.
+  if (typeof _pintarTarjetaSellos === 'function') {
+    if (window._fidelizacionClienteCache && window._fidelizacionClienteCache.phone === _fidPhoneClean) {
+      _pintarTarjetaSellos(_fidPhoneClean, window._fidelizacionClienteCache.cliente);
+    } else {
+      document.querySelectorAll('.tarjeta-sellos-cliente').forEach(e => e.remove());
+    }
+  }
+}
+
+// ── REPETIR ÚLTIMO PEDIDO ──
+// dpf_ultimo_pedido lo guarda antifraude.js justo después de confirmar un
+// pedido (a diferencia de dpf_active_order, este no caduca) — si existe y
+// el carrito está vacío, se ofrece repetirlo con un toque en vez de
+// obligar a repasar toda la carta otra vez.
+function _bimbaTarjetaRepetirPedido() {
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items) || !data.items.length) return '';
+    const lineas = data.items.map(i => '<b>' + i.qty + '×</b> ' + i.name).join('<br>');
+    return '<div class="repeat-card">' +
+      '<div class="repeat-card__label">🔁 Pediste esto la última vez</div>' +
+      '<div class="repeat-card__items">' + lineas + '</div>' +
+      '<button type="button" class="repeat-card__btn" onclick="repetirUltimoPedido()">Repetir pedido — ' + (data.total || 0).toFixed(2).replace('.', ',') + ' €</button>' +
+      '</div>';
+  } catch (e) { return ''; }
+}
+function repetirUltimoPedido() {
+  if (isShopBlocked()) { showClosedToast(); return; }
+  try {
+    const raw = localStorage.getItem('dpf_ultimo_pedido');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    let algoOmitido = false;
+    const disponible = id => {
+      const item = MENU.find(m => m.id == id);
+      return item && !item.hidden && !item.soldout;
+    };
+    Object.entries(data.cart || {}).forEach(([id, qty]) => {
+      if (!disponible(id)) { algoOmitido = true; return; }
+      cart[id] = (cart[id] || 0) + qty;
+    });
+    Object.entries(data.custCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      custCart[key] = c;
+    });
+    Object.entries(data.extrasCart || {}).forEach(([key, c]) => {
+      if (!disponible(c.menuId)) { algoOmitido = true; return; }
+      extrasCart[key] = c;
+    });
+    renderMenu();
+    renderCart();
+    showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');
+  } catch (e) {}
 }
 

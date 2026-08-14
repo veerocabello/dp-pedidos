@@ -1,0 +1,96 @@
+# ═══════════════════════════════════════════════════════════
+#  .htaccess PREPARADO PARA EL DÍA DE LA REAPERTURA
+#
+#  Cómo usarlo: el día que abras, renombra este fichero a ".htaccess"
+#  (sobrescribiendo el actual) en pedidos/ dentro de public_html.
+#  Diferencias respecto al .htaccess de "cerrado por obras":
+#   - Se quita el bloque "Zona privada" (Basic Auth de toda la web).
+#   - Se quita el SetEnvIf/RequireAny de fichar-standalone.html (ya no
+#     hace nada útil sin el Basic Auth de por medio).
+#   - admin-shell.html SIGUE con su propia contraseña (nunca se abre).
+#   - El bloqueo permanente de /src/, /scripts/, package.json y
+#     package-lock.json se mantiene igual.
+#
+#  Antes de renombrarlo, borra a mano estos ficheros huérfanos del
+#  servidor si todavía siguen ahí (no forman parte de este .htaccess,
+#  pero conviene quitarlos antes de abrir):
+#   - pedidos/img/js/            (copia vieja del bundle, sin usar)
+#   - pedidos/src/js/            (otra copia vieja del bundle, sin usar)
+#   - pedidos/adminshell.html    (duplicado obsoleto de admin-shell.html)
+#   - pedidos/src/htaccess       (borrador suelto, sin punto inicial)
+#   - pedidos/fichar-publico.html (copia vieja y desactualizada de
+#     index.html de un intento anterior — ya no la usa nada, los
+#     enlaces de fichar van a fichar-standalone.html; se quitó del
+#     repo pero puede seguir en el servidor de una subida anterior)
+# ═══════════════════════════════════════════════════════════
+
+# ── Las credenciales de Twilio ya NO viven aquí.
+#    Ahora están en /domains/dulcepatatafood.es/twilio-secrets.php
+#    (fuera de public_html, no accesible por web).
+#    Ver twilio-config.php.
+
+# ── Compresión (gzip/deflate) — reduce mucho el peso de JS/CSS/HTML al viajar ──
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain image/svg+xml
+</IfModule>
+
+# ── Cabeceras de seguridad HTTP ──
+<IfModule mod_headers.c>
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(self), magnetometer=(), gyroscope=(), accelerometer=()"
+
+    # CSP activo — sin 'unsafe-eval' (comprobado a fondo: revisión de todo el
+    # JS propio y de las librerías de terceros que se cargan self-hosted —
+    # Firebase, html2pdf/html2canvas/jsPDF — sin ningún eval()/new Function(),
+    # y prueba real generando un PDF con esta misma política aplicada, sin
+    # ningún aviso de violación). También se añaden los dominios de
+    # GoatCounter (la analítica del pie de la web: gc.zgo.at sirve el
+    # script, dulcepatata.goatcounter.com recibe la visita) — antes no
+    # estaban en la lista y se bloqueaban solos, sin que se notara en
+    # pantalla ni se contara ninguna visita.
+    #
+    # report-uri: manda aquí un aviso automático del navegador cada vez
+    # que bloquea algo por la CSP (ver csp-report.php) — así un script de
+    # terceros que cambie de dominio, una regla demasiado estricta para
+    # una librería nueva, o un intento real de inyección, deja rastro en
+    # csp-reports.log en vez de solo verse en la consola de quien lo sufre.
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com https://gc.zgo.at; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org https://dulcepatata.goatcounter.com; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'; report-uri /csp-report.php"
+</IfModule>
+
+# ── Bloquear acceso directo a archivos PHP sensibles ──
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log)$">
+    Require all denied
+</FilesMatch>
+
+# ── Bloquear el código fuente sin construir y ficheros de desarrollo ──
+# El Service Worker sirve /src/ en producción (para cachearlo como
+# estático) — sin esto, con el Basic Auth ya quitado, quedaría público el
+# código sin minificar con comentarios que explican rutas de secretos,
+# umbrales antifraude y el resto de la arquitectura de seguridad.
+RewriteEngine On
+RewriteRule ^src/ - [F,L]
+RewriteRule ^scripts/ - [F,L]
+RewriteRule ^package\.json$ - [F,L]
+RewriteRule ^package-lock\.json$ - [F,L]
+
+# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
+RewriteRule ^send-code\.php$ - [L]
+RewriteRule ^verify-code\.php$ - [L]
+RewriteRule ^webhook-incidencia\.php$ - [L]
+RewriteRule ^bimba-verify\.php$ - [L]
+RewriteRule ^fichar-pin-check\.php$ - [L]
+RewriteRule ^csp-report\.php$ - [L]
+
+# admin-shell.html: siempre con contraseña — esto NO se quita nunca,
+# ni el día de la reapertura ni después. Es la única puerta (junto con
+# el login de Firebase Auth dentro de la propia página) al panel de
+# administración.
+<FilesMatch "^admin-shell\.html$">
+    AuthType Basic
+    AuthName "Zona privada"
+    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
+    Require valid-user
+</FilesMatch>

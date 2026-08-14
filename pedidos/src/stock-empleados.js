@@ -1,6 +1,8 @@
 // ── STOCK SYSTEM ──
+// STOCK_DATA_KEY vive en nucleo-compartido.js (bundle de cliente) — init.js
+// cachea el listener de stock en tiempo real para cualquier visitante nada
+// más cargar, aunque solo lo USE el panel de admin.
 const STOCK_PWD_KEY = 'dpf_stock_pwd';
-const STOCK_DATA_KEY = 'dpf_stock_data';
 const STOCK_DEFAULTS = {
   congelados: ['Kebab', 'Carne picada', 'Tronquitos de mar', 'Gambas', 'York', 'Pulled pork', 'Bacon'],
   latas_salsas: ['Tomate frito', 'Aceitunas', 'Maíz', 'Zanahoria', 'Remolacha', 'Champiñones', 'Piña', 'Alioli', 'Mayonesa', 'Salsa rosa', 'Salsa de yogur', 'Salsa barbacoa', 'Salsa brava', 'Salsa ketchup', 'Salsa roquefort', 'Salsa miel mostaza', 'Cebolla crujiente', 'Nata Vegecrem'],

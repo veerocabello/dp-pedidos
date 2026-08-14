@@ -42,10 +42,18 @@ function getDevice() {
   const devices = usb.getDeviceList();
   const device = devices.find(d => d.deviceDescriptor.idVendor === 0x0416 && d.deviceDescriptor.idProduct === 0x5011);
   if (!device) return null;
-  device.open();
-  const iface = device.interfaces[0];
-  iface.claim();
-  return { device, ep: iface.endpoints.find(e => e.direction === 'out') };
+  // open()/claim() pueden lanzar de forma sincrona (p.ej. LIBUSB_ERROR_BUSY si el
+  // dispositivo aun no se ha liberado del intento anterior). Lo tratamos como fallo
+  // normal de impresion, no como excepcion, para que los reintentos no tumben el proceso.
+  try {
+    device.open();
+    const iface = device.interfaces[0];
+    iface.claim();
+    return { device, ep: iface.endpoints.find(e => e.direction === 'out') };
+  } catch (e) {
+    console.error('Error al abrir/reclamar la impresora:', e.message);
+    return null;
+  }
 }
 
 function imprimirUnaCopia(ticket, cb) {
@@ -164,12 +172,18 @@ function imprimirUnaCopia(ticket, cb) {
 
   d.push(GS, 0x56, 0x42, 0x00);
 
-  conn.ep.transfer(Buffer.from(d), (err) => {
-    conn.device.close();
-    if (err) console.error('Error:', err.message);
-    else console.log('Impreso #' + ticket.orderNum);
-    cb(!err);
-  });
+  try {
+    conn.ep.transfer(Buffer.from(d), (err) => {
+      conn.device.close();
+      if (err) console.error('Error:', err.message);
+      else console.log('Impreso #' + ticket.orderNum);
+      cb(!err);
+    });
+  } catch (e) {
+    console.error('Error al enviar datos a la impresora:', e.message);
+    try { conn.device.close(); } catch {}
+    cb();
+  }
 }
 
 // Imprime el ticket tantas veces como copias se hayan configurado (1 por defecto).
@@ -201,20 +215,37 @@ function marcarEnPreparacion(orderNum, fecha) {
     .catch((e) => console.warn('No se pudo marcar como en preparacion:', e.message));
 }
 
+const MAX_INTENTOS_IMPRESION = 5;
+
+function marcarTicketProcesado(snap) {
+  snap.ref.update({ _impreso: true, _reimprimir: false })
+    .catch((e) => console.warn('No se pudo actualizar el ticket en Firebase:', e.message));
+}
+
 function procesarCola() {
   if (printing || printQueue.length === 0) return;
   printing = true;
-  const { ticket, snap } = printQueue.shift();
+  const item = printQueue.shift();
+  const { ticket, snap } = item;
+  item.intentos = (item.intentos || 0) + 1;
   imprimir(ticket, (todoBien) => {
-    snap.ref.update({ _impreso: true, _reimprimir: false });
-    // Solo avanzamos el estado en pedidos NUEVOS (no en reimpresiones manuales)
-    // y solo si de verdad se imprimio bien. Si fallo, se deja tal cual para que
-    // alguien lo vea e imprima a mano.
-    if (todoBien && !ticket._reimprimir) {
-      marcarEnPreparacion(ticket.orderNum, today);
+    if (todoBien) {
+      marcarTicketProcesado(snap);
+      // Solo avanzamos el estado en pedidos NUEVOS (no en reimpresiones manuales)
+      if (!ticket._reimprimir) {
+        marcarEnPreparacion(ticket.orderNum, today);
+      }
+    } else if (item.intentos < MAX_INTENTOS_IMPRESION) {
+      // No marcamos como impreso: puede que la impresora aún no esté lista
+      // (p.ej. justo tras arrancar el programa). Reintentamos con espera.
+      console.warn('Fallo al imprimir #' + ticket.orderNum + ', reintento ' + item.intentos + '/' + MAX_INTENTOS_IMPRESION);
+      printQueue.push(item);
+    } else {
+      console.error('No se pudo imprimir #' + ticket.orderNum + ' tras ' + MAX_INTENTOS_IMPRESION + ' intentos. Imprime a mano desde el panel.');
+      marcarTicketProcesado(snap);
     }
     printing = false;
-    setTimeout(procesarCola, 500);
+    setTimeout(procesarCola, todoBien || item.intentos >= MAX_INTENTOS_IMPRESION ? 500 : 2000);
   });
 }
 

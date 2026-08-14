@@ -29,24 +29,61 @@ $tmp_dir = sys_get_temp_dir();
 $window  = 600;
 $max_ip  = 20;
 
-$ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+// NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
+// quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
+// fije de verdad), así que confiar en él permite saltarse el límite de
+// intentos mandando un valor distinto en cada petición. REMOTE_ADDR es
+// la IP real de quien conecta — no se puede falsificar en la capa TCP.
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 $ip_file = $tmp_dir . '/dpf_webhook_ip_' . md5($ip) . '.json';
 
-function dpf_webhook_check_limit($file, $max, $window) {
-    $now = time();
-    $log = [];
-    if (file_exists($file)) {
-        $log = json_decode(file_get_contents($file), true) ?: [];
+// Limpieza ocasional: sin esto se acumula un archivo por cada IP distinta
+// para siempre (solo se filtran las entradas de dentro, nunca se borra el
+// archivo en sí). Se ejecuta con baja probabilidad para no penalizar cada
+// petición, y borra archivos sin tocar hace más de 1 hora (bastante más
+// que cualquier ventana de límite usada en esta web).
+function dpf_gc_rate_limit_files() {
+    if (mt_rand(1, 50) !== 1) return; // ~2% de las peticiones
+    $ahora = time();
+    foreach (glob(sys_get_temp_dir() . '/dpf_*.json') ?: [] as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime !== false && ($ahora - $mtime) > 3600) {
+            @unlink($f);
+        }
     }
-    $log = array_filter($log, function ($ts) use ($now, $window) {
+}
+dpf_gc_rate_limit_files();
+
+// Todo esto (leer, contar, decidir, escribir) pasa con el lock exclusivo
+// abierto de principio a fin — si no, dos peticiones a la vez podían leer
+// el mismo estado antes de que ninguna escribiera y saltarse el límite.
+function dpf_webhook_check_limit($file, $max, $window) {
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return true; // no bloquear tráfico real por un fallo de disco
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return true;
+    }
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
         return ($now - $ts) < $window;
-    });
+    }));
     if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return false;
     }
     $log[] = $now;
-    file_put_contents($file, json_encode(array_values($log)), LOCK_EX);
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
     return true;
 }
 
@@ -85,6 +122,24 @@ function base64url_encode($data) {
 }
 
 function obtenerTokenAcceso($rutaCredenciales) {
+    // Cache del token compartido entre todos los endpoints (guardar-pedido.php,
+    // fidelizacion.php, juegos.php, fichar-pin-check.php, webhook-incidencia.php,
+    // bimba-verify.php) — dura 1 hora entera, pero sin este cache cada
+    // petición pedía uno nuevo a Google desde cero (una ida y vuelta HTTP
+    // extra, ~100-400ms) aunque el anterior siguiera siendo válido. En una
+    // hora punta con muchos pedidos casi a la vez eso multiplicaba
+    // peticiones externas y mantenía cada proceso PHP abierto más tiempo
+    // del necesario — en un hosting compartido con límite de procesos
+    // simultáneos, eso es justo lo que puede tumbar la web si entra mucha
+    // gente a la vez.
+    $rutaCache = dirname($rutaCredenciales) . '/firebase-token-cache.json';
+    $cache = @json_decode(@file_get_contents($rutaCache), true);
+    // Margen de 5 minutos antes de la caducidad real, para no arriesgarse a
+    // usar un token que caduque a mitad de la petición.
+    if (is_array($cache) && isset($cache['token'], $cache['exp']) && (int)$cache['exp'] > (time() + 300)) {
+        return $cache['token'];
+    }
+
     $creds = json_decode(file_get_contents($rutaCredenciales), true);
     if (!$creds || !isset($creds['private_key'])) {
         throw new Exception('No se pudo leer el archivo de credenciales.');
@@ -116,6 +171,15 @@ function obtenerTokenAcceso($rutaCredenciales) {
     if (!isset($data['access_token'])) {
         throw new Exception('No se pudo obtener el token de acceso: ' . $response);
     }
+
+    // Guardar en cache para las próximas peticiones — best-effort: si falla
+    // escribir el archivo no pasa nada grave, simplemente se pedirá un
+    // token nuevo también la próxima vez.
+    @file_put_contents($rutaCache, json_encode([
+        'token' => $data['access_token'],
+        'exp'   => $now + (int)($data['expires_in'] ?? 3600),
+    ]));
+
     return $data['access_token'];
 }
 
