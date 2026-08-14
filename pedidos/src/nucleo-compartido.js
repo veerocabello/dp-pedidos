@@ -3190,11 +3190,43 @@ function initFirebaseListeners() {
         if (typeof _actualizarAvisoSaturacion === 'function') _actualizarAvisoSaturacion(_pendientes);
       }
 
-      // First call — set baseline, don't alert, but refresh UI
+      // First call — set baseline. Normalmente no avisamos/imprimimos pedidos
+      // que ya estaban ahí al conectar (p.ej. de una sesión anterior). Pero si
+      // el pedido más reciente (guardar-pedido.php los inserta al principio,
+      // stats.orders[0]) llegó hace muy poco, es probable que sea nuevo y aún
+      // no se haya visto ni impreso — p.ej. el primer pedido del día llega
+      // justo cuando se abre el panel — en ese caso lo tratamos igual que un
+      // pedido nuevo (mismo camino de aviso + auto-impresión de más abajo).
       if (_fbLastCount === null) {
         var _document$getElementB1, _document$getElementB10;
         _fbLastCount = newCount;
         _lastKnownOrderCount = newCount;
+        const _ultimoPedido = stats.orders && stats.orders.length ? stats.orders[0] : null;
+        if (_ultimoPedido && _ultimoPedido.ts && (Date.now() - _ultimoPedido.ts) < 60000) {
+          _unseenOrders += 1;
+          if (typeof updateTabTitle === 'function') updateTabTitle(_unseenOrders);
+          console.log('[DPF] Pedido reciente detectado al conectar, avisando #' + _ultimoPedido.num);
+          if (!_adminLoggedIn) {
+            var adminPanel0 = document.getElementById('admin-panel');
+            var kitchenMode0 = document.getElementById('kitchen-mode');
+            var yaAutenticado0 = window.fb && window.fb.getAdminUser && window.fb.getAdminUser();
+            if ((adminPanel0 && adminPanel0.style.display !== 'none')
+              || (kitchenMode0 && kitchenMode0.classList.contains('open'))
+              || yaAutenticado0) {
+              _adminLoggedIn = true; window._adminLoggedIn = true;
+            }
+          }
+          if (_adminLoggedIn) {
+            if (getTicketConfig().autoImprimir) _autoImprimirPedido(_ultimoPedido);
+            _marcarPedidoPendienteAlerta(_ultimoPedido.num);
+            startAlertLoop();
+            const toast = document.getElementById('new-order-toast');
+            if (toast) {
+              toast.style.display = 'block';
+              setTimeout(() => { toast.style.display = 'none'; }, 4000);
+            }
+          }
+        }
         if ((_document$getElementB1 = document.getElementById('admin-pedidos')) !== null && _document$getElementB1 !== void 0 && _document$getElementB1.classList.contains('active')) loadLiveOrders();
         if ((_document$getElementB10 = document.getElementById('admin-stats')) !== null && _document$getElementB10 !== void 0 && _document$getElementB10.classList.contains('active')) loadDayStats();
         return;

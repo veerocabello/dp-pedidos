@@ -941,6 +941,18 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/app.js?v=1786623281645" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
+  // Activa el Service Worker (sw.js) para cachear assets estáticos y que la
+  // web cargue más rápido con conexión floja. No cachea HTML, Firebase ni
+  // los PHP, así que el menú/precios/pedidos siempre están al día.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(function(err) {
+        console.warn('No se pudo registrar el Service Worker:', err);
+      });
+    });
+  }
+</script>
+<script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
   // las dos antes de dar el panel por "listo" — loadAdminShell(callback)
