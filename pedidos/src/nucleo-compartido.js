@@ -3165,7 +3165,23 @@ function initFirebaseListeners() {
 
   // 2. Stats / pedidos — sync orders across all devices
   if (window.fb_listenStats) {
+    // Semilla del contador con el último valor que esta misma tablet ya
+    // tenía guardado en localStorage para hoy (no siempre null) — así, si
+    // la pantalla se recarga a media jornada con pedidos ya pendientes de
+    // antes, el primer pedido NUEVO que llegue después de la recarga
+    // sigue sonando/imprimiendo. Antes, el primer aviso de Firebase tras
+    // CUALQUIER recarga fijaba el contador en silencio sin comparar con
+    // nada, así que justo el pedido siguiente a cada recarga se perdía
+    // (sin sonido y sin imprimir) — daba la sensación de que "el primer
+    // pedido" nunca avisaba, porque literalmente era así cada vez que se
+    // reabría la pantalla de cocina/admin.
     let _fbLastCount = null;
+    try {
+      const _statsCacheInicial = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+      if (_statsCacheInicial && _statsCacheInicial.date === todayKey && typeof _statsCacheInicial.count === 'number') {
+        _fbLastCount = _statsCacheInicial.count;
+      }
+    } catch (e) {}
     window.fb_listenStats(todayKey, stats => {
       var _document$getElementB11, _document$getElementB12, _document$getElementB13, _document$getElementB14;
       if (!stats) return;
