@@ -1699,6 +1699,20 @@ let _mkMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let _mkMesFiltroDia = null;
 const MK_RED_COLOR = { Instagram: '#C13584', TikTok: '#000000', Facebook: '#1877F2' };
 const MK_MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const MK_MESES_ABR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MK_DIAS_ABR = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+// Separa un emoji inicial (si lo hay) del resto del texto, para poder mostrarlo más grande.
+function _mkExtraerEmoji(texto) {
+  const m = (texto || '').match(/^(\p{Extended_Pictographic}(?:️)?(?:‍\p{Extended_Pictographic}(?:️)?)*)\s*/u);
+  if (m) return { emoji: m[1], resto: texto.slice(m[0].length) };
+  return { emoji: null, resto: texto || '' };
+}
+function _mkLunesDeSemana(d) {
+  const dow = (d.getDay() + 6) % 7; // lunes = 0
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
+}
+let _mkSemanaActual = _mkLunesDeSemana(new Date());
 
 async function bimbaRenderMkCalendario() {
   const el = document.getElementById('mk-calendario-lista');
@@ -1714,6 +1728,7 @@ async function bimbaRenderMkCalendario() {
     return;
   }
   bimbaPintarMkCalendarioLista();
+  if (document.getElementById('mk-calendario-vista-semana').style.display !== 'none') bimbaRenderMkSemana();
   if (document.getElementById('mk-calendario-vista-mes').style.display !== 'none') bimbaRenderMkMes();
 }
 function bimbaPintarMkCalendarioLista() {
@@ -1725,9 +1740,13 @@ function bimbaPintarMkCalendarioLista() {
   }
   el.innerHTML = lista.map(function (p) {
     const color = MK_ESTADO_COLOR[p.estado] || '#8A6A4E';
+    const emojiInfo = _mkExtraerEmoji(p.tema);
+    const temaHtml = emojiInfo.emoji
+      ? '<span style="font-size:22px;line-height:1;flex-shrink:0">' + emojiInfo.emoji + '</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (escapeHtml(emojiInfo.resto) || '(sin tema)') + '</span>'
+      : '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(p.tema || '(sin tema)') + '</span>';
     return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
-      + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(p.tema || '(sin tema)') + '</div>'
+      + '<div style="flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#3D1F0D">' + temaHtml + '</div>'
       + '<button onclick="bimbaEliminarMkCalendario(\'' + p.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + (p.fecha ? _fechaCorta(p.fecha) : 'sin fecha') + ' · ' + escapeHtml(p.red || '') + ' · ' + escapeHtml(p.tipo || '') + '</div>'
@@ -1746,24 +1765,64 @@ async function bimbaCambiarEstadoMkCalendario(id, nuevoEstado) {
   try { await firebase.database().ref('marketing/calendario/' + id + '/estado').set(nuevoEstado); } catch (e) {}
 }
 
-// ── Calendario de contenido: pestañas Lista / Mes ──
+// ── Calendario de contenido: pestañas Lista / Semana / Mes ──
 function bimbaMkCalVista(vista) {
-  const tabLista = document.getElementById('mk-cal-tab-lista');
-  const tabMes = document.getElementById('mk-cal-tab-mes');
-  const vistaMes = document.getElementById('mk-calendario-vista-mes');
-  const esMes = vista === 'mes';
-  tabMes.style.background = esMes ? '#3D1F0D' : '#fff';
-  tabMes.style.color = esMes ? '#fff' : '#8A6A4E';
-  tabMes.style.borderColor = esMes ? '#3D1F0D' : '#F5E6C8';
-  tabLista.style.background = esMes ? '#fff' : '#3D1F0D';
-  tabLista.style.color = esMes ? '#8A6A4E' : '#fff';
-  tabLista.style.borderColor = esMes ? '#F5E6C8' : '#3D1F0D';
-  vistaMes.style.display = esMes ? 'block' : 'none';
-  if (esMes) bimbaRenderMkMes();
+  const tabs = { lista: document.getElementById('mk-cal-tab-lista'), semana: document.getElementById('mk-cal-tab-semana'), mes: document.getElementById('mk-cal-tab-mes') };
+  const vistas = { semana: document.getElementById('mk-calendario-vista-semana'), mes: document.getElementById('mk-calendario-vista-mes') };
+  Object.keys(tabs).forEach(function (key) {
+    const activo = key === vista;
+    tabs[key].style.background = activo ? '#3D1F0D' : '#fff';
+    tabs[key].style.color = activo ? '#fff' : '#8A6A4E';
+    tabs[key].style.borderColor = activo ? '#3D1F0D' : '#F5E6C8';
+  });
+  Object.keys(vistas).forEach(function (key) { vistas[key].style.display = key === vista ? 'block' : 'none'; });
+  if (vista === 'semana') bimbaRenderMkSemana();
+  if (vista === 'mes') bimbaRenderMkMes();
 }
 function bimbaMkMesCambiar(delta) {
   _mkMesActual = new Date(_mkMesActual.getFullYear(), _mkMesActual.getMonth() + delta, 1);
   bimbaRenderMkMes();
+}
+function bimbaMkSemanaCambiar(delta) {
+  _mkSemanaActual = new Date(_mkSemanaActual.getFullYear(), _mkSemanaActual.getMonth(), _mkSemanaActual.getDate() + delta * 7);
+  bimbaRenderMkSemana();
+}
+function bimbaRenderMkSemana() {
+  const dias = [];
+  for (let i = 0; i < 7; i++) dias.push(new Date(_mkSemanaActual.getFullYear(), _mkSemanaActual.getMonth(), _mkSemanaActual.getDate() + i));
+  const primero = dias[0], ultimo = dias[6];
+  const tituloEl = document.getElementById('mk-semana-titulo');
+  if (primero.getMonth() === ultimo.getMonth()) {
+    tituloEl.textContent = primero.getDate() + ' – ' + ultimo.getDate() + ' ' + MK_MESES_ABR[primero.getMonth()] + ' ' + ultimo.getFullYear();
+  } else {
+    tituloEl.textContent = primero.getDate() + ' ' + MK_MESES_ABR[primero.getMonth()] + ' – ' + ultimo.getDate() + ' ' + MK_MESES_ABR[ultimo.getMonth()] + ' ' + ultimo.getFullYear();
+  }
+
+  const porDia = {};
+  _mkCalendarioCache.forEach(function (p) {
+    if (!p.fecha) return;
+    (porDia[p.fecha] = porDia[p.fecha] || []).push(p);
+  });
+  const hoyStr = new Date().toISOString().slice(0, 10);
+
+  document.getElementById('mk-semana-grid').innerHTML = dias.map(function (d, i) {
+    const fechaStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const posts = porDia[fechaStr] || [];
+    const esHoy = fechaStr === hoyStr;
+    const esSeleccionado = fechaStr === _mkMesFiltroDia;
+    const chips = posts.map(function (p) {
+      const emojiInfo = _mkExtraerEmoji(p.tema);
+      const etiqueta = emojiInfo.emoji ? emojiInfo.emoji + ' ' + escapeHtml(emojiInfo.resto || '') : escapeHtml(p.tema || '(sin tema)');
+      return '<span style="display:inline-flex;align-items:center;gap:4px;background:' + (MK_RED_COLOR[p.red] || '#8A6A4E') + '1A;border:1px solid ' + (MK_RED_COLOR[p.red] || '#8A6A4E') + '55;border-radius:99px;padding:3px 9px;font-size:11.5px;font-weight:700;color:#3D1F0D;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + etiqueta + '</span>';
+    }).join('');
+    return '<div onclick="bimbaMkMesFiltrarDia(\'' + fechaStr + '\')" style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;cursor:pointer;background:' + (esSeleccionado ? '#FBEFD6' : '#fff') + ';border:1.5px solid ' + (esSeleccionado ? '#F4C430' : '#F5E6C8') + ';margin-bottom:4px">'
+      + '<div style="flex-shrink:0;width:38px;text-align:center">'
+      + '<div style="font-size:9.5px;font-weight:700;color:#8A6A4E">' + MK_DIAS_ABR[i] + '</div>'
+      + '<div style="font-size:14px;font-weight:' + (esHoy ? '800' : '600') + ';color:' + (esHoy ? '#C2711A' : '#3D1F0D') + '">' + d.getDate() + '</div>'
+      + '</div>'
+      + '<div style="flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:4px;padding-top:2px">' + (chips || '<span style="font-size:11.5px;color:#C9B79A">Sin publicaciones</span>') + '</div>'
+      + '</div>';
+  }).join('');
 }
 function bimbaRenderMkMes() {
   const anio = _mkMesActual.getFullYear();
@@ -1807,12 +1866,14 @@ function bimbaMkMesFiltrarDia(fechaStr) {
   } else {
     filtroEl.style.display = 'none';
   }
+  bimbaRenderMkSemana();
   bimbaRenderMkMes();
   bimbaPintarMkCalendarioLista();
 }
 function bimbaMkMesLimpiarFiltro() {
   _mkMesFiltroDia = null;
   document.getElementById('mk-mes-filtro').style.display = 'none';
+  bimbaRenderMkSemana();
   bimbaRenderMkMes();
   bimbaPintarMkCalendarioLista();
 }

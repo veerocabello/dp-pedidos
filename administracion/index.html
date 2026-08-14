@@ -757,7 +757,17 @@
 
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <div id="mk-cal-tab-lista" onclick="bimbaMkCalVista('lista')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #3D1F0D;background:#3D1F0D;color:#fff">📋 Lista</div>
+        <div id="mk-cal-tab-semana" onclick="bimbaMkCalVista('semana')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">📆 Semana</div>
         <div id="mk-cal-tab-mes" onclick="bimbaMkCalVista('mes')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">🗓️ Mes</div>
+      </div>
+
+      <div id="mk-calendario-vista-semana" style="display:none;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <button onclick="bimbaMkSemanaCambiar(-1)" style="background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;width:32px;height:32px;font-size:15px;font-weight:700;color:#3D1F0D;cursor:pointer">‹</button>
+          <div id="mk-semana-titulo" style="font-family:'Oswald',sans-serif;font-size:13px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.04em"></div>
+          <button onclick="bimbaMkSemanaCambiar(1)" style="background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;width:32px;height:32px;font-size:15px;font-weight:700;color:#3D1F0D;cursor:pointer">›</button>
+        </div>
+        <div id="mk-semana-grid"></div>
       </div>
 
       <div id="mk-calendario-vista-mes" style="display:none;margin-bottom:14px">
@@ -776,10 +786,11 @@
           <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">D</div>
         </div>
         <div id="mk-mes-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px"></div>
-        <div id="mk-mes-filtro" style="display:none;align-items:center;justify-content:space-between;background:#FBEFD6;border:1.5px solid #F4C430;border-radius:8px;padding:8px 10px;margin-top:10px">
-          <span id="mk-mes-filtro-texto" style="font-size:12px;font-weight:700;color:#854F0B"></span>
-          <span onclick="bimbaMkMesLimpiarFiltro()" style="font-size:11px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline">Ver todas</span>
-        </div>
+      </div>
+
+      <div id="mk-mes-filtro" style="display:none;align-items:center;justify-content:space-between;background:#FBEFD6;border:1.5px solid #F4C430;border-radius:8px;padding:8px 10px;margin-bottom:14px">
+        <span id="mk-mes-filtro-texto" style="font-size:12px;font-weight:700;color:#854F0B"></span>
+        <span onclick="bimbaMkMesLimpiarFiltro()" style="font-size:11px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline">Ver todas</span>
       </div>
 
       <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Publicaciones planeadas</div>
