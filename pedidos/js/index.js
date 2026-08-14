@@ -201,20 +201,32 @@ function marcarEnPreparacion(orderNum, fecha) {
     .catch((e) => console.warn('No se pudo marcar como en preparacion:', e.message));
 }
 
+const MAX_INTENTOS_IMPRESION = 5;
+
 function procesarCola() {
   if (printing || printQueue.length === 0) return;
   printing = true;
-  const { ticket, snap } = printQueue.shift();
+  const item = printQueue.shift();
+  const { ticket, snap } = item;
+  item.intentos = (item.intentos || 0) + 1;
   imprimir(ticket, (todoBien) => {
-    snap.ref.update({ _impreso: true, _reimprimir: false });
-    // Solo avanzamos el estado en pedidos NUEVOS (no en reimpresiones manuales)
-    // y solo si de verdad se imprimio bien. Si fallo, se deja tal cual para que
-    // alguien lo vea e imprima a mano.
-    if (todoBien && !ticket._reimprimir) {
-      marcarEnPreparacion(ticket.orderNum, today);
+    if (todoBien) {
+      snap.ref.update({ _impreso: true, _reimprimir: false });
+      // Solo avanzamos el estado en pedidos NUEVOS (no en reimpresiones manuales)
+      if (!ticket._reimprimir) {
+        marcarEnPreparacion(ticket.orderNum, today);
+      }
+    } else if (item.intentos < MAX_INTENTOS_IMPRESION) {
+      // No marcamos como impreso: puede que la impresora aún no esté lista
+      // (p.ej. justo tras arrancar el programa). Reintentamos con espera.
+      console.warn('Fallo al imprimir #' + ticket.orderNum + ', reintento ' + item.intentos + '/' + MAX_INTENTOS_IMPRESION);
+      printQueue.push(item);
+    } else {
+      console.error('No se pudo imprimir #' + ticket.orderNum + ' tras ' + MAX_INTENTOS_IMPRESION + ' intentos. Imprime a mano desde el panel.');
+      snap.ref.update({ _impreso: true, _reimprimir: false });
     }
     printing = false;
-    setTimeout(procesarCola, 500);
+    setTimeout(procesarCola, todoBien || item.intentos >= MAX_INTENTOS_IMPRESION ? 500 : 2000);
   });
 }
 
