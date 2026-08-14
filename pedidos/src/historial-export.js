@@ -636,11 +636,36 @@ function initFirebaseListeners() {
       const newCount = stats.count || 0;
       // Update localStorage cache
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-      // First call — set baseline, don't alert, but refresh UI
+      // First call — set baseline. Normalmente no avisamos de pedidos que ya
+      // estaban ahí al conectar (p.ej. de una sesión anterior). Pero si el
+      // pedido más reciente llegó hace muy poco, es probable que sea nuevo y
+      // aún no se haya visto (p.ej. el primer pedido del día llega justo
+      // cuando se abre el panel) — en ese caso sí avisamos.
       if (_fbLastCount === null) {
         var _document$getElementB1, _document$getElementB10;
         _fbLastCount = newCount;
         _lastKnownOrderCount = newCount;
+        const ultimoPedido = stats.orders && stats.orders.length ? stats.orders[stats.orders.length - 1] : null;
+        if (ultimoPedido && ultimoPedido.ts && (Date.now() - ultimoPedido.ts) < 60000) {
+          _unseenOrders += 1;
+          updateTabTitle(_unseenOrders);
+          console.log('[DPF] Pedido reciente detectado al conectar, avisando #' + ultimoPedido.num);
+          if (!_adminLoggedIn) {
+            var adminPanel0 = document.getElementById('admin-panel');
+            if (adminPanel0 && adminPanel0.style.display !== 'none') {
+              _adminLoggedIn = true; window._adminLoggedIn = true;
+            }
+          }
+          if (_adminLoggedIn) {
+            _alertPendingOrders = 1;
+            startAlertLoop();
+            const toast = document.getElementById('new-order-toast');
+            if (toast) {
+              toast.style.display = 'block';
+              setTimeout(() => { toast.style.display = 'none'; }, 4000);
+            }
+          }
+        }
         if ((_document$getElementB1 = document.getElementById('admin-pedidos')) !== null && _document$getElementB1 !== void 0 && _document$getElementB1.classList.contains('active')) loadLiveOrders();
         if ((_document$getElementB10 = document.getElementById('admin-stats')) !== null && _document$getElementB10 !== void 0 && _document$getElementB10.classList.contains('active')) loadDayStats();
         return;

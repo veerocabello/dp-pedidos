@@ -705,6 +705,14 @@ function checkForNewOrders(statsOverride) {
   const count = stats.count || 0;
   if (_lastKnownOrderCount === null) {
     _lastKnownOrderCount = count;
+    // Si el pedido más reciente llegó hace muy poco, avisar aunque sea la
+    // primera vez que comprobamos (p.ej. el primer pedido del día).
+    const ultimoPedido = stats.orders && stats.orders.length ? stats.orders[stats.orders.length - 1] : null;
+    if (ultimoPedido && ultimoPedido.ts && (Date.now() - ultimoPedido.ts) < 60000) {
+      _unseenOrders += 1;
+      updateTabTitle(_unseenOrders);
+      showNewOrderNotification(1);
+    }
     return;
   }
   console.log('[DPF] checkForNewOrders: count=' + count + ' lastKnown=' + _lastKnownOrderCount + ' adminLoggedIn=' + _adminLoggedIn);

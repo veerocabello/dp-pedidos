@@ -2365,10 +2365,13 @@ function renderCart() {
   const grandTotal = feeEnabled ? total + feeAmount : total;
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
-  // Sync mobile FAB and drawer
-  _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
   // Only show total and form if orders are open
+  // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
+  // porque _syncCartDrawer() (a través de _syncDrawerSlotPicker()) copia el
+  // estado visible de #slot-picker-group al drawer móvil. Si se sincroniza
+  // primero, el drawer copia el estado del render ANTERIOR (desactualizado),
+  // provocando que "Hora de recogida" no aparezca en el drawer justo tras
+  // el primer cambio de carrito (bug intermitente en móvil).
   if (getOrdersOpen()) {
     totalRowEl.style.display = "flex";
     formEl.style.display = "block";
@@ -2377,6 +2380,10 @@ function renderCart() {
     totalRowEl.style.display = "none";
     formEl.style.display = "none";
   }
+
+  // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
+  _updateCartFab(totalItems, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal);
 }
 
 
@@ -4139,7 +4146,7 @@ function updateCustProgress() {
     if (sauceProg) sauceProg.style.display = 'none';
     document.getElementById('cust-sauce-badge').textContent = ns;
     document.getElementById('cust-ing-label').textContent = 'Total: ' + total + '/' + cfg.maxTotal + ' (salsas: ' + ns + ' · ing: ' + ni + ')';
-    document.getElementById('cust-ing-bar').style.width = pct + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pct / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill ' + cls;
     document.getElementById('cust-ing-badge').textContent = total + '/' + cfg.maxTotal;
   } else {
@@ -4148,11 +4155,11 @@ function updateCustProgress() {
     const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(ni / cfg.maxIngredients * 100));
     document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
-    document.getElementById('cust-sauce-bar').style.width = pctS + '%';
+    document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
     document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + ni + '/' + cfg.maxIngredients;
-    document.getElementById('cust-ing-bar').style.width = pctI + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
     document.getElementById('cust-ing-badge').textContent = ni + '/' + cfg.maxIngredients;
   }
@@ -7867,24 +7874,29 @@ function _ejecutarLoadOrdersStatus() {
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe
   checkVacationMode();
+  // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
+  // un cliente anónimo mirando la carta no tiene permiso de escritura en
+  // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
+  // generando avisos de "permission_denied" en la consola sin ningún efecto.
+  const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
       updateOpenBtn(false);
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
       localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
   const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
@@ -8593,9 +8605,12 @@ function scheduleSlotMidnightReset() {
     localStorage.removeItem(OPEN_KEY);
     localStorage.removeItem(ORDERS_KEY);
     localStorage.removeItem('dpf_open_manual_override');
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    const _esAdminAutenticadoReset = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+    if (_esAdminAutenticadoReset) {
+      firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    }
     // También archivar el día anterior en historial
     try {
       const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8623,7 +8638,7 @@ function scheduleSlotMidnightReset() {
           modified = true;
         }
       });
-      if (modified) fichajesSave(fich);
+      if (modified && _esAdminAutenticadoReset) fichajesSave(fich);
     } catch (e) {
       console.warn('Auto-checkout error', e);
     }
@@ -8710,11 +8725,36 @@ function initFirebaseListeners() {
       const newCount = stats.count || 0;
       // Update localStorage cache
       localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-      // First call — set baseline, don't alert, but refresh UI
+      // First call — set baseline. Normalmente no avisamos de pedidos que ya
+      // estaban ahí al conectar (p.ej. de una sesión anterior). Pero si el
+      // pedido más reciente llegó hace muy poco, es probable que sea nuevo y
+      // aún no se haya visto (p.ej. el primer pedido del día llega justo
+      // cuando se abre el panel) — en ese caso sí avisamos.
       if (_fbLastCount === null) {
         var _document$getElementB1, _document$getElementB10;
         _fbLastCount = newCount;
         _lastKnownOrderCount = newCount;
+        const ultimoPedido = stats.orders && stats.orders.length ? stats.orders[stats.orders.length - 1] : null;
+        if (ultimoPedido && ultimoPedido.ts && (Date.now() - ultimoPedido.ts) < 60000) {
+          _unseenOrders += 1;
+          updateTabTitle(_unseenOrders);
+          console.log('[DPF] Pedido reciente detectado al conectar, avisando #' + ultimoPedido.num);
+          if (!_adminLoggedIn) {
+            var adminPanel0 = document.getElementById('admin-panel');
+            if (adminPanel0 && adminPanel0.style.display !== 'none') {
+              _adminLoggedIn = true; window._adminLoggedIn = true;
+            }
+          }
+          if (_adminLoggedIn) {
+            _alertPendingOrders = 1;
+            startAlertLoop();
+            const toast = document.getElementById('new-order-toast');
+            if (toast) {
+              toast.style.display = 'block';
+              setTimeout(() => { toast.style.display = 'none'; }, 4000);
+            }
+          }
+        }
         if ((_document$getElementB1 = document.getElementById('admin-pedidos')) !== null && _document$getElementB1 !== void 0 && _document$getElementB1.classList.contains('active')) loadLiveOrders();
         if ((_document$getElementB10 = document.getElementById('admin-stats')) !== null && _document$getElementB10 !== void 0 && _document$getElementB10.classList.contains('active')) loadDayStats();
         return;
@@ -9667,6 +9707,14 @@ function checkForNewOrders(statsOverride) {
   const count = stats.count || 0;
   if (_lastKnownOrderCount === null) {
     _lastKnownOrderCount = count;
+    // Si el pedido más reciente llegó hace muy poco, avisar aunque sea la
+    // primera vez que comprobamos (p.ej. el primer pedido del día).
+    const ultimoPedido = stats.orders && stats.orders.length ? stats.orders[stats.orders.length - 1] : null;
+    if (ultimoPedido && ultimoPedido.ts && (Date.now() - ultimoPedido.ts) < 60000) {
+      _unseenOrders += 1;
+      updateTabTitle(_unseenOrders);
+      showNewOrderNotification(1);
+    }
     return;
   }
   console.log('[DPF] checkForNewOrders: count=' + count + ' lastKnown=' + _lastKnownOrderCount + ' adminLoggedIn=' + _adminLoggedIn);
