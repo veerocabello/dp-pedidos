@@ -2,3 +2,11 @@ pedidos/.htpasswd
 pedidos/twilio-errores.log
 .DS_Store
 node_modules/
+
+# comandas-app: envoltorio Electron de pedidos/ — comandas/ dentro de aquí
+# y los iconos se regeneran solos con "npm run copy-assets && npm run
+# make-icon" (ver scripts/), y dist/ son los instaladores ya compilados
+# (demasiado grandes y no son código fuente).
+comandas-app/comandas/
+comandas-app/build/
+comandas-app/dist/

@@ -1748,6 +1748,8 @@ function openCaja() {
   const fechaInput = document.getElementById('caja-fecha-input');
   if (fechaInput) fechaInput.value = cajaFechaSel;
   document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
+  const btnOrganizada = document.getElementById('btn-copia-organizada');
+  if (btnOrganizada) btnOrganizada.style.display = isDesktopApp() ? '' : 'none';
   renderCaja();
   document.getElementById('caja-modal').classList.add('open');
 }
@@ -1804,19 +1806,51 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function exportarCopiaHoyJSON() {
-  const fecha = cajaFechaSel || todayISO();
-  const copia = {
+function construirCopiaJSON(fecha) {
+  return {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
     fondoCaja: loadCajaFondo(fecha),
     totales: loadCajaTotales(fecha),
     pedidos: getHistorial(fecha),
   };
-  _descargarArchivo('dulce-patata-copia-' + fecha + '.json', JSON.stringify(copia, null, 2), 'application/json');
+}
+async function exportarCopiaHoyJSON() {
+  const fecha = cajaFechaSel || todayISO();
+  _descargarArchivo('dulce-patata-copia-' + fecha + '.json', JSON.stringify(construirCopiaJSON(fecha), null, 2), 'application/json');
   marcarBackupHecho(fecha);
+  // En la app de escritorio, además del descargable de arriba, se intenta
+  // guardar sola una copia organizada por año/mes/semana si hay carpeta
+  // configurada — sin bloquear ni avisar si no la hay, para eso ya está el
+  // botón "📁 Guardar copia organizada" para hacerlo a mano.
+  if (isDesktopApp()) {
+    const res = await guardarCopiaOrganizada(fecha);
+    if (res.ok) toast('📥 Copia descargada y guardada en la carpeta organizada');
+    else { renderCaja(); toast('📥 Copia descargada'); }
+    return;
+  }
   renderCaja();
   toast('📥 Copia descargada');
+}
+
+/* ── Copia organizada por año/mes/semana (solo app de escritorio, ver
+   comandas-app/main.js) — mismo contenido que "📥 Descargar copia" pero
+   escrita de verdad en una carpeta elegida, en vez de depender de la
+   carpeta de Descargas del navegador. ── */
+const NO_BACKUP_FOLDER_ERROR = 'No hay ninguna carpeta de copias configurada.';
+async function guardarCopiaOrganizada(fecha) {
+  if (!isDesktopApp()) return { ok: false, error: 'Solo disponible en la app de escritorio' };
+  const folder = await window.comandasDesktop.getBackupFolder();
+  if (!folder) return { ok: false, error: NO_BACKUP_FOLDER_ERROR };
+  const contenido = JSON.stringify(construirCopiaJSON(fecha), null, 2);
+  const res = await window.comandasDesktop.saveOrganizedBackup(fecha, contenido);
+  if (res.ok) marcarBackupHecho(fecha);
+  return res;
+}
+async function guardarCopiaOrganizadaManual() {
+  const res = await guardarCopiaOrganizada(cajaFechaSel);
+  if (res.ok) { toast('📁 Copia guardada en la carpeta de copias'); renderCaja(); }
+  else toast('⚠️ ' + res.error);
 }
 function _csvCelda(v) {
   const s = String(v == null ? '' : v);
@@ -2171,9 +2205,90 @@ function openSettings() {
   document.getElementById('set-copias').value = String(cfg.copias);
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
+  initDesktopSettingsSection();
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+
+/* ══════════════════════════════════════════════════════════════
+   APP DE ESCRITORIO (Electron) — arranque automático, modo kiosco y
+   comprobación de actualizaciones. Todo esto solo existe si la página se
+   abre dentro de comandas-app (ver comandas-app/preload.js) — si se abre
+   en un navegador normal, window.comandasDesktop no existe y esta sección
+   de Ajustes se queda oculta sin romper nada.
+   ══════════════════════════════════════════════════════════════ */
+function isDesktopApp() { return !!(window.comandasDesktop && window.comandasDesktop.isDesktopApp); }
+
+async function initDesktopSettingsSection() {
+  const section = document.getElementById('settings-desktop-section');
+  if (!isDesktopApp()) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  document.getElementById('update-check-result').style.display = 'none';
+  const [version, autoLaunch, kiosk, updatePath, backupFolder] = await Promise.all([
+    window.comandasDesktop.getAppVersion(),
+    window.comandasDesktop.getAutoLaunch(),
+    window.comandasDesktop.getKiosk(),
+    window.comandasDesktop.getUpdatePath(),
+    window.comandasDesktop.getBackupFolder(),
+  ]);
+  document.getElementById('set-app-version').textContent = version ? 'v' + version : '';
+  document.getElementById('set-auto-launch').checked = !!autoLaunch;
+  document.getElementById('set-kiosk').checked = !!kiosk;
+  document.getElementById('set-update-path').value = updatePath || '';
+  document.getElementById('set-backup-folder').value = backupFolder || '';
+}
+async function chooseBackupFolder() {
+  if (!isDesktopApp()) return;
+  const res = await window.comandasDesktop.chooseBackupFolder();
+  if (res && res.ok) {
+    document.getElementById('set-backup-folder').value = res.folder;
+    toast('✅ Carpeta de copias configurada');
+  }
+}
+async function toggleAutoLaunch(checked) {
+  if (!isDesktopApp()) return;
+  const result = await window.comandasDesktop.setAutoLaunch(checked);
+  document.getElementById('set-auto-launch').checked = !!result;
+  toast(result ? '✅ Se abrirá sola al encender el PC' : 'Arranque automático desactivado');
+}
+async function toggleKiosk(checked) {
+  if (!isDesktopApp()) return;
+  const result = await window.comandasDesktop.setKiosk(checked);
+  document.getElementById('set-kiosk').checked = !!result;
+  toast(result ? '✅ Modo kiosco activado (Esc para salir)' : 'Modo kiosco desactivado');
+}
+let updatePathDebounceTimer = null;
+function saveUpdatePathDebounced() {
+  if (!isDesktopApp()) return;
+  clearTimeout(updatePathDebounceTimer);
+  updatePathDebounceTimer = setTimeout(() => {
+    window.comandasDesktop.setUpdatePath(document.getElementById('set-update-path').value);
+  }, 500);
+}
+let pendingUpdateInstallerPath = null;
+async function checkForAppUpdate() {
+  if (!isDesktopApp()) return;
+  const resultEl = document.getElementById('update-check-result');
+  resultEl.style.display = 'block';
+  resultEl.textContent = 'Buscando…';
+  pendingUpdateInstallerPath = null;
+  const res = await window.comandasDesktop.checkForUpdate();
+  if (!res.ok) { resultEl.textContent = '⚠️ ' + res.error; return; }
+  if (!res.hayNueva) { resultEl.textContent = '✅ Ya tienes la última versión (v' + res.actual + ').'; return; }
+  if (!res.instaladorPath) {
+    resultEl.textContent = '🆕 Hay una versión nueva (v' + res.disponible + ') pero no se encuentra su instalador en esa carpeta.';
+    return;
+  }
+  pendingUpdateInstallerPath = res.instaladorPath;
+  resultEl.innerHTML = '🆕 Versión ' + escapeHtml(res.disponible) + ' disponible (tienes v' + escapeHtml(res.actual) + ').'
+    + (res.notas ? '<br>' + escapeHtml(res.notas) : '')
+    + '<br><button class="btn-secondary" style="margin-top:8px" onclick="installAppUpdate()">⬇️ Instalar ahora</button>';
+}
+async function installAppUpdate() {
+  if (!isDesktopApp() || !pendingUpdateInstallerPath) return;
+  if (!confirm('La app se cerrará para instalar la actualización. ¿Continuar?')) return;
+  await window.comandasDesktop.installUpdate(pendingUpdateInstallerPath);
+}
 function saveSettingsForm() {
   const cfg = {
     nombre: document.getElementById('set-nombre').value.trim() || TICKET_CONFIG_DEFAULTS.nombre,

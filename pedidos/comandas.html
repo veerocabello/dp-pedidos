@@ -207,6 +207,34 @@
       </select>
     </div>
 
+    <div id="settings-desktop-section" style="display:none">
+      <div class="section-label">App de escritorio <span id="set-app-version" style="font-weight:400;color:var(--muted);font-size:11px"></span></div>
+      <div class="form-group">
+        <label>Carpeta de copias de seguridad (organizada por año/mes/semana)</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="set-backup-folder" type="text" readonly placeholder="Sin configurar" style="flex:1;background:var(--warm)">
+          <button class="btn-secondary" style="flex:0 0 auto;padding:9px 14px" onclick="chooseBackupFolder()">📁 Elegir…</button>
+        </div>
+        <div class="option-sub" style="margin-top:4px">Con esto configurado, al pulsar "📥 Descargar copia" en Hacer Caja también se guarda sola una copia ahí, organizada en carpetas.</div>
+      </div>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Abrir automáticamente al encender este ordenador</div><div class="option-sub">Así no hay que buscarla ni abrirla a mano cada mañana</div></div>
+        <input type="checkbox" id="set-auto-launch" style="width:20px;height:20px;flex-shrink:0" onchange="toggleAutoLaunch(this.checked)">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Modo kiosco (pantalla completa fija)</div><div class="option-sub">Bloquea cerrar la app sin querer (Alt+F4). Para salir: Esc (pide confirmación)</div></div>
+        <input type="checkbox" id="set-kiosk" style="width:20px;height:20px;flex-shrink:0" onchange="toggleKiosk(this.checked)">
+      </label>
+      <div class="form-group">
+        <label>Carpeta de actualizaciones (ruta de red o USB, opcional)</label>
+        <input id="set-update-path" type="text" placeholder="Ej. \\SERVIDOR\comandas-updates" oninput="saveUpdatePathDebounced()">
+      </div>
+      <div class="settings-actions">
+        <button class="btn-secondary" onclick="checkForAppUpdate()">🔎 Buscar actualización ahora</button>
+      </div>
+      <div id="update-check-result" class="settings-help" style="display:none"></div>
+    </div>
+
     <div class="settings-actions">
       <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
@@ -320,6 +348,7 @@
     <div class="settings-actions">
       <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia</button>
       <button class="btn-secondary" onclick="exportarVentasHoyCSV()">📊 Exportar a Excel (CSV)</button>
+      <button class="btn-secondary" id="btn-copia-organizada" style="display:none" onclick="guardarCopiaOrganizadaManual()">📁 Guardar copia organizada</button>
     </div>
     <div class="settings-help">
       "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo ese día. Cuenta el cajón físico y compáralo con esa cifra para cuadrar caja. Lo cobrado con tarjeta no debe estar en el cajón.
