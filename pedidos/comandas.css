@@ -183,11 +183,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-.tabs-nav {
-  display: flex;
-  flex-direction: column;
   gap: 6px;
 }
 .tab {
@@ -217,76 +212,72 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   box-shadow: var(--shadow-md);
 }
 
-/* ── Contador de paninis (stock limitado) ── */
-.panini-counter {
-  border: 1.5px solid var(--warm);
-  border-radius: var(--radius-xs);
-  background: var(--white);
-  padding: 12px 14px 10px;
-  box-shadow: var(--shadow-sm);
-  text-align: center;
-}
-.panini-counter-label {
+/* ── Contador de stock por panini (pan limitado): una fila compacta
+   dentro de cada tarjeta de panini, para llevar la cuenta de cuántos se
+   han gastado de CADA variedad por separado. ── */
+.panini-stock-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-family: var(--font-head);
-  font-size: 11.5px;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--warm);
+}
+.panini-stock-label {
+  font-size: 11px;
   font-weight: 700;
-  color: var(--brown);
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .04em;
-  margin-bottom: 10px;
+  letter-spacing: .03em;
+  flex: 1;
 }
-.panini-counter-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-}
-.panini-counter-btn {
-  width: 32px;
-  height: 32px;
+.panini-stock-btn {
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: none;
   background: var(--warm);
   color: var(--brown);
   font-weight: 800;
-  font-size: 17px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background .15s, color .15s;
+  flex-shrink: 0;
 }
-.panini-counter-btn:hover { background: var(--amber); color: #fff; }
-.panini-counter-btn:active { transform: scale(.94); }
-.panini-counter-value {
+.panini-stock-btn:hover { background: var(--amber); color: #fff; }
+.panini-stock-btn:active { transform: scale(.92); }
+.panini-stock-value {
   font-family: var(--font-head);
-  font-size: 23px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--amber-dark);
-  min-width: 30px;
+  min-width: 18px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.panini-counter-reset {
-  display: block;
-  margin: 8px auto 0;
+.panini-stock-reset {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: 12px;
   cursor: pointer;
-  text-decoration: underline;
-  padding: 2px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  opacity: .7;
 }
-.panini-counter-reset:hover { color: var(--error); }
+.panini-stock-reset:hover { color: var(--error); opacity: 1; }
 @media (max-width: 900px) {
   .menu-area { flex-direction: column; }
-  .tabs-sidebar { position: static; width: 100%; }
-  .tabs-nav { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  .tabs-sidebar {
+    position: static;
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
   .tab { width: auto; }
 }
 

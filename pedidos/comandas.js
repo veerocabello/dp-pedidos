@@ -210,11 +210,19 @@ function renderItemRow(item) {
       ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
       : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
+  const paniniStock = item.cat === 'Paninis' ? `<div class="panini-stock-row">
+      <span class="panini-stock-label">🥖 Usados hoy</span>
+      <button class="panini-stock-btn" onclick="event.stopPropagation();changePaniniItemCount(${item.id},-1)">−</button>
+      <span class="panini-stock-value" id="panini-count-${item.id}">${loadPaniniItemCount(item.id)}</span>
+      <button class="panini-stock-btn" onclick="event.stopPropagation();changePaniniItemCount(${item.id},1)">+</button>
+      <button class="panini-stock-reset" title="Reiniciar" onclick="event.stopPropagation();resetPaniniItemCount(${item.id})">↺</button>
+    </div>` : '';
   return `<div class="item-row" id="card-${item.id}">
     <div class="item-info">
       <div class="item-name">${nameHtml}</div>
       ${item.desc ? `<div class="item-desc">${escapeHtml(item.desc)}</div>` : ''}
       ${showBlockedWarn ? `<div class="item-warn">⚠️ NO se pueden quitar ingredientes</div>` : ''}
+      ${paniniStock}
     </div>
     <div class="item-controls">
       <div class="item-price">${fmt(item.price)} €</div>
@@ -2353,30 +2361,35 @@ function toggleCartaNuevo(id) {
   renderCartaAdminList();
 }
 
-/* ── Contador de paninis: el pan es limitado, así que sirve para llevar
-   la cuenta de cuántos se han gastado hoy sin tener que ir a mirar el
-   historial de pedidos. Es manual (se marca a mano cada vez que se usa
-   uno), no se engancha a lo que se vende — así vale igual si algún
-   panini se hace fuera de una comanda normal. Se reinicia solo cada día
-   (clave con fecha), igual que el resto de contadores de la app. ── */
-function getPaniniCountKey() { return 'dpf_comandas_panini_count_' + todayISO(); }
-function loadPaniniCount() { const v = parseInt(localStorage.getItem(getPaniniCountKey()), 10); return isNaN(v) ? 0 : v; }
-function savePaniniCount(v) { localStorage.setItem(getPaniniCountKey(), String(v)); }
-function renderPaniniCounter() {
-  const el = document.getElementById('panini-count-value');
-  if (el) el.textContent = loadPaniniCount();
+/* ── Contador de stock por panini: el pan es limitado, así que cada
+   variedad de panini lleva su propio contador (no uno solo para todos)
+   para saber cuántos de CADA tipo se han gastado hoy sin ir a mirar el
+   historial. Es manual — no se engancha a lo que se vende — así vale
+   igual si algún panini se hace fuera de una comanda normal. Se
+   reinicia solo cada día (clave con fecha), igual que el resto de
+   contadores de la app. ── */
+function getPaniniCountsKey() { return 'dpf_comandas_panini_counts_' + todayISO(); }
+function loadPaniniCounts() {
+  try { return JSON.parse(localStorage.getItem(getPaniniCountsKey()) || '{}'); } catch (e) { return {}; }
 }
-function changePaniniCount(delta) {
-  const next = Math.max(0, loadPaniniCount() + delta);
-  savePaniniCount(next);
-  renderPaniniCounter();
+function savePaniniCounts(counts) { localStorage.setItem(getPaniniCountsKey(), JSON.stringify(counts)); }
+function loadPaniniItemCount(id) { return loadPaniniCounts()[id] || 0; }
+function changePaniniItemCount(id, delta) {
+  const counts = loadPaniniCounts();
+  const next = Math.max(0, (counts[id] || 0) + delta);
+  counts[id] = next;
+  savePaniniCounts(counts);
+  const el = document.getElementById('panini-count-' + id);
+  if (el) el.textContent = next;
 }
-function resetPaniniCount() {
-  if (loadPaniniCount() === 0) return;
-  if (!confirm('¿Reiniciar el contador de paninis a 0?')) return;
-  savePaniniCount(0);
-  renderPaniniCounter();
-  toast('🥖 Contador de paninis reiniciado');
+function resetPaniniItemCount(id) {
+  if (!loadPaniniItemCount(id)) return;
+  if (!confirm('¿Reiniciar este contador a 0?')) return;
+  const counts = loadPaniniCounts();
+  counts[id] = 0;
+  savePaniniCounts(counts);
+  const el = document.getElementById('panini-count-' + id);
+  if (el) el.textContent = 0;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2388,6 +2401,5 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMenu();
   restoreCartDraftIfAny();
   renderCart();
-  renderPaniniCounter();
   trySilentReconnect();
 });
