@@ -2353,6 +2353,32 @@ function toggleCartaNuevo(id) {
   renderCartaAdminList();
 }
 
+/* ── Contador de paninis: el pan es limitado, así que sirve para llevar
+   la cuenta de cuántos se han gastado hoy sin tener que ir a mirar el
+   historial de pedidos. Es manual (se marca a mano cada vez que se usa
+   uno), no se engancha a lo que se vende — así vale igual si algún
+   panini se hace fuera de una comanda normal. Se reinicia solo cada día
+   (clave con fecha), igual que el resto de contadores de la app. ── */
+function getPaniniCountKey() { return 'dpf_comandas_panini_count_' + todayISO(); }
+function loadPaniniCount() { const v = parseInt(localStorage.getItem(getPaniniCountKey()), 10); return isNaN(v) ? 0 : v; }
+function savePaniniCount(v) { localStorage.setItem(getPaniniCountKey(), String(v)); }
+function renderPaniniCounter() {
+  const el = document.getElementById('panini-count-value');
+  if (el) el.textContent = loadPaniniCount();
+}
+function changePaniniCount(delta) {
+  const next = Math.max(0, loadPaniniCount() + delta);
+  savePaniniCount(next);
+  renderPaniniCounter();
+}
+function resetPaniniCount() {
+  if (loadPaniniCount() === 0) return;
+  if (!confirm('¿Reiniciar el contador de paninis a 0?')) return;
+  savePaniniCount(0);
+  renderPaniniCounter();
+  toast('🥖 Contador de paninis reiniciado');
+}
+
 /* ══════════════════════════════════════════════════════════════
    INIT
    ══════════════════════════════════════════════════════════════ */
@@ -2362,5 +2388,6 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMenu();
   restoreCartDraftIfAny();
   renderCart();
+  renderPaniniCounter();
   trySilentReconnect();
 });
