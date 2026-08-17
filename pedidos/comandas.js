@@ -205,13 +205,16 @@ function renderItemRow(item) {
   const qty = cart[item.id] || 0;
   const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id) || BONIATO_IDS.has(item.id);
   const nameHtml = escapeHtml(item.name) + (item.nuevo ? '<span class="item-badge-new">Nuevo</span>' : '');
-  const control = isSpecial
-    ? `<button class="add-btn" id="addbtn-${item.id}" onclick="onAddClick(${item.id})">+ Añadir</button>`
-    : (qty > 0
-      ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
-      : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
+  const agotado = isItemAgotado(item);
+  const control = agotado
+    ? `<div class="item-agotado-badge">AGOTADO</div>`
+    : isSpecial
+      ? `<button class="add-btn" id="addbtn-${item.id}" onclick="onAddClick(${item.id})">+ Añadir</button>`
+      : (qty > 0
+        ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
+        : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
-  return `<div class="item-row" id="card-${item.id}">
+  return `<div class="item-row ${agotado ? 'agotado' : ''}" id="card-${item.id}">
     <div class="item-info">
       <div class="item-name">${nameHtml}</div>
       ${item.desc ? `<div class="item-desc">${escapeHtml(item.desc)}</div>` : ''}
@@ -269,12 +272,18 @@ function animateAdd(id) {
 }
 
 function onAddClick(id) {
+  const item = MENU.find(m => m.id == id);
+  if (item && isItemAgotado(item)) { toast('🚫 ' + item.name + ' está agotado'); return; }
   if (id === 15 || id === 16) { openCustomizer(id); return; }
   if (id === CHEDDAR_ID) { openCheddarModal(); return; }
   if (ALL_EXTRAS_IDS.has(id) || BONIATO_IDS.has(id)) { openExtrasModal(id); return; }
 }
 
 function changeQty(id, delta) {
+  if (delta > 0) {
+    const item = MENU.find(m => m.id == id);
+    if (item && isItemAgotado(item)) { toast('🚫 ' + item.name + ' está agotado'); return; }
+  }
   const current = cart[id] || 0;
   const next = current + delta;
   if (next <= 0) delete cart[id]; else cart[id] = next;
@@ -986,6 +995,7 @@ function isQuitarBlocked(id) {
   return NO_QUITAR_IDS_BASE.has(id);
 }
 const BONIATO_IDS = new Set([17, 18, 19, 20, 21, 51]); // no llevan queso/gratinado como extra, solo quitar ingredientes
+const BONIATO_GOAT_ID = 20; // Boniato G.O.A.T. — el único con queso de cabra, va aparte en el stock
 function parseBaseComponents(item) {
   if (item.components) return item.components;
   if (!item.desc) return [];
@@ -2358,75 +2368,164 @@ function toggleCartaNuevo(id) {
    para llevar la cuenta de lo que se va gastando de pan de panini y de
    boniato — ambos limitados. Cada variedad de panini tiene su propio
    contador; el boniato solo se diferencia en normal vs G.O.A.T. (el
-   único que lleva un ingrediente distinto, queso de cabra). Es manual
-   — no se engancha a lo que se vende — así vale igual si algo se hace
-   fuera de una comanda normal. Se reinicia solo cada día (clave con
-   fecha), igual que el resto de contadores de la app. ── */
+   único que lleva un ingrediente distinto, queso de cabra).
+   Cada entrada guarda { inicial, usado }: "inicial" se pone a mano al
+   empezar el turno (unidades de hoy) y "usado" se va marcando a mano
+   según se gastan — no está enganchado a lo que se vende, así vale
+   igual si algo se hace fuera de una comanda normal. Mientras "inicial"
+   sea 0 (no se ha puesto), el producto no tiene límite y nunca sale
+   agotado. En cuanto usado llega a inicial, el producto pasa a AGOTADO:
+   no se puede marcar más uso, y en la carta no se puede añadir al
+   pedido. Se reinicia solo cada día (clave con fecha). ── */
 function getPaniniCountsKey() { return 'dpf_comandas_panini_counts_' + todayISO(); }
 function loadPaniniCounts() {
-  try { return JSON.parse(localStorage.getItem(getPaniniCountsKey()) || '{}'); } catch (e) { return {}; }
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem(getPaniniCountsKey()) || '{}'); } catch (e) { raw = {}; }
+  const out = {};
+  Object.keys(raw).forEach(id => {
+    const v = raw[id];
+    out[id] = (v && typeof v === 'object') ? { inicial: v.inicial || 0, usado: v.usado || 0 } : { inicial: 0, usado: v || 0 };
+  });
+  return out;
 }
 function savePaniniCounts(counts) { localStorage.setItem(getPaniniCountsKey(), JSON.stringify(counts)); }
-function loadPaniniItemCount(id) { return loadPaniniCounts()[id] || 0; }
+function getPaniniEntry(id) { return loadPaniniCounts()[id] || { inicial: 0, usado: 0 }; }
+function paniniRestante(id) {
+  const e = getPaniniEntry(id);
+  if (!e.inicial) return null; // sin límite puesto hoy
+  return Math.max(0, e.inicial - e.usado);
+}
+function setPaniniInicial(id, valor) {
+  const counts = loadPaniniCounts();
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  entry.inicial = Math.max(0, parseInt(valor, 10) || 0);
+  counts[id] = entry;
+  savePaniniCounts(counts);
+  renderStockModal();
+  renderMenu();
+}
 function changePaniniItemCount(id, delta) {
   const counts = loadPaniniCounts();
-  counts[id] = Math.max(0, (counts[id] || 0) + delta);
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  const item = MENU.find(m => m.id == id);
+  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+    toast('🚫 ' + (item ? item.name : 'Producto') + ' agotado — no quedan más');
+    return;
+  }
+  entry.usado = Math.max(0, entry.usado + delta);
+  counts[id] = entry;
   savePaniniCounts(counts);
+  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+    toast('⚠️ ' + (item ? item.name : 'Producto') + ': ya no quedan');
+  }
   renderStockModal();
+  renderMenu();
 }
 function resetPaniniItemCount(id) {
-  if (!loadPaniniItemCount(id)) return;
-  if (!confirm('¿Reiniciar este contador a 0?')) return;
+  const entry = getPaniniEntry(id);
+  if (!entry.usado) return;
+  if (!confirm('¿Reiniciar el contador de uso a 0? (las unidades de hoy no cambian)')) return;
   const counts = loadPaniniCounts();
-  counts[id] = 0;
+  counts[id].usado = 0;
   savePaniniCounts(counts);
   renderStockModal();
+  renderMenu();
 }
 
 const BONIATO_STOCK_TIPOS = { normal: 'Boniato normal', goat: 'Boniato G.O.A.T.' };
 function getBoniatoCountsKey() { return 'dpf_comandas_boniato_counts_' + todayISO(); }
 function loadBoniatoCounts() {
-  try {
-    const c = JSON.parse(localStorage.getItem(getBoniatoCountsKey()) || '{}');
-    return { normal: c.normal || 0, goat: c.goat || 0 };
-  } catch (e) { return { normal: 0, goat: 0 }; }
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem(getBoniatoCountsKey()) || '{}'); } catch (e) { raw = {}; }
+  const norm = (v) => (v && typeof v === 'object') ? { inicial: v.inicial || 0, usado: v.usado || 0 } : { inicial: 0, usado: v || 0 };
+  return { normal: norm(raw.normal), goat: norm(raw.goat) };
 }
 function saveBoniatoCounts(counts) { localStorage.setItem(getBoniatoCountsKey(), JSON.stringify(counts)); }
-function changeBoniatoCount(tipo, delta) {
+function boniatoRestante(tipo) {
+  const e = loadBoniatoCounts()[tipo];
+  if (!e.inicial) return null;
+  return Math.max(0, e.inicial - e.usado);
+}
+function setBoniatoInicial(tipo, valor) {
   const counts = loadBoniatoCounts();
-  counts[tipo] = Math.max(0, (counts[tipo] || 0) + delta);
+  counts[tipo].inicial = Math.max(0, parseInt(valor, 10) || 0);
   saveBoniatoCounts(counts);
   renderStockModal();
+  renderMenu();
+}
+function changeBoniatoCount(tipo, delta) {
+  const counts = loadBoniatoCounts();
+  const entry = counts[tipo];
+  const label = BONIATO_STOCK_TIPOS[tipo];
+  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+    toast('🚫 ' + label + ' agotado — no quedan más');
+    return;
+  }
+  entry.usado = Math.max(0, entry.usado + delta);
+  saveBoniatoCounts(counts);
+  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+    toast('⚠️ ' + label + ': ya no quedan');
+  }
+  renderStockModal();
+  renderMenu();
 }
 function resetBoniatoCount(tipo) {
   const counts = loadBoniatoCounts();
-  if (!counts[tipo]) return;
-  if (!confirm('¿Reiniciar este contador a 0?')) return;
-  counts[tipo] = 0;
+  if (!counts[tipo].usado) return;
+  if (!confirm('¿Reiniciar el contador de uso a 0? (las unidades de hoy no cambian)')) return;
+  counts[tipo].usado = 0;
   saveBoniatoCounts(counts);
   renderStockModal();
+  renderMenu();
 }
 
-function stockCounterRow(label, value, onMinus, onPlus, onReset) {
+// Restante (unidades que quedan) de un producto de la carta: null = sin
+// límite puesto hoy, nunca agotado. Se usa tanto en el modal de stock
+// como al pintar la carta (para bloquear "+ Añadir" y mostrar AGOTADO).
+function getStockRestanteForItem(item) {
+  if (item.cat === 'Paninis') return paniniRestante(item.id);
+  if (BONIATO_IDS.has(item.id)) return boniatoRestante(item.id === BONIATO_GOAT_ID ? 'goat' : 'normal');
+  return null;
+}
+function isItemAgotado(item) {
+  const r = getStockRestanteForItem(item);
+  return r !== null && r <= 0;
+}
+
+function stockCounterRow(label, entry, onInicial, onMinus, onPlus, onReset) {
+  const restante = entry.inicial ? Math.max(0, entry.inicial - entry.usado) : null;
+  const restanteHtml = restante === null
+    ? `<span class="stock-restante sin-limite">Sin límite</span>`
+    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restante}</span>`;
   return `<div class="stock-row">
-    <span class="stock-row-label">${escapeHtml(label)}</span>
-    <div class="stock-row-controls">
-      <button class="stock-btn" onclick="${onMinus}">−</button>
-      <span class="stock-value">${value}</span>
-      <button class="stock-btn" onclick="${onPlus}">+</button>
-      <button class="stock-reset" title="Reiniciar" onclick="${onReset}">↺</button>
+    <div class="stock-row-head">
+      <span class="stock-row-label">${escapeHtml(label)}</span>
+      ${restanteHtml}
+    </div>
+    <div class="stock-row-body">
+      <label class="stock-inicial">Unidades hoy
+        <input type="number" min="0" class="stock-inicial-input" value="${entry.inicial || ''}" placeholder="0" onchange="${onInicial}this.value)">
+      </label>
+      <div class="stock-row-controls">
+        <button class="stock-btn" onclick="${onMinus}">−</button>
+        <span class="stock-value">${entry.usado}</span>
+        <button class="stock-btn" onclick="${onPlus}">+</button>
+        <button class="stock-reset" title="Reiniciar uso" onclick="${onReset}">↺</button>
+      </div>
     </div>
   </div>`;
 }
 function renderStockModal() {
   const paninis = MENU.filter(m => m.cat === 'Paninis');
   document.getElementById('stock-paninis-rows').innerHTML = paninis.map(item => stockCounterRow(
-    item.name, loadPaniniItemCount(item.id),
+    item.name, getPaniniEntry(item.id),
+    `setPaniniInicial(${item.id},`,
     `changePaniniItemCount(${item.id},-1)`, `changePaniniItemCount(${item.id},1)`, `resetPaniniItemCount(${item.id})`
   )).join('');
   const boniato = loadBoniatoCounts();
   document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => stockCounterRow(
     label, boniato[tipo],
+    `setBoniatoInicial('${tipo}',`,
     `changeBoniatoCount('${tipo}',-1)`, `changeBoniatoCount('${tipo}',1)`, `resetBoniatoCount('${tipo}')`
   )).join('');
 }

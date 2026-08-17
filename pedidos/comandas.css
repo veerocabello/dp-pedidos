@@ -216,10 +216,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
    dentro de cada tarjeta de panini, para llevar la cuenta de cuántos se
    han gastado de CADA variedad por separado. ── */
 .stock-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
   background: var(--white);
@@ -227,7 +223,48 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   border-radius: var(--radius-xs);
   box-shadow: var(--shadow-sm);
 }
+.stock-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
 .stock-row-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.stock-restante { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.stock-restante.ok { color: var(--success); }
+.stock-restante.bajo { color: var(--amber-dark); }
+.stock-restante.agotado { color: var(--error); }
+.stock-restante.sin-limite { color: var(--muted); font-weight: 600; }
+.stock-row-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.stock-inicial {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.stock-inicial-input {
+  width: 52px;
+  padding: 4px 6px;
+  border: 1.5px solid var(--warm);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  text-align: center;
+  color: var(--text);
+  background: var(--cream);
+}
+.stock-inicial-input:focus { border-color: var(--amber); outline: none; }
 .stock-row-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .stock-btn {
   width: 26px;
@@ -416,6 +453,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .add-btn:active { transform: translateY(0) scale(.97); }
 .add-btn.popping { animation: popIn .25s; }
 @keyframes popIn { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
+
+.item-agotado-badge {
+  background: var(--muted);
+  color: #fff;
+  border-radius: var(--radius-xs);
+  padding: 9px 17px;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
 
 .qty-stepper {
   display: flex;
