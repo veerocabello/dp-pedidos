@@ -193,7 +193,7 @@ function initTabs() {
   ).join('');
   document.getElementById('tabs').innerHTML = catTabs
     + `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`
-    + `<button class="tab" onclick="openStockModal()"><span class="tab-icon">📦</span>Stock limitado</button>`;
+    + `<button class="tab" onclick="openStockModal()"><span class="tab-icon">📦</span>Stock</button>`;
 }
 function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
 function addBolsaDirect() {
