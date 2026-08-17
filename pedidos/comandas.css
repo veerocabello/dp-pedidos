@@ -215,6 +215,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* ── Contador de stock por panini (pan limitado): una fila compacta
    dentro de cada tarjeta de panini, para llevar la cuenta de cuántos se
    han gastado de CADA variedad por separado. ── */
+.stock-section-label { font-size: 16px; letter-spacing: .3px; }
 #stock-paninis-rows, #stock-boniato-rows {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
