@@ -216,14 +216,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
    dentro de cada tarjeta de panini, para llevar la cuenta de cuántos se
    han gastado de CADA variedad por separado. ── */
 .stock-section-label { font-size: 16px; letter-spacing: .3px; }
+.stock-columns { display: flex; gap: 18px; align-items: flex-start; }
+.stock-col { flex: 1; min-width: 0; }
 #stock-paninis-rows, #stock-boniato-rows {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   margin-bottom: 4px;
 }
 @media (max-width: 640px) {
-  #stock-paninis-rows, #stock-boniato-rows { grid-template-columns: 1fr; }
+  .stock-columns { flex-direction: column; gap: 0; }
 }
 .stock-row {
   padding: 10px 12px;
