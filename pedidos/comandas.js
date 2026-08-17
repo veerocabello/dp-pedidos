@@ -192,7 +192,8 @@ function initTabs() {
     `<button class="tab ${c === activeCategory ? 'active' : ''}" onclick="setCategory('${c}')"><span class="tab-icon">${CATEGORY_ICONS[c] || '🍽️'}</span>${c}</button>`
   ).join('');
   document.getElementById('tabs').innerHTML = catTabs
-    + `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`;
+    + `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`
+    + `<button class="tab" onclick="openStockModal()"><span class="tab-icon">📦</span>Stock limitado</button>`;
 }
 function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
 function addBolsaDirect() {
@@ -210,19 +211,11 @@ function renderItemRow(item) {
       ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
       : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
-  const paniniStock = item.cat === 'Paninis' ? `<div class="panini-stock-row">
-      <span class="panini-stock-label">🥖 Usados hoy</span>
-      <button class="panini-stock-btn" onclick="event.stopPropagation();changePaniniItemCount(${item.id},-1)">−</button>
-      <span class="panini-stock-value" id="panini-count-${item.id}">${loadPaniniItemCount(item.id)}</span>
-      <button class="panini-stock-btn" onclick="event.stopPropagation();changePaniniItemCount(${item.id},1)">+</button>
-      <button class="panini-stock-reset" title="Reiniciar" onclick="event.stopPropagation();resetPaniniItemCount(${item.id})">↺</button>
-    </div>` : '';
   return `<div class="item-row" id="card-${item.id}">
     <div class="item-info">
       <div class="item-name">${nameHtml}</div>
       ${item.desc ? `<div class="item-desc">${escapeHtml(item.desc)}</div>` : ''}
       ${showBlockedWarn ? `<div class="item-warn">⚠️ NO se pueden quitar ingredientes</div>` : ''}
-      ${paniniStock}
     </div>
     <div class="item-controls">
       <div class="item-price">${fmt(item.price)} €</div>
@@ -2361,13 +2354,14 @@ function toggleCartaNuevo(id) {
   renderCartaAdminList();
 }
 
-/* ── Contador de stock por panini: el pan es limitado, así que cada
-   variedad de panini lleva su propio contador (no uno solo para todos)
-   para saber cuántos de CADA tipo se han gastado hoy sin ir a mirar el
-   historial. Es manual — no se engancha a lo que se vende — así vale
-   igual si algún panini se hace fuera de una comanda normal. Se
-   reinicia solo cada día (clave con fecha), igual que el resto de
-   contadores de la app. ── */
+/* ── "📦 Stock limitado": pestaña aparte (no dentro de cada producto)
+   para llevar la cuenta de lo que se va gastando de pan de panini y de
+   boniato — ambos limitados. Cada variedad de panini tiene su propio
+   contador; el boniato solo se diferencia en normal vs G.O.A.T. (el
+   único que lleva un ingrediente distinto, queso de cabra). Es manual
+   — no se engancha a lo que se vende — así vale igual si algo se hace
+   fuera de una comanda normal. Se reinicia solo cada día (clave con
+   fecha), igual que el resto de contadores de la app. ── */
 function getPaniniCountsKey() { return 'dpf_comandas_panini_counts_' + todayISO(); }
 function loadPaniniCounts() {
   try { return JSON.parse(localStorage.getItem(getPaniniCountsKey()) || '{}'); } catch (e) { return {}; }
@@ -2376,11 +2370,9 @@ function savePaniniCounts(counts) { localStorage.setItem(getPaniniCountsKey(), J
 function loadPaniniItemCount(id) { return loadPaniniCounts()[id] || 0; }
 function changePaniniItemCount(id, delta) {
   const counts = loadPaniniCounts();
-  const next = Math.max(0, (counts[id] || 0) + delta);
-  counts[id] = next;
+  counts[id] = Math.max(0, (counts[id] || 0) + delta);
   savePaniniCounts(counts);
-  const el = document.getElementById('panini-count-' + id);
-  if (el) el.textContent = next;
+  renderStockModal();
 }
 function resetPaniniItemCount(id) {
   if (!loadPaniniItemCount(id)) return;
@@ -2388,9 +2380,61 @@ function resetPaniniItemCount(id) {
   const counts = loadPaniniCounts();
   counts[id] = 0;
   savePaniniCounts(counts);
-  const el = document.getElementById('panini-count-' + id);
-  if (el) el.textContent = 0;
+  renderStockModal();
 }
+
+const BONIATO_STOCK_TIPOS = { normal: 'Boniato normal', goat: 'Boniato G.O.A.T.' };
+function getBoniatoCountsKey() { return 'dpf_comandas_boniato_counts_' + todayISO(); }
+function loadBoniatoCounts() {
+  try {
+    const c = JSON.parse(localStorage.getItem(getBoniatoCountsKey()) || '{}');
+    return { normal: c.normal || 0, goat: c.goat || 0 };
+  } catch (e) { return { normal: 0, goat: 0 }; }
+}
+function saveBoniatoCounts(counts) { localStorage.setItem(getBoniatoCountsKey(), JSON.stringify(counts)); }
+function changeBoniatoCount(tipo, delta) {
+  const counts = loadBoniatoCounts();
+  counts[tipo] = Math.max(0, (counts[tipo] || 0) + delta);
+  saveBoniatoCounts(counts);
+  renderStockModal();
+}
+function resetBoniatoCount(tipo) {
+  const counts = loadBoniatoCounts();
+  if (!counts[tipo]) return;
+  if (!confirm('¿Reiniciar este contador a 0?')) return;
+  counts[tipo] = 0;
+  saveBoniatoCounts(counts);
+  renderStockModal();
+}
+
+function stockCounterRow(label, value, onMinus, onPlus, onReset) {
+  return `<div class="stock-row">
+    <span class="stock-row-label">${escapeHtml(label)}</span>
+    <div class="stock-row-controls">
+      <button class="stock-btn" onclick="${onMinus}">−</button>
+      <span class="stock-value">${value}</span>
+      <button class="stock-btn" onclick="${onPlus}">+</button>
+      <button class="stock-reset" title="Reiniciar" onclick="${onReset}">↺</button>
+    </div>
+  </div>`;
+}
+function renderStockModal() {
+  const paninis = MENU.filter(m => m.cat === 'Paninis');
+  document.getElementById('stock-paninis-rows').innerHTML = paninis.map(item => stockCounterRow(
+    item.name, loadPaniniItemCount(item.id),
+    `changePaniniItemCount(${item.id},-1)`, `changePaniniItemCount(${item.id},1)`, `resetPaniniItemCount(${item.id})`
+  )).join('');
+  const boniato = loadBoniatoCounts();
+  document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => stockCounterRow(
+    label, boniato[tipo],
+    `changeBoniatoCount('${tipo}',-1)`, `changeBoniatoCount('${tipo}',1)`, `resetBoniatoCount('${tipo}')`
+  )).join('');
+}
+function openStockModal() {
+  renderStockModal();
+  document.getElementById('stock-modal').classList.add('open');
+}
+function closeStockModal() { document.getElementById('stock-modal').classList.remove('open'); }
 
 /* ══════════════════════════════════════════════════════════════
    INIT

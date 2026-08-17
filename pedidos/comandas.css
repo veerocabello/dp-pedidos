@@ -215,31 +215,29 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* ── Contador de stock por panini (pan limitado): una fila compacta
    dentro de cada tarjeta de panini, para llevar la cuenta de cuántos se
    han gastado de CADA variedad por separado. ── */
-.panini-stock-row {
+.stock-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--warm);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--white);
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-sm);
 }
-.panini-stock-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .03em;
-  flex: 1;
-}
-.panini-stock-btn {
-  width: 24px;
-  height: 24px;
+.stock-row-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.stock-row-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.stock-btn {
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: none;
   background: var(--warm);
   color: var(--brown);
   font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -247,28 +245,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   transition: background .15s, color .15s;
   flex-shrink: 0;
 }
-.panini-stock-btn:hover { background: var(--amber); color: #fff; }
-.panini-stock-btn:active { transform: scale(.92); }
-.panini-stock-value {
+.stock-btn:hover { background: var(--amber); color: #fff; }
+.stock-btn:active { transform: scale(.92); }
+.stock-value {
   font-family: var(--font-head);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--amber-dark);
-  min-width: 18px;
+  min-width: 20px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.panini-stock-reset {
+.stock-reset {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   padding: 2px 4px;
   flex-shrink: 0;
   opacity: .7;
 }
-.panini-stock-reset:hover { color: var(--error); opacity: 1; }
+.stock-reset:hover { color: var(--error); opacity: 1; }
 @media (max-width: 900px) {
   .menu-area { flex-direction: column; }
   .tabs-sidebar {
