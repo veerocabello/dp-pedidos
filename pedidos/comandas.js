@@ -286,27 +286,27 @@ function changeQty(id, delta) {
   }
   const current = cart[id] || 0;
   const next = current + delta;
-  if (next <= 0) delete cart[id]; else cart[id] = next;
+  if (next <= 0) { delete cart[id]; clearLineDiscount(simpleLineKey(id)); } else cart[id] = next;
   renderMenu();
   renderCart();
   if (delta > 0) animateAdd(id);
 }
-function removeItem(id) { delete cart[id]; renderMenu(); renderCart(); }
-function removeCustItem(key) { delete custCart[key]; renderCart(); }
-function removeExtrasItem(key) { delete extrasCart[key]; renderCart(); }
+function removeItem(id) { delete cart[id]; clearLineDiscount(simpleLineKey(id)); renderMenu(); renderCart(); }
+function removeCustItem(key) { delete custCart[key]; clearLineDiscount(key); renderCart(); }
+function removeExtrasItem(key) { delete extrasCart[key]; clearLineDiscount(key); renderCart(); }
 
 function changeCustQty(key, delta) {
   const c = custCart[key];
   if (!c) return;
   c.qty += delta;
-  if (c.qty <= 0) delete custCart[key];
+  if (c.qty <= 0) { delete custCart[key]; clearLineDiscount(key); }
   renderCart();
 }
 function changeExtrasQty(key, delta) {
   const c = extrasCart[key];
   if (!c) return;
   c.qty += delta;
-  if (c.qty <= 0) delete extrasCart[key];
+  if (c.qty <= 0) { delete extrasCart[key]; clearLineDiscount(key); }
   renderCart();
 }
 function editCustItem(key) {
@@ -455,20 +455,58 @@ function cartHasAnyItem() {
 /* ══════════════════════════════════════════════════════════════
    DESCUENTO / OFERTA — se aplica como una línea más del pedido
    (con importe negativo), igual que hace la web con la fidelización.
-   ══════════════════════════════════════════════════════════════ */
-let orderDiscount = null; // {type:'percent'|'fixed', value, label}
+   Puede ser de TODO el pedido (orderDiscount, botón "🏷️ Descuento" de
+   la cabecera) o de UN SOLO PRODUCTO (lineDiscounts, botón 🏷️ en cada
+   línea de la comanda) — el mismo modal sirve para los dos casos según
+   discountTargetKey: null = pedido completo, si no, la key de esa línea
+   (mismo formato de key que usa el carrito: 'simple:<id>' para
+   productos sencillos, o la key ya existente de custCart/extrasCart). ── */
+let orderDiscount = null; // {type:'percent'|'fixed', value, label} — todo el pedido
+let lineDiscounts = {};   // key de línea -> {type,value,label} — un solo producto
+let discountTargetKey = null; // objetivo del modal abierto ahora mismo
 
-function openDiscountModal() {
-  document.getElementById('discount-type').value = orderDiscount ? orderDiscount.type : 'percent';
-  document.getElementById('discount-value').value = orderDiscount ? orderDiscount.value : '';
-  document.getElementById('discount-label').value = orderDiscount ? (orderDiscount.label || '') : '';
+function simpleLineKey(id) { return 'simple:' + id; }
+// Quita el descuento de una línea que ya no existe en el carrito (se ha
+// borrado del todo o su cantidad ha llegado a 0) — sin esto quedaría un
+// descuento "huérfano" guardado que reaparecería si se vuelve a añadir
+// ese mismo producto más tarde en la misma comanda.
+function clearLineDiscount(key) { delete lineDiscounts[key]; }
+
+function getActiveDiscount() { return discountTargetKey ? (lineDiscounts[discountTargetKey] || null) : orderDiscount; }
+function setActiveDiscount(d) {
+  if (discountTargetKey) { if (d) lineDiscounts[discountTargetKey] = d; else delete lineDiscounts[discountTargetKey]; }
+  else orderDiscount = d;
+}
+// Nombre del producto de esa línea, para el subtítulo del modal cuando el
+// descuento es de un solo producto (y no de todo el pedido).
+function getLineDiscountContextLabel(key) {
+  if (!key) return null;
+  if (key.indexOf('simple:') === 0) {
+    const item = MENU.find(m => m.id == key.slice('simple:'.length));
+    return item ? item.name : null;
+  }
+  if (custCart[key]) { const item = MENU.find(m => m.id == custCart[key].menuId); return item ? item.name : null; }
+  if (extrasCart[key]) return getExtrasItemLabel(extrasCart[key]);
+  return null;
+}
+
+function openDiscountModal(lineKey) {
+  discountTargetKey = lineKey || null;
+  const current = getActiveDiscount();
+  document.getElementById('discount-type').value = current ? current.type : 'percent';
+  document.getElementById('discount-value').value = current ? current.value : '';
+  document.getElementById('discount-label').value = current ? (current.label || '') : '';
   document.getElementById('discount-error').style.display = 'none';
-  document.getElementById('discount-remove-btn').style.display = orderDiscount ? 'inline-block' : 'none';
+  document.getElementById('discount-remove-btn').style.display = current ? 'inline-block' : 'none';
+  const contextLabel = discountTargetKey ? getLineDiscountContextLabel(discountTargetKey) : null;
+  document.getElementById('discount-modal-subtitle').textContent = contextLabel
+    ? 'Se aplica solo a: ' + contextLabel
+    : 'Se aplica al total de esta comanda.';
   document.getElementById('discount-modal').classList.add('open');
 }
-function closeDiscountModal() { document.getElementById('discount-modal').classList.remove('open'); }
+function closeDiscountModal() { document.getElementById('discount-modal').classList.remove('open'); discountTargetKey = null; }
 function applyPresetDiscount() {
-  orderDiscount = { type: 'percent', value: 10, label: 'ESTUDIANTE/JUBILADO' };
+  setActiveDiscount({ type: 'percent', value: 10, label: 'ESTUDIANTE/JUBILADO' });
   closeDiscountModal();
   renderCart();
   toast('✅ Descuento aplicado');
@@ -488,26 +526,100 @@ function applyDiscount() {
     errEl.style.display = 'block';
     return;
   }
-  orderDiscount = { type, value, label };
+  setActiveDiscount({ type, value, label });
   closeDiscountModal();
   renderCart();
   toast('✅ Descuento aplicado');
 }
 function removeDiscount() {
-  orderDiscount = null;
+  setActiveDiscount(null);
   closeDiscountModal();
   renderCart();
   toast('Descuento eliminado');
 }
-function discountLineLabel(forTicket) {
-  const label = (orderDiscount.label && orderDiscount.label.trim()) || 'Descuento';
-  const suffix = orderDiscount.type === 'percent' ? ' (-' + orderDiscount.value + '%)' : '';
+function discountLineLabel(discount, forTicket) {
+  const label = (discount.label && discount.label.trim()) || 'Descuento';
+  const suffix = discount.type === 'percent' ? ' (-' + discount.value + '%)' : '';
   return (forTicket ? '' : '🏷️ ') + label + suffix;
 }
-function computeDiscountAmount(subtotal) {
-  if (!orderDiscount || subtotal <= 0) return 0;
-  let amt = orderDiscount.type === 'percent' ? subtotal * orderDiscount.value / 100 : orderDiscount.value;
+function computeDiscountAmount(subtotal, discount) {
+  if (!discount || subtotal <= 0) return 0;
+  let amt = discount.type === 'percent' ? subtotal * discount.value / 100 : discount.value;
   return Math.max(0, Math.min(amt, subtotal));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DESLIZAR PARA BORRAR (gesto táctil) — alternativa al icono 🗑️
+   pequeño, más fácil de acertar con el dedo en hora punta. Cada línea
+   del carrito se envuelve en un .cart-line-swipe-wrap con un fondo rojo
+   "🗑️ Quitar" debajo; al deslizar la línea hacia la izquierda más de
+   SWIPE_UMBRAL_BORRAR px se suelta y se borra, igual que si se hubiera
+   tocado el icono. Usa Pointer Events (mismo código para dedo y ratón) y
+   delegación de eventos sobre #cart-body en vez de un listener por línea,
+   porque renderCart() reconstruye todo el HTML del carrito en cada
+   cambio — con delegación no hace falta re-engancharlos cada vez. ── */
+function wrapSwipe(type, key, lineHtml) {
+  return `<div class="cart-line-swipe-wrap" data-swipe-type="${escapeHtml(type)}" data-swipe-key="${escapeHtml(String(key))}">
+    <div class="cart-line-delete-bg">🗑️ Quitar</div>
+    ${lineHtml}
+  </div>`;
+}
+const SWIPE_UMBRAL_BORRAR = 76; // px que hay que deslizar para que se suelte y borre
+const SWIPE_MAX = 120;
+let swipeState = null;
+function initCartSwipeToDelete() {
+  const body = document.getElementById('cart-body');
+  if (!body) return;
+  body.addEventListener('pointerdown', onSwipePointerDown);
+  body.addEventListener('pointermove', onSwipePointerMove);
+  body.addEventListener('pointerup', onSwipePointerUp);
+  body.addEventListener('pointercancel', onSwipePointerUp);
+}
+function onSwipePointerDown(e) {
+  if (e.target.closest('button')) return; // no robarle el toque a +/-, ✏️, 🏷️ o 🗑️
+  const wrap = e.target.closest('.cart-line-swipe-wrap');
+  if (!wrap) return;
+  const line = wrap.querySelector('.cart-line');
+  if (!line) return;
+  swipeState = { wrap, line, startX: e.clientX, startY: e.clientY, dx: 0, dragging: false, pointerId: e.pointerId };
+}
+function onSwipePointerMove(e) {
+  if (!swipeState || e.pointerId !== swipeState.pointerId) return;
+  const dx = e.clientX - swipeState.startX;
+  const dy = e.clientY - swipeState.startY;
+  if (!swipeState.dragging) {
+    // Todavía no está claro si es un swipe horizontal o solo scroll
+    // vertical / un toque que tiembla un poco — hasta que el movimiento
+    // horizontal sea claramente mayor que el vertical no se "roba" el
+    // gesto, para no romper el scroll normal de la lista de la comanda.
+    if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    swipeState.dragging = true;
+    swipeState.line.style.transition = 'none';
+    try { swipeState.line.setPointerCapture(swipeState.pointerId); } catch (err) {}
+  }
+  e.preventDefault();
+  swipeState.dx = Math.max(-SWIPE_MAX, Math.min(0, dx)); // solo se desliza hacia la izquierda
+  swipeState.line.style.transform = 'translateX(' + swipeState.dx + 'px)';
+  swipeState.wrap.classList.toggle('swipe-armed', swipeState.dx <= -SWIPE_UMBRAL_BORRAR);
+}
+function onSwipePointerUp(e) {
+  if (!swipeState || e.pointerId !== swipeState.pointerId) return;
+  const { wrap, line, dx, dragging } = swipeState;
+  swipeState = null;
+  line.style.transition = 'transform .18s ease';
+  if (dragging && dx <= -SWIPE_UMBRAL_BORRAR) {
+    line.style.transform = 'translateX(-100%)';
+    setTimeout(() => swipeRemoveByKey(wrap.dataset.swipeType, wrap.dataset.swipeKey), 170);
+  } else {
+    line.style.transform = 'translateX(0)';
+    wrap.classList.remove('swipe-armed');
+  }
+}
+function swipeRemoveByKey(type, key) {
+  if (type === 'simple') removeItem(parseInt(key, 10));
+  else if (type === 'cust') removeCustItem(key);
+  else if (type === 'extras') removeExtrasItem(key);
+  else if (type === 'discount') removeDiscount();
 }
 
 function renderCart() {
@@ -534,9 +646,12 @@ function renderCart() {
   lines.forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
-    const subtotal = item.price * qty;
+    const key = simpleLineKey(item.id);
+    const raw = item.price * qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[key]);
+    const subtotal = raw - discAmt;
     total += subtotal;
-    rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
+    rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('simple', item.id, `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeQty(${item.id},-1)">−</button>
@@ -544,18 +659,22 @@ function renderCart() {
         <button class="qty-btn-sm" onclick="changeQty(${item.id},1)">+</button>
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
+      <button class="cart-edit" onclick="openDiscountModal('${key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeItem(${item.id})" title="Quitar">🗑️</button>
-    </div>` });
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[key]))} (-${fmt(discAmt)} €)</div>` : ''}
+    </div>`) });
   });
 
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
     const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
-    const subtotal = unitPrice * c.qty;
+    const raw = unitPrice * c.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
+    const subtotal = raw - discAmt;
     total += subtotal;
     const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
-    rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
+    rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(item.name)}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
@@ -564,18 +683,22 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-edit" onclick="editCustItem('${c.key}')" title="Editar">✏️</button>
+      <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeCustItem('${c.key}')" title="Quitar">🗑️</button>
       <div class="cart-line-extra">${escapeHtml(details)}</div>
-    </div>` });
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
+    </div>`) });
   });
 
   extLines.forEach(c => {
     const price = getExtrasItemPrice(c);
-    const subtotal = price * c.qty;
+    const raw = price * c.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
+    const subtotal = raw - discAmt;
     total += subtotal;
     const details = getExtrasItemDetails(c).join(' · ');
     const baseItem = MENU.find(m => m.id == c.menuId);
-    rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: `<div class="cart-line">
+    rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: wrapSwipe('extras', c.key, `<div class="cart-line">
       <span class="cart-line-name">${escapeHtml(getExtrasItemLabel(c))}</span>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',-1)">−</button>
@@ -584,22 +707,24 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-edit" onclick="editExtrasItem('${c.key}')" title="Editar">✏️</button>
+      <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
-    </div>` });
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
+    </div>`) });
   });
 
   rows.sort((a, b) => a.rank - b.rank);
   let html = rows.map(r => r.html).join('');
 
-  const discountAmount = computeDiscountAmount(total);
+  const discountAmount = computeDiscountAmount(total, orderDiscount);
   if (discountAmount > 0) {
-    html += `<div class="cart-line cart-line-discount">
-      <span class="cart-line-name">${escapeHtml(discountLineLabel())}</span>
+    html += wrapSwipe('discount', '', `<div class="cart-line cart-line-discount">
+      <span class="cart-line-name">${escapeHtml(discountLineLabel(orderDiscount))}</span>
       <span class="cart-line-price">-${fmt(discountAmount)} €</span>
       <button class="cart-edit" onclick="openDiscountModal()" title="Editar">✏️</button>
       <button class="cart-remove" onclick="removeDiscount()" title="Quitar">🗑️</button>
-    </div>`;
+    </div>`);
   }
 
   bodyEl.innerHTML = html;
@@ -622,6 +747,7 @@ function saveCartDraft() {
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+      lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: (document.getElementById('order-name') || {}).value || '',
       paid: orderPaid,
       paymentMethod,
@@ -640,6 +766,7 @@ function restoreCartDraftIfAny() {
   custCart = draft.custCart || {};
   extrasCart = draft.extrasCart || {};
   orderDiscount = draft.orderDiscount || null;
+  lineDiscounts = draft.lineDiscounts || {};
   const nameEl = document.getElementById('order-name');
   if (nameEl) nameEl.value = draft.name || '';
   setOrderPaid(!!draft.paid);
@@ -713,12 +840,13 @@ function clearOrder(silent) {
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+      lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: document.getElementById('order-name').value,
       paid: orderPaid,
       paymentMethod,
     };
   }
-  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null;
+  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('cash-received').value = '';
   cashTotalEdited = false;
@@ -743,6 +871,7 @@ function undoClearOrder() {
   custCart = clearedOrderSnapshot.custCart;
   extrasCart = clearedOrderSnapshot.extrasCart;
   orderDiscount = clearedOrderSnapshot.orderDiscount;
+  lineDiscounts = clearedOrderSnapshot.lineDiscounts || {};
   document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
   setOrderPaid(!!clearedOrderSnapshot.paid);
   setPaymentMethod(clearedOrderSnapshot.paymentMethod || 'efectivo');
@@ -1273,6 +1402,7 @@ const TICKET_CONFIG_DEFAULTS = {
   copias: 1,
   autoImprimir: true,
   modoImpresion: 'auto',
+  copiaAutoCadaDias: 1, // días entre copias automáticas; 0 = desactivada — ver "Copia automática" más abajo
 };
 function getTicketConfig() {
   try {
@@ -1284,12 +1414,28 @@ function saveTicketConfig(cfg) { localStorage.setItem(TICKET_CONFIG_KEY, JSON.st
 
 function getPaperWidthChars() { return getTicketConfig().anchoPapel == 58 ? 32 : 48; }
 
+// Aplica el descuento de línea (si lo hay) de esa key al item ya
+// construido: reduce su subtotal (y displaySubtotal, si lo tiene, para que
+// el precio impreso sea coherente) y añade una línea de texto sin importe
+// propio anotando el descuento — igual que se ve en el carrito.
+function applyLineDiscountToTicketItem(item, key) {
+  const discount = lineDiscounts[key];
+  if (!discount) return item;
+  const discAmt = computeDiscountAmount(item.subtotal, discount);
+  if (discAmt <= 0) return item;
+  item.subtotal -= discAmt;
+  if (item.displaySubtotal !== undefined) item.displaySubtotal -= discAmt;
+  item.extras = [...(item.extras || []), { name: discountLineLabel(discount, true) + ' (-' + fmt(discAmt) + '€)' }];
+  return item;
+}
 function buildOrderObject(preview) {
   const items = [];
   Object.entries(cart).forEach(([id, qty]) => {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
-    items.push({ name: item.name, qty, subtotal: item.price * qty, extras: [], _rank: categoryRank(item.cat) });
+    items.push(applyLineDiscountToTicketItem(
+      { name: item.name, qty, subtotal: item.price * qty, extras: [], _rank: categoryRank(item.cat) },
+      simpleLineKey(item.id)));
   });
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
@@ -1308,24 +1454,26 @@ function buildOrderObject(preview) {
     // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
     // extra van cada uno en su línea con su propio precio.
-    items.push({ name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat) });
+    items.push(applyLineDiscountToTicketItem(
+      { name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat) },
+      c.key));
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
     const baseItem = MENU.find(m => m.id == c.menuId);
-    items.push({
+    items.push(applyLineDiscountToTicketItem({
       name: getExtrasItemLabel(c), qty: c.qty,
       subtotal: getExtrasItemPrice(c) * c.qty,
       displaySubtotal: getExtrasItemBaseSubtotal(c) * c.qty,
       extras: getExtrasItemTicketExtras(c),
       _rank: categoryRank(baseItem ? baseItem.cat : ''),
-    });
+    }, c.key));
   });
   items.sort((a, b) => a._rank - b._rank);
   items.forEach(it => delete it._rank);
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
-  const discountAmount = computeDiscountAmount(subtotal);
+  const discountAmount = computeDiscountAmount(subtotal, orderDiscount);
   if (discountAmount > 0) {
-    items.push({ name: discountLineLabel(true), qty: 1, subtotal: -discountAmount, extras: [] });
+    items.push({ name: discountLineLabel(orderDiscount, true), qty: 1, subtotal: -discountAmount, extras: [] });
   }
   const total = items.reduce((s, it) => s + it.subtotal, 0);
   return {
@@ -1552,7 +1700,34 @@ function todayISO() { return new Date().toISOString().slice(0, 10); }
 // aparte sin tope, así que aunque algún día se superase este número el
 // arqueo de caja seguiría siendo exacto.
 const HISTORIAL_MAX = 1000;
-function getHistorialKey(fecha) { return 'dpf_comandas_historial_' + (fecha || todayISO()); }
+const HISTORIAL_KEY_PREFIX = 'dpf_comandas_historial_';
+function getHistorialKey(fecha) { return HISTORIAL_KEY_PREFIX + (fecha || todayISO()); }
+
+// Cuántos días se guarda el DETALLE de cada comanda (para reimprimir/ver/
+// buscar en "Pedidos de hoy" de días anteriores). Pasado ese tiempo se
+// borra solo ese detalle — no hace falta para el día a día y, con meses de
+// uso, son cientos de comandas por día acumulándose sin límite en
+// localStorage. Los totales de caja de ese día (loadCajaTotales) NUNCA se
+// tocan aquí, así que "Resumen por fechas" sigue siendo exacto por
+// siempre, aunque ya no se pueda reimprimir un ticket de hace medio año.
+const HISTORIAL_DETALLE_RETENCION_DIAS = 90;
+const HISTORIAL_ULTIMA_PURGA_KEY = 'dpf_comandas_historial_ultima_purga';
+function purgarHistorialAntiguoSiToca() {
+  const hoy = todayISO();
+  if (localStorage.getItem(HISTORIAL_ULTIMA_PURGA_KEY) === hoy) return; // ya comprobado hoy, no repetir en cada carga de página
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - HISTORIAL_DETALLE_RETENCION_DIAS);
+  const cutoffISO = cutoff.toISOString().slice(0, 10);
+  const aBorrar = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(HISTORIAL_KEY_PREFIX)) continue;
+    const fecha = key.slice(HISTORIAL_KEY_PREFIX.length);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fecha) && fecha < cutoffISO) aBorrar.push(key);
+  }
+  aBorrar.forEach(k => localStorage.removeItem(k));
+  localStorage.setItem(HISTORIAL_ULTIMA_PURGA_KEY, hoy);
+}
 // Totales de caja del día, ACUMULADOS APARTE del historial de arriba, sin
 // límite de cantidad. El historial de "Pedidos de hoy" solo guarda las
 // últimas HISTORIAL_MAX comandas (las más viejas se descartan solas para
@@ -1627,6 +1802,7 @@ function saveToHistorial(order) {
   if (list.length > HISTORIAL_MAX) list = list.slice(0, HISTORIAL_MAX);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
   _cajaTotalesAplicar(order, 1);
+  maybeAutoBackup(todayISO());
 }
 function getHistorial(fecha) {
   try { return JSON.parse(localStorage.getItem(getHistorialKey(fecha)) || '[]'); } catch (e) { return []; }
@@ -1706,6 +1882,7 @@ function modifyHistorialOrder(index) {
   custCart = order.rawState.custCart || {};
   extrasCart = order.rawState.extrasCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
+  lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
   setOrderPaid(!!order.paid);
   setPaymentMethod(order.paymentMethod || 'efectivo');
@@ -1852,6 +2029,73 @@ async function guardarCopiaOrganizadaManual() {
   if (res.ok) { toast('📁 Copia guardada en la carpeta de copias'); renderCaja(); }
   else toast('⚠️ ' + res.error);
 }
+
+/* ── Copia automática: igual que el botón manual de arriba, pero se
+   dispara sola por CALENDARIO (cada X días, X configurable en Ajustes,
+   0 = desactivada) en vez de por cantidad de comandas — así un día flojo
+   de ventas también queda protegido, y un día muy movido no genera un
+   aluvión de descargas. Se comprueba con el primer pedido que se imprime
+   cada día: si ya ha pasado X días desde la última copia automática, se
+   dispara una copia del día actual (con lo que haya hasta ese momento) y
+   no se repite hasta que toque de nuevo. Con la opción "cada día"
+   (recomendada) cae siempre en el primer pedido de cada jornada. ── */
+const AUTO_BACKUP_ULTIMA_FECHA_KEY = 'dpf_comandas_autobackup_ultima_fecha';
+function exportarCopiaAutomatica(fecha) {
+  const horaCorta = new Date().toTimeString().slice(0, 5).replace(':', '');
+  _descargarArchivo('dulce-patata-auto-' + fecha + '-' + horaCorta + '.json', JSON.stringify(construirCopiaJSON(fecha), null, 2), 'application/json');
+  marcarBackupHecho(fecha);
+  toast('📥 Copia automática guardada en Descargas', 3200);
+}
+function maybeAutoBackup(fecha) {
+  const cadaDias = parseInt(getTicketConfig().copiaAutoCadaDias, 10) || 0;
+  if (cadaDias <= 0) return; // desactivada
+  const ultima = localStorage.getItem(AUTO_BACKUP_ULTIMA_FECHA_KEY);
+  if (ultima) {
+    const diasPasados = Math.round((new Date(fecha + 'T00:00:00') - new Date(ultima + 'T00:00:00')) / 86400000);
+    if (diasPasados < cadaDias) return;
+  }
+  localStorage.setItem(AUTO_BACKUP_ULTIMA_FECHA_KEY, fecha);
+  exportarCopiaAutomatica(fecha);
+}
+
+/* ── Importar copia: recupera un archivo generado por "Descargar copia" /
+   la copia automática, para el caso de haber perdido este ordenador o su
+   localStorage. Sustituye el historial/totales/fondo del día indicado
+   DENTRO del archivo (no del día seleccionado en pantalla) — por eso pide
+   confirmación explícita mostrando esa fecha antes de tocar nada. ── */
+function importarCopiaJSON(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = ''; // permite volver a elegir el mismo archivo si hace falta reintentar
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch (e) { toast('⚠️ El archivo no es una copia válida (JSON incorrecto)'); return; }
+    if (!data || typeof data !== 'object' || !/^\d{4}-\d{2}-\d{2}$/.test(data.fecha || '') || !Array.isArray(data.pedidos)) {
+      toast('⚠️ El archivo no tiene el formato de una copia de Comandas');
+      return;
+    }
+    const fecha = data.fecha;
+    const yaHabiaAlgo = getHistorial(fecha).length > 0 || localStorage.getItem(getCajaTotalesKey(fecha)) !== null;
+    const aviso = yaHabiaAlgo
+      ? '⚠️ Ya hay datos guardados para el ' + fecha + ' en este ordenador. Importar esta copia LOS SUSTITUIRÁ. ¿Continuar?'
+      : '¿Importar la copia del ' + fecha + ' (' + data.pedidos.length + ' pedidos)?';
+    if (!confirm(aviso)) return;
+    localStorage.setItem(getHistorialKey(fecha), JSON.stringify(data.pedidos));
+    if (data.totales && typeof data.totales === 'object') saveCajaTotales(data.totales, fecha);
+    else localStorage.removeItem(getCajaTotalesKey(fecha)); // sin totales en el archivo: se recalculan solos desde los pedidos al leer la caja
+    if (typeof data.fondoCaja === 'number') localStorage.setItem(getCajaFondoKey(fecha), String(data.fondoCaja));
+    cajaFechaSel = fecha;
+    const fechaInput = document.getElementById('caja-fecha-input');
+    if (fechaInput) fechaInput.value = fecha;
+    const fondoInput = document.getElementById('caja-fondo');
+    if (fondoInput) fondoInput.value = loadCajaFondo(fecha) || '';
+    renderCaja();
+    toast('✅ Copia del ' + fecha + ' importada');
+  };
+  reader.onerror = () => toast('⚠️ No se pudo leer el archivo');
+  reader.readAsText(file);
+}
 function _csvCelda(v) {
   const s = String(v == null ? '' : v);
   return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -1959,6 +2203,41 @@ function renderResumen() {
    ══════════════════════════════════════════════════════════════ */
 let printerDevice = null, printerEndpoint = null;
 
+/* ── Qué dispositivo USB coger cuando hay que reconectar (recarga de
+   página, timeout, desconexión...): antes se cogía a ciegas el primero
+   de navigator.usb.getDevices(), lo que en un mostrador con más de un
+   USB emparejado (lector de códigos de barras, báscula, etc.) podía
+   intentar imprimir en el dispositivo equivocado. Ahora se recuerda el
+   vendorId/productId de la impresora la primera vez que se empareja con
+   "🔌 Conectar impresora directa" y se busca por eso; solo si no hay nada
+   guardado (primer uso de siempre) se cae a buscar un dispositivo con
+   interfaz de clase impresora (7), y como último recurso al primero de
+   la lista, igual que antes. ── */
+const PRINTER_IDS_KEY = 'dpf_comandas_printer_ids';
+function savePrinterIds(device) {
+  try { localStorage.setItem(PRINTER_IDS_KEY, JSON.stringify({ vendorId: device.vendorId, productId: device.productId })); } catch (e) {}
+}
+function loadPrinterIds() {
+  try { return JSON.parse(localStorage.getItem(PRINTER_IDS_KEY) || 'null'); } catch (e) { return null; }
+}
+function isPrinterClassDevice(device) {
+  try {
+    return (device.configurations || []).some(cfg =>
+      (cfg.interfaces || []).some(iface => (iface.alternates || []).some(alt => alt.interfaceClass === 7)));
+  } catch (e) { return false; }
+}
+function pickPrinterDevice(list) {
+  if (!list.length) return null;
+  const saved = loadPrinterIds();
+  if (saved) {
+    const exacto = list.find(d => d.vendorId === saved.vendorId && d.productId === saved.productId);
+    if (exacto) return exacto;
+  }
+  const porClase = list.find(isPrinterClassDevice);
+  if (porClase) return porClase;
+  return list[0]; // último recurso, igual que antes, si no hay forma de distinguir
+}
+
 function updatePrinterStatusUI() {
   const el = document.getElementById('printer-status');
   if (printerDevice) {
@@ -1991,6 +2270,7 @@ async function pairPrinter() {
   try {
     const device = await navigator.usb.requestDevice({ filters: [] });
     await openAndClaim(device);
+    savePrinterIds(device);
     toast('✅ Impresora conectada: ' + (device.productName || 'dispositivo USB'));
     updatePrinterStatusUI();
   } catch (e) {
@@ -2002,7 +2282,8 @@ async function trySilentReconnect() {
   if (!navigator.usb) { updatePrinterStatusUI(); return; }
   try {
     const list = await navigator.usb.getDevices();
-    if (list.length) await openAndClaim(list[0]);
+    const elegido = pickPrinterDevice(list);
+    if (elegido) await openAndClaim(elegido);
   } catch (e) { /* se usará el diálogo de impresión */ }
   updatePrinterStatusUI();
 }
@@ -2025,8 +2306,9 @@ async function sendToPrinter(bytes) {
   if (!printerDevice) {
     if (!navigator.usb) throw new Error('WebUSB no disponible');
     const list = await navigator.usb.getDevices();
-    if (!list.length) throw new Error('No hay impresora emparejada');
-    await openAndClaim(list[0]);
+    const elegido = pickPrinterDevice(list);
+    if (!elegido) throw new Error('No hay impresora emparejada');
+    await openAndClaim(elegido);
   }
   try {
     // 15s de margen (no 8s): WebUSB no deja cancelar transferOut() una vez
@@ -2120,6 +2402,7 @@ async function handlePrintOrder() {
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
     orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+    lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
   };
   // Se guarda en "Pedidos de hoy" ANTES de intentar imprimir — si el envío
   // a la impresora se queda colgado o falla del todo, la comanda ya está a
@@ -2205,6 +2488,7 @@ function openSettings() {
   document.getElementById('set-copias').value = String(cfg.copias);
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
+  document.getElementById('set-copia-auto-cada').value = String(cfg.copiaAutoCadaDias != null ? cfg.copiaAutoCadaDias : 1);
   initDesktopSettingsSection();
   document.getElementById('settings-modal').classList.add('open');
 }
@@ -2301,6 +2585,7 @@ function saveSettingsForm() {
     copias: Math.max(1, parseInt(document.getElementById('set-copias').value, 10) || 1),
     autoImprimir: document.getElementById('set-auto-imprimir').checked,
     modoImpresion: document.getElementById('set-modo-impresion').value,
+    copiaAutoCadaDias: parseInt(document.getElementById('set-copia-auto-cada').value, 10) || 0,
   };
   saveTicketConfig(cfg);
   closeSettings();
@@ -2657,7 +2942,9 @@ document.addEventListener('DOMContentLoaded', () => {
   applyFontChoice(loadFontChoice());
   initTabs();
   renderMenu();
+  initCartSwipeToDelete();
   restoreCartDraftIfAny();
   renderCart();
   trySilentReconnect();
+  purgarHistorialAntiguoSiToca();
 });

@@ -207,6 +207,17 @@
       </select>
     </div>
 
+    <div class="section-label">Copia de seguridad</div>
+    <div class="form-group">
+      <label>Descargar copia automática…</label>
+      <select id="set-copia-auto-cada">
+        <option value="0">Desactivada (solo copia manual)</option>
+        <option value="1">Cada día (recomendado)</option>
+        <option value="3">Cada 3 días</option>
+        <option value="7">Cada 7 días</option>
+      </select>
+    </div>
+
     <div id="settings-desktop-section" style="display:none">
       <div class="section-label">App de escritorio <span id="set-app-version" style="font-weight:400;color:var(--muted);font-size:11px"></span></div>
       <div class="form-group">
@@ -349,6 +360,11 @@
       <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia</button>
       <button class="btn-secondary" onclick="exportarVentasHoyCSV()">📊 Exportar a Excel (CSV)</button>
       <button class="btn-secondary" id="btn-copia-organizada" style="display:none" onclick="guardarCopiaOrganizadaManual()">📁 Guardar copia organizada</button>
+      <button class="btn-secondary" onclick="document.getElementById('importar-copia-file').click()">📤 Importar copia</button>
+      <input type="file" id="importar-copia-file" accept="application/json,.json" style="display:none" onchange="importarCopiaJSON(event)">
+    </div>
+    <div class="settings-help">
+      <b>Importar copia:</b> recupera un archivo descargado antes con "📥 Descargar copia" (por ejemplo, si se ha perdido este ordenador o se ha cambiado a otro). Solo afecta al día indicado dentro del archivo — sustituye lo que hubiera guardado ese día por lo del archivo, así que revisa la fecha antes de confirmar.
     </div>
     <div class="settings-help">
       "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo ese día. Cuenta el cajón físico y compáralo con esa cifra para cuadrar caja. Lo cobrado con tarjeta no debe estar en el cajón.
@@ -411,7 +427,7 @@
   <div class="modal-box" style="max-width:400px">
     <button class="modal-close" onclick="closeDiscountModal()">&#x2715;</button>
     <div class="modal-title">🏷️ Descuento / oferta</div>
-    <div class="modal-subtitle">Se aplica al total de esta comanda.</div>
+    <div class="modal-subtitle" id="discount-modal-subtitle">Se aplica al total de esta comanda.</div>
     <button type="button" class="btn-secondary" style="width:100%;margin-bottom:12px" onclick="applyPresetDiscount()">🎓 ESTUDIANTE/JUBILADO 10%</button>
     <div class="form-group">
       <label>Tipo</label>

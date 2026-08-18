@@ -600,6 +600,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cart-empty-icon { font-size: 34px; margin-bottom: 8px; opacity: .7; }
 
+/* Deslizar una línea del carrito hacia la izquierda para borrarla (gesto
+   táctil): .cart-line-swipe-wrap recorta y guarda la posición, el fondo
+   rojo "🗑️ Quitar" vive debajo y solo se ve según .cart-line se desliza
+   encima. Ver initCartSwipeToDelete() en comandas.js. */
+.cart-line-swipe-wrap { position: relative; overflow: hidden; border-radius: var(--radius-xs); margin-bottom: 6px; }
+.cart-line-delete-bg {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  padding-right: 18px;
+  background: var(--error); color: #fff;
+  font-weight: 700; font-size: 13px;
+  border-radius: var(--radius-xs);
+}
+.cart-line-swipe-wrap.swipe-armed .cart-line-delete-bg { background: #a52a20; }
+
 .cart-line {
   position: relative;
   display: flex;
@@ -607,12 +622,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   align-items: center;
   gap: 6px 8px;
   padding: 10px 12px;
-  margin-bottom: 6px;
   border-radius: var(--radius-xs);
   background: var(--white);
   border: 1.5px solid var(--warm);
   font-size: 13px;
   box-shadow: var(--shadow-sm);
+  touch-action: pan-y;
 }
 .cart-line-name { flex: 1; min-width: 100px; font-weight: 700; color: var(--text); }
 .cart-line-discount { border-color: var(--amber-dark); background: var(--amber-light); }
