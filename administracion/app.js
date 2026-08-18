@@ -1780,7 +1780,7 @@ function closeMkCalendarioOverlay() {
 }
 let _mkMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let _mkMesFiltroDia = null;
-const MK_RED_COLOR = { Instagram: '#C13584', 'Instagram (Historias)': '#833AB4', TikTok: '#000000', Facebook: '#1877F2' };
+const MK_RED_COLOR = { Instagram: '#C13584', 'Instagram (Historias)': '#833AB4', TikTok: '#000000' };
 const MK_MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 async function bimbaRenderMkCalendario() {
@@ -1869,7 +1869,11 @@ function bimbaPintarMkCalendarioLista() {
     if (item.tipo === 'promo') {
       const pr = item.data;
       return '<div style="background:#FFFDF5;border:1.5px solid #F4C430;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
-        + '<div style="font-size:12.5px;font-weight:800;color:#854F0B;margin-bottom:2px">🎉 Empieza: ' + escapeHtml(pr.nombre || '') + '</div>'
+        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'
+        + '<div style="flex:1;min-width:0;font-size:12.5px;font-weight:800;color:#854F0B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🎉 Empieza: ' + escapeHtml(pr.nombre || '') + '</div>'
+        + '<button onclick="bimbaEditarMkPromoDesdeCalendario(\'' + pr.id + '\')" style="background:none;border:none;color:#854F0B;font-size:14px;cursor:pointer;padding:2px 4px;flex-shrink:0">✏️</button>'
+        + '<button onclick="bimbaEliminarMkPromoDesdeCalendario(\'' + pr.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+        + '</div>'
         + '<div style="font-size:11px;color:#8A6A4E">' + (pr.fechaInicio ? _fechaCorta(pr.fechaInicio) : '') + (pr.oferta ? ' · ' + escapeHtml(pr.oferta) : '') + '</div>'
         + '</div>';
     }
@@ -2109,6 +2113,19 @@ async function bimbaGuardarMkCalendario() {
     msgEl.style.color = '#c0392b';
     msgEl.textContent = 'Error al guardar';
   }
+}
+function bimbaEditarMkPromoDesdeCalendario(id) {
+  closeMkCalendarioOverlay();
+  openMkPromosOverlay();
+  setTimeout(function () { bimbaEditarMkPromo(id); }, 50);
+}
+async function bimbaEliminarMkPromoDesdeCalendario(id) {
+  if (!confirm('¿Borrar esta campaña?')) return;
+  try {
+    await firebase.database().ref('marketing/promos/' + id).remove();
+    if (_mkPromoEditId === id) bimbaCancelarEdicionMkPromo();
+    bimbaRenderMkCalendario();
+  } catch (e) {}
 }
 
 // ── Banco de ideas ──
