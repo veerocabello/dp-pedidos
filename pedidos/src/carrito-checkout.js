@@ -1361,6 +1361,22 @@ async function _submitOrderInner() {
     discountCode: _discountCodeUsado
   };
 
+  // Pedido "desde el local" (código del QR del mostrador validado y de
+  // hoy): el cliente lo tiene el personal delante, así que no tiene
+  // sentido pedirle un SMS — se salta el modal y se finaliza directo. Ojo:
+  // esto NO basta por sí solo, guardar-pedido.php vuelve a comprobar el
+  // código y su fecha de verdad contra Firebase (ver localCodeValido allí)
+  // antes de aceptar un pedido sin smsToken, así que un pedido con
+  // esPedidoLocal falseado a mano sin el código real seguiría rechazándose.
+  if (_sinGastosPorCodigoLocalSubmit) {
+    const _codigoLocalUsado = ((document.getElementById('local-fee-code-input') || {}).value || '').trim().toUpperCase();
+    window._pendingOrderData.localCode = _codigoLocalUsado;
+    btn.disabled = false;
+    btn.textContent = 'Confirmar pedido →';
+    await _finalizarPedido();
+    return;
+  }
+
   // Intentar enviar SMS de verificación — ya no hay atajo que se la salte
   // (ni el antiguo _skipSmsVerification del navegador, ni dejar pasar el
   // pedido si el envío falla): guardar-pedido.php ahora exige de verdad un
@@ -1418,7 +1434,7 @@ async function _submitOrderInner() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -1453,6 +1469,11 @@ async function _finalizarPedido() {
       // (ver validarSmsToken allí) — lo genera verify-code.php tras
       // confirmar el código de verdad con Twilio.
       smsToken: smsToken || null,
+      // Código "pedido desde el local" tal cual lo escribió/trajo el
+      // cliente — junto con esPedidoLocal, es lo que guardar-pedido.php
+      // revalida de verdad contra Firebase para decidir si puede aceptar
+      // el pedido sin smsToken (ver localCodeValido allí).
+      localCode: localCode || null,
       upsellMostrado: window._pendingTicketData.upsellMostrado || false,
       upsellAnadido: window._pendingTicketData.upsellAnadido || false,
       esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,

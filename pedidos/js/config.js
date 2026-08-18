@@ -438,14 +438,28 @@ function _initFirebase() {
   window.fb_loadStudentDiscountConfig = async function() { var sn = await jget("config/studentDiscountConfig"); return sn.exists() ? sn.val() : null; };
   window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   window.fb_loadFee2Config = async function() { var sn = await jget("config/fee2Config"); return sn.exists() ? sn.val() : null; };
-  // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión)
-  window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", code); };
-  window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?sn.val():""); }); };
+  // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión y, si es de
+  // hoy, también salta el SMS — ver validarSmsToken/localCodeValido en
+  // guardar-pedido.php). Se guarda con la fecha del día en que se creó para
+  // que caduque solo a la mañana siguiente sin tener que borrarlo a mano —
+  // y como solo se guarda un código a la vez, generar uno nuevo de urgencia
+  // desde el mostrador invalida el anterior al instante, lo sobrescribe.
+  // Normaliza: si en Firebase quedó el formato antiguo (string suelto, de
+  // antes de que el código caducara cada día), se trata como código sin
+  // fecha — no coincidirá con el día de hoy, así que simplemente deja de
+  // aplicar hasta que se guarde de nuevo desde el panel (que ya escribe
+  // siempre el formato nuevo).
+  var _normLocalCode = function(v) {
+    if (v && typeof v === 'object') return { code: v.code || '', fecha: v.fecha || '' };
+    return { code: v || '', fecha: '' };
+  };
+  window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", { code: code, fecha: tK() }); };
+  window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?_normLocalCode(sn.val()):{code:"",fecha:""}); }); };
   // Lectura directa de una sola vez — para cuando hace falta el valor YA
   // (comprobar el ?local= del QR) y no se puede esperar a que el listener
   // en tiempo real reciba su primer dato, que en una visita nueva/incógnito
   // puede tardar más de lo que tarda el cliente en rellenar el formulario.
-  window.fb_loadLocalFeeCode = async function() { var sn = await jget("config/localFeeCode"); return sn.exists() ? sn.val() : ""; };
+  window.fb_loadLocalFeeCode = async function() { var sn = await jget("config/localFeeCode"); return sn.exists() ? _normLocalCode(sn.val()) : {code:"",fecha:""}; };
   // TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda)
   window.fb_saveTiendaEsperaMinutos = async function(min) { await jset("config/tiendaEsperaMinutos", min); };
   window.fb_listenTiendaEsperaMinutos = function(cb) { return jlisten("config/tiendaEsperaMinutos", function(sn){ cb(sn.exists()?sn.val():0); }); };

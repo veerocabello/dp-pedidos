@@ -1515,10 +1515,30 @@ function loadStudentDiscountFromFirebase() {
 }
 
 // ── CÓDIGO "PEDIDO DESDE EL LOCAL" (comprobación — crearlo es cosa de admin) ──
+// Desde que este código también salta el SMS de verificación (no solo quita
+// los gastos de gestión), caduca cada día: se guarda junto a su fecha
+// (LOCAL_FEE_CODE_KEY guarda el JSON {code,fecha}) y solo cuenta como válido
+// si esa fecha es la de hoy — así un cartel QR olvidado en el mostrador deja
+// de servir solo, sin tener que acordarse de borrarlo, y generar uno nuevo
+// de urgencia invalida el anterior al instante (solo se guarda uno a la vez).
+// guardar-pedido.php vuelve a comprobar lo mismo por su cuenta antes de
+// aceptar un pedido sin SMS, así que esta validación de aquí es solo para la
+// experiencia del cliente (feedback al instante) — no hace falta ir al
+// servidor para saberlo.
 const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
 let _codigoLocalValidado = false;
+function _todayKeyLocal() {
+  return new Date().toISOString().slice(0, 10);
+}
+function _localFeeCodeObj() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LOCAL_FEE_CODE_KEY) || 'null');
+    if (raw && typeof raw === 'object') return { code: raw.code || '', fecha: raw.fecha || '' };
+  } catch (e) {}
+  return { code: '', fecha: '' };
+}
 function getLocalFeeCode() {
-  return localStorage.getItem(LOCAL_FEE_CODE_KEY) || '';
+  return _localFeeCodeObj().code;
 }
 function _modoLocalActivo() {
   return _codigoLocalValidado;
@@ -1528,22 +1548,22 @@ function _modoLocalActivo() {
 // sí) — compara contra el código real ya cargado en localStorage, nunca
 // hace falta ir al servidor: es un código de un solo nivel (como una
 // contraseña de wifi de cara al público), no un secreto que proteja nada
-// más allá de quitar un par de euros de gasto de gestión, y el propio
-// panel deja cambiarlo cuando se quiera para que deje de valer.
+// más allá de quitar un par de euros de gasto de gestión y el SMS, y el
+// propio panel deja cambiarlo cuando se quiera para que deje de valer.
 function comprobarCodigoLocal() {
   const input = document.getElementById('local-fee-code-input');
   const feedback = document.getElementById('local-fee-code-feedback');
   const code = ((input && input.value) || '').trim().toUpperCase();
-  const real = getLocalFeeCode();
-  _codigoLocalValidado = !!code && !!real && code === real;
+  const real = _localFeeCodeObj();
+  _codigoLocalValidado = !!code && !!real.code && code === real.code && real.fecha === _todayKeyLocal();
   if (feedback) {
     if (!code) {
       feedback.textContent = '';
     } else if (_codigoLocalValidado) {
-      feedback.textContent = '✅ Código válido — gastos de gestión anulados para este pedido';
+      feedback.textContent = '✅ Código válido — gastos de gestión y SMS anulados para este pedido';
       feedback.style.color = '#27855a';
     } else {
-      feedback.textContent = '❌ Código incorrecto';
+      feedback.textContent = '❌ Código incorrecto o caducado (el código cambia cada día)';
       feedback.style.color = 'var(--error)';
     }
   }
@@ -1559,23 +1579,23 @@ function _comprobarCodigoLocalDesdeUrl() {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = (params.get('local') || '').trim().toUpperCase();
     if (!fromUrl) return;
-    const real = getLocalFeeCode();
-    if (real && fromUrl === real) {
+    const real = _localFeeCodeObj();
+    if (real.code && fromUrl === real.code && real.fecha === _todayKeyLocal()) {
       _codigoLocalValidado = true;
       const input = document.getElementById('local-fee-code-input');
       if (input) input.value = fromUrl;
       const box = document.getElementById('local-fee-code-box');
       if (box) box.style.display = 'flex';
       const feedback = document.getElementById('local-fee-code-feedback');
-      if (feedback) { feedback.textContent = '✅ Código válido — gastos de gestión anulados para este pedido'; feedback.style.color = '#27855a'; }
+      if (feedback) { feedback.textContent = '✅ Código válido — gastos de gestión y SMS anulados para este pedido'; feedback.style.color = '#27855a'; }
       renderCart();
     }
   } catch (e) {}
 }
 function loadLocalFeeCodeFromFirebase() {
   if (window.fb_loadLocalFeeCode) {
-    window.fb_loadLocalFeeCode().then(function (code) {
-      localStorage.setItem(LOCAL_FEE_CODE_KEY, code || '');
+    window.fb_loadLocalFeeCode().then(function (obj) {
+      localStorage.setItem(LOCAL_FEE_CODE_KEY, JSON.stringify(obj || { code: '', fecha: '' }));
       _comprobarCodigoLocalDesdeUrl();
       renderCart();
     }).catch(function () {}).finally(function () { window._localCodeListo = true; });
@@ -1583,8 +1603,8 @@ function loadLocalFeeCodeFromFirebase() {
     window._localCodeListo = true;
   }
   if (!window.fb_listenLocalFeeCode) return;
-  window.fb_listenLocalFeeCode(function (code) {
-    localStorage.setItem(LOCAL_FEE_CODE_KEY, code || '');
+  window.fb_listenLocalFeeCode(function (obj) {
+    localStorage.setItem(LOCAL_FEE_CODE_KEY, JSON.stringify(obj || { code: '', fecha: '' }));
     renderCart();
   });
 }
@@ -6180,6 +6200,22 @@ async function _submitOrderInner() {
     discountCode: _discountCodeUsado
   };
 
+  // Pedido "desde el local" (código del QR del mostrador validado y de
+  // hoy): el cliente lo tiene el personal delante, así que no tiene
+  // sentido pedirle un SMS — se salta el modal y se finaliza directo. Ojo:
+  // esto NO basta por sí solo, guardar-pedido.php vuelve a comprobar el
+  // código y su fecha de verdad contra Firebase (ver localCodeValido allí)
+  // antes de aceptar un pedido sin smsToken, así que un pedido con
+  // esPedidoLocal falseado a mano sin el código real seguiría rechazándose.
+  if (_sinGastosPorCodigoLocalSubmit) {
+    const _codigoLocalUsado = ((document.getElementById('local-fee-code-input') || {}).value || '').trim().toUpperCase();
+    window._pendingOrderData.localCode = _codigoLocalUsado;
+    btn.disabled = false;
+    btn.textContent = 'Confirmar pedido →';
+    await _finalizarPedido();
+    return;
+  }
+
   // Intentar enviar SMS de verificación — ya no hay atajo que se la salte
   // (ni el antiguo _skipSmsVerification del navegador, ni dejar pasar el
   // pedido si el envío falla): guardar-pedido.php ahora exige de verdad un
@@ -6237,7 +6273,7 @@ async function _submitOrderInner() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken } = window._pendingOrderData;
+  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
 
@@ -6272,6 +6308,11 @@ async function _finalizarPedido() {
       // (ver validarSmsToken allí) — lo genera verify-code.php tras
       // confirmar el código de verdad con Twilio.
       smsToken: smsToken || null,
+      // Código "pedido desde el local" tal cual lo escribió/trajo el
+      // cliente — junto con esPedidoLocal, es lo que guardar-pedido.php
+      // revalida de verdad contra Firebase para decidir si puede aceptar
+      // el pedido sin smsToken (ver localCodeValido allí).
+      localCode: localCode || null,
       upsellMostrado: window._pendingTicketData.upsellMostrado || false,
       upsellAnadido: window._pendingTicketData.upsellAnadido || false,
       esPedidoLocal: window._pendingTicketData.esPedidoLocal || false,

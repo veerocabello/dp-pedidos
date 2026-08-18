@@ -252,6 +252,25 @@ function fbPutSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
     return $httpCode === 200;
 }
 
+// ── Código "pedido desde el local" (cartel QR del mostrador) — permite
+// saltarse el SMS SOLO si coincide de verdad con el guardado en Firebase Y
+// es el de HOY (config/localFeeCode guarda {code,fecha}, y fb_saveLocalFeeCode
+// en config.js siempre estampa la fecha del día al guardar/regenerar, así
+// que un código de ayer deja de servir solo, y generar uno nuevo de
+// urgencia desde el panel invalida el anterior al instante porque solo se
+// guarda uno a la vez). No basta con que el navegador mande
+// esPedidoLocal=true — eso se comprueba aquí de verdad, si no cualquiera
+// podría mandarlo a mano sin conocer el código real y saltarse el SMS.
+function localCodeValido($databaseURL, $accessToken, $codigoRecibido, $todayKey) {
+    $codigoRecibido = strtoupper(trim((string)$codigoRecibido));
+    if ($codigoRecibido === '') return false;
+    $resp = fbGetConEtag($databaseURL, 'config/localFeeCode', $accessToken);
+    $cfg = is_array($resp['data']) ? $resp['data'] : null;
+    if (!$cfg || empty($cfg['code']) || empty($cfg['fecha'])) return false;
+    if ((string)$cfg['fecha'] !== $todayKey) return false;
+    return hash_equals((string)$cfg['code'], $codigoRecibido);
+}
+
 // Igual que _normOrderKey() en pedidos-vivo-cocina.js: quita '#' y una 'T' inicial
 function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
@@ -1220,8 +1239,14 @@ try {
     // Solo se comprueba aquí, en el camino de un ticket genuinamente nuevo —
     // un reenvío de un pedido YA guardado (justo arriba) no necesita volver
     // a demostrar nada, porque ya lo demostró la primera vez.
+    // Única excepción: pedido "desde el local" con el código del QR del
+    // mostrador válido y de hoy (ver localCodeValido arriba) — el cliente
+    // lo tiene el personal delante, así que no hace falta comprobar su
+    // teléfono. Revalidado aquí de verdad contra Firebase, no basta con que
+    // el navegador diga esPedidoLocal=true.
     $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
-    if (!validarSmsToken($smsToken, $phoneClean)) {
+    $localCodeRecibido = isset($payload['localCode']) ? (string)$payload['localCode'] : '';
+    if (!validarSmsToken($smsToken, $phoneClean) && !localCodeValido($databaseURL, $accessToken, $localCodeRecibido, $todayKey)) {
         echo json_encode(['success' => false, 'error' => 'No se ha podido verificar tu teléfono. Vuelve a intentarlo desde el principio del pedido.']);
         exit;
     }

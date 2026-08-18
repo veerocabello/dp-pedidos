@@ -888,15 +888,31 @@ async function reimprimirUltimoTicketTermico() {
 }
 
 // Cartel con QR para el mostrador: al escanearlo se abre la web ya con el
-// código de "pedido desde el local" puesto (sin gastos de gestión), sin que
-// el cliente tenga que escribir nada — para pegar en el mostrador cuando
-// hay cola. Se imprime tal cual, en un ticket corto aparte.
-async function imprimirCartelQRLocal() {
+// código de "pedido desde el local" puesto (sin gastos de gestión ni SMS),
+// sin que el cliente tenga que escribir nada — para pegar en el mostrador
+// cuando hay cola. Se imprime tal cual, en un ticket corto aparte.
+// "copias" deja sacar varios carteles del MISMO código de una vez (para
+// varios puntos del local, o de repuesto) sin generar uno nuevo cada vez —
+// pasa por _ptEnFila() para que no se atropellen entre sí ni con otros
+// tickets que se estén imprimiendo a la vez.
+async function imprimirCartelQRLocal(copias) {
   const code = (typeof getLocalFeeCode === 'function') ? getLocalFeeCode() : '';
   if (!code) {
     alert('Primero pon y guarda un código en "Código pedido desde el local".');
     return;
   }
+  const n = Math.max(1, Math.min(10, parseInt(copias, 10) || 1));
+  const _ptEjecutarCartel = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  for (let i = 0; i < n; i++) {
+    try {
+      await _ptEjecutarCartel(() => _imprimirUnCartelQRLocal(code));
+    } catch (e) {
+      alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
+      return;
+    }
+  }
+}
+async function _imprimirUnCartelQRLocal(code) {
   const url = window.location.origin + '/?local=' + encodeURIComponent(code);
   const ESC = 0x1B, GS = 0x1D;
   const d = [];
@@ -912,6 +928,7 @@ async function imprimirCartelQRLocal() {
   push('EL MOVIL\n');
   normal();
   push('sin gastos de gestion\n');
+  push('(codigo valido solo hoy)\n');
   push('\n');
   _ptPushQR(d, GS, url, 8);
   push('\n');
@@ -924,11 +941,7 @@ async function imprimirCartelQRLocal() {
   push(window.location.origin + '/\n');
   push('\n\n\n');
   d.push(GS, 0x56, 0x42, 0x00);
-  try {
-    await _ptEnviarBytes(new Uint8Array(d));
-  } catch (e) {
-    alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
-  }
+  await _ptEnviarBytes(new Uint8Array(d));
 }
 
 // ── AVISO DE PAPEL ──
