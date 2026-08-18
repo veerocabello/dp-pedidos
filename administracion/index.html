@@ -2,8 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Administración — Dulce Patata Food</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@400;600;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -182,6 +183,7 @@
     <h1>🏪 Administración</h1>
     <button id="logout-btn" onclick="hacerLogout()">Salir</button>
   </header>
+  <div style="text-align:center;font-size:10px;color:#B99B84;padding:4px 0;background:#FBF6EC">versión v18</div>
   <main>
     <div id="loading-msg" style="display:none">Cargando datos...</div>
     <div id="app-content">
@@ -203,7 +205,7 @@
           <div class="row" onclick="mostrarSeccionMarketing()">
             <span class="row-icon">📣</span>
             <div class="row-text">
-              <div class="row-title">Marketing</div>
+              <div class="row-title">Marketing <span id="mk-home-badge" style="display:none;font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;background:#F4C430;color:#3D1F0D;margin-left:4px;vertical-align:middle;white-space:nowrap"></span></div>
               <div class="row-desc">Calendario de contenido, banco de ideas y promociones.</div>
             </div>
             <span class="row-chevron">›</span>
@@ -297,6 +299,30 @@
           <div class="row-text">
             <div class="row-title">Promociones y campañas</div>
             <div class="row-desc">Ofertas activas, fechas y objetivo de cada una.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openMkColabsOverlay()">
+          <span class="row-icon">🤝</span>
+          <div class="row-text">
+            <div class="row-title">Colaboraciones</div>
+            <div class="row-desc">Perfiles contactados y en qué punto está cada uno.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openMkFotosOverlay()">
+          <span class="row-icon">📸</span>
+          <div class="row-text">
+            <div class="row-title">Banco de fotos pendientes</div>
+            <div class="row-desc">Fotos que te faltan por hacer, para cuando tengas un rato.</div>
+          </div>
+          <span class="row-chevron">›</span>
+        </div>
+        <div class="row" onclick="openMkPaletaOverlay()">
+          <span class="row-icon">🎨</span>
+          <div class="row-text">
+            <div class="row-title">Identidad visual</div>
+            <div class="row-desc">Colores dominantes de una foto + acceso directo para identificar la fuente.</div>
           </div>
           <span class="row-chevron">›</span>
         </div>
@@ -737,7 +763,7 @@
 
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Red social</label>
         <select id="mk-cal-red" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
-          <option>Instagram</option><option>TikTok</option><option>Facebook</option>
+          <option>Instagram</option><option>Instagram (Historias)</option><option>TikTok</option><option>Facebook</option>
         </select>
 
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Tipo de contenido</label>
@@ -751,7 +777,8 @@
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Texto / notas (opcional)</label>
         <textarea id="mk-cal-texto" rows="2" placeholder="Copy, hashtags..." style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical"></textarea>
 
-        <button onclick="bimbaGuardarMkCalendario()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <button id="mk-calendario-guardar-btn" onclick="bimbaGuardarMkCalendario()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-calendario-cancelar-edicion" onclick="bimbaCancelarEdicionMkCalendario()" style="display:none;font-size:11.5px;font-weight:700;color:#C2711A;text-align:center;margin-top:8px;cursor:pointer;text-decoration:underline">Cancelar edición</div>
         <div id="mk-calendario-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
       </div>
 
@@ -759,6 +786,8 @@
         <div id="mk-cal-tab-lista" onclick="bimbaMkCalVista('lista')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #3D1F0D;background:#3D1F0D;color:#fff">📋 Lista</div>
         <div id="mk-cal-tab-mes" onclick="bimbaMkCalVista('mes')" style="flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:1.5px solid #F5E6C8;background:#fff;color:#8A6A4E">🗓️ Mes</div>
       </div>
+
+      <div id="mk-cal-resumen-estados" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
 
       <div id="mk-calendario-vista-mes" style="display:none;margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -776,6 +805,7 @@
           <div style="text-align:center;font-size:9.5px;font-weight:700;color:#8A6A4E">D</div>
         </div>
         <div id="mk-mes-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px"></div>
+        <div id="mk-mes-aviso-vacio" style="display:none;font-size:11.5px;font-weight:700;color:#c0392b;background:#FDF2F2;border:1.5px solid #E8A0A0;border-radius:8px;padding:8px 10px;margin-top:10px">⚠️ Esta semana no tienes nada planeado todavía</div>
         <div id="mk-mes-filtro" style="display:none;align-items:center;justify-content:space-between;background:#FBEFD6;border:1.5px solid #F4C430;border-radius:8px;padding:8px 10px;margin-top:10px">
           <span id="mk-mes-filtro-texto" style="font-size:12px;font-weight:700;color:#854F0B"></span>
           <span onclick="bimbaMkMesLimpiarFiltro()" style="font-size:11px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline">Ver todas</span>
@@ -783,6 +813,8 @@
       </div>
 
       <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Publicaciones planeadas</div>
+      <div id="mk-cal-filtro-red" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
+      <div id="mk-cal-filtro-estado" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
       <div id="mk-calendario-lista"></div>
     </div>
   </div>
@@ -793,7 +825,7 @@
     <button class="admin-close" onclick="closeMkIdeasOverlay()">✕</button>
     <h2>💡 Banco de ideas</h2>
     <div class="admin-modal-body">
-      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta ideas sueltas de contenido para cuando te falte inspiración. Desde cada idea puedes mandarla directa al calendario.</div>
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta ideas sueltas de contenido para cuando te falte inspiración.</div>
 
       <div onclick="bimbaToggleMkForm('idea')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
         <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir idea</span>
@@ -801,17 +833,24 @@
       </div>
       <div id="mk-idea-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Idea</label>
-        <input type="text" id="mk-idea-texto" placeholder="ej. vídeo detrás de cámaras en cocina" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <button type="button" onclick="bimbaMkIdeaFormatear('mk-idea-texto','bold')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;cursor:pointer;color:#3D1F0D;font-family:'DM Sans',sans-serif">B</button>
+          <button type="button" onclick="bimbaMkIdeaFormatear('mk-idea-texto','italic')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;font-style:italic;cursor:pointer;color:#3D1F0D;font-family:'DM Sans',sans-serif">I</button>
+          <button type="button" onclick="bimbaMkIdeaFormatear('mk-idea-texto','underline')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;text-decoration:underline;cursor:pointer;color:#3D1F0D;font-family:'DM Sans',sans-serif">U</button>
+        </div>
+        <textarea id="mk-idea-texto" rows="3" placeholder="ej. vídeo detrás de cámaras en cocina" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical"></textarea>
 
         <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Categoría</label>
-        <select id="mk-idea-categoria" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
-          <option>Producto</option><option>Detrás de cámaras</option><option>Promoción</option><option>Testimonio</option><option>Tendencia</option><option>Colaboración</option>
-        </select>
+        <select id="mk-idea-categoria" onchange="bimbaMkIdeaCategoriaChange()" style="width:100%;padding:8px 10px;margin-bottom:6px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D"></select>
+        <div onclick="bimbaToggleMkCategoriasManager()" style="font-size:11px;color:#C2711A;font-weight:700;cursor:pointer;text-decoration:underline;margin-bottom:10px">Gestionar categorías</div>
+        <div id="mk-idea-categorias-manager" style="display:none;background:#FBF6EC;border:1.5px solid #F5E6C8;border-radius:8px;padding:10px;margin-bottom:12px">
+          <div id="mk-idea-categorias-manager-lista" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
 
-        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Prioridad</label>
-        <select id="mk-idea-prioridad" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
-          <option>Alta</option><option selected>Media</option><option>Baja</option>
-        </select>
+        <div onclick="bimbaToggleMkIdeaStarNueva()" style="display:flex;align-items:center;justify-content:space-between;background:#fafafa;border:1.5px solid #F5E6C8;border-radius:8px;padding:9px 12px;margin-bottom:12px;cursor:pointer">
+          <label style="font-size:12px;color:#8A6A4E;font-weight:700;cursor:pointer">Destacar esta idea</label>
+          <span id="mk-idea-star-nueva" style="font-size:19px;line-height:1">☆</span>
+        </div>
 
         <button onclick="bimbaGuardarMkIdea()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
         <div id="mk-idea-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
@@ -874,9 +913,97 @@
   </div>
 </div><!-- /mk-promos-overlay -->
 
+<div id="mk-colabs-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkColabsOverlay()">✕</button>
+    <h2>🤝 Colaboraciones</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Perfiles y colaboraciones que vas contactando, para no perder el hilo de en qué punto está cada uno.</div>
+
+      <div onclick="bimbaToggleMkForm('colab')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir colaboración</span>
+        <span id="mk-colab-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-colab-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Nombre / perfil</label>
+        <input type="text" id="mk-colab-nombre" placeholder="ej. @granadafoodie" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Red social</label>
+        <select id="mk-colab-red" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+          <option>Instagram</option><option>TikTok</option><option>Facebook</option><option>Otro</option>
+        </select>
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Contacto (opcional)</label>
+        <input type="text" id="mk-colab-contacto" placeholder="email, teléfono o usuario" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Notas (opcional)</label>
+        <textarea id="mk-colab-notas" rows="2" placeholder="qué se ofrece a cambio, condiciones..." style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical"></textarea>
+
+        <button onclick="bimbaGuardarMkColab()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-colab-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Tus colaboraciones</div>
+      <div id="mk-colabs-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-colabs-overlay -->
+
+<div id="mk-fotos-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkFotosOverlay()">✕</button>
+    <h2>📸 Banco de fotos pendientes</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Apunta fotos que te faltan por hacer, para cuando tengas un rato en la cocina con buena luz. Marca ✓ cuando ya la tengas.</div>
+
+      <div onclick="bimbaToggleMkForm('foto')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:700;color:#3D1F0D">➕ Añadir foto pendiente</span>
+        <span id="mk-foto-chevron" style="color:#C2711A;font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+      </div>
+      <div id="mk-foto-form" style="display:none;background:#fff;border:1.5px solid #F5E6C8;border-top:none;border-radius:0 0 10px 10px;padding:12px;margin-bottom:14px">
+        <label style="display:block;font-size:12px;color:#8A6A4E;font-weight:700;margin-bottom:5px">Foto</label>
+        <input type="text" id="mk-foto-texto" placeholder="ej. boniato fries de cerca, con luz natural" style="width:100%;padding:8px 10px;margin-bottom:12px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+        <button onclick="bimbaGuardarMkFoto()" style="width:100%;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+        <div id="mk-foto-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Tus fotos pendientes</div>
+      <div id="mk-fotos-lista"></div>
+    </div>
+  </div>
+</div><!-- /mk-fotos-overlay -->
+
+<div id="mk-paleta-overlay" class="admin-overlay" style="z-index:9999">
+  <div class="admin-modal" style="max-width:480px">
+    <button class="admin-close" onclick="closeMkPaletaOverlay()">✕</button>
+    <h2>🎨 Identidad visual</h2>
+    <div class="admin-modal-body">
+      <div style="font-size:12px;color:#8A6A4E;margin-bottom:14px">Sube una foto de referencia y saca sus colores dominantes en hexadecimal. Se procesa en tu propio navegador, la foto no se sube a ningún sitio. Toca un color para copiarlo.</div>
+
+      <input type="file" accept="image/*" id="mk-paleta-input" onchange="bimbaMkPaletaProcesar(event)" style="width:100%;padding:10px;margin-bottom:14px;border:1.5px dashed #C2711A;border-radius:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fafafa;color:#3D1F0D">
+
+      <canvas id="mk-paleta-canvas" style="display:none"></canvas>
+      <img id="mk-paleta-preview" style="display:none;width:100%;border-radius:10px;margin-bottom:14px">
+
+      <div id="mk-paleta-resultado"></div>
+
+      <div style="height:1px;background:#F5E6C8;margin:18px 0"></div>
+
+      <div onclick="window.open('https://www.myfonts.com/whatthefont/', '_blank')" style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#3D1F0D">🔤 Identificar la fuente</div>
+          <div style="font-size:11.5px;color:#8A6A4E;margin-top:2px">Abre WhatTheFont en una pestaña nueva para subir ahí la misma foto</div>
+        </div>
+        <span style="color:#C2711A;font-size:16px;flex-shrink:0">↗</span>
+      </div>
+    </div>
+  </div>
+</div><!-- /mk-paleta-overlay -->
+
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
