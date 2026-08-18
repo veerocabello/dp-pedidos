@@ -143,6 +143,9 @@ window.fb_loadEmpleados = async function () {
   if (!sn.exists()) return null;
   try { return JSON.parse(sn.val()); } catch (e) { return null; }
 };
+window.fb_saveEmpleados = async function (arr) {
+  await firebase.database().ref('config/empleados').set(JSON.stringify(arr));
+};
 // Sin esto, "Equipo vs facturación" siempre calculaba 0 horas trabajadas:
 // _empHorasEnPeriodo() lee los fichajes de localStorage, pero aquí nadie
 // los rellenaba nunca (en la web de pedidos lo hace un listener aparte que
@@ -472,7 +475,11 @@ function _bimbaPintarConfigEquipo(empleados) {
     const esHora = cfg.tipoPago !== 'sueldo';
     const idAttr = escapeAttr(String(emp.id));
     return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:12px;margin-bottom:10px">'
-      + '<div style="font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:8px">' + escapeHtml(emp.nombre) + '</div>'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+        + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(emp.nombre) + '</div>'
+        + '<button onclick="bimbaEditarNombreEmpleado(\'' + idAttr + '\')" style="background:none;border:none;color:#8A6A4E;font-size:14px;cursor:pointer;padding:2px 4px;flex-shrink:0">✏️</button>'
+        + '<button onclick="bimbaEliminarEmpleado(\'' + idAttr + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+      + '</div>'
       + '<div style="display:flex;gap:6px;margin-bottom:10px">'
         + '<div onclick="bimbaSetTipoPago(\'' + idAttr + '\',\'hora\')" style="flex:1;text-align:center;padding:7px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #F5E6C8;cursor:pointer;background:' + (esHora ? '#3D1F0D' : '#fff') + ';color:' + (esHora ? '#FFF8EE' : '#8A6A4E') + '">Por hora</div>'
         + '<div onclick="bimbaSetTipoPago(\'' + idAttr + '\',\'sueldo\')" style="flex:1;text-align:center;padding:7px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #F5E6C8;cursor:pointer;background:' + (!esHora ? '#3D1F0D' : '#fff') + ';color:' + (!esHora ? '#FFF8EE' : '#8A6A4E') + '">Sueldo fijo</div>'
@@ -485,6 +492,33 @@ function _bimbaPintarConfigEquipo(empleados) {
       + '<div style="display:flex;align-items:center;gap:8px;padding-top:6px;border-top:1px dashed #F5E6C8"><label style="font-size:11.5px;color:#854F0B;font-weight:700;flex:1">🛡️ Seguridad Social mensual</label><div style="display:flex;align-items:center;gap:4px"><input type="number" step="1" min="0" placeholder="0" value="' + (cfg.ssMensual != null ? cfg.ssMensual : '') + '" onchange="bimbaActualizarPago(\'' + idAttr + '\',\'ssMensual\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid #F4C430;border-radius:6px;font-size:12px;text-align:right;font-family:\'DM Sans\',sans-serif"><span style="font-size:11px;color:#854F0B">€/mes</span></div></div>'
       + '</div>';
   }).join('');
+}
+async function bimbaEditarNombreEmpleado(id) {
+  const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
+  const emp = empleados.find(function (e) { return String(e.id) === id; });
+  if (!emp) return;
+  const nuevoNombre = prompt('Nombre del empleado:', emp.nombre);
+  if (!nuevoNombre || !nuevoNombre.trim() || nuevoNombre.trim() === emp.nombre) return;
+  emp.nombre = nuevoNombre.trim();
+  localStorage.setItem('dpf_empleados', JSON.stringify(empleados));
+  _bimbaPintarConfigEquipo(empleados);
+  _bimbaPintarCalcEquipo(empleados);
+  try { await window.fb_saveEmpleados(empleados); } catch (e) { alert('No se pudo guardar el cambio, revisa tu conexión.'); }
+}
+async function bimbaEliminarEmpleado(id) {
+  const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
+  const emp = empleados.find(function (e) { return String(e.id) === id; });
+  if (!emp) return;
+  if (!confirm('¿Eliminar a ' + emp.nombre + '? Se borrará también su configuración de pago.')) return;
+  const restantes = empleados.filter(function (e) { return String(e.id) !== id; });
+  localStorage.setItem('dpf_empleados', JSON.stringify(restantes));
+  delete _equipoPagoConfig[id];
+  _bimbaPintarConfigEquipo(restantes);
+  _bimbaPintarCalcEquipo(restantes);
+  try {
+    await window.fb_saveEmpleados(restantes);
+    await firebase.database().ref('config/empleadosPago/' + id).remove();
+  } catch (e) { alert('No se pudo guardar el cambio, revisa tu conexión.'); }
 }
 function bimbaSetTipoPago(empId, tipo) {
   if (!_equipoPagoConfig[empId]) _equipoPagoConfig[empId] = {};
