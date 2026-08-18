@@ -1766,7 +1766,6 @@ function bimbaToggleMkForm(tipo) {
 // ── Calendario de contenido ──
 let _mkCalendarioEditId = null;
 let _mkFiltroRed = null;
-let _mkFiltroEstado = null;
 function openMkCalendarioOverlay() {
   document.getElementById('mk-calendario-overlay').classList.add('open');
   bimbaRenderMkCalFiltros();
@@ -1776,7 +1775,6 @@ function closeMkCalendarioOverlay() {
   document.getElementById('mk-calendario-overlay').classList.remove('open');
   bimbaCancelarEdicionMkCalendario();
   _mkFiltroRed = null;
-  _mkFiltroEstado = null;
 }
 let _mkMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let _mkMesFiltroDia = null;
@@ -1806,17 +1804,6 @@ async function bimbaRenderMkCalendario() {
   bimbaPintarMkCalendarioLista();
   if (document.getElementById('mk-calendario-vista-mes').style.display !== 'none') bimbaRenderMkMes();
 }
-function bimbaPintarMkResumenEstados() {
-  const el = document.getElementById('mk-cal-resumen-estados');
-  if (!el) return;
-  const counts = {};
-  MK_ESTADOS.forEach(function (e) { counts[e] = 0; });
-  _mkCalendarioCache.forEach(function (p) { const e = p.estado || 'Idea'; counts[e] = (counts[e] || 0) + 1; });
-  el.innerHTML = MK_ESTADOS.map(function (e) {
-    const color = MK_ESTADO_COLOR[e];
-    return '<span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px;background:' + color + '1A;color:' + color + '">' + e + ' ' + counts[e] + '</span>';
-  }).join('');
-}
 function bimbaRenderMkCalFiltros() {
   const redEl = document.getElementById('mk-cal-filtro-red');
   if (redEl) {
@@ -1826,41 +1813,25 @@ function bimbaRenderMkCalFiltros() {
       return '<span onclick="bimbaMkFiltrarRed(\'' + r + '\')" style="font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:99px;cursor:pointer;border:1.5px solid ' + color + ';background:' + (activo ? color : color + '1A') + ';color:' + (activo ? '#fff' : color) + '">' + r + '</span>';
     }).join('');
   }
-  const estadoEl = document.getElementById('mk-cal-filtro-estado');
-  if (estadoEl) {
-    estadoEl.innerHTML = MK_ESTADOS.map(function (e) {
-      const activo = _mkFiltroEstado === e;
-      const color = MK_ESTADO_COLOR[e];
-      return '<span onclick="bimbaMkFiltrarEstado(\'' + e + '\')" style="font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:99px;cursor:pointer;border:1.5px solid ' + color + ';background:' + (activo ? color : color + '1A') + ';color:' + (activo ? '#fff' : color) + '">' + e + '</span>';
-    }).join('');
-  }
 }
 function bimbaMkFiltrarRed(red) {
   _mkFiltroRed = (_mkFiltroRed === red) ? null : red;
   bimbaRenderMkCalFiltros();
   bimbaPintarMkCalendarioLista();
 }
-function bimbaMkFiltrarEstado(estado) {
-  _mkFiltroEstado = (_mkFiltroEstado === estado) ? null : estado;
-  bimbaRenderMkCalFiltros();
-  bimbaPintarMkCalendarioLista();
-}
 function bimbaPintarMkCalendarioLista() {
   const el = document.getElementById('mk-calendario-lista');
-  bimbaPintarMkResumenEstados();
   let postsCache = _mkCalendarioCache;
   if (_mkFiltroRed) postsCache = postsCache.filter(function (p) { return p.red === _mkFiltroRed; });
-  if (_mkFiltroEstado) postsCache = postsCache.filter(function (p) { return (p.estado || 'Idea') === _mkFiltroEstado; });
   const posts = (_mkMesFiltroDia ? postsCache.filter(function (p) { return p.fecha === _mkMesFiltroDia; }) : postsCache)
     .map(function (p) { return { tipo: 'post', fecha: p.fecha, data: p }; });
-  const hayFiltroRedEstado = _mkFiltroRed || _mkFiltroEstado;
-  const promosCache = hayFiltroRedEstado ? [] : (_mkPromosCache || []);
+  const promosCache = _mkFiltroRed ? [] : (_mkPromosCache || []);
   const promos = (_mkMesFiltroDia ? promosCache.filter(function (pr) { return pr.fechaInicio === _mkMesFiltroDia; }) : promosCache)
     .map(function (pr) { return { tipo: 'promo', fecha: pr.fechaInicio, data: pr }; });
   const combinado = posts.concat(promos).sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); });
 
   if (!combinado.length) {
-    const hayFiltros = _mkMesFiltroDia || hayFiltroRedEstado;
+    const hayFiltros = _mkMesFiltroDia || _mkFiltroRed;
     el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">' + (hayFiltros ? 'Sin publicaciones con esos filtros' : 'Sin publicaciones planeadas todavía') + '</div>';
     return;
   }
