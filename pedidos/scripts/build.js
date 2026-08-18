@@ -40,7 +40,11 @@ const ADMIN_MODULOS = [
   'proveedores.js',
   'admin-antispam-stats.js',
   'admin-turnos-descuentos.js',
-  'finanzas.js',
+  // finanzas.js: fuera del bundle a propósito — Márgenes/Calculadora/Equipo
+  // vs facturación/Estrellas y perdedores se quitaron de esta web (panel
+  // bimba) porque ya viven en administracion.dulcepatatafood.es, que lee
+  // los mismos datos de este mismo proyecto de Firebase. El archivo se deja
+  // en el repo sin usar, por si hace falta como referencia más adelante.
   'admin-accesos.js',
   'slots-alertas.js',
   'admin-config.js',
