@@ -1673,6 +1673,7 @@ const MK_PRIORIDAD_COLOR = { Alta: '#c0392b', Media: '#B5862C', Baja: '#27855a' 
 let _mkCalendarioCache = [];
 let _mkIdeasCache = [];
 let _mkPromosCache = [];
+let _mkPromoEditId = null;
 
 function bimbaToggleMkForm(tipo) {
   const form = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-form');
@@ -1867,24 +1868,56 @@ async function bimbaRenderMkIdeas() {
     el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
     return;
   }
-  if (!_mkIdeasCache.length) {
-    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin ideas guardadas todavía</div>';
-    return;
+  bimbaPintarMkIdeas();
+}
+function bimbaPintarMkIdeas() {
+  const el = document.getElementById('mk-ideas-lista');
+  const pendientes = _mkIdeasCache.filter(function (i) { return !i.hecha; });
+  const hechas = _mkIdeasCache.filter(function (i) { return i.hecha; });
+
+  if (!pendientes.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin ideas pendientes</div>';
+  } else {
+    el.innerHTML = pendientes.map(function (i) { return bimbaRenderMkIdeaCard(i, false); }).join('');
   }
-  el.innerHTML = _mkIdeasCache.map(function (i) {
-    const colorP = MK_PRIORIDAD_COLOR[i.prioridad] || '#8A6A4E';
-    return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
-      + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D">' + escapeHtml(i.idea || '') + '</div>'
-      + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-      + '<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:#F5E6C8;color:#8A6A4E">' + escapeHtml(i.categoria || '') + '</span>'
-      + '<span style="font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:99px;background:' + colorP + '1A;color:' + colorP + '">' + escapeHtml(i.prioridad || '') + '</span>'
-      + '<span onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:10.5px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline;margin-left:auto">→ Calendario</span>'
-      + '</div>'
-      + '</div>';
-  }).join('');
+
+  document.getElementById('mk-ideas-hechas-count').textContent = hechas.length;
+  const elHechas = document.getElementById('mk-ideas-hechas-lista');
+  if (!hechas.length) {
+    elHechas.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Aún no hay ideas hechas</div>';
+  } else {
+    elHechas.innerHTML = hechas.map(function (i) { return bimbaRenderMkIdeaCard(i, true); }).join('');
+  }
+}
+function bimbaRenderMkIdeaCard(i, hecha) {
+  const colorP = MK_PRIORIDAD_COLOR[i.prioridad] || '#8A6A4E';
+  const textStyle = hecha ? 'text-decoration:line-through;color:#8A6A4E' : 'color:#3D1F0D';
+  return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px' + (hecha ? ';opacity:0.75' : '') + '">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
+    + '<span onclick="bimbaToggleMkIdeaHecha(\'' + i.id + '\')" title="' + (hecha ? 'Marcar como pendiente' : 'Marcar como hecha') + '" style="font-size:16px;cursor:pointer;flex-shrink:0;line-height:1">' + (hecha ? '✅' : '⬜️') + '</span>'
+    + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;' + textStyle + '">' + escapeHtml(i.idea || '') + '</div>'
+    + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+    + '<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:#F5E6C8;color:#8A6A4E">' + escapeHtml(i.categoria || '') + '</span>'
+    + '<span style="font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:99px;background:' + colorP + '1A;color:' + colorP + '">' + escapeHtml(i.prioridad || '') + '</span>'
+    + (!hecha ? '<span onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:10.5px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline;margin-left:auto">→ Calendario</span>' : '')
+    + '</div>'
+    + '</div>';
+}
+function bimbaToggleMkIdeasHechas() {
+  const lista = document.getElementById('mk-ideas-hechas-lista');
+  const chevron = document.getElementById('mk-ideas-hechas-chevron');
+  const abierto = lista.style.display !== 'none';
+  lista.style.display = abierto ? 'none' : 'block';
+  chevron.style.transform = abierto ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+async function bimbaToggleMkIdeaHecha(id) {
+  const item = _mkIdeasCache.find(function (i) { return i.id === id; });
+  if (!item) return;
+  item.hecha = !item.hecha;
+  bimbaPintarMkIdeas();
+  try { await firebase.database().ref('marketing/ideas/' + id + '/hecha').set(item.hecha); } catch (e) {}
 }
 async function bimbaEliminarMkIdea(id) {
   if (!confirm('¿Borrar esta idea?')) return;
@@ -1930,6 +1963,7 @@ function openMkPromosOverlay() {
 }
 function closeMkPromosOverlay() {
   document.getElementById('mk-promos-overlay').classList.remove('open');
+  bimbaCancelarEdicionMkPromo();
 }
 async function bimbaRenderMkPromos() {
   const el = document.getElementById('mk-promos-lista');
@@ -1954,6 +1988,7 @@ async function bimbaRenderMkPromos() {
     return '<div style="background:#fff;border:1.5px solid ' + (activa ? '#27855a' : '#F5E6C8') + ';border-radius:10px;padding:10px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
       + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D">' + escapeHtml(p.nombre || '') + (activa ? ' <span style="font-size:10px;font-weight:800;color:#27855a">· ACTIVA</span>' : '') + '</div>'
+      + '<button onclick="bimbaEditarMkPromo(\'' + p.id + '\')" style="background:none;border:none;color:#8A6A4E;font-size:14px;cursor:pointer;padding:2px 4px;flex-shrink:0">✏️</button>'
       + '<button onclick="bimbaEliminarMkPromo(\'' + p.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:4px">' + (p.fechaInicio ? _fechaCorta(p.fechaInicio) : '?') + ' — ' + (p.fechaFin ? _fechaCorta(p.fechaFin) : '?') + '</div>'
@@ -1966,8 +2001,36 @@ async function bimbaEliminarMkPromo(id) {
   if (!confirm('¿Borrar esta campaña?')) return;
   try {
     await firebase.database().ref('marketing/promos/' + id).remove();
+    if (_mkPromoEditId === id) bimbaCancelarEdicionMkPromo();
     bimbaRenderMkPromos();
   } catch (e) {}
+}
+function bimbaEditarMkPromo(id) {
+  const p = _mkPromosCache.find(function (x) { return x.id === id; });
+  if (!p) return;
+  _mkPromoEditId = id;
+  document.getElementById('mk-promo-nombre').value = p.nombre || '';
+  document.getElementById('mk-promo-inicio').value = p.fechaInicio || '';
+  document.getElementById('mk-promo-fin').value = p.fechaFin || '';
+  document.getElementById('mk-promo-oferta').value = p.oferta || '';
+  document.getElementById('mk-promo-objetivo').value = p.objetivo || '';
+  document.getElementById('mk-promo-guardar-btn').textContent = 'Guardar cambios';
+  document.getElementById('mk-promo-cancelar-edicion').style.display = 'block';
+  document.getElementById('mk-promo-msg').textContent = '';
+  const form = document.getElementById('mk-promo-form');
+  if (form.style.display === 'none') bimbaToggleMkForm('promo');
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function bimbaCancelarEdicionMkPromo() {
+  _mkPromoEditId = null;
+  document.getElementById('mk-promo-nombre').value = '';
+  document.getElementById('mk-promo-inicio').value = '';
+  document.getElementById('mk-promo-fin').value = '';
+  document.getElementById('mk-promo-oferta').value = '';
+  document.getElementById('mk-promo-objetivo').value = '';
+  document.getElementById('mk-promo-guardar-btn').textContent = 'Guardar';
+  document.getElementById('mk-promo-cancelar-edicion').style.display = 'none';
+  document.getElementById('mk-promo-msg').textContent = '';
 }
 async function bimbaGuardarMkPromo() {
   const msgEl = document.getElementById('mk-promo-msg');
@@ -1979,12 +2042,19 @@ async function bimbaGuardarMkPromo() {
   if (!nombre) { msgEl.textContent = 'Pon un nombre'; msgEl.style.color = '#c0392b'; return; }
   if (!fechaInicio || !fechaFin) { msgEl.textContent = 'Pon fecha de inicio y fin'; msgEl.style.color = '#c0392b'; return; }
   try {
-    await firebase.database().ref('marketing/promos').push({ nombre: nombre, fechaInicio: fechaInicio, fechaFin: fechaFin, oferta: oferta, objetivo: objetivo, ts: Date.now() });
-    msgEl.style.color = '#27855a';
-    msgEl.textContent = '✅ Guardado';
-    document.getElementById('mk-promo-nombre').value = '';
-    document.getElementById('mk-promo-oferta').value = '';
-    document.getElementById('mk-promo-objetivo').value = '';
+    if (_mkPromoEditId) {
+      await firebase.database().ref('marketing/promos/' + _mkPromoEditId).update({ nombre: nombre, fechaInicio: fechaInicio, fechaFin: fechaFin, oferta: oferta, objetivo: objetivo });
+      msgEl.style.color = '#27855a';
+      msgEl.textContent = '✅ Cambios guardados';
+      bimbaCancelarEdicionMkPromo();
+    } else {
+      await firebase.database().ref('marketing/promos').push({ nombre: nombre, fechaInicio: fechaInicio, fechaFin: fechaFin, oferta: oferta, objetivo: objetivo, ts: Date.now() });
+      msgEl.style.color = '#27855a';
+      msgEl.textContent = '✅ Guardado';
+      document.getElementById('mk-promo-nombre').value = '';
+      document.getElementById('mk-promo-oferta').value = '';
+      document.getElementById('mk-promo-objetivo').value = '';
+    }
     bimbaRenderMkPromos();
   } catch (e) {
     msgEl.style.color = '#c0392b';
