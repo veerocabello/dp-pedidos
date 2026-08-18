@@ -776,6 +776,116 @@ function saveTicketConfig(cfg) {
   logActivity('🧾 Configuración del ticket actualizada');
 }
 
+// Movidas aquí desde finanzas.js (que ya no entra en el bundle admin, ver
+// build.js) — estas dos no tienen nada que ver con Finanzas, solo vivían en
+// el mismo archivo por casualidad.
+function openIngredientesStockOverlay() {
+  document.getElementById('ingredientes-stock-overlay').classList.add('open');
+  if (typeof loadStockAdminList === 'function') loadStockAdminList();
+  if (typeof renderStockHistorial === 'function') renderStockHistorial();
+}
+function closeIngredientesStockOverlay() {
+  document.getElementById('ingredientes-stock-overlay').classList.remove('open');
+}
+
+function bimbaPintarTicketConfig() {
+  const tc = getTicketConfig();
+  const nombreEl = document.getElementById('tc-nombre');
+  if (!nombreEl) return;
+  nombreEl.value = tc.nombre;
+  document.getElementById('tc-direccion').value = tc.direccion;
+  document.getElementById('tc-telefono').value = tc.telefono;
+  document.getElementById('tc-despedida').value = tc.despedida;
+  document.getElementById('tc-texto-pago').value = tc.textoPago;
+  document.getElementById('tc-ancho-papel').value = String(tc.anchoPapel || 80);
+  document.getElementById('tc-copias').value = tc.copias || 1;
+  const autoEl = document.getElementById('tc-auto-imprimir');
+  autoEl.checked = tc.autoImprimir !== false;
+  document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
+
+  // Segundo gasto fijo, descuento estudiante/jubilado, código del local y
+  // tiempo de espera — igual patrón que arriba, pero cada uno con su propio
+  // getter (ver admin-config.js) en vez de vivir dentro de getTicketConfig().
+  const fee2EnabledEl = document.getElementById('tc-fee2-enabled');
+  if (fee2EnabledEl) fee2EnabledEl.checked = getFee2Enabled();
+  const fee2AmountEl = document.getElementById('tc-fee2-amount');
+  if (fee2AmountEl) fee2AmountEl.value = getFee2Amount().toFixed(2);
+  const fee2LabelEl = document.getElementById('tc-fee2-label');
+  if (fee2LabelEl) fee2LabelEl.value = getFee2Label();
+
+  const studentEnabledEl = document.getElementById('tc-student-discount-enabled');
+  if (studentEnabledEl) studentEnabledEl.checked = getStudentDiscountEnabled();
+  const studentPctEl = document.getElementById('tc-student-discount-pct');
+  if (studentPctEl) studentPctEl.value = getStudentDiscountPct();
+
+  const localCodeEl = document.getElementById('tc-local-fee-code');
+  if (localCodeEl) localCodeEl.value = getLocalFeeCode();
+
+  const esperaEl = document.getElementById('tc-tienda-espera');
+  if (esperaEl) esperaEl.value = String(getTiendaEsperaMinutos());
+}
+function openTicketConfigOverlay() {
+  document.getElementById('ticket-config-overlay').classList.add('open');
+  bimbaPintarTicketConfig();
+}
+function closeTicketConfigOverlay() {
+  document.getElementById('ticket-config-overlay').classList.remove('open');
+}
+function bimbaGuardarTicketConfig() {
+  const msgEl = document.getElementById('tc-msg');
+  const cfg = {
+    nombre: document.getElementById('tc-nombre').value.trim() || TICKET_CONFIG_DEFAULTS.nombre,
+    direccion: document.getElementById('tc-direccion').value.trim() || TICKET_CONFIG_DEFAULTS.direccion,
+    telefono: document.getElementById('tc-telefono').value.trim() || TICKET_CONFIG_DEFAULTS.telefono,
+    despedida: document.getElementById('tc-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
+    textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
+    anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
+    copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
+    autoImprimir: document.getElementById('tc-auto-imprimir').checked
+  };
+  saveTicketConfig(cfg);
+
+  // Segundo gasto fijo y descuento estudiante/jubilado se guardan con el
+  // mismo botón "Guardar" de este panel — cada uno con su propia función
+  // (ver admin-config.js), porque no forman parte de getTicketConfig()/
+  // saveTicketConfig() (esas dos solo gestionan el aspecto del ticket).
+  const fee2EnabledEl = document.getElementById('tc-fee2-enabled');
+  const fee2AmountEl = document.getElementById('tc-fee2-amount');
+  const fee2LabelEl = document.getElementById('tc-fee2-label');
+  if (fee2EnabledEl && fee2AmountEl && fee2LabelEl) {
+    saveFee2Config(
+      fee2EnabledEl.checked,
+      parseFloat(fee2AmountEl.value) || 0.50,
+      fee2LabelEl.value.trim() || 'Otro gasto fijo'
+    );
+  }
+
+  const studentEnabledEl = document.getElementById('tc-student-discount-enabled');
+  const studentPctEl = document.getElementById('tc-student-discount-pct');
+  if (studentEnabledEl && studentPctEl) {
+    saveStudentDiscountConfig(
+      studentEnabledEl.checked,
+      Math.max(0, Math.min(100, parseFloat(studentPctEl.value) || 0))
+    );
+  }
+
+  if (msgEl) {
+    msgEl.style.color = '#27855a';
+    msgEl.textContent = '✅ Guardado';
+    setTimeout(() => { msgEl.textContent = ''; }, 2500);
+  }
+}
+
+function toggleIngredientesPanel(btn) {
+  const panel = document.getElementById('ingredientes-panel');
+  if (!panel) return;
+  const open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? '✏️ Editar' : '✕ Cerrar';
+  btn.style.background = open ? '#3D1F0D' : '#F5E6C8';
+  btn.style.color = open ? '#FFF8EE' : '#3D1F0D';
+}
+
 function savePauseMsg() {
   const msg = document.getElementById('orders-pause-msg').value.trim();
   if (msg) {
