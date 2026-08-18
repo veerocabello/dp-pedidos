@@ -2602,7 +2602,7 @@ function bimbaPintarMkFotosLista() {
   el.innerHTML = _mkFotosCache.map(function (f) {
     const hecha = !!f.hecha;
     return '<div style="display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
-      + '<span onclick="bimbaToggleMkFotoHecha(\'' + f.id + '\')" style="font-size:19px;line-height:1;cursor:pointer;flex-shrink:0">' + (hecha ? '✅' : '⬜') + '</span>'
+      + '<span onclick="bimbaToggleMkFotoHecha(\'' + f.id + '\')" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;border:2px solid ' + (hecha ? '#27855a' : '#D8C7A6') + ';background:' + (hecha ? '#27855a' : '#fff') + ';color:#fff;font-size:14px;font-weight:900;line-height:1;cursor:pointer;flex-shrink:0">' + (hecha ? '✓' : '') + '</span>'
       + '<div style="flex:1;min-width:0;font-size:13px;color:' + (hecha ? '#B99B84' : '#3D1F0D') + ';text-decoration:' + (hecha ? 'line-through' : 'none') + '">' + escapeHtml(f.texto || '') + '</div>'
       + '<button onclick="bimbaEliminarMkFoto(\'' + f.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>';
