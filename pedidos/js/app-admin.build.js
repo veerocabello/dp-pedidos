@@ -3779,6 +3779,17 @@ function cancelarPausaExpres() {
 // SLOTS_KEY vive en nucleo-compartido.js (bundle de cliente) — lo usa el
 // propio checkout (carrito-checkout.js) y el reseteo de medianoche.
 
+// ── VERIFICACIÓN SMS OBLIGATORIA (interruptor de emergencia, ej. Twilio
+// caído) — desactivarla hace que cualquiera pueda confirmar un pedido sin
+// demostrar que el teléfono es suyo, así que solo debería usarse el tiempo
+// justo hasta que el SMS vuelva a funcionar. ──
+async function toggleSmsVerificacionActiva(checked) {
+  localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, checked ? 'true' : 'false');
+  if (typeof _actualizarTrack === 'function') _actualizarTrack('sms-verificacion-toggle-track', checked);
+  if (window.fb_saveSmsVerificacionActiva) await window.fb_saveSmsVerificacionActiva(checked).catch(() => {});
+  logActivity(checked ? '📵 Verificación SMS obligatoria reactivada' : '🚨 Verificación SMS DESACTIVADA — cualquiera puede pedir sin confirmar su móvil');
+}
+
 // ── CONFIGURACIÓN DEL TICKET (guardar desde el panel) ──
 function saveTicketConfig(cfg) {
   localStorage.setItem(TICKET_CONFIG_KEY, JSON.stringify(cfg));

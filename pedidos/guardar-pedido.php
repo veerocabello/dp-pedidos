@@ -271,6 +271,16 @@ function localCodeValido($databaseURL, $accessToken, $codigoRecibido, $todayKey)
     return hash_equals((string)$cfg['code'], $codigoRecibido);
 }
 
+// ── Interruptor de emergencia "Verificación SMS obligatoria" (panel >
+// Sistema) — por defecto true (si nunca se ha guardado nada, se exige el
+// SMS como siempre). Solo se desactiva a mano y a propósito, ej. mientras
+// Twilio está caído — mientras esté así, CUALQUIER pedido pasa sin
+// smsToken ni código local, así que se comprueba antes que nada.
+function smsVerificacionActivaGlobal($databaseURL, $accessToken) {
+    $resp = fbGetConEtag($databaseURL, 'config/smsVerificacionActiva', $accessToken);
+    return $resp['data'] !== false;
+}
+
 // Igual que _normOrderKey() en pedidos-vivo-cocina.js: quita '#' y una 'T' inicial
 function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
@@ -1239,16 +1249,20 @@ try {
     // Solo se comprueba aquí, en el camino de un ticket genuinamente nuevo —
     // un reenvío de un pedido YA guardado (justo arriba) no necesita volver
     // a demostrar nada, porque ya lo demostró la primera vez.
-    // Única excepción: pedido "desde el local" con el código del QR del
+    // Excepciones: pedido "desde el local" con el código del QR del
     // mostrador válido y de hoy (ver localCodeValido arriba) — el cliente
     // lo tiene el personal delante, así que no hace falta comprobar su
-    // teléfono. Revalidado aquí de verdad contra Firebase, no basta con que
-    // el navegador diga esPedidoLocal=true.
-    $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
-    $localCodeRecibido = isset($payload['localCode']) ? (string)$payload['localCode'] : '';
-    if (!validarSmsToken($smsToken, $phoneClean) && !localCodeValido($databaseURL, $accessToken, $localCodeRecibido, $todayKey)) {
-        echo json_encode(['success' => false, 'error' => 'No se ha podido verificar tu teléfono. Vuelve a intentarlo desde el principio del pedido.']);
-        exit;
+    // teléfono — o que el panel haya desactivado la verificación SMS entera
+    // a mano (interruptor de emergencia, ej. Twilio caído). Ninguna de las
+    // dos se fía de lo que diga el navegador: las dos se revalidan aquí de
+    // verdad contra Firebase.
+    if (smsVerificacionActivaGlobal($databaseURL, $accessToken)) {
+        $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
+        $localCodeRecibido = isset($payload['localCode']) ? (string)$payload['localCode'] : '';
+        if (!validarSmsToken($smsToken, $phoneClean) && !localCodeValido($databaseURL, $accessToken, $localCodeRecibido, $todayKey)) {
+            echo json_encode(['success' => false, 'error' => 'No se ha podido verificar tu teléfono. Vuelve a intentarlo desde el principio del pedido.']);
+            exit;
+        }
     }
 
     $ticketData = [

@@ -1368,7 +1368,13 @@ async function _submitOrderInner() {
   // código y su fecha de verdad contra Firebase (ver localCodeValido allí)
   // antes de aceptar un pedido sin smsToken, así que un pedido con
   // esPedidoLocal falseado a mano sin el código real seguiría rechazándose.
-  if (_sinGastosPorCodigoLocalSubmit) {
+  // Interruptor de emergencia del panel (Twilio caído, etc.) — mientras
+  // esté desactivado, ningún pedido pide SMS, no solo los del QR local.
+  // guardar-pedido.php vuelve a comprobar config/smsVerificacionActiva de
+  // verdad contra Firebase antes de aceptar un pedido sin smsToken, así
+  // que esto tampoco basta por sí solo si alguien lo falsea a mano.
+  const _smsDesactivadaSubmit = (typeof getSmsVerificacionActiva === 'function') && !getSmsVerificacionActiva();
+  if (_sinGastosPorCodigoLocalSubmit || _smsDesactivadaSubmit) {
     const _codigoLocalUsado = ((document.getElementById('local-fee-code-input') || {}).value || '').trim().toUpperCase();
     window._pendingOrderData.localCode = _codigoLocalUsado;
     btn.disabled = false;

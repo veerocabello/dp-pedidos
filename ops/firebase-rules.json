@@ -25,6 +25,7 @@
       "fee2Config": { ".read": true },
       "studentDiscountConfig": { ".read": true },
       "localFeeCode": { ".read": true },
+      "smsVerificacionActiva": { ".read": true },
       "tiendaEsperaMinutos": { ".read": true },
       "pausaExpresHasta": { ".read": true },
       "avisoSaturacionEstado": { ".read": true },

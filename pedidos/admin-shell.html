@@ -1131,6 +1131,14 @@
               Cargando…
             </button>
           </div>
+          <div class="row">
+            <span class="row-icon">📵</span>
+            <div class="row-text"><div class="row-title">Verificación SMS obligatoria</div><div class="row-desc">Si la desactivas, cualquiera puede pedir sin confirmar su móvil</div></div>
+            <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+              <input type="checkbox" id="sms-verificacion-activa-check" checked onchange="toggleSmsVerificacionActiva(this.checked)" style="opacity:0;width:0;height:0">
+              <span id="sms-verificacion-toggle-track" style="position:absolute;inset:0;background:var(--brown);border-radius:24px;transition:.2s;cursor:pointer"></span>
+            </label>
+          </div>
           <div class="row" onclick="bimbaIrAEmail()">
             <span class="row-icon">✉️</span>
             <div class="row-text"><div class="row-title">Email</div></div>

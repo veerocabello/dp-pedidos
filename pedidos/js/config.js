@@ -463,6 +463,13 @@ function _initFirebase() {
   // TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda)
   window.fb_saveTiendaEsperaMinutos = async function(min) { await jset("config/tiendaEsperaMinutos", min); };
   window.fb_listenTiendaEsperaMinutos = function(cb) { return jlisten("config/tiendaEsperaMinutos", function(sn){ cb(sn.exists()?sn.val():0); }); };
+  // VERIFICACIÓN SMS OBLIGATORIA — interruptor de emergencia (Twilio caído,
+  // etc.). Si no hay valor guardado se trata como activada (true), que es
+  // el comportamiento de siempre — así una instalación que nunca lo toque
+  // sigue exigiendo el SMS como hasta ahora.
+  window.fb_saveSmsVerificacionActiva = async function(v) { await jset("config/smsVerificacionActiva", v); };
+  window.fb_listenSmsVerificacionActiva = function(cb) { return jlisten("config/smsVerificacionActiva", function(sn){ cb(sn.exists() ? sn.val() !== false : true); }); };
+  window.fb_loadSmsVerificacionActiva = async function() { var sn = await jget("config/smsVerificacionActiva"); return sn.exists() ? sn.val() !== false : true; };
   // INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu pedido?",
   // recibidas y guardadas por webhook-incidencia.php en el nodo "incidencias")
   window.fb_listenIncidencias = function(cb) { return jlisten("incidencias", function(sn){ cb(sn.exists()?sn.val():{}); }); };

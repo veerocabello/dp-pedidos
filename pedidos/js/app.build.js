@@ -1486,6 +1486,15 @@ function loadFee2FromFirebase() {
 }
 
 // ── DESCUENTO ESTUDIANTE/JUBILADO (lectura — el cliente marca la casilla) ──
+// ── VERIFICACIÓN SMS OBLIGATORIA (interruptor de emergencia) ── — por
+// defecto activada (si nunca se ha guardado nada, se trata como 'true'
+// para no cambiar el comportamiento de siempre en ninguna instalación).
+const SMS_VERIFICACION_ACTIVA_KEY = 'dpf_sms_verificacion_activa';
+function getSmsVerificacionActiva() {
+  const v = localStorage.getItem(SMS_VERIFICACION_ACTIVA_KEY);
+  return v === null ? true : v === 'true';
+}
+
 const STUDENT_DISCOUNT_ENABLED_KEY = 'dpf_student_discount_enabled';
 const STUDENT_DISCOUNT_PCT_KEY = 'dpf_student_discount_pct';
 function getStudentDiscountEnabled() {
@@ -3425,6 +3434,17 @@ function initFirebaseListeners() {
       if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
       if (typeof bimbaRenderFichajeLista === 'function') bimbaRenderFichajeLista();
       if (typeof bimbaActualizarContadorAlertas === 'function') bimbaActualizarContadorAlertas();
+    });
+  }
+
+  // Verificación SMS obligatoria — sync en tiempo real, para que un cambio
+  // desde el panel (o desde otro dispositivo) se refleje aquí sin recargar.
+  if (window.fb_listenSmsVerificacionActiva) {
+    window.fb_listenSmsVerificacionActiva(function (activa) {
+      localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, activa ? 'true' : 'false');
+      const check = document.getElementById('sms-verificacion-activa-check');
+      if (check) check.checked = activa;
+      if (typeof _actualizarTrack === 'function') _actualizarTrack('sms-verificacion-toggle-track', activa);
     });
   }
 
@@ -6207,7 +6227,13 @@ async function _submitOrderInner() {
   // código y su fecha de verdad contra Firebase (ver localCodeValido allí)
   // antes de aceptar un pedido sin smsToken, así que un pedido con
   // esPedidoLocal falseado a mano sin el código real seguiría rechazándose.
-  if (_sinGastosPorCodigoLocalSubmit) {
+  // Interruptor de emergencia del panel (Twilio caído, etc.) — mientras
+  // esté desactivado, ningún pedido pide SMS, no solo los del QR local.
+  // guardar-pedido.php vuelve a comprobar config/smsVerificacionActiva de
+  // verdad contra Firebase antes de aceptar un pedido sin smsToken, así
+  // que esto tampoco basta por sí solo si alguien lo falsea a mano.
+  const _smsDesactivadaSubmit = (typeof getSmsVerificacionActiva === 'function') && !getSmsVerificacionActiva();
+  if (_sinGastosPorCodigoLocalSubmit || _smsDesactivadaSubmit) {
     const _codigoLocalUsado = ((document.getElementById('local-fee-code-input') || {}).value || '').trim().toUpperCase();
     window._pendingOrderData.localCode = _codigoLocalUsado;
     btn.disabled = false;
