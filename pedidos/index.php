@@ -542,7 +542,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <!-- Dirección -->
   <div style="background:#2B1712;border-radius:14px;padding:16px 20px;max-width:380px;margin:0 auto 20px;text-align:center;">
     <div style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin-bottom:4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</div>
-    <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;">Frente al Supermercado Dani</div>
+    <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">Frente al Supermercado Dani</div>
+    <a href="https://www.google.com/maps/dir/?api=1&destination=Carretera%20de%20M%C3%A1laga%20111%2C%2018015%20Granada" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:8px 18px;border-radius:99px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif;">📍 Cómo llegar</a>
   </div>
 
   <!-- Botones redes + teléfono -->
