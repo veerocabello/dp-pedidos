@@ -555,7 +555,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
   <!-- Reseña -->
   <div style="display:flex;justify-content:center;margin-bottom:20px;">
-    <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:10px 22px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;">⭐ Déjanos una reseña</a>
+    <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#4285F4;color:#FFFFFF;text-decoration:none;padding:10px 22px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;">⭐ Déjanos una reseña</a>
   </div>
 
   <!-- Formulario de incidencias -->
