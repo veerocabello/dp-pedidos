@@ -2602,6 +2602,35 @@ function _bimbaPintarRangoTexto() {
 let _equipoPagoConfig = {};
 let _equipoHorasManual = {};
 let _equipoUltimoTotalPersonal = 0;
+// Facturación real del periodo, sacada de stats/<fecha>.total (lo mismo que
+// ya se guarda por cada pedido en guardar-pedido.php) — mismo patrón que
+// _estrellasObtenerVentas() de más abajo para ventasProductos, ya que
+// stats/ también está indexado por fecha. Antes había que teclear este
+// número a mano cada vez; ahora se rellena solo y se puede seguir
+// editando encima (por si hay ventas en mano/otro sitio que sumar).
+async function _facturacionObtenerTotal(inicio, fin) {
+  let total = 0;
+  try {
+    const snap = await firebase.database().ref('stats').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snap.exists()) {
+      snap.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        total += Number(dia.total) || 0;
+      });
+    }
+  } catch (e) {
+    console.warn('[equipo] error leyendo facturación real', e);
+  }
+  return total;
+}
+async function _equipoRellenarFacturacionAuto() {
+  const { inicio, fin } = _equipoRangoPeriodo();
+  const facturacionEl = document.getElementById('equipo-facturacion');
+  if (!facturacionEl) return;
+  const total = await _facturacionObtenerTotal(inicio, fin);
+  facturacionEl.value = total > 0 ? total.toFixed(2) : '';
+  bimbaEquipoFacturacionChange();
+}
 async function bimbaRenderEquipoFacturacion() {
   _equipoHorasManual = {};
   const customDiv = document.getElementById('equipo-fechas-custom');
@@ -2625,6 +2654,7 @@ async function bimbaRenderEquipoFacturacion() {
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarRangoTexto();
   _bimbaPintarCalcEquipo(empleados);
+  _equipoRellenarFacturacionAuto();
 }
 function _bimbaPintarConfigEquipo(empleados) {
   const el = document.getElementById('config-empleados');
@@ -2773,6 +2803,7 @@ function bimbaEquipoPeriodoChange() {
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarRangoTexto();
   _bimbaPintarCalcEquipo(empleados);
+  _equipoRellenarFacturacionAuto();
 }
 function bimbaEquipoFacturacionChange() {
   _bimbaPintarResultadoEquipo(_equipoUltimoTotalPersonal);
