@@ -772,12 +772,37 @@ function cancelarPausaExpres() {
 // ── VERIFICACIÓN SMS OBLIGATORIA (interruptor de emergencia, ej. Twilio
 // caído) — desactivarla hace que cualquiera pueda confirmar un pedido sin
 // demostrar que el teléfono es suyo, así que solo debería usarse el tiempo
-// justo hasta que el SMS vuelva a funcionar. ──
-async function toggleSmsVerificacionActiva(checked) {
-  localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, checked ? 'true' : 'false');
-  if (typeof _actualizarTrack === 'function') _actualizarTrack('sms-verificacion-toggle-track', checked);
-  if (window.fb_saveSmsVerificacionActiva) await window.fb_saveSmsVerificacionActiva(checked).catch(() => {});
-  logActivity(checked ? '📵 Verificación SMS obligatoria reactivada' : '🚨 Verificación SMS DESACTIVADA — cualquiera puede pedir sin confirmar su móvil');
+// justo hasta que el SMS vuelva a funcionar. Mismo patrón visual que el
+// botón de "Modo vacaciones" (vacaciones.js) — texto Activado/Desactivado
+// en vez de un simple interruptor, para que el estado real se lea de un
+// vistazo sin depender del color solo. ──
+function _renderSmsVerifBtn(activa) {
+  const btn = document.getElementById('sms-verificacion-toggle-btn');
+  if (!btn) return;
+  window._smsVerificacionActivaAdmin = activa;
+  btn.textContent = activa ? 'Activado' : '🚨 Desactivado';
+  btn.style.background = activa ? '#F5E6C8' : '#c0392b';
+  btn.style.color = activa ? '#8A6A4E' : '#fff';
+}
+function loadSmsVerificacionStatus() {
+  const btn = document.getElementById('sms-verificacion-toggle-btn');
+  if (!btn) return;
+  (window.fb_loadSmsVerificacionActiva ? window.fb_loadSmsVerificacionActiva() : Promise.resolve(getSmsVerificacionActiva()))
+    .then(activa => _renderSmsVerifBtn(activa !== false))
+    .catch(() => { btn.textContent = '⚠️ Error'; });
+}
+async function toggleSmsVerificacionActivaAdmin() {
+  const btn = document.getElementById('sms-verificacion-toggle-btn');
+  const nuevoEstado = !window._smsVerificacionActivaAdmin;
+  if (btn) btn.textContent = 'Cargando…';
+  try {
+    if (window.fb_saveSmsVerificacionActiva) await window.fb_saveSmsVerificacionActiva(nuevoEstado);
+    localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, nuevoEstado ? 'true' : 'false');
+    _renderSmsVerifBtn(nuevoEstado);
+    logActivity(nuevoEstado ? '📵 Verificación SMS obligatoria reactivada' : '🚨 Verificación SMS DESACTIVADA — cualquiera puede pedir sin confirmar su móvil');
+  } catch (e) {
+    if (btn) btn.textContent = '⚠️ Error';
+  }
 }
 
 // ── CONFIGURACIÓN DEL TICKET (guardar desde el panel) ──

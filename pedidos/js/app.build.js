@@ -3442,9 +3442,7 @@ function initFirebaseListeners() {
   if (window.fb_listenSmsVerificacionActiva) {
     window.fb_listenSmsVerificacionActiva(function (activa) {
       localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, activa ? 'true' : 'false');
-      const check = document.getElementById('sms-verificacion-activa-check');
-      if (check) check.checked = activa;
-      if (typeof _actualizarTrack === 'function') _actualizarTrack('sms-verificacion-toggle-track', activa);
+      if (typeof _renderSmsVerifBtn === 'function') _renderSmsVerifBtn(activa);
     });
   }
 
