@@ -2247,7 +2247,7 @@ function bimbaMkIdeaCardHtml(i) {
     + '<div style="font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-line' + (hecha ? ';text-decoration:line-through' : '') + '">' + _mkFormatearTexto(i.idea) + '</div>'
     + '</div>'
     + '<div style="display:flex;align-items:center;gap:8px;margin-top:12px">'
-    + '<span onclick="bimbaToggleMkIdeaHecha(\'' + i.id + '\')" title="' + (hecha ? 'Marcar como pendiente' : 'Marcar como hecha') + '" style="font-size:20px;cursor:pointer;line-height:1">' + (hecha ? '✅' : '⬜️') + '</span>'
+    + '<span onclick="bimbaToggleMkIdeaHecha(\'' + i.id + '\')" title="' + (hecha ? 'Marcar como pendiente' : 'Marcar como hecha') + '" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;border:2px solid ' + (hecha ? '#27855a' : '#D8C7A6') + ';background:' + (hecha ? '#27855a' : '#fff') + ';color:#fff;font-size:14px;font-weight:900;line-height:1;cursor:pointer;flex-shrink:0">' + (hecha ? '✓' : '') + '</span>'
     + '<div style="flex:1"></div>'
     + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="width:36px;height:32px;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;font-size:15px;cursor:pointer">✏️</button>'
     + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="width:36px;height:32px;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;font-size:15px;cursor:pointer">🗑️</button>'
