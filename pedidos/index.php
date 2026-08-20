@@ -662,7 +662,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
        visual a quien ya sabe lo que quiere pedir. -->
   <details style="max-width:380px;margin:0 auto 14px;text-align:left;">
     <summary style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;cursor:pointer;text-align:center;">🥔 SOBRE NOSOTROS</summary>
-    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.6;font-family:'DM Sans',sans-serif;">Dulce Patata Food es un local de comida artesanal en Granada, especializado en patatas asadas. También tenemos boniatos fries, paninis, cookies, tartas y bebidas. Haz tu pedido en esta web y recógelo en tienda, en Carretera de Málaga 111 (frente al Supermercado Dani), pagando al recoger con tarjeta o efectivo. Si prefieres que te lo llevemos a casa, pide por Glovo, Just Eat o Uber Eats.</p>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.6;font-family:'DM Sans',sans-serif;">Dulce Patata Food es un local de comida artesanal en Granada, especializado en patatas asadas. También tenemos boniato fries, paninis, cookies, tartas y bebidas. Haz tu pedido en esta web y recógelo en tienda, en Carretera de Málaga 111 (frente al Supermercado Dani), pagando al recoger con tarjeta o efectivo. Si prefieres que te lo llevemos a casa, pide por Glovo, Just Eat o Uber Eats.</p>
   </details>
 
   <!-- Preguntas frecuentes — <details> nativo: cerrado por defecto, cada
