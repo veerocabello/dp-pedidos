@@ -30,6 +30,15 @@ const FIDELIZACION_META = 10;
 // comprueba el navegador (FIDELIZACION_PEDIDO_MINIMO en carrito-checkout.js),
 // pero exigido aquí también porque el navegador no es de fiar.
 const FIDELIZACION_PEDIDO_MINIMO = 5;
+// Tope de premios sin canjear que un mismo teléfono puede tener acumulados
+// a la vez — antes no había límite: alguien que completara varios ciclos
+// de 10 sellos seguidos sin venir a canjear ninguno podía acumular
+// premiosPendientes sin fin. Al llegar al tope, el sello NO se pierde
+// (sería injusto para quien ya se lo ha currado) — la tarjeta se queda
+// "a las puertas" del siguiente premio (sellos = META-1) hasta que canjee
+// alguno de los que ya tiene pendientes; en cuanto lo haga, el siguiente
+// pedido con patata completa el ciclo con normalidad.
+const FIDELIZACION_MAX_PREMIOS_PENDIENTES = 3;
 
 // ── LÍMITE DE INTENTOS: máximo 30 peticiones por IP cada 5 minutos ──
 // (más alto que otros endpoints porque "consultar" se llama cada vez
@@ -492,10 +501,17 @@ try {
             $cliente['sellos'] += 1;
             $completoCicloAhora = false;
             if ($cliente['sellos'] >= FIDELIZACION_META) {
-                $cliente['sellos'] = 0;
-                $cliente['premiosPendientes'] += 1;
-                $cliente['vecesCompletado'] += 1;
-                $completoCicloAhora = true;
+                if ($cliente['premiosPendientes'] < FIDELIZACION_MAX_PREMIOS_PENDIENTES) {
+                    $cliente['sellos'] = 0;
+                    $cliente['premiosPendientes'] += 1;
+                    $cliente['vecesCompletado'] += 1;
+                    $completoCicloAhora = true;
+                } else {
+                    // Tope de premios pendientes alcanzado — se queda a 1
+                    // sello de completar (no se pierde ni se sigue sumando
+                    // de más) hasta que canjee alguno de los que ya tiene.
+                    $cliente['sellos'] = FIDELIZACION_META - 1;
+                }
             }
 
             // Registro de cuándo se pone cada sello (con el pedido que lo
