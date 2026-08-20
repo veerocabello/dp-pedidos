@@ -367,8 +367,9 @@ const DIETARY_TAGS = [
   { id: 'altramuces', emoji: '🌱', label: 'Altramuces', color: '#B7950B' },
   { id: 'moluscos', emoji: '🐚', label: 'Moluscos', color: '#17A589' }
 ];
-// Genera el HTML de las insignias de alérgenos de un producto (icono de
-// color + nombre corto), para ponerlas justo al lado del nombre del
+// Genera el HTML de las insignias de alérgenos de un producto (solo el
+// icono de color, sin texto — el nombre completo sale al pasar el ratón
+// por encima, con el title), para ponerlas justo al lado del nombre del
 // producto — se usa tanto en la carta real (nucleo-compartido.js) como en
 // la lista del panel de admin (admin-config.js), así se ven de un vistazo
 // en los dos sitios sin tener que abrir nada.
@@ -376,7 +377,7 @@ function dietaryTagsHtml(item) {
   if (!Array.isArray(item.tags) || !item.tags.length) return '';
   return '<span class="item-tags">' + item.tags.map(tid => {
     const t = DIETARY_TAGS.find(d => d.id === tid);
-    return t ? '<span class="item-tag" title="Contiene ' + t.label + '"><span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</span>' : '';
+    return t ? '<span class="allergen-icon" style="background:' + t.color + '" title="Contiene ' + t.label + '">' + t.emoji + '</span>' : '';
   }).join('') + '</span>';
 }
 function initTabs() {

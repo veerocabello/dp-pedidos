@@ -472,29 +472,19 @@
     vertical-align: middle;
     margin-left: 6px;
   }
-  .item-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--muted);
-    background: rgba(61,31,13,0.06);
-    border-radius: 99px;
-    padding: 2px 8px 2px 2px;
-    white-space: nowrap;
-  }
-  /* Círculo de color con el icono de cada alérgeno. */
+  /* Círculo de color con el icono de cada alérgeno — solo el icono, sin
+     texto (el nombre completo sale al pasar el ratón por encima). */
   .allergen-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 19px;
+    height: 19px;
     border-radius: 50%;
-    font-size: 9px;
+    font-size: 10.5px;
     line-height: 1;
     flex-shrink: 0;
+    cursor: default;
   }
 
   /* ── BUSCADOR ── */
