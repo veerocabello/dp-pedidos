@@ -535,7 +535,7 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [])
 // "Estrellas y perdedores" llevaba vacío. Ahora lo hace este script con la
 // cuenta de servicio, igual que el resto de nodos solo-admin. Los items no
 // llevan el id del producto (solo name/qty/subtotal), así que se busca por
-// nombre contra config/menu — igual que comprobarPreciosSospechosos() de
+// nombre contra config/menu — igual que corregirPreciosCatalogo() de
 // abajo.
 function _idsDeProductosPorNombre($databaseURL, $accessToken) {
     $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
@@ -600,14 +600,19 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
     _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas);
 }
 
-// ── Comprobación (solo aviso, nunca bloquea el pedido) de que el precio
-// enviado por el navegador coincide con el precio real del menú. Solo
-// compara productos normales de la carta por nombre exacto — los
-// personalizados (Al Gusto/Bomba) y los "extras" no se verifican aquí,
-// porque su precio depende de una lógica más compleja (ingredientes,
+// ── Corrige (ya NO solo avisa) el precio de los productos de catálogo que
+// no coincidan con el precio real de config/menu — sustituye el subtotal
+// recibido por qty × precio real ANTES de guardar nada, así un total
+// forjado a partir de un precio de catálogo falso deja de colarse (antes
+// se aceptaba el pedido tal cual y solo quedaba un aviso en el panel).
+// Solo corrige productos normales de la carta, encontrados por nombre
+// exacto — los personalizados (Al Gusto/Bomba) y los "extras" NO se tocan
+// aquí, porque su precio depende de una lógica más compleja (ingredientes,
 // quesos...) que no merece la pena duplicar en PHP y arriesgar
-// desincronizar del cálculo real del carrito.
-function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
+// desincronizar del cálculo real del carrito: siguen siendo el único hueco
+// de precio no cerrado del todo (ver comprobarTotalSospechoso más abajo,
+// que sí hace de red para el total general).
+function corregirPreciosCatalogo($databaseURL, $accessToken, $items) {
     $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
     // config/menu se guarda como {items:[...], ts} desde admin-config.js,
     // pero puede quedar en el formato legacy (array plano) si no se ha
@@ -626,26 +631,28 @@ function comprobarPreciosSospechosos($databaseURL, $accessToken, $items) {
         if (isset($mi['name'])) $menuPorNombre[$mi['name']] = $mi;
     }
     $avisos = [];
-    foreach ($items as $it) {
+    $corregidos = array_map(function ($it) use ($menuPorNombre, &$avisos) {
         $nombre = $it['name'] ?? null;
-        if (!$nombre || !isset($menuPorNombre[$nombre])) continue; // custom/extra, no catalogado aquí
+        if (!$nombre || !isset($menuPorNombre[$nombre])) return $it; // custom/extra, no catalogado aquí
         $qty = isset($it['qty']) ? (float)$it['qty'] : null;
         $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : null;
-        if ($qty === null || $subtotal === null) continue;
+        if ($qty === null || $subtotal === null) return $it;
         // qty:0 con subtotal>0 es tan sospechoso como un precio que no
-        // cuadra (antes se ignoraba del todo — qty>0 era obligatorio para
-        // entrar aquí, así que un qty:0 se saltaba el aviso sin más).
+        // cuadra, pero no hay con qué cantidad corregirlo — se deja pasar,
+        // solo queda constancia en el aviso para revisión manual.
         if ($qty <= 0) {
-            if ($subtotal > 0.02) $avisos[] = sprintf('%s: qty=0 pero subtotal %.2f€', $nombre, $subtotal);
-            continue;
+            if ($subtotal > 0.02) $avisos[] = sprintf('%s: qty=0 pero subtotal %.2f€ (sin corregir, revisar a mano)', $nombre, $subtotal);
+            return $it;
         }
-        $precioReal = (float)$menuPorNombre[$nombre]['price'];
+        $precioReal = round((float)$menuPorNombre[$nombre]['price'], 2);
         $precioEnviado = $subtotal / $qty;
         if (abs($precioEnviado - $precioReal) > 0.02) {
-            $avisos[] = sprintf('%s: enviado %.2f€, precio real %.2f€', $nombre, $precioEnviado, $precioReal);
+            $avisos[] = sprintf('%s: enviado %.2f€, corregido a precio real %.2f€', $nombre, $precioEnviado, $precioReal);
+            $it['subtotal'] = round($precioReal * $qty, 2);
         }
-    }
-    return $avisos;
+        return $it;
+    }, $items);
+    return ['items' => $corregidos, 'avisos' => $avisos];
 }
 
 // ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
@@ -721,22 +728,28 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
     return null;
 }
 
-// ── Comprobación (solo aviso, nunca bloquea el pedido) de que el TOTAL
-// enviado no sea más bajo de lo que un descuento/premio legítimo podría
-// explicar. La comprobación de precios de arriba solo mira productos que
-// coinciden por nombre con la carta — esto la complementa mirando el
-// total final, que hasta ahora no se verificaba en absoluto: se podía
-// pedir con productos reales a precio real y aun así forzar el total a
-// cualquier cifra.
+// ── Comprobación del TOTAL (ya NO solo aviso — rechaza el pedido si no
+// cuadra) de que el TOTAL enviado no sea más bajo de lo que un descuento/
+// premio legítimo podría explicar. La comprobación de precios de arriba
+// (corregirPreciosCatalogo) ya corrige los productos de catálogo antes de
+// llegar aquí — esto complementa mirando el total final en conjunto, por
+// si alguien manda productos/precios reales pero fuerza el total a mano a
+// una cifra menor sin relación con la suma real.
 //
-// Margen que SÍ se admite como legítimo (no genera aviso):
+// Margen que SÍ se admite como legítimo (no bloquea el pedido):
 //  - El código de descuento aplicado (si lo hay), por su % real guardado.
 //  - El premio de fidelización (patata gratis), aproximado como el precio
 //    unitario de la patata más cara del carrito — igual que calcula el
 //    propio navegador en _finalizarPedido() (carrito-checkout.js).
-// No se puede saber desde aquí si el cliente REALMENTE tenía derecho a
-// ese premio, así que se admite siempre como margen: es mejor un falso
-// negativo ocasional que bloquear/avisar de pedidos legítimos.
+//  - Un colchón fijo de 0,30€ además de lo anterior, para no rechazar un
+//    pedido legítimo por un redondeo o un caso límite que esta función no
+//    haya sabido calcular exactamente — ahora que esto bloquea el pedido
+//    de verdad conviene un margen algo más generoso que cuando solo era un
+//    aviso informativo (antes 0,05€).
+// No se puede saber desde aquí si el cliente REALMENTE tenía derecho al
+// premio de fidelización, así que se admite siempre como margen: es mejor
+// dejar pasar alguna vez ese caso puntual (que ya se avisa en su propio
+// sitio, ver fidelizacionElegible) que bloquear pedidos legítimos por él.
 function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado) {
     $itemsSum = 0;
     $maxPatataUnit = 0;
@@ -797,7 +810,7 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
     // ya envía como máximo uno de los tres "activo" a la vez, pero por si
     // alguien llamara a este endpoint directamente saltándose esa lógica,
     // aquí se admite como margen el mayor de los tres, nunca la suma.
-    $margen = $maxPatataUnit + max($descuentoCodigo, $margenEstudiante, $margenOfertaRelampago) + 0.05;
+    $margen = $maxPatataUnit + max($descuentoCodigo, $margenEstudiante, $margenOfertaRelampago) + 0.30;
     if ($total < ($itemsSum - $margen)) {
         return sprintf('total enviado %.2f€, suma de productos %.2f€ (margen de descuentos/premio admitido: %.2f€)', $total, $itemsSum, $margen);
     }
@@ -878,6 +891,86 @@ function detectarPosibleDuplicado($databaseURL, $accessToken, $fecha, $phone, $t
         }
     }
     return null;
+}
+
+// ── Comprobación del código de descuento (SÍ bloquea el pedido) ── Antes
+// el límite de usos (maxUses) solo se avisaba DESPUÉS de guardar el pedido
+// (ver el incremento de uso más abajo en el flujo principal) — el pedido
+// ya se había guardado con el descuento aplicado, aunque el código llevara
+// agotado, y quien lo compartiera podía seguir usándolo sin límite. Ahora
+// se comprueba ANTES de guardar nada: si el código no existe, ya caducó
+// (premios de ruleta/rasca, expiran a las 48h) o ya alcanzó su máximo de
+// usos, se rechaza el pedido entero para que el cliente lo reintente sin
+// ese descuento.
+function discountCodeInvalido($databaseURL, $accessToken, $discountCode) {
+    $leido = fbGetConEtag($databaseURL, 'discounts/' . $discountCode, $accessToken);
+    $cupon = is_array($leido['data']) ? $leido['data'] : null;
+    if (!$cupon) return 'Este código de descuento ya no existe.';
+    $usos = is_numeric($cupon['uses'] ?? null) ? (int)$cupon['uses'] : 0;
+    $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
+    if ($maxUsos !== null && $usos >= $maxUsos) return 'Este código de descuento ya se ha agotado.';
+    if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) return 'Este código de descuento ha caducado.';
+    return null;
+}
+
+// ── Turnos: caducidad de reservas nunca confirmadas ── Antes reservarSlot
+// solo sumaba 1 al contador slots/<fecha>/<turno> sin dejar rastro de
+// quién lo reservó ni cuándo — si alguien reservaba un turno y nunca
+// llegaba a completar el pedido (o lo hacía a propósito, en bucle, para
+// agotar todos los huecos del día), ese hueco quedaba "ocupado" para
+// siempre, sin ninguna forma de liberarlo salvo cancelar un pedido real
+// que nunca existió. slotReservas/<fecha>/<turno>/<id> = timestamp guarda
+// una marca temporal por cada reserva SIN confirmar todavía; se poda sola
+// (sin cron ni tarea aparte) cada vez que alguien vuelve a reservar ese
+// mismo turno, liberando en slots/ cualquier reserva más vieja que
+// SLOT_RESERVA_TTL_SEGUNDOS — tiempo de sobra para acabar un pedido normal
+// (rellenar datos + verificar SMS) pero no tanto como para dejar huecos
+// fantasma horas enteras.
+define('SLOT_RESERVA_TTL_SEGUNDOS', 720); // 12 minutos
+
+function podarReservasCaducadasSlot($databaseURL, $accessToken, $fecha, $slotTime) {
+    $path = 'slotReservas/' . $fecha . '/' . $slotTime;
+    $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+    $reservas = is_array($leido['data']) ? $leido['data'] : [];
+    if (!$reservas) return;
+    $ahora = microtime(true) * 1000;
+    $vivas = [];
+    $caducadas = 0;
+    foreach ($reservas as $id => $ts) {
+        if (is_numeric($ts) && ($ahora - (float)$ts) < (SLOT_RESERVA_TTL_SEGUNDOS * 1000)) {
+            $vivas[$id] = $ts;
+        } else {
+            $caducadas++;
+        }
+    }
+    if ($caducadas === 0) return;
+    if (fbPutSiCoincide($databaseURL, $path, $accessToken, $vivas ?: null, $leido['etag'])) {
+        for ($i = 0; $i < $caducadas; $i++) {
+            liberarSlot($databaseURL, $accessToken, $fecha, $slotTime);
+        }
+    }
+    // Si el PUT no coincide (otra petición lo tocó a la vez), no pasa nada:
+    // se reintentará podar en la próxima reserva de ese mismo turno.
+}
+
+// Marca UNA reserva pendiente de ese turno como confirmada (el pedido ya
+// se guardó de verdad, con ticket propio que no caduca) — se quita de
+// slotReservas para que deje de estar sujeta a la poda de arriba, sin
+// tocar el contador de slots/ (que ya refleja el hueco ocupado desde que
+// se reservó). No importa cuál de las entradas se borre exactamente: solo
+// hace falta que el número de reservas "podables" baje en una.
+function confirmarReservaSlot($databaseURL, $accessToken, $fecha, $slotTime) {
+    if (!$slotTime) return;
+    $path = 'slotReservas/' . $fecha . '/' . $slotTime;
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+        $reservas = is_array($leido['data']) ? $leido['data'] : [];
+        if (!$reservas) return; // nada que confirmar (ya se podó, o esta reserva es de otro proceso)
+        $primeraClave = array_key_first($reservas);
+        unset($reservas[$primeraClave]);
+        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $reservas ?: null, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
 }
 
 try {
@@ -964,6 +1057,11 @@ try {
         }
         $accessToken = obtenerTokenAcceso($rutaCredenciales);
         $todayKey = date('Y-m-d');
+        // Primero se liberan las reservas de ESTE turno que llevan más de
+        // SLOT_RESERVA_TTL_SEGUNDOS sin convertirse en un pedido real — así
+        // alguien que reserve en bucle sin llegar nunca a pedir no puede
+        // dejar los huecos ocupados para siempre (ver podarReservasCaducadasSlot).
+        podarReservasCaducadasSlot($databaseURL, $accessToken, $todayKey, $slotTime);
         $slotMax = obtenerSlotMax($databaseURL, $accessToken);
         $path = 'slots/' . $todayKey . '/' . $slotTime;
         $reservado = false;
@@ -976,6 +1074,19 @@ try {
             }
             if (fbPutSiCoincide($databaseURL, $path, $accessToken, $count + 1, $leido['etag'])) { $reservado = true; break; }
             usleep(rand(20000, 80000));
+        }
+        if ($reservado) {
+            // Marca temporal de esta reserva concreta — se confirma (deja de
+            // caducar) si el pedido llega a guardarse de verdad más abajo, o
+            // se poda sola pasado el TTL si el cliente nunca termina.
+            $reservaPath = 'slotReservas/' . $todayKey . '/' . $slotTime;
+            for ($i = 0; $i < 3; $i++) {
+                $leidoR = fbGetConEtag($databaseURL, $reservaPath, $accessToken);
+                $reservas = is_array($leidoR['data']) ? $leidoR['data'] : [];
+                $reservas[uniqid('r', true)] = (int)(microtime(true) * 1000);
+                if (fbPutSiCoincide($databaseURL, $reservaPath, $accessToken, $reservas, $leidoR['etag'])) break;
+                usleep(rand(20000, 80000));
+            }
         }
         echo json_encode($reservado
             ? ['success' => true]
@@ -1195,14 +1306,27 @@ try {
         exit;
     }
 
-    // ── 0. COMPROBACIÓN DE PRECIOS Y TOTAL (solo aviso, nunca bloquea el pedido) ──
-    $avisosPrecios = comprobarPreciosSospechosos($databaseURL, $accessToken, $items);
-    if ($avisosPrecios) {
-        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible precio manipulado en pedido ' . $orderNum . ' — ' . implode(' · ', $avisosPrecios));
+    // ── 0a. CÓDIGO DE DESCUENTO (SÍ bloquea si ya no es válido) ──
+    if ($discountCode) {
+        $errorDescuento = discountCodeInvalido($databaseURL, $accessToken, $discountCode);
+        if ($errorDescuento) {
+            echo json_encode(['success' => false, 'error' => $errorDescuento]);
+            exit;
+        }
+    }
+
+    // ── 0b. PRECIOS DE CATÁLOGO (se corrigen, no solo se avisa) y TOTAL
+    // (SÍ bloquea el pedido si no cuadra ni con el margen admitido) ──
+    $corrPrecios = corregirPreciosCatalogo($databaseURL, $accessToken, $items);
+    $items = $corrPrecios['items'];
+    if ($corrPrecios['avisos']) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de catálogo corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPrecios['avisos']));
     }
     $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado);
     if ($avisoTotal) {
-        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Posible total manipulado en pedido ' . $orderNum . ' — ' . $avisoTotal);
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido ' . $orderNum . ' rechazado por total manipulado — ' . $avisoTotal);
+        echo json_encode(['success' => false, 'error' => 'No se pudo verificar el importe del pedido. Recarga la página e inténtalo de nuevo.']);
+        exit;
     }
     $avisosFees = comprobarFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal, $orderNum);
     if ($avisosFees) {
@@ -1289,6 +1413,7 @@ try {
         exit;
     }
     dpf_backup_pedido_local($ticketData);
+    if ($slotTime) confirmarReservaSlot($databaseURL, $accessToken, $todayKey, $slotTime);
 
     // ── 2. ACTUALIZAR ESTADÍSTICAS DEL DÍA (lo que lee "Pedidos en vivo") ──
     // stats/<fecha> es UN único nodo compartido por todos los pedidos del

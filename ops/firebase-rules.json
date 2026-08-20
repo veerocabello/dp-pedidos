@@ -4,6 +4,10 @@
       ".read": true,
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
+    "slotReservas": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+    },
     "tickets": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
@@ -98,8 +102,11 @@
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
     "discounts": {
-      ".read": true,
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
+      "$code": {
+        ".read": true
+      }
     },
     "ruleta_config": {
       ".read": true,
