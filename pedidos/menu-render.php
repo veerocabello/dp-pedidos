@@ -86,6 +86,14 @@ function dpf_menu_actual() {
 // ni nada interactivo, solo el contenido real: nombre, descripción y
 // precio de cada producto, agrupado por categoría igual que en la carta
 // de verdad.
+// Mismo catálogo que DIETARY_TAGS en carta.js — mantener los dos en sync
+// si se añade o cambia alguna etiqueta.
+const DPF_DIETARY_TAGS = [
+    'veg'        => ['emoji' => '🌱', 'label' => 'Vegetariano'],
+    'vegano'     => ['emoji' => '🌿', 'label' => 'Vegano'],
+    'singluten'  => ['emoji' => '🌾', 'label' => 'Sin gluten'],
+    'picante'    => ['emoji' => '🌶️', 'label' => 'Picante'],
+];
 function dpf_menu_html($menu) {
     $emojiMap = ['Patatas' => '🥔', 'Boniato' => '🍠', 'Paninis' => '🍕', 'Cookies' => '🍪', 'Tartas' => '🍰', 'Bebidas' => '🥤'];
     $porCategoria = [];
@@ -101,10 +109,21 @@ function dpf_menu_html($menu) {
         $html .= '<div class="menu-cat-sep"><div class="menu-cat-left"><h3 class="menu-cat-name">' . htmlspecialchars($emoji ? $emoji . ' ' . mb_strtoupper($cat) : mb_strtoupper($cat)) . '</h3></div></div>';
         foreach ($items as $item) {
             $precio = number_format((float)($item['price'] ?? 0), 2, ',', '');
+            $tagsHtml = '';
+            if (!empty($item['tags']) && is_array($item['tags'])) {
+                $chips = '';
+                foreach ($item['tags'] as $tid) {
+                    if (!isset(DPF_DIETARY_TAGS[$tid])) continue;
+                    $t = DPF_DIETARY_TAGS[$tid];
+                    $chips .= '<span class="item-tag">' . $t['emoji'] . ' ' . htmlspecialchars($t['label']) . '</span>';
+                }
+                if ($chips) $tagsHtml = '<div class="item-tags">' . $chips . '</div>';
+            }
             $html .= '<div class="item-card">'
                 . '<div class="item-info">'
                 . '<div class="item-name">' . htmlspecialchars($item['name'] ?? '') . '</div>'
                 . '<div class="item-desc">' . htmlspecialchars($item['desc'] ?? '') . '</div>'
+                . $tagsHtml
                 . '</div>'
                 . '<div class="item-price">' . $precio . ' €</div>'
                 . '</div>';

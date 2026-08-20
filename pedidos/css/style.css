@@ -461,6 +461,46 @@
     color: var(--gold);
   }
 
+  /* ── FILTRO DE DIETA/ALÉRGENOS ── */
+  .allergen-filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: -8px 0 16px;
+  }
+  .allergen-chip {
+    padding: 5px 12px;
+    border-radius: 99px;
+    border: 1.5px solid rgba(61,31,13,0.25);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all .15s;
+  }
+  .allergen-chip.active {
+    background: var(--brown);
+    border-color: var(--brown);
+    color: var(--cream);
+  }
+  .item-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .item-tag {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--muted);
+    background: rgba(61,31,13,0.06);
+    border-radius: 6px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+
   /* ── BUSCADOR ── */
   #menu-search-input {
     width: 100%;

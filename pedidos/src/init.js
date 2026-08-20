@@ -5,6 +5,7 @@
 // parte de admin-config.js que también se quedó ahí.
 initCatBlocks();
 initTabs();
+initAllergenFilters();
 renderMenu();
 renderPromos();
 renderCart();

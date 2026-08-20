@@ -939,7 +939,9 @@ function loadSavedMenu() {
 }
 function renderMenu() {
   window._tartaLastSub = null;
-  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
+  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory))
+    .filter(i => !i.hidden)
+    .filter(i => !activeDietaryFilters.length || activeDietaryFilters.every(t => Array.isArray(i.tags) && i.tags.indexOf(t) !== -1));
   // Ordenar tartas: clásicas primero, especiales después
   var tartasClasicas = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1);
   var tartasEspeciales = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('especial') !== -1);
@@ -1029,6 +1031,12 @@ function renderMenu() {
     const priceHtml = _precioOferta < item.price
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2) + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2) + ' € ⚡</span>'
       : item.price.toFixed(2) + ' €';
+    const tagsHtml = (Array.isArray(item.tags) && item.tags.length)
+      ? '<div class="item-tags">' + item.tags.map(tid => {
+          const t = DIETARY_TAGS.find(d => d.id === tid);
+          return t ? '<span class="item-tag" title="' + t.label + '">' + t.emoji + ' ' + t.label + '</span>' : '';
+        }).join('') + '</div>'
+      : '';
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
@@ -1038,6 +1046,7 @@ function renderMenu() {
       + '<div class="item-info">'
       + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
+      + tagsHtml
       + '</div>'
       + '<div class="item-price">' + priceHtml + '</div>'
       + '<div class="item-controls">' + controls + '</div>'
@@ -3586,6 +3595,7 @@ function _aplicarMenuDesdeFirebase(data) {
       if (saved.desc !== undefined) item.desc = saved.desc;
       item.hidden = saved.hidden || false;
       item.soldout = saved.soldout || false;
+      item.tags = Array.isArray(saved.tags) ? saved.tags : [];
     } else {
       // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
       // junto a los de su misma categoría, no suelto al final
@@ -4048,6 +4058,36 @@ let _adminLoggedIn = false; // true solo cuando hay sesión de admin activa
 let activeCategory = "Todos";
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
 const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
+
+// ── Etiquetas de dieta/alérgenos por producto ── Antes esa información
+// solo estaba en el cartel físico del local — quien miraba la carta desde
+// casa antes de decidir no tenía forma de saber si algo era vegetariano o
+// sin gluten sin llamar o venir a preguntar. item.tags (array de estos ids,
+// opcional) se guarda junto al resto de datos del producto en config/menu.
+const DIETARY_TAGS = [
+  { id: 'veg', emoji: '🌱', label: 'Vegetariano' },
+  { id: 'vegano', emoji: '🌿', label: 'Vegano' },
+  { id: 'singluten', emoji: '🌾', label: 'Sin gluten' },
+  { id: 'picante', emoji: '🌶️', label: 'Picante' }
+];
+let activeDietaryFilters = [];
+function initAllergenFilters() {
+  const el = document.getElementById('allergen-filters');
+  if (!el) return;
+  el.innerHTML = DIETARY_TAGS.map(t => {
+    const active = activeDietaryFilters.indexOf(t.id) !== -1;
+    return '<button class="allergen-chip' + (active ? ' active' : '') + '" onclick="toggleDietaryFilter(\'' + t.id + '\')">' + t.emoji + ' ' + t.label + '</button>';
+  }).join('');
+}
+// AND, no OR: si se marcan dos a la vez (p.ej. Vegano + Sin gluten) es
+// porque se buscan las DOS cosas juntas, no productos que cumplan
+// cualquiera de las dos por separado.
+function toggleDietaryFilter(id) {
+  const idx = activeDietaryFilters.indexOf(id);
+  if (idx === -1) activeDietaryFilters.push(id); else activeDietaryFilters.splice(idx, 1);
+  initAllergenFilters();
+  renderMenu();
+}
 function initTabs() {
   const tabsEl = document.getElementById("tabs");
   tabsEl.innerHTML = categories.map(c => {
@@ -7280,6 +7320,7 @@ function confirmCustomizer() {
 // parte de admin-config.js que también se quedó ahí.
 initCatBlocks();
 initTabs();
+initAllergenFilters();
 renderMenu();
 renderPromos();
 renderCart();

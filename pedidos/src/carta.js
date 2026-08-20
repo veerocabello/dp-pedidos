@@ -336,6 +336,36 @@ let _adminLoggedIn = false; // true solo cuando hay sesión de admin activa
 let activeCategory = "Todos";
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
 const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
+
+// ── Etiquetas de dieta/alérgenos por producto ── Antes esa información
+// solo estaba en el cartel físico del local — quien miraba la carta desde
+// casa antes de decidir no tenía forma de saber si algo era vegetariano o
+// sin gluten sin llamar o venir a preguntar. item.tags (array de estos ids,
+// opcional) se guarda junto al resto de datos del producto en config/menu.
+const DIETARY_TAGS = [
+  { id: 'veg', emoji: '🌱', label: 'Vegetariano' },
+  { id: 'vegano', emoji: '🌿', label: 'Vegano' },
+  { id: 'singluten', emoji: '🌾', label: 'Sin gluten' },
+  { id: 'picante', emoji: '🌶️', label: 'Picante' }
+];
+let activeDietaryFilters = [];
+function initAllergenFilters() {
+  const el = document.getElementById('allergen-filters');
+  if (!el) return;
+  el.innerHTML = DIETARY_TAGS.map(t => {
+    const active = activeDietaryFilters.indexOf(t.id) !== -1;
+    return '<button class="allergen-chip' + (active ? ' active' : '') + '" onclick="toggleDietaryFilter(\'' + t.id + '\')">' + t.emoji + ' ' + t.label + '</button>';
+  }).join('');
+}
+// AND, no OR: si se marcan dos a la vez (p.ej. Vegano + Sin gluten) es
+// porque se buscan las DOS cosas juntas, no productos que cumplan
+// cualquiera de las dos por separado.
+function toggleDietaryFilter(id) {
+  const idx = activeDietaryFilters.indexOf(id);
+  if (idx === -1) activeDietaryFilters.push(id); else activeDietaryFilters.splice(idx, 1);
+  initAllergenFilters();
+  renderMenu();
+}
 function initTabs() {
   const tabsEl = document.getElementById("tabs");
   tabsEl.innerHTML = categories.map(c => {
