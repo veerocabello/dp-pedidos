@@ -623,6 +623,27 @@ function removeCustItem(key) {
   renderMenu();
   renderCart();
 }
+// Abre el personalizador YA relleno con las salsas/ingredientes/extras de
+// una línea que ya está en el carrito — para pedir una segunda patata
+// parecida pero no idéntica sin tener que volver a elegir todo desde cero.
+// No toca la línea original: si el cliente confirma sin cambiar nada, se
+// suma 1 a esa misma línea (mismo comportamiento que pedir dos iguales);
+// si cambia algo, confirmCustomizer() la guarda como línea nueva porque su
+// "huella" de salsas/ingredientes ya no coincide con la original.
+function duplicarCustItem(key) {
+  const item = custCart[key];
+  if (!item) return;
+  openCustomizer(item.menuId);
+  custSelSauces = [...item.sauces];
+  custSelIngredients = [...item.ingredients];
+  custExtraQueso = !!item.extraQueso;
+  custExtraGratinado = !!item.extraGratinado;
+  updateCustExtraUI('queso', custExtraQueso);
+  updateCustExtraUI('gratinado', custExtraGratinado);
+  renderCustChips();
+  updateCustProgress();
+  updateCustTotalPrice();
+}
 function confirmCustomizer() {
   if (isShopBlocked()) {
     showClosedToast();

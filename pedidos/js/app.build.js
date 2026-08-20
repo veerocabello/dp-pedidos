@@ -4602,7 +4602,7 @@ function renderCart() {
     const subtotal = unitPrice * c.qty;
     total += subtotal;
     const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
-    return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
+    return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Duplicar para pedir otra con distintas salsas/ingredientes\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
     const price = getExtrasItemPrice(c);
@@ -7184,6 +7184,27 @@ function removeCustItem(key) {
   delete custCart[key];
   renderMenu();
   renderCart();
+}
+// Abre el personalizador YA relleno con las salsas/ingredientes/extras de
+// una línea que ya está en el carrito — para pedir una segunda patata
+// parecida pero no idéntica sin tener que volver a elegir todo desde cero.
+// No toca la línea original: si el cliente confirma sin cambiar nada, se
+// suma 1 a esa misma línea (mismo comportamiento que pedir dos iguales);
+// si cambia algo, confirmCustomizer() la guarda como línea nueva porque su
+// "huella" de salsas/ingredientes ya no coincide con la original.
+function duplicarCustItem(key) {
+  const item = custCart[key];
+  if (!item) return;
+  openCustomizer(item.menuId);
+  custSelSauces = [...item.sauces];
+  custSelIngredients = [...item.ingredients];
+  custExtraQueso = !!item.extraQueso;
+  custExtraGratinado = !!item.extraGratinado;
+  updateCustExtraUI('queso', custExtraQueso);
+  updateCustExtraUI('gratinado', custExtraGratinado);
+  renderCustChips();
+  updateCustProgress();
+  updateCustTotalPrice();
 }
 function confirmCustomizer() {
   if (isShopBlocked()) {
