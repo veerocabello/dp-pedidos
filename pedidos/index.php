@@ -57,6 +57,13 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600&family=Oswald:wght@300;400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- La imagen del hero se carga por CSS (background-image), así que el
+     navegador no se entera de que existe hasta que termina de leer el CSS
+     — este preload se lo adelanta, para que empiece a bajar en paralelo
+     con el HTML en vez de después. Es la imagen más grande de la portada,
+     normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
+     contenido principal). -->
+<link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
 <link rel="stylesheet" href="css/style.css?v=1787223448192">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
