@@ -119,6 +119,65 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     "menu": "https://pedidos.dulcepatatafood.es/#carta"
   }
   </script>
+  <!-- Mismo texto que el acordeón de "Preguntas frecuentes" del footer —
+       si se cambia uno hay que cambiar el otro, Google exige que el
+       contenido del schema esté también visible en la página. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "¿Puedo pagar con tarjeta o solo en efectivo?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Con las dos: tarjeta o efectivo al recoger tu pedido en tienda."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Hacéis entrega a domicilio o solo recogida en tienda?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Esta web es solo para recoger en tienda. Si prefieres que te lo lleven a casa, puedes pedir por Glovo, Just Eat o Uber Eats — haz clic en sus logos al principio de la web."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Puedo personalizar mi patata con mis propias salsas e ingredientes?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sí, con la Patata Al Gusto eliges tú la salsa y los ingredientes."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Tenéis opciones vegetarianas?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sí, tenemos opciones vegetarianas en la carta."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Los productos tienen información de alérgenos?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sí, tenemos la carta de alérgenos disponible en el propio local."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿A partir de qué hora hay patatas recién asadas?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A partir de las 19:30h."
+        }
+      }
+    ]
+  }
+  </script>
   <?= $dpf_menu_jsonld ?>
 </head>
 <body>
@@ -590,6 +649,39 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <!-- Formulario de incidencias -->
   <div style="display:flex;justify-content:center;margin-bottom:20px;">
     <a href="https://tally.so/r/zxvMMq" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--brown);text-decoration:none;padding:9px 18px;border-radius:99px;border:1.5px solid var(--brown);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;">🚩 ¿Algún problema con tu pedido?</a>
+  </div>
+
+  <!-- Preguntas frecuentes — <details> nativo: cerrado por defecto, cada
+       pregunta ocupa una sola línea hasta que se abre, así no le añade
+       peso visual a la página. El texto de cada pregunta/respuesta tiene
+       que coincidir con el FAQPage del <head> (Google exige que el
+       contenido del schema esté también visible en la página). -->
+  <div style="max-width:380px;margin:0 auto 20px;text-align:left;">
+    <div style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;margin-bottom:8px;text-align:center;">❓ PREGUNTAS FRECUENTES</div>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Puedo pagar con tarjeta o solo en efectivo?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Con las dos: tarjeta o efectivo al recoger tu pedido en tienda.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Hacéis entrega a domicilio o solo recogida en tienda?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Esta web es solo para recoger en tienda. Si prefieres que te lo lleven a casa, puedes pedir por Glovo, Just Eat o Uber Eats — haz clic en sus logos al principio de la web.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Puedo personalizar mi patata con mis propias salsas e ingredientes?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Sí, con la Patata Al Gusto eliges tú la salsa y los ingredientes.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Tenéis opciones vegetarianas?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Sí, tenemos opciones vegetarianas en la carta.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Los productos tienen información de alérgenos?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Sí, tenemos la carta de alérgenos disponible en el propio local.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:0;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿A partir de qué hora hay patatas recién asadas?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">A partir de las 19:30h.</p>
+    </details>
   </div>
 
   <!-- Copyright -->
