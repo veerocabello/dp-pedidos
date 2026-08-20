@@ -73,9 +73,24 @@ function construirBundle(nombreBundle, modulos, buildFile, minFile) {
   });
 }
 
+// css/style.css sigue siendo el archivo que se edita a mano (igual que los
+// módulos de src/ para el JS); aquí se genera aparte una copia minificada
+// que es la que index.php enlaza de verdad, para que la página pese menos
+// y cargue más rápido (Google lo mide directamente en Core Web Vitals).
+function construirCss() {
+  const cssDir = path.join(rootDir, 'css');
+  const original = fs.readFileSync(path.join(cssDir, 'style.css'), 'utf8');
+  return esbuild.transform(original, { minify: true, loader: 'css' }).then(result => {
+    fs.writeFileSync(path.join(cssDir, 'style.min.css'), result.code);
+    console.log('✅ Construido: css/style.min.css (' + result.code.length + ' bytes, antes ' + original.length + ')');
+    return result.code.length;
+  });
+}
+
 Promise.all([
   construirBundle('núcleo', CORE_MODULOS, 'app.build.js', 'app.js'),
   construirBundle('admin', ADMIN_MODULOS, 'app-admin.build.js', 'app-admin.js'),
+  construirCss(),
 ]).then(([coreBytes, adminBytes]) => {
   console.log('   Versiones legibles en js/app.build.js y js/app-admin.build.js para revisar si algo falla.');
   console.log('   Total: ' + (coreBytes + adminBytes) + ' bytes (antes, un único bundle con todo).');

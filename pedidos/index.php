@@ -64,7 +64,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.css?v=1787223448192">
+<link rel="stylesheet" href="css/style.min.css?v=1787225257802">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -655,6 +655,15 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <div style="display:flex;justify-content:center;margin-bottom:20px;">
     <a href="https://tally.so/r/zxvMMq" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--brown);text-decoration:none;padding:9px 18px;border-radius:99px;border:1.5px solid var(--brown);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;">🚩 ¿Algún problema con tu pedido?</a>
   </div>
+
+  <!-- Sobre nosotros — párrafo de texto real (no interfaz ni datos
+       estructurados) para que Google tenga contenido en prosa de la página,
+       no solo el schema. Plegado igual que el FAQ, para no añadirle peso
+       visual a quien ya sabe lo que quiere pedir. -->
+  <details style="max-width:380px;margin:0 auto 14px;text-align:left;">
+    <summary style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;cursor:pointer;text-align:center;">🥔 SOBRE NOSOTROS</summary>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.6;font-family:'DM Sans',sans-serif;">Dulce Patata Food es un local de comida rápida artesanal en Granada, especializado en patatas rellenas al gusto: eliges tú la salsa y los ingredientes. También tenemos boniato relleno, paninis, cookies, tartas y bebidas. Haz tu pedido en esta web y recógelo en tienda, en Carretera de Málaga 111 (frente al Supermercado Dani), pagando al recoger con tarjeta o efectivo. Si prefieres que te lo llevemos a casa, pide por Glovo, Just Eat o Uber Eats.</p>
+  </details>
 
   <!-- Preguntas frecuentes — <details> nativo: cerrado por defecto, cada
        pregunta ocupa una sola línea hasta que se abre, así no le añade
