@@ -478,10 +478,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 19px;
-    height: 19px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    font-size: 10.5px;
+    font-size: 14px;
     line-height: 1;
     flex-shrink: 0;
     cursor: default;
@@ -490,8 +490,8 @@
      círculo de emoji de reserva, para que no salte el diseño si uno de los
      dos falta. */
   .allergen-icon-img {
-    width: 19px;
-    height: 19px;
+    width: 26px;
+    height: 26px;
     object-fit: contain;
     flex-shrink: 0;
     vertical-align: middle;
