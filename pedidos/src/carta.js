@@ -386,11 +386,20 @@ function _alergenoImgFallback(img, tid) {
   const t = DIETARY_TAGS.find(d => d.id === tid);
   if (t) img.outerHTML = _alergenoEmojiSpan(t);
 }
+// Texto para meter dentro de un atributo onclick="..." de doble comilla:
+// escapa barras invertidas y comillas simples (para la cadena de JS) y
+// luego las comillas dobles (para que no corten el atributo HTML).
+function _jsAttrEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
 // item.tagNotes = { <idAlergeno>: 'texto libre' } (opcional) — para avisar
 // cuando ese alérgeno concreto viene de un ingrediente que se puede quitar
-// bajo petición (p.ej. el queso mozzarella en muchas patatas): en vez de
-// que la insignia dé a entender que el producto SIEMPRE lo lleva, el texto
-// que sale al pasar el ratón por encima lo aclara.
+// bajo petición (p.ej. el queso mozzarella en muchas patatas). El icono no
+// lleva texto ni nota a la vista (se decidió que ocupara sitio de más en
+// cada producto) — en vez de eso, TOCAR el icono abre el mismo aviso
+// emergente que ya usa el resto de la web (showAlert), con la nota si la
+// hay o un mensaje genérico si no. Un aviso arriba de la carta (ver
+// #allergen-hint en index.php) explica una sola vez que se puede tocar.
 function dietaryTagsHtml(item) {
   if (!Array.isArray(item.tags) || !item.tags.length) return '';
   const notas = (item.tagNotes && typeof item.tagNotes === 'object') ? item.tagNotes : {};
@@ -398,8 +407,10 @@ function dietaryTagsHtml(item) {
     const t = DIETARY_TAGS.find(d => d.id === tid);
     if (!t) return '';
     const nota = notas[tid] || '';
-    if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
-    return _alergenoEmojiSpan(t, nota);
+    const mensaje = nota || ('Este producto contiene ' + t.label.toLowerCase() + '.');
+    const onclick = "if(typeof showAlert==='function')showAlert('" + _jsAttrEscape(mensaje) + "','" + _jsAttrEscape(t.label) + "')";
+    if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onclick="' + onclick + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
+    return '<span class="allergen-icon" style="background:' + t.color + '" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onclick="' + onclick + '">' + t.emoji + '</span>';
   }).join('') + '</span>';
 }
 function initTabs() {

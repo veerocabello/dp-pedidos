@@ -939,6 +939,14 @@ function loadSavedMenu() {
 }
 function renderMenu() {
   window._tartaLastSub = null;
+  // El aviso de "toca un icono de alérgeno" solo tiene sentido si ALGÚN
+  // producto lleva alguno marcado — si la dueña todavía no ha etiquetado
+  // nada, no tiene sentido mostrarlo (ver dietaryTagsHtml en carta.js).
+  var allergenHintEl = document.getElementById('allergen-hint');
+  if (allergenHintEl) {
+    var hayAlergenos = MENU.some(function (i) { return Array.isArray(i.tags) && i.tags.length; });
+    allergenHintEl.style.display = hayAlergenos ? 'block' : 'none';
+  }
   var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
   // Ordenar tartas: clásicas primero, especiales después
   var tartasClasicas = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1);

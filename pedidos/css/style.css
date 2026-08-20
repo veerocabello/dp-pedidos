@@ -473,7 +473,9 @@
     margin-left: 6px;
   }
   /* Círculo de color con el icono de cada alérgeno — solo el icono, sin
-     texto (el nombre completo sale al pasar el ratón por encima). */
+     texto — se toca para ver el nombre y, si lo hay, un aviso de si se
+     puede pedir sin ese ingrediente (ver dietaryTagsHtml en carta.js y
+     #allergen-hint más abajo). */
   .allergen-icon {
     display: inline-flex;
     align-items: center;
@@ -484,8 +486,10 @@
     font-size: 14px;
     line-height: 1;
     flex-shrink: 0;
-    cursor: default;
+    cursor: pointer;
+    transition: transform .12s;
   }
+  .allergen-icon:active { transform: scale(0.92); }
   /* Icono real subido por la dueña (img/alergenos/) — mismo hueco que el
      círculo de emoji de reserva, para que no salte el diseño si uno de los
      dos falta. */
@@ -495,6 +499,20 @@
     object-fit: contain;
     flex-shrink: 0;
     vertical-align: middle;
+    cursor: pointer;
+    transition: transform .12s;
+  }
+  .allergen-icon-img:active { transform: scale(0.92); }
+  #allergen-hint {
+    display: none;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--amber-dark);
+    background: var(--amber-light);
+    border-radius: 8px;
+    padding: 9px 12px;
+    margin: 0 0 14px;
   }
 
   /* ── BUSCADOR ── */
