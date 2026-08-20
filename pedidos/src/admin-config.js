@@ -40,21 +40,40 @@ function renderAdminProducts() {
   document.getElementById('admin-product-list').innerHTML = html;
 }
 // ── Alérgenos del producto (los 14 de declaración obligatoria — ver
-// DIETARY_TAGS en carta.js). Marca los que el producto SÍ contiene. ──
+// DIETARY_TAGS en carta.js). Marca los que el producto SÍ contiene, y
+// opcionalmente añade una nota (ej. "por el queso, se puede quitar") para
+// cuando ese alérgeno concreto viene de un ingrediente que no es fijo —
+// sale al pasar el ratón por encima de la insignia en la carta real, en
+// vez de dar a entender que el producto SIEMPRE lo lleva.
 function _tagCheckboxesHtml(item) {
   const seleccionadas = Array.isArray(item.tags) ? item.tags : [];
-  return '<div style="font-size:11px;font-weight:700;color:#8A6A4E;margin:2px 0 4px">Contiene (alérgenos):</div>'
-    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px">' + DIETARY_TAGS.map(t => {
+  const notas = (item.tagNotes && typeof item.tagNotes === 'object') ? item.tagNotes : {};
+  const checkboxes = DIETARY_TAGS.map(t => {
     const checked = seleccionadas.indexOf(t.id) !== -1;
     const icono = t.img
       ? '<img class="allergen-icon-img" src="' + t.img + '" alt="" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">'
       : _alergenoEmojiSpan(t);
     return '<label style="display:flex;align-items:center;gap:5px;font-size:12px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;padding:5px 9px;cursor:pointer">'
-      + '<input type="checkbox" id="edit-tag-' + t.id + '-' + item.id + '"' + (checked ? ' checked' : '') + ' style="margin:0">'
+      + '<input type="checkbox" id="edit-tag-' + t.id + '-' + item.id + '"' + (checked ? ' checked' : '') + ' onchange="_toggleTagNotaVisible(' + item.id + ',\'' + t.id + '\')" style="margin:0">'
       + icono
       + t.label
       + '</label>';
-  }).join('') + '</div>';
+  }).join('');
+  const notasInputs = DIETARY_TAGS.map(t => {
+    const checked = seleccionadas.indexOf(t.id) !== -1;
+    const val = (notas[t.id] || '').replace(/"/g, '&quot;');
+    return '<input type="text" id="edit-tagnota-' + t.id + '-' + item.id + '" value="' + val + '"'
+      + ' placeholder="Nota sobre ' + t.label + ' (opcional — ej: por el queso, se puede quitar)"'
+      + ' style="display:' + (checked ? 'block' : 'none') + ';width:100%;box-sizing:border-box;padding:6px 9px;margin-bottom:4px;border:1.5px solid #F5E6C8;border-radius:6px;font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff;color:#2A1506">';
+  }).join('');
+  return '<div style="font-size:11px;font-weight:700;color:#8A6A4E;margin:2px 0 4px">Contiene (alérgenos):</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px">' + checkboxes + '</div>'
+    + '<div>' + notasInputs + '</div>';
+}
+function _toggleTagNotaVisible(itemId, tagId) {
+  const cb = document.getElementById('edit-tag-' + tagId + '-' + itemId);
+  const nota = document.getElementById('edit-tagnota-' + tagId + '-' + itemId);
+  if (cb && nota) nota.style.display = cb.checked ? 'block' : 'none';
 }
 function toggleEditPanel(id) {
   const panel = document.getElementById('edit-' + id);

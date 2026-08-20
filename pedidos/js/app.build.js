@@ -4085,23 +4085,35 @@ const DIETARY_TAGS = [
 // producto — se usa tanto en la carta real (nucleo-compartido.js) como en
 // la lista del panel de admin (admin-config.js), así se ven de un vistazo
 // en los dos sitios sin tener que abrir nada.
-function _alergenoEmojiSpan(t) {
-  return '<span class="allergen-icon" style="background:' + t.color + '" title="Contiene ' + t.label + '">' + t.emoji + '</span>';
+function _alergenoTitulo(t, nota) {
+  return 'Contiene ' + t.label + (nota ? ' — ' + nota : '');
+}
+function _alergenoEmojiSpan(t, nota) {
+  return '<span class="allergen-icon" style="background:' + t.color + '" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '">' + t.emoji + '</span>';
 }
 // Si el icono real no llega a cargar (sin conexión, archivo movido/borrado
 // sin querer...) se cae al círculo de color + emoji en vez de dejar un
-// hueco roto — el aviso del alérgeno no debe desaparecer sin más.
+// hueco roto — el aviso del alérgeno no debe desaparecer sin más. La nota
+// concreta del producto (si tenía) no se conserva en este caso — es un
+// fallback para un fallo raro, no merece la pena complicar el onerror por eso.
 function _alergenoImgFallback(img, tid) {
   const t = DIETARY_TAGS.find(d => d.id === tid);
   if (t) img.outerHTML = _alergenoEmojiSpan(t);
 }
+// item.tagNotes = { <idAlergeno>: 'texto libre' } (opcional) — para avisar
+// cuando ese alérgeno concreto viene de un ingrediente que se puede quitar
+// bajo petición (p.ej. el queso mozzarella en muchas patatas): en vez de
+// que la insignia dé a entender que el producto SIEMPRE lo lleva, el texto
+// que sale al pasar el ratón por encima lo aclara.
 function dietaryTagsHtml(item) {
   if (!Array.isArray(item.tags) || !item.tags.length) return '';
+  const notas = (item.tagNotes && typeof item.tagNotes === 'object') ? item.tagNotes : {};
   return '<span class="item-tags">' + item.tags.map(tid => {
     const t = DIETARY_TAGS.find(d => d.id === tid);
     if (!t) return '';
-    if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="Contiene ' + t.label + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
-    return _alergenoEmojiSpan(t);
+    const nota = notas[tid] || '';
+    if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
+    return _alergenoEmojiSpan(t, nota);
   }).join('') + '</span>';
 }
 function initTabs() {
