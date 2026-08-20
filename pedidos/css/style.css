@@ -155,7 +155,7 @@
      Sin cortina oscura: en su lugar, sombra de texto para que se siga
      leyendo bien encima de la imagen. */
   .hero {
-    background: #311E10 url('../img/hero-bg.jpg') top center / 100% auto no-repeat;
+    background: #311E10 url('../img/hero-bg.webp') top center / 100% auto no-repeat;
     padding: 48px 24px 64px;
     text-align: center;
     position: relative;

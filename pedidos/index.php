@@ -57,7 +57,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600&family=Oswald:wght@300;400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=1786558226000">
+<link rel="stylesheet" href="css/style.css?v=1787223448192">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -143,7 +143,10 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <header>
   <div class="header-inner">
     <div style="display:flex;align-items:center;gap:10px;">
-      <img src="img/logo.png" alt="Dulce Patata Food" style="height:52px;width:auto;display:block;">
+      <picture>
+        <source srcset="img/logo.webp" type="image/webp">
+        <img src="img/logo.png" alt="Dulce Patata Food" style="height:52px;width:auto;display:block;">
+      </picture>
       <div class="logo" id="logo-secret" style="cursor:default;user-select:none;font-family:Anton,sans-serif;letter-spacing:0.05em;text-transform:uppercase">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
     </div>
     <div class="header-badge">🥔 Paga en tienda</div>
@@ -164,7 +167,12 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
   <div style="flex:none;width:380px;max-width:100%">
     <div class="pickup-card">
-      <div class="pickup-icon"><img src="img/pin-mapa-dulce-patata.png" alt="Ubicación de Dulce Patata Food en el mapa"></div>
+      <div class="pickup-icon">
+        <picture>
+          <source srcset="img/pin-mapa-dulce-patata.webp" type="image/webp">
+          <img src="img/pin-mapa-dulce-patata.png" alt="Ubicación de Dulce Patata Food en el mapa">
+        </picture>
+      </div>
       <div class="pickup-text">
         <div class="pickup-title">Web solo para recogida en tienda</div>
         <div class="pickup-sub">efectivo o tarjeta, tú decides en caja</div>
