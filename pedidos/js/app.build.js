@@ -4062,11 +4062,9 @@ const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Pan
 // por la dueña — img/alergenos/<id>.webp) y, de refuerzo, un color+emoji
 // por si esa imagen no llegara a cargar (sin conexión, archivo borrado sin
 // querer...) — en algo de seguridad alimentaria no vale arriesgarse a que
-// el aviso desaparezca sin más porque falló una imagen. GLUTEN no tiene
-// icono real todavía (no vino en el lote que subió la dueña) y usa el
-// emoji de reserva mientras tanto.
+// el aviso desaparezca sin más porque falló una imagen.
 const DIETARY_TAGS = [
-  { id: 'gluten', emoji: '🌾', label: 'Gluten', color: '#E67E22' },
+  { id: 'gluten', emoji: '🌾', label: 'Gluten', color: '#E67E22', img: 'img/alergenos/gluten.webp' },
   { id: 'crustaceos', emoji: '🦐', label: 'Crustáceos', color: '#2980B9', img: 'img/alergenos/crustaceos.webp' },
   { id: 'huevo', emoji: '🥚', label: 'Huevo', color: '#F1A208', img: 'img/alergenos/huevo.webp' },
   { id: 'pescado', emoji: '🐟', label: 'Pescado', color: '#1B4F72', img: 'img/alergenos/pescado.webp' },

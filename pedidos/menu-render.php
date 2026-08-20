@@ -89,7 +89,7 @@ function dpf_menu_actual() {
 // Mismo catálogo que DIETARY_TAGS en carta.js — mantener los dos en sync
 // si se añade o cambia alguna etiqueta.
 const DPF_DIETARY_TAGS = [
-    'gluten'         => ['emoji' => '🌾', 'label' => 'Gluten', 'color' => '#E67E22'],
+    'gluten'         => ['emoji' => '🌾', 'label' => 'Gluten', 'color' => '#E67E22', 'img' => 'img/alergenos/gluten.webp'],
     'crustaceos'     => ['emoji' => '🦐', 'label' => 'Crustáceos', 'color' => '#2980B9', 'img' => 'img/alergenos/crustaceos.webp'],
     'huevo'          => ['emoji' => '🥚', 'label' => 'Huevo', 'color' => '#F1A208', 'img' => 'img/alergenos/huevo.webp'],
     'pescado'        => ['emoji' => '🐟', 'label' => 'Pescado', 'color' => '#1B4F72', 'img' => 'img/alergenos/pescado.webp'],
