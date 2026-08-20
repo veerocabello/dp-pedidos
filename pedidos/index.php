@@ -23,7 +23,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Dulce Patata Food — Pedidos Online en Granada</title>
-<meta name="description" content="Haz tu pedido online en Dulce Patata Food. Patatas rellenas artesanales con los mejores ingredientes. Recoge en tienda y paga al recoger.">
+<meta name="description" content="Haz tu pedido online en Dulce Patata Food, Granada. Patatas rellenas artesanales con los mejores ingredientes. Recoge en tienda y paga al recoger.">
 <meta name="keywords" content="dulce patata, patatas rellenas, pedidos online, comida para llevar, patatas artesanales">
 <meta name="author" content="Dulce Patata Food">
 <meta name="robots" content="index, follow">
@@ -33,7 +33,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://pedidos.dulcepatatafood.es/">
 <meta property="og:title" content="Dulce Patata Food — Pedidos Online en Granada">
-<meta property="og:description" content="Patatas rellenas artesanales. Haz tu pedido online y recoge en tienda.">
+<meta property="og:description" content="Patatas rellenas artesanales en Granada. Haz tu pedido online y recoge en tienda.">
 <meta property="og:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
 <meta property="og:image:width" content="2027">
 <meta property="og:image:height" content="776">
@@ -44,7 +44,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Dulce Patata Food — Pedidos Online en Granada">
-<meta name="twitter:description" content="Patatas rellenas artesanales. Haz tu pedido online y recoge en tienda.">
+<meta name="twitter:description" content="Patatas rellenas artesanales en Granada. Haz tu pedido online y recoge en tienda.">
 <meta name="twitter:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
 <meta name="twitter:image:alt" content="Dulce Patata Food — fachada y patatas rellenas">
 
@@ -88,6 +88,11 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       "latitude": 37.176,
       "longitude": -3.5986
     },
+    "image": [
+      "https://pedidos.dulcepatatafood.es/img/hero-bg.jpg",
+      "https://pedidos.dulcepatatafood.es/img/logo.png"
+    ],
+    "hasMap": "https://maps.app.goo.gl/fUoVZdJDtByWcYq16",
     "servesCuisine": ["Patatas rellenas", "Comida rápida artesanal"],
     "priceRange": "€",
     "openingHoursSpecification": [
@@ -620,7 +625,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
   <!-- Tarjeta horario -->
   <div style="background:#2B1712;border-radius:14px;padding:24px 20px;max-width:380px;margin:0 auto 14px;text-align:center;">
-    <div style="font-family:'Anton',sans-serif;font-size:20px;color:var(--gold);letter-spacing:0.06em;margin-bottom:14px;">🕐 MARTES A DOMINGO</div>
+    <h2 style="font-family:'Anton',sans-serif;font-size:20px;color:var(--gold);letter-spacing:0.06em;margin:0 0 14px;">🕐 MARTES A DOMINGO</h2>
     <div style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:rgba(245,230,200,0.8);letter-spacing:0.03em;margin-bottom:6px;">MAÑANAS · 10:00 – 13:45H</div>
     <div style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:rgba(245,230,200,0.8);letter-spacing:0.03em;margin-bottom:0;">TARDES · 18:00 – 23:45H</div>
     <div style="height:1px;background:rgba(244,196,48,0.2);margin:14px 0;"></div>
@@ -629,7 +634,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
   <!-- Dirección -->
   <div style="background:#2B1712;border-radius:14px;padding:16px 20px;max-width:380px;margin:0 auto 20px;text-align:center;">
-    <div style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin-bottom:4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</div>
+    <h2 style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin:0 0 4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</h2>
     <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">Frente al Supermercado Dani</div>
     <a href="https://www.google.com/maps/dir/?api=1&destination=Carretera%20de%20M%C3%A1laga%20111%2C%2018015%20Granada" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:8px 18px;border-radius:99px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif;">📍 Cómo llegar</a>
   </div>
