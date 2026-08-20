@@ -1,6 +1,36 @@
 // ── PRODUCTOS (edición desde el panel) — leer/renderizar el menú para
 // cualquier visitante (getSavedMenu, loadSavedMenu, renderMenu) vive ahora
 // en nucleo-compartido.js. ──
+// ── Botón "🔓 Marcar alérgenos quitables" de la cabecera de Patatas ──
+// Marca item.ingredientesQuitables=true en TODAS las patatas de la carta
+// EXCEPTO la Carbonara y la Boloñesa (nombre de excepción decidido por la
+// dueña: en esas dos el alérgeno va mezclado en la propia salsa y no se
+// puede sacar). Se puede pulsar de nuevo siempre que se añada una patata
+// nueva o cambie algún nombre — vuelve a aplicar la regla entera de golpe,
+// no hace falta ir producto por producto.
+function marcarPatatasAlergenosQuitables() {
+  const EXCEPCIONES = ['carbonara', 'boloñesa', 'bolognesa'];
+  let cambiados = 0;
+  const excluidas = [];
+  MENU.forEach(item => {
+    if (item.cat !== 'Patatas') return;
+    const nombreLower = item.name.toLowerCase();
+    const esExcepcion = EXCEPCIONES.some(ex => nombreLower.indexOf(ex) !== -1);
+    if (esExcepcion) excluidas.push(item.name);
+    const nuevoValor = !esExcepcion;
+    if (!!item.ingredientesQuitables !== nuevoValor) {
+      item.ingredientesQuitables = nuevoValor;
+      cambiados++;
+    }
+  });
+  saveMenu();
+  renderMenu();
+  renderAdminProducts();
+  const msg = cambiados
+    ? 'Actualizado — ' + cambiados + ' patata(s) cambiadas.' + (excluidas.length ? ' Sin marcar (no se pueden quitar sus alérgenos): ' + excluidas.join(', ') + '.' : '')
+    : 'Ya estaba todo así — ninguna patata ha cambiado.';
+  if (typeof showAlert === 'function') showAlert(msg, 'Alérgenos de las patatas');
+}
 function saveMenu() {
   const data = {
     items: MENU,
@@ -17,7 +47,15 @@ function renderAdminProducts() {
   let html = '';
   cats.forEach(cat => {
     const catEmoji = emojiMapAdmin[cat] || '';
-    html += "<p style=\"font-family:Anton,sans-serif;font-size:19px;font-weight:400;color:#FFF8EE;background:#3D1F0D;text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px;padding:8px 14px;border-radius:8px\">".concat(catEmoji ? catEmoji + ' ' : '', cat, "</p>");
+    // Botón masivo solo en "Patatas" — ver marcarPatatasAlergenosQuitables:
+    // en vez de tener que marcar el interruptor "se pueden quitar" patata
+    // por patata, este botón lo activa de golpe para toda la categoría
+    // excepto la Carbonara y la Boloñesa (regla que dio la dueña: en esas
+    // dos el alérgeno viene ya mezclado en la salsa, no se puede sacar).
+    const catBulkBtn = (cat === 'Patatas')
+      ? '<button onclick="marcarPatatasAlergenosQuitables()" style="background:var(--gold);color:#3D1F0D;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔓 Marcar alérgenos quitables</button>'
+      : '';
+    html += "<p style=\"display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:Anton,sans-serif;font-size:19px;font-weight:400;color:#FFF8EE;background:#3D1F0D;text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px;padding:8px 14px;border-radius:8px\"><span>".concat(catEmoji ? catEmoji + ' ' : '', cat, "</span>").concat(catBulkBtn, "</p>");
     let lastTartaSub = null;
     MENU.filter(i => i.cat === cat).forEach(item => {
       const visible = item.hidden ? 'off' : 'on';
@@ -48,6 +86,7 @@ function renderAdminProducts() {
 function _tagCheckboxesHtml(item) {
   const seleccionadas = Array.isArray(item.tags) ? item.tags : [];
   const notas = (item.tagNotes && typeof item.tagNotes === 'object') ? item.tagNotes : {};
+  const quitables = !!item.ingredientesQuitables;
   const checkboxes = DIETARY_TAGS.map(t => {
     const checked = seleccionadas.indexOf(t.id) !== -1;
     const icono = t.img
@@ -63,11 +102,22 @@ function _tagCheckboxesHtml(item) {
     const checked = seleccionadas.indexOf(t.id) !== -1;
     const val = (notas[t.id] || '').replace(/"/g, '&quot;');
     return '<input type="text" id="edit-tagnota-' + t.id + '-' + item.id + '" value="' + val + '"'
-      + ' placeholder="Nota sobre ' + t.label + ' (opcional — ej: por el queso, se puede quitar)"'
+      + ' placeholder="Nota sobre ' + t.label + ' (solo si es distinto del resto — ej: no se puede quitar aunque los demás sí)"'
       + ' style="display:' + (checked ? 'block' : 'none') + ';width:100%;box-sizing:border-box;padding:6px 9px;margin-bottom:4px;border:1.5px solid #F5E6C8;border-radius:6px;font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff;color:#2A1506">';
   }).join('');
+  // Interruptor general del producto: si está activado, TODOS los
+  // alérgenos marcados arriba avisan de que se pueden pedir sin ellos
+  // (mensaje genérico automático) — sin tener que escribir la misma nota
+  // en cada uno. El cuadro de texto de arriba solo hace falta para la
+  // excepción contraria (un alérgeno que NO se pueda quitar aunque el
+  // resto del producto sí lo permita, p.ej. si viniera ya mezclado en la salsa).
+  const quitableToggle = '<label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#2A1506;background:#FDECD5;border:1.5px solid #F4C430;border-radius:8px;padding:7px 10px;margin:2px 0 8px;cursor:pointer">'
+    + '<input type="checkbox" id="edit-quitables-' + item.id + '"' + (quitables ? ' checked' : '') + ' style="margin:0">'
+    + '🔓 Los ingredientes con alérgeno de este producto se pueden pedir sin ellos'
+    + '</label>';
   return '<div style="font-size:11px;font-weight:700;color:#8A6A4E;margin:2px 0 4px">Contiene (alérgenos):</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px">' + checkboxes + '</div>'
+    + quitableToggle
     + '<div>' + notasInputs + '</div>';
 }
 function _toggleTagNotaVisible(itemId, tagId) {
@@ -102,6 +152,16 @@ function saveProductEdit(id) {
     const cb = document.getElementById('edit-tag-' + t.id + '-' + id);
     return cb && cb.checked;
   }).map(t => t.id);
+  const tagNotes = {};
+  DIETARY_TAGS.forEach(t => {
+    if (item.tags.indexOf(t.id) === -1) return;
+    const notaEl = document.getElementById('edit-tagnota-' + t.id + '-' + id);
+    const val = notaEl ? notaEl.value.trim() : '';
+    if (val) tagNotes[t.id] = val;
+  });
+  item.tagNotes = Object.keys(tagNotes).length ? tagNotes : undefined;
+  const quitablesEl = document.getElementById('edit-quitables-' + id);
+  item.ingredientesQuitables = !!(quitablesEl && quitablesEl.checked);
   saveMenu();
   renderMenu();
   renderAdminProducts();
