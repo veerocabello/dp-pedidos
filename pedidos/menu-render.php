@@ -90,19 +90,19 @@ function dpf_menu_actual() {
 // si se añade o cambia alguna etiqueta.
 const DPF_DIETARY_TAGS = [
     'gluten'         => ['emoji' => '🌾', 'label' => 'Gluten', 'color' => '#E67E22'],
-    'crustaceos'     => ['emoji' => '🦐', 'label' => 'Crustáceos', 'color' => '#2980B9'],
-    'huevo'          => ['emoji' => '🥚', 'label' => 'Huevo', 'color' => '#F1A208'],
-    'pescado'        => ['emoji' => '🐟', 'label' => 'Pescado', 'color' => '#1B4F72'],
-    'cacahuetes'     => ['emoji' => '🥜', 'label' => 'Cacahuetes', 'color' => '#8B5A2B'],
-    'soja'           => ['emoji' => '🫘', 'label' => 'Soja', 'color' => '#27632A'],
-    'leche'          => ['emoji' => '🥛', 'label' => 'Leche', 'color' => '#5DADE2'],
-    'frutos_cascara' => ['emoji' => '🌰', 'label' => 'Frutos de cáscara', 'color' => '#C0392B'],
-    'apio'           => ['emoji' => '🥬', 'label' => 'Apio', 'color' => '#58B368'],
-    'mostaza'        => ['emoji' => '🟡', 'label' => 'Mostaza', 'color' => '#D4AC0D'],
-    'sesamo'         => ['emoji' => '⚪', 'label' => 'Sésamo', 'color' => '#95A5A6'],
-    'sulfitos'       => ['emoji' => '🍷', 'label' => 'Sulfitos', 'color' => '#7D3C98'],
-    'altramuces'     => ['emoji' => '🌱', 'label' => 'Altramuces', 'color' => '#B7950B'],
-    'moluscos'       => ['emoji' => '🐚', 'label' => 'Moluscos', 'color' => '#17A589'],
+    'crustaceos'     => ['emoji' => '🦐', 'label' => 'Crustáceos', 'color' => '#2980B9', 'img' => 'img/alergenos/crustaceos.webp'],
+    'huevo'          => ['emoji' => '🥚', 'label' => 'Huevo', 'color' => '#F1A208', 'img' => 'img/alergenos/huevo.webp'],
+    'pescado'        => ['emoji' => '🐟', 'label' => 'Pescado', 'color' => '#1B4F72', 'img' => 'img/alergenos/pescado.webp'],
+    'cacahuetes'     => ['emoji' => '🥜', 'label' => 'Cacahuetes', 'color' => '#8B5A2B', 'img' => 'img/alergenos/cacahuetes.webp'],
+    'soja'           => ['emoji' => '🫘', 'label' => 'Soja', 'color' => '#27632A', 'img' => 'img/alergenos/soja.webp'],
+    'leche'          => ['emoji' => '🥛', 'label' => 'Leche', 'color' => '#5DADE2', 'img' => 'img/alergenos/leche.webp'],
+    'frutos_cascara' => ['emoji' => '🌰', 'label' => 'Frutos de cáscara', 'color' => '#C0392B', 'img' => 'img/alergenos/frutos_cascara.webp'],
+    'apio'           => ['emoji' => '🥬', 'label' => 'Apio', 'color' => '#58B368', 'img' => 'img/alergenos/apio.webp'],
+    'mostaza'        => ['emoji' => '🟡', 'label' => 'Mostaza', 'color' => '#D4AC0D', 'img' => 'img/alergenos/mostaza.webp'],
+    'sesamo'         => ['emoji' => '⚪', 'label' => 'Sésamo', 'color' => '#95A5A6', 'img' => 'img/alergenos/sesamo.webp'],
+    'sulfitos'       => ['emoji' => '🍷', 'label' => 'Sulfitos', 'color' => '#7D3C98', 'img' => 'img/alergenos/sulfitos.webp'],
+    'altramuces'     => ['emoji' => '🌱', 'label' => 'Altramuces', 'color' => '#B7950B', 'img' => 'img/alergenos/altramuces.webp'],
+    'moluscos'       => ['emoji' => '🐚', 'label' => 'Moluscos', 'color' => '#17A589', 'img' => 'img/alergenos/moluscos.webp'],
 ];
 function dpf_menu_html($menu) {
     $emojiMap = ['Patatas' => '🥔', 'Boniato' => '🍠', 'Paninis' => '🍕', 'Cookies' => '🍪', 'Tartas' => '🍰', 'Bebidas' => '🥤'];
@@ -125,7 +125,9 @@ function dpf_menu_html($menu) {
                 foreach ($item['tags'] as $tid) {
                     if (!isset(DPF_DIETARY_TAGS[$tid])) continue;
                     $t = DPF_DIETARY_TAGS[$tid];
-                    $chips .= '<span class="allergen-icon" style="background:' . $t['color'] . '" title="Contiene ' . htmlspecialchars($t['label']) . '">' . $t['emoji'] . '</span>';
+                    $chips .= !empty($t['img'])
+                        ? '<img class="allergen-icon-img" src="' . htmlspecialchars($t['img']) . '" alt="" title="Contiene ' . htmlspecialchars($t['label']) . '">'
+                        : '<span class="allergen-icon" style="background:' . $t['color'] . '" title="Contiene ' . htmlspecialchars($t['label']) . '">' . $t['emoji'] . '</span>';
                 }
                 if ($chips) $tagsHtml = '<span class="item-tags">' . $chips . '</span>';
             }

@@ -486,6 +486,16 @@
     flex-shrink: 0;
     cursor: default;
   }
+  /* Icono real subido por la dueña (img/alergenos/) — mismo hueco que el
+     círculo de emoji de reserva, para que no salte el diseño si uno de los
+     dos falta. */
+  .allergen-icon-img {
+    width: 19px;
+    height: 19px;
+    object-fit: contain;
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
 
   /* ── BUSCADOR ── */
   #menu-search-input {

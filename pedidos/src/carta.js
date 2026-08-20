@@ -344,40 +344,52 @@ const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Pan
 // se guarda junto al resto de datos del producto en config/menu — marca
 // los alérgenos que el producto SÍ contiene (no es una etiqueta positiva
 // tipo "vegano", es la lista de qué evitar).
-// Cada uno lleva también un color, para pintar el emoji dentro de un
-// círculo de color (como los iconos de alérgenos que se ven en cartas de
-// restaurante) y que se distingan de un vistazo — no son los pictogramas
-// oficiales exactos (habría que licenciarlos/dibujarlos aparte), así que
-// el texto va SIEMPRE junto al icono, nunca solo el símbolo: en algo de
-// seguridad alimentaria no vale arriesgarse a que alguien interprete mal
-// un icono ambiguo.
+// Cada uno lleva su icono real (pictograma en círculo de color, subidos
+// por la dueña — img/alergenos/<id>.webp) y, de refuerzo, un color+emoji
+// por si esa imagen no llegara a cargar (sin conexión, archivo borrado sin
+// querer...) — en algo de seguridad alimentaria no vale arriesgarse a que
+// el aviso desaparezca sin más porque falló una imagen. GLUTEN no tiene
+// icono real todavía (no vino en el lote que subió la dueña) y usa el
+// emoji de reserva mientras tanto.
 const DIETARY_TAGS = [
   { id: 'gluten', emoji: '🌾', label: 'Gluten', color: '#E67E22' },
-  { id: 'crustaceos', emoji: '🦐', label: 'Crustáceos', color: '#2980B9' },
-  { id: 'huevo', emoji: '🥚', label: 'Huevo', color: '#F1A208' },
-  { id: 'pescado', emoji: '🐟', label: 'Pescado', color: '#1B4F72' },
-  { id: 'cacahuetes', emoji: '🥜', label: 'Cacahuetes', color: '#8B5A2B' },
-  { id: 'soja', emoji: '🫘', label: 'Soja', color: '#27632A' },
-  { id: 'leche', emoji: '🥛', label: 'Leche', color: '#5DADE2' },
-  { id: 'frutos_cascara', emoji: '🌰', label: 'Frutos de cáscara', color: '#C0392B' },
-  { id: 'apio', emoji: '🥬', label: 'Apio', color: '#58B368' },
-  { id: 'mostaza', emoji: '🟡', label: 'Mostaza', color: '#D4AC0D' },
-  { id: 'sesamo', emoji: '⚪', label: 'Sésamo', color: '#95A5A6' },
-  { id: 'sulfitos', emoji: '🍷', label: 'Sulfitos', color: '#7D3C98' },
-  { id: 'altramuces', emoji: '🌱', label: 'Altramuces', color: '#B7950B' },
-  { id: 'moluscos', emoji: '🐚', label: 'Moluscos', color: '#17A589' }
+  { id: 'crustaceos', emoji: '🦐', label: 'Crustáceos', color: '#2980B9', img: 'img/alergenos/crustaceos.webp' },
+  { id: 'huevo', emoji: '🥚', label: 'Huevo', color: '#F1A208', img: 'img/alergenos/huevo.webp' },
+  { id: 'pescado', emoji: '🐟', label: 'Pescado', color: '#1B4F72', img: 'img/alergenos/pescado.webp' },
+  { id: 'cacahuetes', emoji: '🥜', label: 'Cacahuetes', color: '#8B5A2B', img: 'img/alergenos/cacahuetes.webp' },
+  { id: 'soja', emoji: '🫘', label: 'Soja', color: '#27632A', img: 'img/alergenos/soja.webp' },
+  { id: 'leche', emoji: '🥛', label: 'Leche', color: '#5DADE2', img: 'img/alergenos/leche.webp' },
+  { id: 'frutos_cascara', emoji: '🌰', label: 'Frutos de cáscara', color: '#C0392B', img: 'img/alergenos/frutos_cascara.webp' },
+  { id: 'apio', emoji: '🥬', label: 'Apio', color: '#58B368', img: 'img/alergenos/apio.webp' },
+  { id: 'mostaza', emoji: '🟡', label: 'Mostaza', color: '#D4AC0D', img: 'img/alergenos/mostaza.webp' },
+  { id: 'sesamo', emoji: '⚪', label: 'Sésamo', color: '#95A5A6', img: 'img/alergenos/sesamo.webp' },
+  { id: 'sulfitos', emoji: '🍷', label: 'Sulfitos', color: '#7D3C98', img: 'img/alergenos/sulfitos.webp' },
+  { id: 'altramuces', emoji: '🌱', label: 'Altramuces', color: '#B7950B', img: 'img/alergenos/altramuces.webp' },
+  { id: 'moluscos', emoji: '🐚', label: 'Moluscos', color: '#17A589', img: 'img/alergenos/moluscos.webp' }
 ];
 // Genera el HTML de las insignias de alérgenos de un producto (solo el
-// icono de color, sin texto — el nombre completo sale al pasar el ratón
-// por encima, con el title), para ponerlas justo al lado del nombre del
+// icono, sin texto — el nombre completo sale al pasar el ratón por
+// encima, con el title), para ponerlas justo al lado del nombre del
 // producto — se usa tanto en la carta real (nucleo-compartido.js) como en
 // la lista del panel de admin (admin-config.js), así se ven de un vistazo
 // en los dos sitios sin tener que abrir nada.
+function _alergenoEmojiSpan(t) {
+  return '<span class="allergen-icon" style="background:' + t.color + '" title="Contiene ' + t.label + '">' + t.emoji + '</span>';
+}
+// Si el icono real no llega a cargar (sin conexión, archivo movido/borrado
+// sin querer...) se cae al círculo de color + emoji en vez de dejar un
+// hueco roto — el aviso del alérgeno no debe desaparecer sin más.
+function _alergenoImgFallback(img, tid) {
+  const t = DIETARY_TAGS.find(d => d.id === tid);
+  if (t) img.outerHTML = _alergenoEmojiSpan(t);
+}
 function dietaryTagsHtml(item) {
   if (!Array.isArray(item.tags) || !item.tags.length) return '';
   return '<span class="item-tags">' + item.tags.map(tid => {
     const t = DIETARY_TAGS.find(d => d.id === tid);
-    return t ? '<span class="allergen-icon" style="background:' + t.color + '" title="Contiene ' + t.label + '">' + t.emoji + '</span>' : '';
+    if (!t) return '';
+    if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="Contiene ' + t.label + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
+    return _alergenoEmojiSpan(t);
   }).join('') + '</span>';
 }
 function initTabs() {

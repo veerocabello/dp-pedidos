@@ -7,7 +7,7 @@
 //  para que el menú, precios y pedidos estén siempre al día.
 // ═══════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'dpf-static-v8'; // subida por añadir las versiones .webp de logo/hero-bg/pin-mapa — súbelo otra vez si cambias otra imagen
+const CACHE_NAME = 'dpf-static-v9'; // subida por añadir los iconos de alérgenos en img/alergenos/ — súbelo otra vez si cambias otra imagen
 //
 // ⚠️ IMPORTANTE: las imágenes de img/ y js/firebase-auth-compat.js NO llevan
 // ?v= en su URL (a diferencia de css/style.css y los módulos de src/, que sí).

@@ -64,7 +64,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1787246781878">
+<link rel="stylesheet" href="css/style.min.css?v=1787248460605">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -1076,7 +1076,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787219287818" defer></script>
-<script src="js/app.js?v=1787246781878" defer></script>
+<script src="js/app.js?v=1787248460605" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
