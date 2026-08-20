@@ -97,6 +97,11 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
         "closes": "23:45"
       }
     ],
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.6",
+      "reviewCount": "512"
+    },
     "hasMenu": "https://pedidos.dulcepatatafood.es/#carta",
     "acceptsReservations": false,
     "sameAs": [
