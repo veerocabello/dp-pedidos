@@ -507,6 +507,27 @@ function smsCancelVerify() {
   }, { passive: true });
 })();
 
+// ── Ocultar el carrito/"repetir pedido" flotante al llegar al pie ──
+// Los dos son position:fixed pegados abajo del todo — en una web tan
+// corta como esta, al llegar al final de la página (FAQ, horario,
+// dirección...) no queda sitio debajo donde "flotar" sin tapar contenido
+// real, y el bloque fijo se quedaba encima del pie tapando lo último de
+// la página. Se desvanecen (opacity, no display — así no interfieren con
+// la lógica que ya decide cuál de los dos mostrar) en cuanto el pie entra
+// en la pantalla, y vuelven en cuanto se sube de nuevo.
+(function () {
+  var footer = document.querySelector('footer');
+  var cartFab = document.getElementById('cart-fab');
+  var repeatFab = document.getElementById('repeat-order-fab');
+  if (!footer || !window.IntersectionObserver || (!cartFab && !repeatFab)) return;
+  var obs = new IntersectionObserver(function (entries) {
+    var cerca = entries[0].isIntersecting;
+    if (cartFab) cartFab.classList.toggle('near-footer', cerca);
+    if (repeatFab) repeatFab.classList.toggle('near-footer', cerca);
+  });
+  obs.observe(footer);
+})();
+
 // ── Recordar nombre y teléfono entre visitas ──────────────────────
 // Se guardan (antifraude.js, justo tras confirmar un pedido) sin caducar,
 // y se rellenan solos aquí en la próxima visita — el cliente puede

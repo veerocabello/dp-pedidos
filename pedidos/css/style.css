@@ -243,7 +243,7 @@
     min-width: 260px;
     white-space: nowrap;
     justify-content: space-between;
-    transition: transform .15s, box-shadow .15s;
+    transition: transform .15s, box-shadow .15s, opacity .2s;
   }
   #cart-fab:active { transform: translateX(-50%) scale(0.97); }
   #cart-fab-count {
@@ -290,6 +290,14 @@
   #repeat-order-fab.hidden { display: none !important; }
   @media (min-width: 701px) {
     #repeat-order-fab { display: none !important; }
+  }
+
+  /* Al llegar al pie de página, se desvanecen en vez de taparlo — ver el
+     IntersectionObserver del footer en init.js. */
+  #repeat-order-fab { transition: opacity .2s; }
+  #cart-fab.near-footer, #repeat-order-fab.near-footer {
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* ── DRAWER CARRITO ── */

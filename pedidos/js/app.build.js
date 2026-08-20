@@ -2304,11 +2304,28 @@ function _juegoTelefonoGuardado() {
   try { return localStorage.getItem('dpf_customer_phone') || ''; } catch (e) { return ''; }
 }
 
+// El token que demuestra "quien pregunta es quien jugó" (ver juegos.php,
+// necesario para poder recuperar un premio/código ya ganado hoy sin que
+// cualquiera pueda robarlo solo probando teléfonos ajenos) se guarda aquí
+// y se reenvía en cada giro — antes NUNCA se guardaba ni se mandaba de
+// vuelta, así que el servidor jamás reconocía al dueño real al reabrir el
+// juego: devolvía premio/code como null aunque el premio sí tuviera
+// descuento, y quien cerraba el modal sin pulsar "aplicar" (o volvía a
+// abrir el juego después) se quedaba sin ninguna forma real de recuperar
+// su código el resto del día.
+function _juegoTokenKey(juego) { return 'dpf_juego_token_' + juego; }
+function _juegoTokenGuardado(juego) {
+  try { return localStorage.getItem(_juegoTokenKey(juego)) || ''; } catch (e) { return ''; }
+}
+function _juegoGuardarToken(juego, token) {
+  try { if (token) localStorage.setItem(_juegoTokenKey(juego), token); } catch (e) {}
+}
+
 async function _juegoGirar(juego, telefono) {
   const res = await fetch('juegos.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'girar', juego, telefono })
+    body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
   });
   return res.json();
 }
@@ -2515,6 +2532,7 @@ async function girarRuleta() {
     const canvas = document.getElementById('ruleta-canvas');
     canvas.style.transform = 'rotate(' + deg + 'deg)';
     window._juegoState = { juego: 'ruleta', premio: data.premio, code: data.code };
+    _juegoGuardarToken('ruleta', data.token);
     setTimeout(() => {
       document.getElementById('ruleta-intro').style.display = 'none';
       document.getElementById('ruleta-resultado').style.display = 'block';
@@ -2584,6 +2602,7 @@ async function empezarRasca() {
       // el resultado (con el botón de aplicar si aún tiene código sin usar)
       // en vez de un "vuelve mañana" sin ninguna forma de recuperarlo.
       const premio = data.premio || {};
+      document.getElementById('rasca-intro').style.display = 'none';
       document.getElementById('rasca-tel-paso').style.display = 'none';
       document.getElementById('rasca-resultado').style.display = 'block';
       document.getElementById('rasca-resultado-emoji').textContent = premio.emoji || '🎉';
@@ -2596,6 +2615,7 @@ async function empezarRasca() {
       return;
     }
     const premio = data.premio || {};
+    _juegoGuardarToken('rasca', data.token);
     document.getElementById('rasca-premio-emoji').textContent = premio.emoji || '🎁';
     document.getElementById('rasca-premio-texto').textContent = premio.nombre || '';
     document.getElementById('rasca-tel-paso').style.display = 'none';
@@ -2660,6 +2680,7 @@ function _dibujarRascaFoil() {
 }
 
 function _mostrarResultadoRasca() {
+  document.getElementById('rasca-intro').style.display = 'none';
   document.getElementById('rasca-tarjeta-paso').style.display = 'none';
   document.getElementById('rasca-resultado').style.display = 'block';
   const premio = (window._juegoState && window._juegoState.premio) || {};
@@ -7759,6 +7780,27 @@ function smsCancelVerify() {
     ticking = true;
     requestAnimationFrame(actualizar);
   }, { passive: true });
+})();
+
+// ── Ocultar el carrito/"repetir pedido" flotante al llegar al pie ──
+// Los dos son position:fixed pegados abajo del todo — en una web tan
+// corta como esta, al llegar al final de la página (FAQ, horario,
+// dirección...) no queda sitio debajo donde "flotar" sin tapar contenido
+// real, y el bloque fijo se quedaba encima del pie tapando lo último de
+// la página. Se desvanecen (opacity, no display — así no interfieren con
+// la lógica que ya decide cuál de los dos mostrar) en cuanto el pie entra
+// en la pantalla, y vuelven en cuanto se sube de nuevo.
+(function () {
+  var footer = document.querySelector('footer');
+  var cartFab = document.getElementById('cart-fab');
+  var repeatFab = document.getElementById('repeat-order-fab');
+  if (!footer || !window.IntersectionObserver || (!cartFab && !repeatFab)) return;
+  var obs = new IntersectionObserver(function (entries) {
+    var cerca = entries[0].isIntersecting;
+    if (cartFab) cartFab.classList.toggle('near-footer', cerca);
+    if (repeatFab) repeatFab.classList.toggle('near-footer', cerca);
+  });
+  obs.observe(footer);
 })();
 
 // ── Recordar nombre y teléfono entre visitas ──────────────────────
