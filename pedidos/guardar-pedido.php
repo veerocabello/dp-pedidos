@@ -621,7 +621,19 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
 // durante una oferta relámpago se "corregía" de vuelta al precio completo
 // y acababa rechazado por comprobarTotalSospechoso() (bug encontrado en
 // revisión de código, nunca llegó a producción).
-function corregirPreciosCatalogo($databaseURL, $accessToken, $items) {
+//
+// $oferta se recibe ya leída (config/ofertaRelampago) en vez de pedirla
+// aquí dentro — se lee UNA vez en el flujo principal y se pasa también a
+// comprobarTotalSospechoso() más abajo, que la necesita para su propio
+// margen (tipo "total"): antes cada función la pedía por su cuenta, dos
+// peticiones idénticas a Firebase en cada pedido.
+function _ofertaRelampagoVigentePHP($oferta, $tipoEsperado) {
+    return $oferta
+        && ($oferta['tipo'] ?? null) === $tipoEsperado
+        && is_numeric($oferta['fin'] ?? null) && (float)$oferta['fin'] > (microtime(true) * 1000)
+        && is_numeric($oferta['pct'] ?? null) && (float)$oferta['pct'] > 0;
+}
+function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
     $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
     // config/menu se guarda como {items:[...], ts} desde admin-config.js,
     // pero puede quedar en el formato legacy (array plano) si no se ha
@@ -639,13 +651,7 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items) {
     foreach ($menuItems as $mi) {
         if (isset($mi['name'])) $menuPorNombre[$mi['name']] = $mi;
     }
-    $orResp = fbGetConEtag($databaseURL, 'config/ofertaRelampago', $accessToken);
-    $oferta = is_array($orResp['data']) ? $orResp['data'] : null;
-    $ofertaProductoVigente = $oferta
-        && ($oferta['tipo'] ?? null) === 'producto'
-        && is_array($oferta['productoIds'] ?? null)
-        && is_numeric($oferta['fin'] ?? null) && (float)$oferta['fin'] > (microtime(true) * 1000)
-        && is_numeric($oferta['pct'] ?? null) && (float)$oferta['pct'] > 0;
+    $ofertaProductoVigente = _ofertaRelampagoVigentePHP($oferta, 'producto') && is_array($oferta['productoIds'] ?? null);
 
     $avisos = [];
     $deltaTotal = 0;
@@ -775,7 +781,7 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
 // premio de fidelización, así que se admite siempre como margen: es mejor
 // dejar pasar alguna vez ese caso puntual (que ya se avisa en su propio
 // sitio, ver fidelizacionElegible) que bloquear pedidos legítimos por él.
-function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado) {
+function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta) {
     $itemsSum = 0;
     $maxPatataUnit = 0;
     foreach ($items as $it) {
@@ -824,9 +830,7 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
     // aquí: ya se refleja sola en itemsSum, porque el precio por unidad que
     // manda el cliente para ese producto ya viene rebajado.
     $margenOfertaRelampago = 0;
-    $orResp = fbGetConEtag($databaseURL, 'config/ofertaRelampago', $accessToken);
-    $oferta = is_array($orResp['data']) ? $orResp['data'] : null;
-    if ($oferta && ($oferta['tipo'] ?? null) === 'total' && is_numeric($oferta['fin'] ?? null) && (float)$oferta['fin'] > (microtime(true) * 1000) && is_numeric($oferta['pct'] ?? null)) {
+    if (_ofertaRelampagoVigentePHP($oferta, 'total')) {
         $pctOfertaSeguro = max(0, min(100, (float)$oferta['pct']));
         $margenOfertaRelampago = $itemsSum * ($pctOfertaSeguro / 100);
     }
@@ -971,6 +975,27 @@ function reservarUsoDescuento($databaseURL, $accessToken, $discountCode) {
     // "mejor esfuerzo" de este archivo, mejor no rechazar un pedido
     // legítimo por un fallo de reintento puntual.
     return null;
+}
+
+// ── Contrapartida de reservarUsoDescuento() — si el uso ya se reservó
+// (incrementado) pero el ticket NO llega a guardarse de verdad justo
+// después (colisión rara de número de pedido, o un fallo de red/Firebase
+// puntual, ver el bloque que llama a esto), había quedado un hueco: el
+// cliente perdía el uso del código sin que se hubiera creado ningún
+// pedido — y si maxUses era 1, el reintento se encontraba el código ya
+// "agotado" sin haber llegado a usarlo nunca. Se resta 1 sin bajar de 0,
+// igual que liberarSlot() para los turnos.
+function liberarUsoDescuento($databaseURL, $accessToken, $discountCode) {
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetConEtag($databaseURL, 'discounts/' . $discountCode, $accessToken);
+        $cupon = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$cupon) return; // ya no existe, nada que liberar
+        $usos = is_numeric($cupon['uses'] ?? null) ? (int)$cupon['uses'] : 0;
+        if ($usos <= 0) return;
+        $cupon['uses'] = $usos - 1;
+        if (fbPutSiCoincide($databaseURL, 'discounts/' . $discountCode, $accessToken, $cupon, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
 }
 
 // ── Turnos: caducidad de reservas nunca confirmadas ── Antes reservarSlot
@@ -1377,7 +1402,11 @@ try {
 
     // ── 0b. PRECIOS DE CATÁLOGO (se corrigen, no solo se avisa) y TOTAL
     // (SÍ bloquea el pedido si no cuadra ni con el margen admitido) ──
-    $corrPrecios = corregirPreciosCatalogo($databaseURL, $accessToken, $items);
+    // config/ofertaRelampago se lee UNA sola vez aquí y se pasa a las dos
+    // funciones de abajo (antes cada una la pedía por su cuenta a Firebase).
+    $orResp = fbGetConEtag($databaseURL, 'config/ofertaRelampago', $accessToken);
+    $oferta = is_array($orResp['data']) ? $orResp['data'] : null;
+    $corrPrecios = corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta);
     $items = $corrPrecios['items'];
     if ($corrPrecios['avisos']) {
         // El total también se ajusta por la misma diferencia que los items
@@ -1389,7 +1418,7 @@ try {
         if ($total < 0) $total = 0;
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de catálogo corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPrecios['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
     }
-    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado);
+    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta);
     if ($avisoTotal) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido ' . $orderNum . ' rechazado por total manipulado — ' . $avisoTotal);
         echo json_encode(['success' => false, 'error' => 'No se pudo verificar el importe del pedido. Recarga la página e inténtalo de nuevo.']);
@@ -1490,6 +1519,11 @@ try {
         // sigue adelante: ni se tocan las estadísticas ni se consume el
         // límite diario de pedidos de este teléfono (más abajo) por un
         // pedido que en realidad no ha quedado guardado en ningún sitio.
+        // Por el mismo motivo, si se había reservado un uso de código de
+        // descuento justo arriba, se libera — si no, un código de un solo
+        // uso quedaría "gastado" sin que se hubiera llegado a crear ningún
+        // pedido con él.
+        if ($discountCode) liberarUsoDescuento($databaseURL, $accessToken, $discountCode);
         echo json_encode(['success' => false, 'error' => 'No se pudo guardar el pedido, inténtalo de nuevo.']);
         exit;
     }
