@@ -612,6 +612,15 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
 // desincronizar del cálculo real del carrito: siguen siendo el único hueco
 // de precio no cerrado del todo (ver comprobarTotalSospechoso más abajo,
 // que sí hace de red para el total general).
+//
+// IMPORTANTE — oferta relámpago de producto: si hay una activa (tipo
+// "producto", ver config/ofertaRelampago), el precio REAL de un producto
+// incluido en ella es el rebajado, no el de config/menu a secas — igual
+// que calcula _precioConOferta() en carta.js, que es de donde sale el
+// subtotal que manda el navegador. Sin esto, un pedido legítimo hecho
+// durante una oferta relámpago se "corregía" de vuelta al precio completo
+// y acababa rechazado por comprobarTotalSospechoso() (bug encontrado en
+// revisión de código, nunca llegó a producción).
 function corregirPreciosCatalogo($databaseURL, $accessToken, $items) {
     $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
     // config/menu se guarda como {items:[...], ts} desde admin-config.js,
@@ -630,8 +639,17 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items) {
     foreach ($menuItems as $mi) {
         if (isset($mi['name'])) $menuPorNombre[$mi['name']] = $mi;
     }
+    $orResp = fbGetConEtag($databaseURL, 'config/ofertaRelampago', $accessToken);
+    $oferta = is_array($orResp['data']) ? $orResp['data'] : null;
+    $ofertaProductoVigente = $oferta
+        && ($oferta['tipo'] ?? null) === 'producto'
+        && is_array($oferta['productoIds'] ?? null)
+        && is_numeric($oferta['fin'] ?? null) && (float)$oferta['fin'] > (microtime(true) * 1000)
+        && is_numeric($oferta['pct'] ?? null) && (float)$oferta['pct'] > 0;
+
     $avisos = [];
-    $corregidos = array_map(function ($it) use ($menuPorNombre, &$avisos) {
+    $deltaTotal = 0;
+    $corregidos = array_map(function ($it) use ($menuPorNombre, $ofertaProductoVigente, $oferta, &$avisos, &$deltaTotal) {
         $nombre = $it['name'] ?? null;
         if (!$nombre || !isset($menuPorNombre[$nombre])) return $it; // custom/extra, no catalogado aquí
         $qty = isset($it['qty']) ? (float)$it['qty'] : null;
@@ -644,15 +662,22 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items) {
             if ($subtotal > 0.02) $avisos[] = sprintf('%s: qty=0 pero subtotal %.2f€ (sin corregir, revisar a mano)', $nombre, $subtotal);
             return $it;
         }
-        $precioReal = round((float)$menuPorNombre[$nombre]['price'], 2);
+        $mi = $menuPorNombre[$nombre];
+        $precioReal = round((float)$mi['price'], 2);
+        if ($ofertaProductoVigente && isset($mi['id']) && in_array($mi['id'], $oferta['productoIds'])) {
+            $pctSeguro = max(0, min(100, (float)$oferta['pct']));
+            $precioReal = round($precioReal * (1 - $pctSeguro / 100), 2);
+        }
         $precioEnviado = $subtotal / $qty;
         if (abs($precioEnviado - $precioReal) > 0.02) {
             $avisos[] = sprintf('%s: enviado %.2f€, corregido a precio real %.2f€', $nombre, $precioEnviado, $precioReal);
-            $it['subtotal'] = round($precioReal * $qty, 2);
+            $subtotalCorregido = round($precioReal * $qty, 2);
+            $deltaTotal += ($subtotalCorregido - $subtotal);
+            $it['subtotal'] = $subtotalCorregido;
         }
         return $it;
     }, $items);
-    return ['items' => $corregidos, 'avisos' => $avisos];
+    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2)];
 }
 
 // ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
@@ -910,6 +935,41 @@ function discountCodeInvalido($databaseURL, $accessToken, $discountCode) {
     $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
     if ($maxUsos !== null && $usos >= $maxUsos) return 'Este código de descuento ya se ha agotado.';
     if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) return 'Este código de descuento ha caducado.';
+    return null;
+}
+
+// ── Reserva ATÓMICA del uso del código de descuento — el cierre real del
+// límite de usos (discountCodeInvalido de arriba solo hace un rechazo
+// rápido para el caso normal, con una lectura suelta que puede quedar
+// desfasada). Se llama justo antes de guardar el ticket (nunca antes: si
+// se llamara antes de las demás comprobaciones, una petición que luego
+// fallara por otro motivo —SMS, antifraude...— habría gastado igual un
+// uso de un código limitado sin llegar a generar ningún pedido). Al
+// incrementar con escritura condicional (If-Match/ETag, igual que el
+// resto de contadores de este archivo) y ser el ÚNICO sitio que
+// incrementa discounts/<code>/uses, dos peticiones casi simultáneas con
+// el mismo código ya no pueden colar las dos un pedido cuando maxUses
+// permite solo una — antes esto se comprobaba con una lectura aparte y
+// SOLO SE AVISABA después de que el ticket ya se hubiera guardado, así
+// que un código de un solo uso compartido a tiempo real sí podía acabar
+// aplicado dos veces.
+function reservarUsoDescuento($databaseURL, $accessToken, $discountCode) {
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetConEtag($databaseURL, 'discounts/' . $discountCode, $accessToken);
+        $cupon = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$cupon) return null; // ya no existe: nada que reservar, se deja pasar (mismo criterio que el resto de este archivo)
+        $usos = is_numeric($cupon['uses'] ?? null) ? (int)$cupon['uses'] : 0;
+        $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
+        if ($maxUsos !== null && $usos >= $maxUsos) return 'Este código de descuento ya se ha agotado.';
+        if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) return 'Este código de descuento ha caducado.';
+        $cupon['uses'] = $usos + 1;
+        if (fbPutSiCoincide($databaseURL, 'discounts/' . $discountCode, $accessToken, $cupon, $leido['etag'])) return null;
+        usleep(rand(20000, 80000));
+    }
+    // Colisión persistente tras varios intentos (muy improbable): se deja
+    // pasar el pedido sin bloquear — igual que el resto de contadores de
+    // "mejor esfuerzo" de este archivo, mejor no rechazar un pedido
+    // legítimo por un fallo de reintento puntual.
     return null;
 }
 
@@ -1320,7 +1380,14 @@ try {
     $corrPrecios = corregirPreciosCatalogo($databaseURL, $accessToken, $items);
     $items = $corrPrecios['items'];
     if ($corrPrecios['avisos']) {
-        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de catálogo corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPrecios['avisos']));
+        // El total también se ajusta por la misma diferencia que los items
+        // corregidos — si no, tickets/ y stats/ se quedarían con un "total"
+        // que ya no coincide con la suma real de sus propias líneas (bug
+        // encontrado en revisión de código: antes solo se corregía el item,
+        // el total guardado se quedaba con el valor original sin corregir).
+        $total = round($total + $corrPrecios['deltaTotal'], 2);
+        if ($total < 0) $total = 0;
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de catálogo corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPrecios['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
     }
     $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado);
     if ($avisoTotal) {
@@ -1389,6 +1456,20 @@ try {
         }
     }
 
+    // ── RESERVAR USO DEL CÓDIGO DE DESCUENTO (SÍ bloquea) — justo aquí,
+    // tras TODAS las demás comprobaciones y justo antes de guardar el
+    // ticket: ni antes (gastaría un uso de un código limitado en una
+    // petición que luego falla por otro motivo) ni después como estaba
+    // antes (el ticket ya se guardaba con el descuento aplicado aunque el
+    // código llevara agotado — ver reservarUsoDescuento más arriba).
+    if ($discountCode) {
+        $errorReserva = reservarUsoDescuento($databaseURL, $accessToken, $discountCode);
+        if ($errorReserva) {
+            echo json_encode(['success' => false, 'error' => $errorReserva]);
+            exit;
+        }
+    }
+
     $ticketData = [
         'orderNum' => $orderNum,
         'name'     => $name,
@@ -1449,32 +1530,9 @@ try {
         ]);
     }
 
-    // ── 3. INCREMENTAR USO DEL CÓDIGO DE DESCUENTO (si se usó uno) ──
-    if ($discountCode) {
-        for ($intento = 0; $intento < 5; $intento++) {
-            $leido = fbGetConEtag($databaseURL, 'discounts/' . $discountCode, $accessToken);
-            $cupon = is_array($leido['data']) ? $leido['data'] : null;
-            if (!$cupon) break; // el código no existe, nada que incrementar
-            $usos = is_numeric($cupon['uses'] ?? null) ? (int)$cupon['uses'] : 0;
-            $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
-            if ($maxUsos !== null && $usos >= $maxUsos) {
-                // Antes esto se quedaba callado: el código seguía "funcionando"
-                // indefinidamente para el total ya calculado en el navegador
-                // (el descuento no se revierte, por el mismo motivo que el
-                // total sospechoso de más abajo solo se avisa y no se
-                // bloquea) — pero al menos ahora el admin se entera de que
-                // se ha superado el cupo, en vez de no verlo nunca.
-                fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Código de descuento ' . $discountCode . ' usado en el pedido ' . $orderNum . ' aunque ya había superado el máximo de usos (' . $usos . '/' . $maxUsos . ')');
-                break;
-            }
-            // Premios de la ruleta/rasca caducados a las 48h (expiraEn) — los
-            // códigos creados a mano desde el panel no llevan este campo.
-            if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) break;
-            $cupon['uses'] = $usos + 1;
-            if (fbPutSiCoincide($databaseURL, 'discounts/' . $discountCode, $accessToken, $cupon, $leido['etag'])) break;
-            usleep(rand(20000, 80000));
-        }
-    }
+    // (El uso del código de descuento, si lo hubo, ya se reservó de forma
+    // atómica ANTES de guardar el ticket — ver reservarUsoDescuento más
+    // arriba. No hay nada más que hacer aquí con discounts/.)
 
     // ── 4. REGISTRAR EN phoneLog (para el cooldown/límite diario de próximos pedidos) ──
     registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey);
