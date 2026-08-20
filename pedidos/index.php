@@ -656,8 +656,9 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
        peso visual a la página. El texto de cada pregunta/respuesta tiene
        que coincidir con el FAQPage del <head> (Google exige que el
        contenido del schema esté también visible en la página). -->
-  <div style="max-width:380px;margin:0 auto 20px;text-align:left;">
-    <div style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;margin-bottom:8px;text-align:center;">❓ PREGUNTAS FRECUENTES</div>
+  <details style="max-width:380px;margin:0 auto 20px;text-align:left;">
+    <summary style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;cursor:pointer;text-align:center;">❓ PREGUNTAS FRECUENTES</summary>
+    <div style="margin-top:10px;">
     <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
       <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Puedo pagar con tarjeta o solo en efectivo?</summary>
       <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Con las dos: tarjeta o efectivo al recoger tu pedido en tienda.</p>
@@ -682,7 +683,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿A partir de qué hora hay patatas recién asadas?</summary>
       <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">A partir de las 19:30h.</p>
     </details>
-  </div>
+    </div>
+  </details>
 
   <!-- Copyright -->
   <div style="font-size:11px;color:rgba(138,106,78,0.4);">© Dulce Patata Food &nbsp;·&nbsp;
