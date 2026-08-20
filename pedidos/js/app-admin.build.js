@@ -3049,14 +3049,17 @@ function renderAdminProducts() {
   });
   document.getElementById('admin-product-list').innerHTML = html;
 }
-// ── Etiquetas de dieta/alérgenos del producto (ver DIETARY_TAGS en carta.js) ──
+// ── Alérgenos del producto (los 14 de declaración obligatoria — ver
+// DIETARY_TAGS en carta.js). Marca los que el producto SÍ contiene. ──
 function _tagCheckboxesHtml(item) {
   const seleccionadas = Array.isArray(item.tags) ? item.tags : [];
-  return '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 6px">' + DIETARY_TAGS.map(t => {
+  return '<div style="font-size:11px;font-weight:700;color:#8A6A4E;margin:2px 0 4px">Contiene (alérgenos):</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px">' + DIETARY_TAGS.map(t => {
     const checked = seleccionadas.indexOf(t.id) !== -1;
-    return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;padding:5px 9px;cursor:pointer">'
+    return '<label style="display:flex;align-items:center;gap:5px;font-size:12px;font-family:\'DM Sans\',sans-serif;color:#2A1506;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;padding:5px 9px;cursor:pointer">'
       + '<input type="checkbox" id="edit-tag-' + t.id + '-' + item.id + '"' + (checked ? ' checked' : '') + ' style="margin:0">'
-      + t.emoji + ' ' + t.label
+      + '<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:' + t.color + ';font-size:11px;line-height:1">' + t.emoji + '</span>'
+      + t.label
       + '</label>';
   }).join('') + '</div>';
 }

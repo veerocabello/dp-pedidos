@@ -337,29 +337,50 @@ let activeCategory = "Todos";
 const categories = ["Todos", ...new Set(MENU.map(i => i.cat))];
 const CATEGORY_ICONS = {"Todos":"🍽️","Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
 
-// ── Etiquetas de dieta/alérgenos por producto ── Antes esa información
-// solo estaba en el cartel físico del local — quien miraba la carta desde
-// casa antes de decidir no tenía forma de saber si algo era vegetariano o
-// sin gluten sin llamar o venir a preguntar. item.tags (array de estos ids,
-// opcional) se guarda junto al resto de datos del producto en config/menu.
+// ── Alérgenos por producto (los 14 de declaración obligatoria en la UE) ──
+// Antes esa información solo estaba en el cartel físico del local — quien
+// miraba la carta desde casa antes de decidir no tenía forma de saberlo
+// sin llamar o venir a preguntar. item.tags (array de estos ids, opcional)
+// se guarda junto al resto de datos del producto en config/menu — marca
+// los alérgenos que el producto SÍ contiene (no es una etiqueta positiva
+// tipo "vegano", es la lista de qué evitar).
+// Cada uno lleva también un color, para pintar el emoji dentro de un
+// círculo de color (como los iconos de alérgenos que se ven en cartas de
+// restaurante) y que se distingan de un vistazo — no son los pictogramas
+// oficiales exactos (habría que licenciarlos/dibujarlos aparte), así que
+// el texto va SIEMPRE junto al icono, nunca solo el símbolo: en algo de
+// seguridad alimentaria no vale arriesgarse a que alguien interprete mal
+// un icono ambiguo.
 const DIETARY_TAGS = [
-  { id: 'veg', emoji: '🌱', label: 'Vegetariano' },
-  { id: 'vegano', emoji: '🌿', label: 'Vegano' },
-  { id: 'singluten', emoji: '🌾', label: 'Sin gluten' },
-  { id: 'picante', emoji: '🌶️', label: 'Picante' }
+  { id: 'gluten', emoji: '🌾', label: 'Gluten', color: '#E67E22' },
+  { id: 'crustaceos', emoji: '🦐', label: 'Crustáceos', color: '#2980B9' },
+  { id: 'huevo', emoji: '🥚', label: 'Huevo', color: '#F1A208' },
+  { id: 'pescado', emoji: '🐟', label: 'Pescado', color: '#1B4F72' },
+  { id: 'cacahuetes', emoji: '🥜', label: 'Cacahuetes', color: '#8B5A2B' },
+  { id: 'soja', emoji: '🫘', label: 'Soja', color: '#27632A' },
+  { id: 'leche', emoji: '🥛', label: 'Leche', color: '#5DADE2' },
+  { id: 'frutos_cascara', emoji: '🌰', label: 'Frutos de cáscara', color: '#C0392B' },
+  { id: 'apio', emoji: '🥬', label: 'Apio', color: '#58B368' },
+  { id: 'mostaza', emoji: '🟡', label: 'Mostaza', color: '#D4AC0D' },
+  { id: 'sesamo', emoji: '⚪', label: 'Sésamo', color: '#95A5A6' },
+  { id: 'sulfitos', emoji: '🍷', label: 'Sulfitos', color: '#7D3C98' },
+  { id: 'altramuces', emoji: '🌱', label: 'Altramuces', color: '#B7950B' },
+  { id: 'moluscos', emoji: '🐚', label: 'Moluscos', color: '#17A589' }
 ];
 let activeDietaryFilters = [];
 function initAllergenFilters() {
   const el = document.getElementById('allergen-filters');
   if (!el) return;
-  el.innerHTML = DIETARY_TAGS.map(t => {
-    const active = activeDietaryFilters.indexOf(t.id) !== -1;
-    return '<button class="allergen-chip' + (active ? ' active' : '') + '" onclick="toggleDietaryFilter(\'' + t.id + '\')">' + t.emoji + ' ' + t.label + '</button>';
-  }).join('');
+  el.innerHTML = '<div class="allergen-filters-label">🚫 Ocultar productos que contengan:</div>'
+    + '<div class="allergen-filters-chips">' + DIETARY_TAGS.map(t => {
+      const active = activeDietaryFilters.indexOf(t.id) !== -1;
+      return '<button class="allergen-chip' + (active ? ' active' : '') + '" onclick="toggleDietaryFilter(\'' + t.id + '\')">'
+        + '<span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</button>';
+    }).join('') + '</div>';
 }
-// AND, no OR: si se marcan dos a la vez (p.ej. Vegano + Sin gluten) es
-// porque se buscan las DOS cosas juntas, no productos que cumplan
-// cualquiera de las dos por separado.
+// OR, no AND: si se marcan varios a la vez (p.ej. Gluten + Frutos de
+// cáscara) es porque se quieren evitar LOS DOS — basta con que el
+// producto tenga cualquiera de los marcados para ocultarlo.
 function toggleDietaryFilter(id) {
   const idx = activeDietaryFilters.indexOf(id);
   if (idx === -1) activeDietaryFilters.push(id); else activeDietaryFilters.splice(idx, 1);

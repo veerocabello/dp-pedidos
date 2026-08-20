@@ -89,10 +89,20 @@ function dpf_menu_actual() {
 // Mismo catálogo que DIETARY_TAGS en carta.js — mantener los dos en sync
 // si se añade o cambia alguna etiqueta.
 const DPF_DIETARY_TAGS = [
-    'veg'        => ['emoji' => '🌱', 'label' => 'Vegetariano'],
-    'vegano'     => ['emoji' => '🌿', 'label' => 'Vegano'],
-    'singluten'  => ['emoji' => '🌾', 'label' => 'Sin gluten'],
-    'picante'    => ['emoji' => '🌶️', 'label' => 'Picante'],
+    'gluten'         => ['emoji' => '🌾', 'label' => 'Gluten', 'color' => '#E67E22'],
+    'crustaceos'     => ['emoji' => '🦐', 'label' => 'Crustáceos', 'color' => '#2980B9'],
+    'huevo'          => ['emoji' => '🥚', 'label' => 'Huevo', 'color' => '#F1A208'],
+    'pescado'        => ['emoji' => '🐟', 'label' => 'Pescado', 'color' => '#1B4F72'],
+    'cacahuetes'     => ['emoji' => '🥜', 'label' => 'Cacahuetes', 'color' => '#8B5A2B'],
+    'soja'           => ['emoji' => '🫘', 'label' => 'Soja', 'color' => '#27632A'],
+    'leche'          => ['emoji' => '🥛', 'label' => 'Leche', 'color' => '#5DADE2'],
+    'frutos_cascara' => ['emoji' => '🌰', 'label' => 'Frutos de cáscara', 'color' => '#C0392B'],
+    'apio'           => ['emoji' => '🥬', 'label' => 'Apio', 'color' => '#58B368'],
+    'mostaza'        => ['emoji' => '🟡', 'label' => 'Mostaza', 'color' => '#D4AC0D'],
+    'sesamo'         => ['emoji' => '⚪', 'label' => 'Sésamo', 'color' => '#95A5A6'],
+    'sulfitos'       => ['emoji' => '🍷', 'label' => 'Sulfitos', 'color' => '#7D3C98'],
+    'altramuces'     => ['emoji' => '🌱', 'label' => 'Altramuces', 'color' => '#B7950B'],
+    'moluscos'       => ['emoji' => '🐚', 'label' => 'Moluscos', 'color' => '#17A589'],
 ];
 function dpf_menu_html($menu) {
     $emojiMap = ['Patatas' => '🥔', 'Boniato' => '🍠', 'Paninis' => '🍕', 'Cookies' => '🍪', 'Tartas' => '🍰', 'Bebidas' => '🥤'];
@@ -115,9 +125,9 @@ function dpf_menu_html($menu) {
                 foreach ($item['tags'] as $tid) {
                     if (!isset(DPF_DIETARY_TAGS[$tid])) continue;
                     $t = DPF_DIETARY_TAGS[$tid];
-                    $chips .= '<span class="item-tag">' . $t['emoji'] . ' ' . htmlspecialchars($t['label']) . '</span>';
+                    $chips .= '<span class="item-tag"><span class="allergen-icon" style="background:' . $t['color'] . '">' . $t['emoji'] . '</span>' . htmlspecialchars($t['label']) . '</span>';
                 }
-                if ($chips) $tagsHtml = '<div class="item-tags">' . $chips . '</div>';
+                if ($chips) $tagsHtml = '<div class="item-tags"><span class="item-tags-label">Contiene:</span>' . $chips . '</div>';
             }
             $html .= '<div class="item-card">'
                 . '<div class="item-info">'
