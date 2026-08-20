@@ -35,6 +35,9 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <meta property="og:title" content="Dulce Patata Food — Pedidos Online en Granada">
 <meta property="og:description" content="Patatas rellenas artesanales. Haz tu pedido online y recoge en tienda.">
 <meta property="og:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
+<meta property="og:image:width" content="2027">
+<meta property="og:image:height" content="776">
+<meta property="og:image:alt" content="Dulce Patata Food — fachada y patatas rellenas">
 <meta property="og:locale" content="es_ES">
 <meta property="og:site_name" content="Dulce Patata Food">
 
@@ -43,6 +46,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <meta name="twitter:title" content="Dulce Patata Food — Pedidos Online en Granada">
 <meta name="twitter:description" content="Patatas rellenas artesanales. Haz tu pedido online y recoge en tienda.">
 <meta name="twitter:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
+<meta name="twitter:image:alt" content="Dulce Patata Food — fachada y patatas rellenas">
 
 <!-- Tema color navegador móvil -->
 <meta name="theme-color" content="#3D1F0D">
@@ -95,7 +99,11 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     ],
     "hasMenu": "https://pedidos.dulcepatatafood.es/#carta",
     "acceptsReservations": false,
-    "sameAs": ["https://www.instagram.com/dulcepatatafood"],
+    "sameAs": [
+      "https://www.instagram.com/dulcepatata_food",
+      "https://www.tiktok.com/@dulcepatatafood",
+      "https://maps.app.goo.gl/fUoVZdJDtByWcYq16"
+    ],
     "menu": "https://pedidos.dulcepatatafood.es/#carta"
   }
   </script>
