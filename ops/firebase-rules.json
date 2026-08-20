@@ -46,9 +46,13 @@
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
+    "ventasProductosTienda": {
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'"
+    },
     "gastos": {
-      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
-      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
+      ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'"
     },
     "marketing": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
