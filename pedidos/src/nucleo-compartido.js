@@ -1969,12 +1969,43 @@ function formatPhone(input) {
   let formatted = digits;
   if (digits.length > 6) formatted = digits.slice(0, 3) + ' ' + digits.slice(3, 6) + ' ' + digits.slice(6);else if (digits.length > 3) formatted = digits.slice(0, 3) + ' ' + digits.slice(3);
   input.value = formatted;
+  _validarTelefonoEnVivo(input, digits);
   // Comprobar premio de fidelización cuando el número está completo (9 dígitos)
   if (digits.length === 9) {
     clearTimeout(window._fidelizacionCheckTimer);
     window._fidelizacionCheckTimer = setTimeout(() => _comprobarPremioFidelizacion(digits), 400);
   } else {
     _ocultarAvisoPremioFidelizacion();
+  }
+}
+
+// Aviso en vivo bajo el campo de teléfono, sin esperar a confirmar el
+// pedido — antes el cliente solo se enteraba de un número mal escrito al
+// llegar al paso del SMS, un viaje de ida y vuelta que se evita avisando
+// ya mientras escribe. Busca el div "<id-del-input>-feedback" junto al
+// input (desktop y drawer móvil llevan cada uno el suyo, mismo patrón).
+function _validarTelefonoEnVivo(input, digits) {
+  const feedback = document.getElementById(input.id + '-feedback');
+  if (!feedback) return;
+  if (!digits.length) {
+    feedback.style.display = 'none';
+    input.style.borderColor = '';
+    return;
+  }
+  const prefijoValido = digits[0] === '6' || digits[0] === '7';
+  if (!prefijoValido) {
+    feedback.style.display = 'block';
+    feedback.style.color = 'var(--error)';
+    feedback.textContent = '❌ Los móviles españoles empiezan por 6 o 7 — revisa el número';
+    input.style.borderColor = 'var(--error)';
+  } else if (digits.length < 9) {
+    feedback.style.display = 'none';
+    input.style.borderColor = '';
+  } else {
+    feedback.style.display = 'block';
+    feedback.style.color = '#27855a';
+    feedback.textContent = '✅ Número válido';
+    input.style.borderColor = '#27855a';
   }
 }
 

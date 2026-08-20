@@ -370,6 +370,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
         <div class="form-group">
           <label>Teléfono</label>
           <input type="tel" id="customer-phone" placeholder="" maxlength="11" autocomplete="tel" inputmode="tel" oninput="formatPhone(this)">
+          <div id="customer-phone-feedback" style="font-size:11.5px;margin-top:4px;display:none"></div>
           <div style="background:var(--white);border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
             <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--warm)">📱</div>
             <p style="font-size:12px;font-weight:700;color:var(--brown);margin:0">Se verificará tu número por SMS</p>
@@ -938,8 +939,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      una vez este ya se ha ejecutado). -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1787084848185" defer></script>
-<script src="js/app.js?v=1787084848185" defer></script>
+<script src="js/config.js?v=1787218979973" defer></script>
+<script src="js/app.js?v=1787218979973" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
