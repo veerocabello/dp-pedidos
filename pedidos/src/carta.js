@@ -367,25 +367,17 @@ const DIETARY_TAGS = [
   { id: 'altramuces', emoji: '🌱', label: 'Altramuces', color: '#B7950B' },
   { id: 'moluscos', emoji: '🐚', label: 'Moluscos', color: '#17A589' }
 ];
-let activeDietaryFilters = [];
-function initAllergenFilters() {
-  const el = document.getElementById('allergen-filters');
-  if (!el) return;
-  el.innerHTML = '<div class="allergen-filters-label">🚫 Ocultar productos que contengan:</div>'
-    + '<div class="allergen-filters-chips">' + DIETARY_TAGS.map(t => {
-      const active = activeDietaryFilters.indexOf(t.id) !== -1;
-      return '<button class="allergen-chip' + (active ? ' active' : '') + '" onclick="toggleDietaryFilter(\'' + t.id + '\')">'
-        + '<span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</button>';
-    }).join('') + '</div>';
-}
-// OR, no AND: si se marcan varios a la vez (p.ej. Gluten + Frutos de
-// cáscara) es porque se quieren evitar LOS DOS — basta con que el
-// producto tenga cualquiera de los marcados para ocultarlo.
-function toggleDietaryFilter(id) {
-  const idx = activeDietaryFilters.indexOf(id);
-  if (idx === -1) activeDietaryFilters.push(id); else activeDietaryFilters.splice(idx, 1);
-  initAllergenFilters();
-  renderMenu();
+// Genera el HTML de las insignias de alérgenos de un producto (icono de
+// color + nombre corto), para ponerlas justo al lado del nombre del
+// producto — se usa tanto en la carta real (nucleo-compartido.js) como en
+// la lista del panel de admin (admin-config.js), así se ven de un vistazo
+// en los dos sitios sin tener que abrir nada.
+function dietaryTagsHtml(item) {
+  if (!Array.isArray(item.tags) || !item.tags.length) return '';
+  return '<span class="item-tags">' + item.tags.map(tid => {
+    const t = DIETARY_TAGS.find(d => d.id === tid);
+    return t ? '<span class="item-tag" title="Contiene ' + t.label + '"><span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</span>' : '';
+  }).join('') + '</span>';
 }
 function initTabs() {
   const tabsEl = document.getElementById("tabs");

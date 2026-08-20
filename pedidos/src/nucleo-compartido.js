@@ -939,9 +939,7 @@ function loadSavedMenu() {
 }
 function renderMenu() {
   window._tartaLastSub = null;
-  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory))
-    .filter(i => !i.hidden)
-    .filter(i => !activeDietaryFilters.length || !activeDietaryFilters.some(t => Array.isArray(i.tags) && i.tags.indexOf(t) !== -1));
+  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
   // Ordenar tartas: clásicas primero, especiales después
   var tartasClasicas = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1);
   var tartasEspeciales = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('especial') !== -1);
@@ -1031,12 +1029,7 @@ function renderMenu() {
     const priceHtml = _precioOferta < item.price
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2) + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2) + ' € ⚡</span>'
       : item.price.toFixed(2) + ' €';
-    const tagsHtml = (Array.isArray(item.tags) && item.tags.length)
-      ? '<div class="item-tags"><span class="item-tags-label">Contiene:</span>' + item.tags.map(tid => {
-          const t = DIETARY_TAGS.find(d => d.id === tid);
-          return t ? '<span class="item-tag" title="' + t.label + '"><span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</span>' : '';
-        }).join('') + '</div>'
-      : '';
+    const tagsHtml = dietaryTagsHtml(item);
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
@@ -1044,9 +1037,8 @@ function renderMenu() {
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
-      + tagsHtml
       + '</div>'
       + '<div class="item-price">' + priceHtml + '</div>'
       + '<div class="item-controls">' + controls + '</div>'

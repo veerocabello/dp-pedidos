@@ -135,7 +135,7 @@ Esta acci\xF3n no se puede deshacer.`))return;const e=new Date().toISOString().s
         <span class="drag-handle" draggable="true" title="Arrastrar para reordenar"
           ondragstart="dragStart(event,`).concat(s.id,`)">\u283F</span>
         <div class="aprod-info">
-          <div class="aprod-name" style="`).concat(r?"text-decoration:line-through;color:#8A6A4E":"",'">').concat(formatNombreConBadgeNuevo(s.name),`</div>
+          <div class="aprod-name" style="`).concat(r?"text-decoration:line-through;color:#8A6A4E":"",'">').concat(formatNombreConBadgeNuevo(s.name),dietaryTagsHtml(s),`</div>
           <div class="aprod-desc">`).concat(s.desc,`</div>
           `).concat(r?'<span class="soldout-badge">AGOTADO</span>':"",`
         

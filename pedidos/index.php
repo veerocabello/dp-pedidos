@@ -64,7 +64,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1787245983166">
+<link rel="stylesheet" href="css/style.min.css?v=1787246514932">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -373,8 +373,6 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       </a>
     </div>
     <div class="tabs" id="tabs"></div>
-    <div class="allergen-filters" id="allergen-filters"></div>
-    <p style="font-size:11px;color:var(--muted);margin:-10px 0 16px">ℹ️ Información orientativa. Si tienes alergias o intolerancias, confirma siempre con el personal en tienda antes de pedir.</p>
     <div id="promos-container"></div>
     <div class="menu-grid" id="menu-grid"><?= $dpf_menu_html ?></div>
   </div>
@@ -1078,7 +1076,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787219287818" defer></script>
-<script src="js/app.js?v=1787245983166" defer></script>
+<script src="js/app.js?v=1787246514932" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript

@@ -939,9 +939,7 @@ function loadSavedMenu() {
 }
 function renderMenu() {
   window._tartaLastSub = null;
-  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory))
-    .filter(i => !i.hidden)
-    .filter(i => !activeDietaryFilters.length || !activeDietaryFilters.some(t => Array.isArray(i.tags) && i.tags.indexOf(t) !== -1));
+  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
   // Ordenar tartas: clásicas primero, especiales después
   var tartasClasicas = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1);
   var tartasEspeciales = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('especial') !== -1);
@@ -1031,12 +1029,7 @@ function renderMenu() {
     const priceHtml = _precioOferta < item.price
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2) + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2) + ' € ⚡</span>'
       : item.price.toFixed(2) + ' €';
-    const tagsHtml = (Array.isArray(item.tags) && item.tags.length)
-      ? '<div class="item-tags"><span class="item-tags-label">Contiene:</span>' + item.tags.map(tid => {
-          const t = DIETARY_TAGS.find(d => d.id === tid);
-          return t ? '<span class="item-tag" title="' + t.label + '"><span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</span>' : '';
-        }).join('') + '</div>'
-      : '';
+    const tagsHtml = dietaryTagsHtml(item);
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
@@ -1044,9 +1037,8 @@ function renderMenu() {
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
-      + tagsHtml
       + '</div>'
       + '<div class="item-price">' + priceHtml + '</div>'
       + '<div class="item-controls">' + controls + '</div>'
@@ -4089,25 +4081,17 @@ const DIETARY_TAGS = [
   { id: 'altramuces', emoji: '🌱', label: 'Altramuces', color: '#B7950B' },
   { id: 'moluscos', emoji: '🐚', label: 'Moluscos', color: '#17A589' }
 ];
-let activeDietaryFilters = [];
-function initAllergenFilters() {
-  const el = document.getElementById('allergen-filters');
-  if (!el) return;
-  el.innerHTML = '<div class="allergen-filters-label">🚫 Ocultar productos que contengan:</div>'
-    + '<div class="allergen-filters-chips">' + DIETARY_TAGS.map(t => {
-      const active = activeDietaryFilters.indexOf(t.id) !== -1;
-      return '<button class="allergen-chip' + (active ? ' active' : '') + '" onclick="toggleDietaryFilter(\'' + t.id + '\')">'
-        + '<span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</button>';
-    }).join('') + '</div>';
-}
-// OR, no AND: si se marcan varios a la vez (p.ej. Gluten + Frutos de
-// cáscara) es porque se quieren evitar LOS DOS — basta con que el
-// producto tenga cualquiera de los marcados para ocultarlo.
-function toggleDietaryFilter(id) {
-  const idx = activeDietaryFilters.indexOf(id);
-  if (idx === -1) activeDietaryFilters.push(id); else activeDietaryFilters.splice(idx, 1);
-  initAllergenFilters();
-  renderMenu();
+// Genera el HTML de las insignias de alérgenos de un producto (icono de
+// color + nombre corto), para ponerlas justo al lado del nombre del
+// producto — se usa tanto en la carta real (nucleo-compartido.js) como en
+// la lista del panel de admin (admin-config.js), así se ven de un vistazo
+// en los dos sitios sin tener que abrir nada.
+function dietaryTagsHtml(item) {
+  if (!Array.isArray(item.tags) || !item.tags.length) return '';
+  return '<span class="item-tags">' + item.tags.map(tid => {
+    const t = DIETARY_TAGS.find(d => d.id === tid);
+    return t ? '<span class="item-tag" title="Contiene ' + t.label + '"><span class="allergen-icon" style="background:' + t.color + '">' + t.emoji + '</span>' + t.label + '</span>' : '';
+  }).join('') + '</span>';
 }
 function initTabs() {
   const tabsEl = document.getElementById("tabs");
@@ -7341,7 +7325,6 @@ function confirmCustomizer() {
 // parte de admin-config.js que también se quedó ahí.
 initCatBlocks();
 initTabs();
-initAllergenFilters();
 renderMenu();
 renderPromos();
 renderCart();

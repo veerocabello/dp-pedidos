@@ -125,15 +125,14 @@ function dpf_menu_html($menu) {
                 foreach ($item['tags'] as $tid) {
                     if (!isset(DPF_DIETARY_TAGS[$tid])) continue;
                     $t = DPF_DIETARY_TAGS[$tid];
-                    $chips .= '<span class="item-tag"><span class="allergen-icon" style="background:' . $t['color'] . '">' . $t['emoji'] . '</span>' . htmlspecialchars($t['label']) . '</span>';
+                    $chips .= '<span class="item-tag" title="Contiene ' . htmlspecialchars($t['label']) . '"><span class="allergen-icon" style="background:' . $t['color'] . '">' . $t['emoji'] . '</span>' . htmlspecialchars($t['label']) . '</span>';
                 }
-                if ($chips) $tagsHtml = '<div class="item-tags"><span class="item-tags-label">Contiene:</span>' . $chips . '</div>';
+                if ($chips) $tagsHtml = '<span class="item-tags">' . $chips . '</span>';
             }
             $html .= '<div class="item-card">'
                 . '<div class="item-info">'
-                . '<div class="item-name">' . htmlspecialchars($item['name'] ?? '') . '</div>'
+                . '<div class="item-name">' . htmlspecialchars($item['name'] ?? '') . $tagsHtml . '</div>'
                 . '<div class="item-desc">' . htmlspecialchars($item['desc'] ?? '') . '</div>'
-                . $tagsHtml
                 . '</div>'
                 . '<div class="item-price">' . $precio . ' €</div>'
                 . '</div>';
