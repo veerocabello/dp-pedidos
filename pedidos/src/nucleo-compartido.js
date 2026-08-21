@@ -2037,21 +2037,37 @@ async function _comprobarPremioFidelizacion(phoneClean) {
     if (cliente && premiosPendientes > 0) {
       window._fidelizacionPremioActivo = phoneClean;
       window._fidelizacionProximoSelloActivo = null;
+      window._fidelizacionActivaPremioEsteTicket = null;
       _ocultarAvisoProximoSelloFidelizacion();
+      _ocultarAvisoActivaPremioFidelizacion();
       _mostrarAvisoPremioFidelizacion(phoneClean);
+    } else if (cliente && cliente.sellos >= FIDELIZACION_META && _carritoTienePatata()) {
+      // La tarjeta ya está llena (10/10, ver fidelizacion.php) esperando a
+      // que un pedido la active: este sería ese pedido. Avisamos antes de
+      // confirmar, igual que con el que la completa.
+      window._fidelizacionPremioActivo = null;
+      window._fidelizacionProximoSelloActivo = null;
+      window._fidelizacionActivaPremioEsteTicket = phoneClean;
+      _ocultarAvisoPremioFidelizacion();
+      _ocultarAvisoProximoSelloFidelizacion();
+      _mostrarAvisoActivaPremioFidelizacion(phoneClean);
     } else if (cliente && cliente.sellos === FIDELIZACION_META - 1 && _carritoTienePatata()) {
       // El cliente está a 1 sello del premio (9/10) y este pedido ya incluye
       // patata: este sería el pedido que completa el sello. Avisamos antes
       // de confirmar, no después.
       window._fidelizacionPremioActivo = null;
       window._fidelizacionProximoSelloActivo = phoneClean;
+      window._fidelizacionActivaPremioEsteTicket = null;
       _ocultarAvisoPremioFidelizacion();
+      _ocultarAvisoActivaPremioFidelizacion();
       _mostrarAvisoProximoSelloFidelizacion(phoneClean);
     } else {
       window._fidelizacionPremioActivo = null;
       window._fidelizacionProximoSelloActivo = null;
+      window._fidelizacionActivaPremioEsteTicket = null;
       _ocultarAvisoPremioFidelizacion();
       _ocultarAvisoProximoSelloFidelizacion();
+      _ocultarAvisoActivaPremioFidelizacion();
     }
   } catch (e) { console.warn('[fidelizacion] error comprobando premio:', e); }
 }
@@ -2118,6 +2134,19 @@ function _mostrarAvisoProximoSelloFidelizacion(phoneClean) {
 }
 function _ocultarAvisoProximoSelloFidelizacion() {
   document.querySelectorAll('#fidelizacion-proximo-sello-aviso').forEach(e => e.remove());
+}
+function _mostrarAvisoActivaPremioFidelizacion(phoneClean) {
+  document.querySelectorAll('#fidelizacion-activa-premio-aviso').forEach(e => e.remove());
+  const phoneInput = _campoTelefonoVisible(phoneClean);
+  if (!phoneInput || !phoneInput.parentNode) return;
+  const el = document.createElement('div');
+  el.id = 'fidelizacion-activa-premio-aviso';
+  el.style.cssText = 'background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600';
+  el.innerHTML = '🎁 ¡Tu tarjeta ya está completa! Al confirmar este pedido se activa tu patata gratis (disponible desde tu próximo pedido).';
+  phoneInput.parentNode.appendChild(el);
+}
+function _ocultarAvisoActivaPremioFidelizacion() {
+  document.querySelectorAll('#fidelizacion-activa-premio-aviso').forEach(e => e.remove());
 }
 
 // ── TARJETA VISUAL DE SELLOS (progreso + premio + veces completado) ──

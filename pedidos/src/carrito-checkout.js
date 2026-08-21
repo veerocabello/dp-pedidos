@@ -145,7 +145,9 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
       ? "<div id=\"fidelizacion-premio-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF81 \xA1Tienes una patata gratis disponible! A\xF1ade cualquier patata del men\xFA y se aplicar\xE1 el descuento autom\xE1ticamente al confirmar.</div>"
       : (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === _digitsActualDrawer
         ? "<div id=\"fidelizacion-proximo-sello-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF89 \xA1Este es tu pedido n\xFAmero 10! Al confirmarlo, tu patata gratis estar\xE1 disponible en tu pr\xF3ximo pedido.</div>"
-        : '');
+        : (window._fidelizacionActivaPremioEsteTicket && window._fidelizacionActivaPremioEsteTicket === _digitsActualDrawer
+          ? "<div id=\"fidelizacion-activa-premio-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF81 \xA1Tu tarjeta ya est\xE1 completa! Al confirmar este pedido se activa tu patata gratis (disponible desde tu pr\xF3ximo pedido).</div>"
+          : ''));
     const _studentDiscountHtmlDrawer = studentDiscountEnabledCfg
       ? "<div style=\"margin-top:14px\"><div id=\"drawer-student-discount-box\" style=\"background:#fff;border:1.5px solid ".concat(_estudianteCheckedDrawer ? '#E8943A' : '#F5E6C8', ";border-radius:12px;padding:11px 14px\"><label style=\"display:flex;align-items:center;gap:10px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ").concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado</span></label><div style=\"display:").concat(_estudianteCheckedDrawer ? 'block' : 'none', ";font-size:12px;color:#8A6A4E;line-height:1.45;margin-top:8px;padding-left:28px\">\u26A0\uFE0F Se pedir\xE1 el carn\xE9 en el mostrador.<br><b style=\"color:#C2711A\">Si no se presenta, el descuento no se aplicar\xE1</b> y se cobrar\xE1 el precio normal.</div></div></div>")
       : '';
@@ -518,7 +520,9 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
   const phoneCleanTxt = (phone || '').replace(/\D/g, '');
   const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
     ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
-    : "";
+    : ((window._fidelizacionActivaPremioEsteTicket && window._fidelizacionActivaPremioEsteTicket === phoneCleanTxt)
+      ? "\n>>> PREMIO ACTIVADO. Patata gratis disponible desde el pr\u00F3ximo pedido <<<\n"
+      : "");
   return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
 }
 
@@ -1248,11 +1252,19 @@ async function _submitOrderInner() {
   // línea informativa en el ticket (sin afectar al precio) para que se
   // imprima y se vea en cocina/caja que hay que avisar al cliente.
   const _completaSelloEsteTicket = !!(window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneClean);
+  // Distinto del anterior: la tarjeta YA estaba llena (10/10) de un pedido
+  // previo y es ESTE el que activa el premio — ver el modelo de dos pasos
+  // en fidelizacion.php (registrarSello).
+  const _activaPremioEsteTicket = !!(window._fidelizacionActivaPremioEsteTicket && window._fidelizacionActivaPremioEsteTicket === phoneClean);
   const fidelizacionAvisoItems = _completaSelloEsteTicket ? [{
     name: '🎉 ¡10º SELLO COMPLETADO! Avisar: premio disponible próximo pedido',
     qty: 1,
     subtotal: 0
-  }] : [];
+  }] : (_activaPremioEsteTicket ? [{
+    name: '🎁 ¡PREMIO ACTIVADO! Patata gratis disponible desde el próximo pedido',
+    qty: 1,
+    subtotal: 0
+  }] : []);
   // El ticket siempre imprime la comida en este orden fijo (patatas primero,
   // bebidas al final), sin importar en qué orden se fueron añadiendo al
   // carrito — más fácil de montar en cocina. Los gastos/descuentos/avisos
