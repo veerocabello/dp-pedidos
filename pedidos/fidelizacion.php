@@ -519,28 +519,20 @@ try {
                 $cliente['historialCanjes'] = $historialCanjes;
             }
 
-            // La tarjeta se completa en dos pasos: al llegar a 10 sellos se
-            // queda "llena" (10/10) SIN activar el premio todavía — así se
-            // ve la tarjeta completa en caja/cliente en vez de resetear a 0
-            // de golpe en el mismo pedido que la completa. El premio se
-            // activa recién con el pedido SIGUIENTE (ese pedido "se gasta"
-            // solo en activar el premio: no arranca ya el ciclo nuevo, para
-            // no perder ningún pedido real del cliente).
+            $cliente['sellos'] += 1;
             $completoCicloAhora = false;
             if ($cliente['sellos'] >= FIDELIZACION_META) {
                 if ($cliente['premiosPendientes'] < FIDELIZACION_MAX_PREMIOS_PENDIENTES) {
+                    $cliente['sellos'] = 0;
                     $cliente['premiosPendientes'] += 1;
                     $cliente['vecesCompletado'] += 1;
-                    $cliente['sellos'] = 0;
                     $completoCicloAhora = true;
+                } else {
+                    // Tope de premios pendientes alcanzado — se queda a 1
+                    // sello de completar (no se pierde ni se sigue sumando
+                    // de más) hasta que canjee alguno de los que ya tiene.
+                    $cliente['sellos'] = FIDELIZACION_META - 1;
                 }
-                // Si ya está al tope de premios pendientes, se queda en 10
-                // esperando (no se pierde) hasta que canjee alguno.
-            } else {
-                $cliente['sellos'] += 1;
-                // Si con este sello llega justo a 10, la tarjeta queda llena
-                // pero el premio no se activa aún — se activará con el
-                // pedido siguiente (bloque de arriba).
             }
 
             // Registro de cuándo se pone cada sello (con el pedido que lo
@@ -644,20 +636,11 @@ try {
             // en ese caso).
             $ordenados = $historialSellos;
             usort($ordenados, function ($a, $b) { return ($a['ts'] ?? 0) <=> ($b['ts'] ?? 0); });
-            // Mismo modelo de dos pasos que registrarSello: cada entrada
-            // suma 1 sello, salvo que la tarjeta ya estuviera llena (10),
-            // en cuyo caso esa entrada activa el premio (ciclo completado)
-            // y no arranca ya el ciclo nuevo — ver comentario en
-            // registrarSello más arriba.
             $simular = function ($lista) {
                 $sellos = 0; $ciclos = 0;
                 foreach ($lista as $h) {
-                    if ($sellos >= FIDELIZACION_META) {
-                        $ciclos += 1;
-                        $sellos = 0;
-                    } else {
-                        $sellos += 1;
-                    }
+                    $sellos += 1;
+                    if ($sellos >= FIDELIZACION_META) { $sellos = 0; $ciclos += 1; }
                 }
                 return [$sellos, $ciclos];
             };

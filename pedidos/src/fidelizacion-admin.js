@@ -69,16 +69,11 @@ async function sumarSelloFidelizacionRapido(telefono) {
       let sellos = typeof c.sellos === 'number' ? c.sellos : 0;
       let premiosPendientes = typeof c.premiosPendientes === 'number' ? c.premiosPendientes : (c.premioDisponible ? 1 : 0);
       let vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
-      // Mismo modelo de dos pasos que fidelizacion.php (registrarSello): si
-      // la tarjeta ya estaba llena (10/10) este sello activa el premio en
-      // vez de arrancar ya el ciclo nuevo; si no, suma normal y puede dejar
-      // la tarjeta llena a la espera del siguiente.
+      sellos += 1;
       if (sellos >= FIDELIZACION_META_ADMIN) {
+        sellos = 0;
         premiosPendientes += 1;
         vecesCompletado += 1;
-        sellos = 0;
-      } else {
-        sellos += 1;
       }
       c.sellos = sellos;
       c.premiosPendientes = premiosPendientes;
