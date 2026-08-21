@@ -870,6 +870,57 @@ async function imprimirTicketPrueba() {
   }
 }
 
+// Ticket de prueba SOLO para comparar en papel real dos formas de
+// resaltar una modificación de producto (p.ej. "sin queso") pegada a su
+// línea — de cara a decidir cuál usar de verdad más adelante, nada de
+// esto afecta todavía a los tickets reales. Autocontenido igual que
+// _imprimirUnCartelQRLocal más abajo (bytes ESC/POS propios, no reutiliza
+// los de _ptBuildTicketBytes) — se puede borrar entero sin tocar nada más
+// el día que ya no haga falta.
+async function imprimirPruebaModificaciones() {
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const left = () => d.push(ESC, 0x61, 0x00);
+  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+  // GS B n — modo "blanco sobre negro" (reverse/inverse), estándar ESC/POS
+  // compatible Epson. Si en esta impresora en concreto no invierte nada,
+  // probablemente use otro comando propietario — se vería tal cual (texto
+  // normal) en vez de dar un error, así que no hay riesgo real en probarlo.
+  const invert = on => d.push(GS, 0x42, on ? 0x01 : 0x00);
+
+  d.push(ESC, 0x40);
+  center();
+  bold(true); push('PRUEBA DE MODIFICACIONES\n'); bold(false);
+  push('(no es un pedido real)\n');
+  push('------------------------------------------------\n');
+  left();
+  push('1x Patata Ranchera            6,50 EUR\n');
+  push('\n');
+  push('1x Patata Carnivora            6,40 EUR\n');
+  center();
+  bold(true); push('*** ESTILO A: SIN QUESO ***\n'); bold(false);
+  left();
+  push('\n');
+  push('1x Patata 4 Quesos             5,90 EUR\n');
+  center();
+  invert(true); push(' ESTILO B: SIN ROQUEFORT, DOBLE GOUDA \n'); invert(false);
+  left();
+  push('------------------------------------------------\n');
+  center();
+  push('Fin de la prueba\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+
+  const _ptEjecutarPrueba = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  try {
+    await _ptEjecutarPrueba(() => _ptEnviarBytes(new Uint8Array(d)));
+  } catch (e) {
+    alert('⚠️ ' + e.message);
+  }
+}
+
 // Reimprime el último ticket normal enviado (no el de prueba, ni una
 // anulación) — para el caso de que se atasque el papel a mitad de
 // impresión, sin tener que ir a buscar el pedido en la lista. Pasa por

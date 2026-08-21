@@ -252,7 +252,22 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),a(`
 
 
-`),n.push(29,86,66,0),new Uint8Array(n)}async function imprimirAnulacion(e){await(typeof _ptEnFila=="function"?_ptEnFila:(o=>o()))(()=>_ptEnviarBytes(_ptBuildAnulacionBytes(e)))}async function imprimirTicketPrueba(){const e=typeof _ptEnFila=="function"?_ptEnFila:(t=>t());try{await e(()=>imprimirTicketTermico({orderNum:"PRUEBA",name:"Ticket de prueba",phone:"",notes:"",slotTime:null,items:[{name:"Impresora configurada correctamente",qty:1,subtotal:0}],total:0,time:new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}))}catch(t){alert("\u26A0\uFE0F "+t.message)}}async function reimprimirUltimoTicketTermico(){if(!_ptUltimoTicket){alert("Todav\xEDa no se ha impreso ning\xFAn ticket en este dispositivo.");return}const e=typeof _ptEnFila=="function"?_ptEnFila:(t=>t());try{await e(()=>imprimirTicketTermico(_ptUltimoTicket))}catch(t){alert("\u26A0\uFE0F No se pudo reimprimir: "+t.message)}}async function imprimirCartelQRLocal(e){const t=typeof getLocalFeeCode=="function"?getLocalFeeCode():"";if(!t){alert('Primero pon y guarda un c\xF3digo en "C\xF3digo pedido desde el local".');return}const o=Math.max(1,Math.min(10,parseInt(e,10)||1)),n=typeof _ptEnFila=="function"?_ptEnFila:(a=>a());for(let a=0;a<o;a++)try{await n(()=>_imprimirUnCartelQRLocal(t))}catch(i){alert("\u26A0\uFE0F No se pudo imprimir el cartel: "+i.message);return}}async function _imprimirUnCartelQRLocal(e){const t=window.location.origin+"/?local="+encodeURIComponent(e),o=27,n=29,a=[],i=l=>{for(const d of _ptEncodeStr(l))a.push(d.charCodeAt(0)&255)},s=()=>a.push(o,97,1),r=()=>a.push(o,33,48),c=()=>a.push(o,33,0);a.push(o,64),s(),i(`
+`),n.push(29,86,66,0),new Uint8Array(n)}async function imprimirAnulacion(e){await(typeof _ptEnFila=="function"?_ptEnFila:(o=>o()))(()=>_ptEnviarBytes(_ptBuildAnulacionBytes(e)))}async function imprimirTicketPrueba(){const e=typeof _ptEnFila=="function"?_ptEnFila:(t=>t());try{await e(()=>imprimirTicketTermico({orderNum:"PRUEBA",name:"Ticket de prueba",phone:"",notes:"",slotTime:null,items:[{name:"Impresora configurada correctamente",qty:1,subtotal:0}],total:0,time:new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}))}catch(t){alert("\u26A0\uFE0F "+t.message)}}async function imprimirPruebaModificaciones(){const o=[],n=l=>{for(const d of _ptEncodeStr(l))o.push(d.charCodeAt(0)&255)},a=()=>o.push(27,97,1),i=()=>o.push(27,97,0),s=l=>o.push(27,69,l?1:0),r=l=>o.push(29,66,l?1:0);o.push(27,64),a(),s(!0),n(`PRUEBA DE MODIFICACIONES
+`),s(!1),n(`(no es un pedido real)
+`),n(`------------------------------------------------
+`),i(),n(`1x Patata Ranchera            6,50 EUR
+`),n(`
+`),n(`1x Patata Carnivora            6,40 EUR
+`),a(),s(!0),n(`*** ESTILO A: SIN QUESO ***
+`),s(!1),i(),n(`
+`),n(`1x Patata 4 Quesos             5,90 EUR
+`),a(),r(!0),n(` ESTILO B: SIN ROQUEFORT, DOBLE GOUDA 
+`),r(!1),i(),n(`------------------------------------------------
+`),a(),n(`Fin de la prueba
+`),n(`
+
+
+`),o.push(29,86,66,0);const c=typeof _ptEnFila=="function"?_ptEnFila:(l=>l());try{await c(()=>_ptEnviarBytes(new Uint8Array(o)))}catch(l){alert("\u26A0\uFE0F "+l.message)}}async function reimprimirUltimoTicketTermico(){if(!_ptUltimoTicket){alert("Todav\xEDa no se ha impreso ning\xFAn ticket en este dispositivo.");return}const e=typeof _ptEnFila=="function"?_ptEnFila:(t=>t());try{await e(()=>imprimirTicketTermico(_ptUltimoTicket))}catch(t){alert("\u26A0\uFE0F No se pudo reimprimir: "+t.message)}}async function imprimirCartelQRLocal(e){const t=typeof getLocalFeeCode=="function"?getLocalFeeCode():"";if(!t){alert('Primero pon y guarda un c\xF3digo en "C\xF3digo pedido desde el local".');return}const o=Math.max(1,Math.min(10,parseInt(e,10)||1)),n=typeof _ptEnFila=="function"?_ptEnFila:(a=>a());for(let a=0;a<o;a++)try{await n(()=>_imprimirUnCartelQRLocal(t))}catch(i){alert("\u26A0\uFE0F No se pudo imprimir el cartel: "+i.message);return}}async function _imprimirUnCartelQRLocal(e){const t=window.location.origin+"/?local="+encodeURIComponent(e),o=27,n=29,a=[],i=l=>{for(const d of _ptEncodeStr(l))a.push(d.charCodeAt(0)&255)},s=()=>a.push(o,97,1),r=()=>a.push(o,33,48),c=()=>a.push(o,33,0);a.push(o,64),s(),i(`
 `),r(),i(`PIDE DESDE
 `),i(`EL MOVIL
 `),c(),i(`sin gastos de gestion
