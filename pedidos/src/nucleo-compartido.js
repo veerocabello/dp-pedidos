@@ -1722,6 +1722,7 @@ const TICKET_CONFIG_DEFAULTS = {
   nombre: 'DULCE PATATA FOOD',
   direccion: 'Carretera de Málaga 111, Granada',
   telefono: '604 82 31 80',
+  nif: '77558832A',
   despedida: '¡Gracias por tu pedido! 🥔',
   textoPago: 'Pagar en caja',
   anchoPapel: 80,

@@ -931,6 +931,7 @@ function bimbaPintarTicketConfig() {
   nombreEl.value = tc.nombre;
   document.getElementById('tc-direccion').value = tc.direccion;
   document.getElementById('tc-telefono').value = tc.telefono;
+  document.getElementById('tc-nif').value = tc.nif;
   document.getElementById('tc-despedida').value = tc.despedida;
   document.getElementById('tc-texto-pago').value = tc.textoPago;
   document.getElementById('tc-ancho-papel').value = String(tc.anchoPapel || 80);
@@ -973,6 +974,7 @@ function bimbaGuardarTicketConfig() {
     nombre: document.getElementById('tc-nombre').value.trim() || TICKET_CONFIG_DEFAULTS.nombre,
     direccion: document.getElementById('tc-direccion').value.trim() || TICKET_CONFIG_DEFAULTS.direccion,
     telefono: document.getElementById('tc-telefono').value.trim() || TICKET_CONFIG_DEFAULTS.telefono,
+    nif: document.getElementById('tc-nif').value.trim() || TICKET_CONFIG_DEFAULTS.nif,
     despedida: document.getElementById('tc-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,

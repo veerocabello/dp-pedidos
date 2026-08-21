@@ -76,6 +76,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   normal();
   push(tc.direccion + '\n');
   push(tc.telefono + '\n');
+  if (tc.nif) push('NIF ' + tc.nif + '\n');
   push('------------------------------------------------\n');
 
   // Hora de recogida si tiene turno — si no lo tiene (pedido con código
@@ -924,6 +925,7 @@ async function imprimirPruebaModificaciones() {
   big(); push(tc.nombre + '\n'); normal();
   push(tc.direccion + '\n');
   push(tc.telefono + '\n');
+  if (tc.nif) push('NIF ' + tc.nif + '\n');
   push('------------------------------------------------\n');
   big(); push('PEDIDO PRUEBA\n'); normal();
   push(new Date().toLocaleString('es-ES') + '\n');
