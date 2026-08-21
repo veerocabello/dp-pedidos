@@ -40,12 +40,31 @@ const FIDELIZACION_PEDIDO_MINIMO = 5;
 // pedido con patata completa el ciclo con normalidad.
 const FIDELIZACION_MAX_PREMIOS_PENDIENTES = 3;
 
-// ── LÍMITE DE INTENTOS: máximo 30 peticiones por IP cada 5 minutos ──
-// (más alto que otros endpoints porque "consultar" se llama cada vez
-// que el cliente termina de teclear su teléfono en el formulario)
+// ── LÍMITE DE INTENTOS ── Antes "consultar" (se llama cada vez que el
+// cliente termina de teclear su teléfono, incluso solo para MIRAR su
+// tarjeta de sellos) y "registrarSello"/"revertirSello" (que solo pasan
+// una vez por pedido real) compartían el mismo cupo de 30 peticiones/5min
+// por IP. Alguien probando varios pedidos seguidos (o mirando su tarjeta
+// varias veces mientras tanto) podía agotar el cupo entero con
+// "consultar" y dejar sin margen al "registrarSello" del pedido
+// siguiente — que entonces se rechazaba con un 429 ANTES de llegar
+// siquiera a mirar el pedido, así que fallaba en silencio: sin aviso en
+// el navegador (es una llamada de fondo, ver _procesarSelloFidelizacion)
+// ni en el registro de actividad del panel (ese aviso solo se escribe
+// más abajo, dentro de la propia acción, que ni se llega a ejecutar). El
+// sello se quedaba sin sumar sin que nadie se enterara — atascado siempre
+// en el mismo número por mucho que se probara. Ahora cada tipo de acción
+// tiene su propio cupo, y el de escritura es más generoso porque de
+// verdad solo pasa una vez por pedido real, no una vez por cada vez que
+// alguien mira su tarjeta.
+$rawInput = file_get_contents('php://input');
+$payloadPeek = json_decode($rawInput, true);
+$actionPeek = is_array($payloadPeek) ? (string)($payloadPeek['action'] ?? '') : '';
+$esEscrituraSello = in_array($actionPeek, ['registrarSello', 'revertirSello'], true);
+
 $tmp_dir = sys_get_temp_dir();
 $window  = 300;
-$max_ip  = 30;
+$max_ip  = $esEscrituraSello ? 60 : 30;
 
 // NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
 // quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
@@ -54,7 +73,7 @@ $max_ip  = 30;
 // la IP real de quien conecta — no se puede falsificar en la capa TCP.
 $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
-$ip_file = $tmp_dir . '/dpf_fidelizacion_ip_' . md5($ip) . '.json';
+$ip_file = $tmp_dir . '/dpf_fidelizacion_' . ($esEscrituraSello ? 'w_' : 'r_') . md5($ip) . '.json';
 
 // Limpieza ocasional de archivos de límite viejos (ver otros endpoints)
 function dpf_gc_rate_limit_files() {
@@ -326,8 +345,10 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [])
 }
 
 try {
-    $raw = file_get_contents('php://input');
-    $payload = json_decode($raw, true);
+    // $rawInput/$payloadPeek ya se leyeron arriba (antes de decidir el
+    // cupo de intentos) — php://input solo se puede leer una vez, así que
+    // se reutiliza en vez de volver a llamar a file_get_contents().
+    $payload = $payloadPeek;
     if (!$payload || !isset($payload['action']) || !isset($payload['telefono'])) {
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'Petición inválida']);
