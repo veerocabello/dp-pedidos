@@ -6065,6 +6065,19 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
         }
       });
     }
+    // item.modText (opcional, aún no lo rellena ningún pedido real — solo
+    // se usa aquí, en la prueba del botón "✂️ Probar estilos de nota") —
+    // modificación del producto en estilo E (negrita + subrayado),
+    // pegada a su línea en vez de en las notas generales del final.
+    if (item.modText) {
+      center();
+      bold(true);
+      d.push(ESC, 0x2D, 0x02); // subrayado 2 puntos
+      push(item.modText + '\n');
+      d.push(ESC, 0x2D, 0x00);
+      bold(false);
+      left();
+    }
   });
 
   push('------------------------------------------------\n');
@@ -6863,6 +6876,42 @@ async function imprimirPruebaModificaciones() {
   const _ptEjecutarPrueba = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
   try {
     await _ptEjecutarPrueba(() => _ptEnviarBytes(new Uint8Array(d)));
+  } catch (e) {
+    alert('⚠️ ' + e.message);
+  }
+}
+
+// Pedido de prueba GRANDE, con el pipeline REAL (imprimirTicketTermico →
+// _ptBuildTicketBytes, el mismo que usa cualquier pedido de verdad) — para
+// ver el estilo E (negrita+subrayado, ver item.modText en _ptBuildTicketBytes)
+// dentro de un ticket largo de verdad, con varios productos, y no solo en
+// la prueba corta de arriba. item.modText es un campo nuevo, pero solo lo
+// rellena este botón — ningún pedido real lo manda todavía, así que no hay
+// ningún cambio de comportamiento para los tickets normales.
+async function imprimirPruebaPedidoGrande() {
+  const items = [
+    { name: 'Patata Ranchera', qty: 1, subtotal: 6.50 },
+    { name: 'Patata Carnivora', qty: 1, subtotal: 6.40, modText: 'SIN QUESO' },
+    { name: 'Patata Philadelphia', qty: 1, subtotal: 6.40 },
+    { name: 'Patata 4 Quesos', qty: 1, subtotal: 5.90, modText: 'SIN ROQUEFORT, DOBLE GOUDA' },
+    { name: 'Boniato Fries', qty: 2, subtotal: 9.00 },
+    { name: 'Panini Jamon York y Queso', qty: 1, subtotal: 5.50, modText: 'SIN QUESO' },
+    { name: 'Crumbl Cookie Oreo', qty: 2, subtotal: 5.98 },
+    { name: 'Patata Al Gusto', qty: 1, subtotal: 6.90 }
+  ];
+  const total = items.reduce((s, it) => s + it.subtotal, 0);
+  const _ptEjecutarPrueba = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  try {
+    await _ptEjecutarPrueba(() => imprimirTicketTermico({
+      orderNum: 'PRUEBA-GRANDE',
+      name: 'Pedido de prueba grande',
+      phone: '600000000',
+      notes: 'Este es un ticket de prueba con estilo E en 3 productos',
+      slotTime: '20:30',
+      items: items,
+      total: total,
+      time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+    }));
   } catch (e) {
     alert('⚠️ ' + e.message);
   }
