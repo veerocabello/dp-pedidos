@@ -6802,6 +6802,9 @@ async function imprimirPruebaModificaciones() {
   // real — en esta impresora también se ve bien (estilo C).
   const big = () => d.push(ESC, 0x21, 0x30);
   const normal = () => d.push(ESC, 0x21, 0x00);
+  // ESC '-' n — subrayado (n=2: línea de 2 puntos de grosor, la más
+  // gruesa/visible de las que admite el estándar).
+  const underline = on => d.push(ESC, 0x2D, on ? 0x02 : 0x00);
 
   d.push(ESC, 0x40);
   center();
@@ -6836,10 +6839,20 @@ async function imprimirPruebaModificaciones() {
   // _ptBuildTicketBytes), así que sabemos que ya funciona en producción.
   bold(true); big(); push('ESTILO D:\n'); push('SIN QUESO\n'); normal(); bold(false);
   left();
+  push('\n');
+  push('1x Patata Granollers            6,50 EUR\n');
+  center();
+  bold(true); underline(true); push('ESTILO E: SIN GAMBAS\n'); underline(false); bold(false);
+  left();
+  push('\n');
+  push('1x Patata Philadelphia          6,40 EUR\n');
+  center();
+  invert(true); big(); push('ESTILO H:\n'); push('SIN QUESO\n'); normal(); invert(false);
+  left();
 
   push('------------------------------------------------\n');
   center();
-  big(); push('18,80 EUR\n'); normal();
+  big(); push('39,60 EUR\n'); normal();
   push(tc.textoPago + '\n');
   push('------------------------------------------------\n');
   push(tc.despedida + '\n');
