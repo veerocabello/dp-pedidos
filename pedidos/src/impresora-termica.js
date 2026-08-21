@@ -889,6 +889,13 @@ async function imprimirPruebaModificaciones() {
   // probablemente use otro comando propietario — se vería tal cual (texto
   // normal) en vez de dar un error, así que no hay riesgo real en probarlo.
   const invert = on => d.push(GS, 0x42, on ? 0x01 : 0x00);
+  // Igual que big()/normal() en _ptBuildTicketBytes (el mismo comando que
+  // ya usa el nombre del negocio y el total en CADA ticket real) — si el
+  // estilo A (negrita) y el B (invertido) no se distinguieran en esta
+  // impresora en concreto, este es el que ya sabemos seguro que sí se ve,
+  // porque ya está funcionando delante de sus ojos en todos los pedidos.
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
 
   d.push(ESC, 0x40);
   center();
@@ -906,6 +913,11 @@ async function imprimirPruebaModificaciones() {
   push('1x Patata 4 Quesos             5,90 EUR\n');
   center();
   invert(true); push(' ESTILO B: SIN ROQUEFORT, DOBLE GOUDA \n'); invert(false);
+  left();
+  push('\n');
+  push('1x Patata Bomba                7,90 EUR\n');
+  center();
+  big(); push('ESTILO C:\n'); push('SIN PICANTE\n'); normal();
   left();
   push('------------------------------------------------\n');
   center();
