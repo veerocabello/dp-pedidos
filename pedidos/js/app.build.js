@@ -7097,11 +7097,27 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
       // la reversión evita esa carrera.
       const _selloPendiente = window._selloEnCursoPorPedido && window._selloEnCursoPorPedido[orderNum];
       if (_selloPendiente) { try { await _selloPendiente; } catch (e) {} }
-      fetch('fidelizacion.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'revertirSello', telefono: _telLimpio, orderNum })
-      }).catch(e => console.warn('[fidelizacion] no se pudo revertir el sello al cancelar el pedido:', e));
+      // Antes esto se disparaba "por su cuenta" (sin esperar) para no
+      // retrasar la cancelación — pero eso dejaba la pantalla con el
+      // aviso de "patata gratis" desactualizado: si el cliente hacía otro
+      // pedido justo después con el mismo teléfono ya escrito (sin volver
+      // a teclearlo, que es lo único que dispara _comprobarPremioFidelizacion),
+      // no se enteraba de que ya tenía premio disponible otra vez aunque el
+      // servidor sí lo hubiera revertido bien. Ahora se espera a que
+      // termine y se vuelve a comprobar el teléfono para refrescar el
+      // aviso solo, sin que haga falta borrar y reescribir el número.
+      try {
+        await fetch('fidelizacion.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'revertirSello', telefono: _telLimpio, orderNum })
+        });
+      } catch (e) {
+        console.warn('[fidelizacion] no se pudo revertir el sello al cancelar el pedido:', e);
+      }
+      if (typeof _comprobarPremioFidelizacion === 'function') {
+        try { await _comprobarPremioFidelizacion(_telLimpio); } catch (e) {}
+      }
     }
   }
 
