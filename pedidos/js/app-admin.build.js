@@ -6074,7 +6074,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     if (item.modText) {
       push(' '.repeat(prefix.length));
       bold(true);
-      d.push(ESC, 0x2D, 0x02); // subrayado 2 puntos
+      d.push(ESC, 0x2D, 0x01); // subrayado 1 punto (más fino que el de 2 — el de 2 salía borroso en esta impresora)
       push(item.modText + '\n');
       d.push(ESC, 0x2D, 0x00);
       bold(false);
@@ -6816,9 +6816,9 @@ async function imprimirPruebaModificaciones() {
   // real — en esta impresora también se ve bien (estilo C).
   const big = () => d.push(ESC, 0x21, 0x30);
   const normal = () => d.push(ESC, 0x21, 0x00);
-  // ESC '-' n — subrayado (n=2: línea de 2 puntos de grosor, la más
-  // gruesa/visible de las que admite el estándar).
-  const underline = on => d.push(ESC, 0x2D, on ? 0x02 : 0x00);
+  // ESC '-' n — subrayado (n=1: línea de 1 punto, más fina — la de 2
+  // puntos salía borrosa en esta impresora).
+  const underline = on => d.push(ESC, 0x2D, on ? 0x01 : 0x00);
 
   d.push(ESC, 0x40);
   center();

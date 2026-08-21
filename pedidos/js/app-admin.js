@@ -226,7 +226,7 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `);return}const I=b-w.length-_.length-v.length;I>=1?s(w+_+" ".repeat(I)+v+`
 `):(s(w+_+`
 `),s(" ".repeat(Math.max(0,b-v.length))+v+`
-`))}),g.modText&&(s(" ".repeat(h.length)),p(!0),i.push(n,45,2),s(g.modText+`
+`))}),g.modText&&(s(" ".repeat(h.length)),p(!0),i.push(n,45,1),s(g.modText+`
 `),i.push(n,45,0),p(!1))}),s(`------------------------------------------------
 `),e.fidelizacionElegible&&(r(),p(!0),l(),s(`*** COMPROBAR SELLOS ***
 `),d(),p(!1),s(`------------------------------------------------
@@ -253,7 +253,7 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),a(`
 
 
-`),n.push(29,86,66,0),new Uint8Array(n)}async function imprimirAnulacion(e){await(typeof _ptEnFila=="function"?_ptEnFila:(o=>o()))(()=>_ptEnviarBytes(_ptBuildAnulacionBytes(e)))}async function imprimirTicketPrueba(){const e=typeof _ptEnFila=="function"?_ptEnFila:(t=>t());try{await e(()=>imprimirTicketTermico({orderNum:"PRUEBA",name:"Ticket de prueba",phone:"",notes:"",slotTime:null,items:[{name:"Impresora configurada correctamente",qty:1,subtotal:0}],total:0,time:new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}))}catch(t){alert("\u26A0\uFE0F "+t.message)}}async function imprimirPruebaModificaciones(){const e=getTicketConfig(),t=27,o=29,n=[],a=y=>{for(const u of _ptEncodeStr(y))n.push(u.charCodeAt(0)&255)},i=()=>n.push(t,97,1),s=()=>n.push(t,97,0),r=y=>n.push(t,69,y?1:0),c=y=>n.push(o,66,y?1:0),l=()=>n.push(t,33,48),d=()=>n.push(t,33,0),p=y=>n.push(t,45,y?2:0);n.push(t,64),i();const g=PRINTER_LOGO_W+7>>3;n.push(o,118,48,0,g&255,g>>8&255,PRINTER_LOGO_H&255,PRINTER_LOGO_H>>8&255),PRINTER_LOGO_DATA.forEach(y=>n.push(y)),l(),a(e.nombre+`
+`),n.push(29,86,66,0),new Uint8Array(n)}async function imprimirAnulacion(e){await(typeof _ptEnFila=="function"?_ptEnFila:(o=>o()))(()=>_ptEnviarBytes(_ptBuildAnulacionBytes(e)))}async function imprimirTicketPrueba(){const e=typeof _ptEnFila=="function"?_ptEnFila:(t=>t());try{await e(()=>imprimirTicketTermico({orderNum:"PRUEBA",name:"Ticket de prueba",phone:"",notes:"",slotTime:null,items:[{name:"Impresora configurada correctamente",qty:1,subtotal:0}],total:0,time:new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}))}catch(t){alert("\u26A0\uFE0F "+t.message)}}async function imprimirPruebaModificaciones(){const e=getTicketConfig(),t=27,o=29,n=[],a=y=>{for(const u of _ptEncodeStr(y))n.push(u.charCodeAt(0)&255)},i=()=>n.push(t,97,1),s=()=>n.push(t,97,0),r=y=>n.push(t,69,y?1:0),c=y=>n.push(o,66,y?1:0),l=()=>n.push(t,33,48),d=()=>n.push(t,33,0),p=y=>n.push(t,45,y?1:0);n.push(t,64),i();const g=PRINTER_LOGO_W+7>>3;n.push(o,118,48,0,g&255,g>>8&255,PRINTER_LOGO_H&255,PRINTER_LOGO_H>>8&255),PRINTER_LOGO_DATA.forEach(y=>n.push(y)),l(),a(e.nombre+`
 `),d(),a(e.direccion+`
 `),a(e.telefono+`
 `),a(`------------------------------------------------
