@@ -163,16 +163,17 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     }
     // item.modText (opcional, aún no lo rellena ningún pedido real — solo
     // se usa aquí, en la prueba del botón "✂️ Probar estilos de nota") —
-    // modificación del producto en estilo E (negrita + subrayado),
-    // pegada a su línea en vez de en las notas generales del final.
+    // modificación del producto en estilo E (negrita + subrayado), pegada
+    // a su línea en vez de en las notas generales del final. Alineada a
+    // la izquierda con la misma sangría que "1x " (donde empieza el
+    // nombre del producto arriba), no centrada.
     if (item.modText) {
-      center();
+      push(' '.repeat(prefix.length));
       bold(true);
       d.push(ESC, 0x2D, 0x02); // subrayado 2 puntos
       push(item.modText + '\n');
       d.push(ESC, 0x2D, 0x00);
       bold(false);
-      left();
     }
   });
 

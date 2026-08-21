@@ -226,8 +226,8 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `);return}const I=b-w.length-_.length-v.length;I>=1?s(w+_+" ".repeat(I)+v+`
 `):(s(w+_+`
 `),s(" ".repeat(Math.max(0,b-v.length))+v+`
-`))}),g.modText&&(r(),p(!0),i.push(n,45,2),s(g.modText+`
-`),i.push(n,45,0),p(!1),c())}),s(`------------------------------------------------
+`))}),g.modText&&(s(" ".repeat(h.length)),p(!0),i.push(n,45,2),s(g.modText+`
+`),i.push(n,45,0),p(!1))}),s(`------------------------------------------------
 `),e.fidelizacionElegible&&(r(),p(!0),l(),s(`*** COMPROBAR SELLOS ***
 `),d(),p(!1),s(`------------------------------------------------
 `)),e.esEstudianteJubilado&&(r(),p(!0),l(),s(`*** VERIFICAR CARNET ***
