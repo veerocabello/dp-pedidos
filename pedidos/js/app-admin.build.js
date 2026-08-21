@@ -6782,37 +6782,42 @@ async function imprimirTicketPrueba() {
 // los de _ptBuildTicketBytes) — se puede borrar entero sin tocar nada más
 // el día que ya no haga falta.
 async function imprimirPruebaModificaciones() {
+  // Réplica del cabecero/pie REAL de _ptBuildTicketBytes (logo, nombre,
+  // dirección, teléfono...) para que la prueba se vea dentro de un ticket
+  // completo de verdad y no aislada — así se puede juzgar el estilo en su
+  // sitio real, no en un papel suelto sin nada alrededor. Autocontenida a
+  // propósito: no llama a _ptBuildTicketBytes ni la modifica, cero riesgo
+  // para los tickets reales. Se puede borrar entera cuando ya no haga falta.
+  const tc = getTicketConfig();
   const ESC = 0x1B, GS = 0x1D;
   const d = [];
   const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
   const center = () => d.push(ESC, 0x61, 0x01);
   const left = () => d.push(ESC, 0x61, 0x00);
   const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
-  // GS B n — modo "blanco sobre negro" (reverse/inverse), estándar ESC/POS
-  // compatible Epson. Si en esta impresora en concreto no invierte nada,
-  // probablemente use otro comando propietario — se vería tal cual (texto
-  // normal) en vez de dar un error, así que no hay riesgo real en probarlo.
+  // GS B n — modo "blanco sobre negro" (reverse/inverse). En esta
+  // impresora en concreto SÍ se ve bien (estilo B).
   const invert = on => d.push(GS, 0x42, on ? 0x01 : 0x00);
-  // Igual que big()/normal() en _ptBuildTicketBytes (el mismo comando que
-  // ya usa el nombre del negocio y el total en CADA ticket real) — si el
-  // estilo A (negrita) y el B (invertido) no se distinguieran en esta
-  // impresora en concreto, este es el que ya sabemos seguro que sí se ve,
-  // porque ya está funcionando delante de sus ojos en todos los pedidos.
+  // Mismo comando que el nombre del negocio y el total en CADA ticket
+  // real — en esta impresora también se ve bien (estilo C).
   const big = () => d.push(ESC, 0x21, 0x30);
   const normal = () => d.push(ESC, 0x21, 0x00);
 
   d.push(ESC, 0x40);
   center();
-  bold(true); push('PRUEBA DE MODIFICACIONES\n'); bold(false);
-  push('(no es un pedido real)\n');
+  const bpr = (PRINTER_LOGO_W + 7) >> 3;
+  d.push(GS, 0x76, 0x30, 0x00, bpr & 0xFF, (bpr >> 8) & 0xFF, PRINTER_LOGO_H & 0xFF, (PRINTER_LOGO_H >> 8) & 0xFF);
+  PRINTER_LOGO_DATA.forEach(b => d.push(b));
+  big(); push(tc.nombre + '\n'); normal();
+  push(tc.direccion + '\n');
+  push(tc.telefono + '\n');
   push('------------------------------------------------\n');
+  big(); push('PEDIDO PRUEBA\n'); normal();
+  push(new Date().toLocaleString('es-ES') + '\n');
+  push('------------------------------------------------\n');
+
   left();
-  push('1x Patata Ranchera            6,50 EUR\n');
-  push('\n');
-  push('1x Patata Carnivora            6,40 EUR\n');
-  center();
-  bold(true); push('*** ESTILO A: SIN QUESO ***\n'); bold(false);
-  left();
+  push('1x Patata Ranchera             6,50 EUR\n');
   push('\n');
   push('1x Patata 4 Quesos             5,90 EUR\n');
   center();
@@ -6823,9 +6828,22 @@ async function imprimirPruebaModificaciones() {
   center();
   big(); push('ESTILO C:\n'); push('SIN PICANTE\n'); normal();
   left();
+  push('\n');
+  push('1x Patata Carnivora            6,40 EUR\n');
+  center();
+  // Estilo D: negrita + grande a la vez — el mismo combo que ya usa el
+  // ticket real para "COMPROBAR SELLOS"/"VERIFICAR CARNET" (ver
+  // _ptBuildTicketBytes), así que sabemos que ya funciona en producción.
+  bold(true); big(); push('ESTILO D:\n'); push('SIN QUESO\n'); normal(); bold(false);
+  left();
+
   push('------------------------------------------------\n');
   center();
-  push('Fin de la prueba\n');
+  big(); push('18,80 EUR\n'); normal();
+  push(tc.textoPago + '\n');
+  push('------------------------------------------------\n');
+  push(tc.despedida + '\n');
+  push('(ticket de prueba, no es un pedido real)\n');
   push('\n\n\n');
   d.push(GS, 0x56, 0x42, 0x00);
 
