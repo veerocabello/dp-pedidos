@@ -54,9 +54,12 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Dulce Patata">
   <link rel="apple-touch-icon" href="img/icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600&family=Oswald:wght@300;400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Tipografías alojadas en el propio servidor en vez de cargarlas desde
+       Google Fonts — antes esa carga se hacía en cuanto se abría la
+       página, antes de que el cliente decidiera nada en el aviso de
+       cookies y sin estar declarada en la política de privacidad (envía
+       la IP del visitante a Google). Ver css/fonts-local.css. -->
+  <link href="css/fonts-local.css?v=1787395566747" rel="stylesheet">
 <!-- La imagen del hero se carga por CSS (background-image), así que el
      navegador no se entera de que existe hasta que termina de leer el CSS
      — este preload se lo adelanta, para que empiece a bajar en paralelo
@@ -636,7 +639,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   <!-- Dirección -->
   <div style="background:#2B1712;border-radius:14px;padding:16px 20px;max-width:380px;margin:0 auto 20px;text-align:center;">
     <h2 style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin:0 0 4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</h2>
-    <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">Frente al Supermercado Dani</div>
+    <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:2px;">Frente al Supermercado Dani</div>
+    <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:10px;color:rgba(245,230,200,0.65);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">NIF 77558832A</div>
     <a href="https://www.google.com/maps/dir/?api=1&destination=Carretera%20de%20M%C3%A1laga%20111%2C%2018015%20Granada" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:8px 18px;border-radius:99px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif;">📍 Cómo llegar</a>
   </div>
 
@@ -1029,13 +1033,13 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">1. Responsable del tratamiento</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px"><strong>Dulce Patata Food</strong><br>NIF/CIF: 77558832A<br>Dirección: Carretera de Málaga 111, Granada<br>Teléfono: 604 82 31 80<br>Contacto: a través del teléfono indicado</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">2. Datos que recogemos</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Al realizar un pedido recogemos tu <strong>nombre</strong> y <strong>número de teléfono</strong>. Las notas del pedido (alergias, preferencias) son opcionales. Si se produce un error técnico en la web, se puede recoger también información técnica del dispositivo (navegador, sistema operativo) para poder solucionarlo — nunca tu nombre ni tu teléfono junto con ese error.</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Al realizar un pedido recogemos tu <strong>nombre</strong> y <strong>número de teléfono</strong>. Las notas del pedido (alergias, preferencias) son opcionales. Si juegas a la ruleta o al rasca de premios, también recogemos el <strong>número de teléfono</strong> que introduzcas, aunque no llegues a hacer un pedido. Si se produce un error técnico en la web, se puede recoger también información técnica del dispositivo (navegador, sistema operativo) para poder solucionarlo — nunca tu nombre ni tu teléfono junto con ese error.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">3. Finalidad y base legal</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Usamos tus datos exclusivamente para <strong>gestionar tu pedido</strong>, <strong>contactarte si surge algún problema</strong> con él, y para el <strong>programa de fidelización</strong> si participas en él. La base legal es la ejecución del contrato (art. 6.1.b RGPD).</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">4. Conservación</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los pedidos se conservan mientras sea necesario para la gestión del negocio (atención de incidencias, fidelización, contabilidad) y no se eliminan de forma automática pasado un plazo fijo; puedes solicitar su supresión en cualquier momento (ver "Tus derechos" más abajo). Las copias de seguridad técnicas internas se conservan un máximo de 30 días, tras los cuales se eliminan automáticamente.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">5. Destinatarios</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE) y se envían al correo del local mediante <strong>EmailJS</strong>. Usamos <strong>GoatCounter</strong> para estadísticas de visitas de forma anónima (sin cookies de rastreo) y <strong>Sentry</strong> para detectar errores técnicos de la web (sin tu nombre ni tu teléfono asociados). No cedemos datos a terceros para fines comerciales.</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE) y se envían al correo del local mediante <strong>EmailJS</strong>. Tu número de teléfono se envía también a <strong>Twilio</strong> (Twilio Inc., EEUU) para verificarlo por SMS al confirmar un pedido. Usamos <strong>GoatCounter</strong> para estadísticas de visitas de forma anónima (sin cookies de rastreo) y <strong>Sentry</strong> para detectar errores técnicos de la web (sin tu nombre ni tu teléfono asociados). No cedemos datos a terceros para fines comerciales.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">6. Tus derechos</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición y portabilidad contactando por teléfono al <strong>604 82 31 80</strong>. También puedes reclamar ante la <a href="https://www.aepd.es" target="_blank" style="color:var(--brown);text-decoration:underline">Agencia Española de Protección de Datos (aepd.es)</a>.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">7. Almacenamiento local</h3>
