@@ -1081,7 +1081,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787395566747" defer></script>
-<script src="js/app.js?v=1787411945406" defer></script>
+<script src="js/app.js?v=1787413215403" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
@@ -1114,7 +1114,13 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
             }
           });
         })
-        .catch(function(e) { console.error('[admin-shell] Error cargando el HTML:', e); });
+        .catch(function(e) {
+          console.error('[admin-shell] Error cargando el HTML:', e);
+          // No dejar la promesa fallida en caché: la próxima vez que se
+          // intente abrir el panel, que vuelva a intentar la descarga en
+          // vez de repetir para siempre el mismo fallo ya resuelto.
+          _adminHtmlPromise = null;
+        });
     }
     _adminHtmlPromise.then(function() { if (callback) callback(); });
   }
@@ -1128,9 +1134,19 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
         s.onload = function() { _adminBundleLoaded = true; resolve(); };
         // Si falla la descarga (red caída, etc.) no dejamos la promesa
         // colgada para siempre — se resuelve igual, y las funciones de
-        // admin simplemente seguirán sin existir (los guardas typeof===
-        // 'function' repartidos por el núcleo ya cubren ese caso).
-        s.onerror = function(e) { console.error('[admin-bundle] Error cargando js/app-admin.js:', e); resolve(); };
+        // admin simplemente seguirán sin existir por ahora (los guardas
+        // typeof === 'function' repartidos por el núcleo ya cubren ese
+        // caso) — pero SÍ se limpia la promesa en caché, para que el
+        // siguiente intento de abrir el panel vuelva a descargar el bundle
+        // en vez de quedarse con este mismo fallo resuelto para siempre
+        // (antes, un único fallo dejaba el panel roto hasta recargar la
+        // página entera a mano).
+        s.onerror = function(e) {
+          console.error('[admin-bundle] Error cargando js/app-admin.js:', e);
+          s.remove();
+          _adminBundlePromise = null;
+          resolve();
+        };
         document.body.appendChild(s);
       });
     }
@@ -1142,8 +1158,13 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       new Promise(function(resolve) { _loadAdminHtml(resolve); }),
       new Promise(function(resolve) { _loadAdminBundle(resolve); })
     ]).then(function() {
-      window._adminShellLoaded = true;
-      document.dispatchEvent(new Event('adminShellLoaded'));
+      // Solo se marca "listo del todo" si las dos piezas cargaron de
+      // verdad — si alguna falló, se deja en false a propósito para que la
+      // próxima vez que alguien intente abrir el panel (openAdmin) se
+      // vuelva a intentar la descarga, en vez de darlo por cargado con
+      // funciones de admin que en realidad no existen.
+      window._adminShellLoaded = _adminHtmlLoaded && _adminBundleLoaded;
+      if (window._adminShellLoaded) document.dispatchEvent(new Event('adminShellLoaded'));
       if (callback) callback();
     });
   }

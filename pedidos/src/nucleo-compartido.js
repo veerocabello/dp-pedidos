@@ -497,11 +497,23 @@ async function dcAplicar(code) {
   code = code.trim().toUpperCase();
   let data;
   try {
-    const res = await fetch('guardar-pedido.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'consultarDescuento', code })
-    });
+    // A diferencia de guardar el pedido, el SMS o pedir turno (que ya usan
+    // _fetchConTimeout), esto usaba un fetch() sin límite de tiempo — si el
+    // servidor se quedaba colgado sin responder (p.ej. contención del
+    // límite por IP bajo carga), el campo de código se quedaba en
+    // "comprobando…" para siempre, sin error ni forma de reintentar salvo
+    // recargar la página entera.
+    const res = await (typeof _fetchConTimeout === 'function'
+      ? _fetchConTimeout('guardar-pedido.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'consultarDescuento', code })
+        }, 10000)
+      : fetch('guardar-pedido.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'consultarDescuento', code })
+        }));
     data = await res.json();
   } catch (e) {
     showDiscountError('No se pudo comprobar el código, inténtalo de nuevo');
@@ -640,6 +652,17 @@ async function openAdmin() {
   // están cargados (ver loadAdminShell en index.php).
   if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
     await new Promise(function(resolve) { loadAdminShell(resolve); });
+    // Si sigue sin estar cargado (falló la descarga del HTML o del bundle
+    // de ~370KB — wifi floja, subida a Hostinger a medias...), no seguir
+    // abriendo un panel a medio construir con funciones que no existen
+    // todavía: mejor avisar claramente y dejar que se reintente pulsando
+    // otra vez, ahora que loadAdminShell() vuelve a intentar la descarga
+    // en cada llamada tras un fallo (antes se quedaba roto para siempre
+    // en esa sesión, sin ningún aviso).
+    if (!window._adminShellLoaded) {
+      showAlert('No se ha podido cargar el panel de administración (parece un problema de conexión). Vuelve a intentarlo en unos segundos.');
+      return;
+    }
   }
   // Asegurar que pointer-events está restaurado (por si stock lo dejó bloqueado)
   const adminOverlay = document.getElementById('admin-overlay');

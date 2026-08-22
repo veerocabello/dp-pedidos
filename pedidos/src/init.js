@@ -231,6 +231,13 @@ applyAutoDelete(); // auto-borrado del historial al cargar
       window.fb_listenStockData(data => {
         var _document$getElementB38, _document$getElementB39;
         if (!data) return;
+        // Última copia confirmada por el servidor que este dispositivo ha
+        // visto — saveStockData() (stock-empleados.js) la usa como base
+        // para saber qué grupos ha tocado de verdad este dispositivo desde
+        // la última sincronización, al combinar con lo que haya en el
+        // servidor en ese momento (evita que dos empleados editando
+        // categorías distintas a la vez se pisen el trabajo).
+        window._stockDataSyncedSnapshot = data;
         // Ignorar eco de nuestro propio guardado (menos de 2s)
         if (window._stockDataLocalWrite && Date.now() - window._stockDataLocalWrite < 2000) return;
         localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));

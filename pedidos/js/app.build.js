@@ -497,11 +497,23 @@ async function dcAplicar(code) {
   code = code.trim().toUpperCase();
   let data;
   try {
-    const res = await fetch('guardar-pedido.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'consultarDescuento', code })
-    });
+    // A diferencia de guardar el pedido, el SMS o pedir turno (que ya usan
+    // _fetchConTimeout), esto usaba un fetch() sin límite de tiempo — si el
+    // servidor se quedaba colgado sin responder (p.ej. contención del
+    // límite por IP bajo carga), el campo de código se quedaba en
+    // "comprobando…" para siempre, sin error ni forma de reintentar salvo
+    // recargar la página entera.
+    const res = await (typeof _fetchConTimeout === 'function'
+      ? _fetchConTimeout('guardar-pedido.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'consultarDescuento', code })
+        }, 10000)
+      : fetch('guardar-pedido.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'consultarDescuento', code })
+        }));
     data = await res.json();
   } catch (e) {
     showDiscountError('No se pudo comprobar el código, inténtalo de nuevo');
@@ -640,6 +652,17 @@ async function openAdmin() {
   // están cargados (ver loadAdminShell en index.php).
   if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
     await new Promise(function(resolve) { loadAdminShell(resolve); });
+    // Si sigue sin estar cargado (falló la descarga del HTML o del bundle
+    // de ~370KB — wifi floja, subida a Hostinger a medias...), no seguir
+    // abriendo un panel a medio construir con funciones que no existen
+    // todavía: mejor avisar claramente y dejar que se reintente pulsando
+    // otra vez, ahora que loadAdminShell() vuelve a intentar la descarga
+    // en cada llamada tras un fallo (antes se quedaba roto para siempre
+    // en esa sesión, sin ningún aviso).
+    if (!window._adminShellLoaded) {
+      showAlert('No se ha podido cargar el panel de administración (parece un problema de conexión). Vuelve a intentarlo en unos segundos.');
+      return;
+    }
   }
   // Asegurar que pointer-events está restaurado (por si stock lo dejó bloqueado)
   const adminOverlay = document.getElementById('admin-overlay');
@@ -7135,8 +7158,16 @@ async function modificarPedido() {
   });
   if (!confirmado) return;
 
-  // Borrar pedido actual de Firebase y stats
-  await _borrarPedidoDeFirebase(data.num, data.phone);
+  // Borrar pedido actual de Firebase y stats — si el servidor no llega a
+  // confirmarlo (red caída justo al pulsar), NO se sigue adelante: hacerlo
+  // de todas formas dejaría el pedido viejo vivo en cocina Y crearía uno
+  // nuevo con otro número al reenviar el formulario — cocina terminaría
+  // preparando dos, uno de los cuales nadie recoge.
+  const _borrado = await _borrarPedidoDeFirebase(data.num, data.phone);
+  if (!_borrado) {
+    showAlert('No se pudo modificar el pedido ' + data.num + ' — parece que se ha perdido la conexión. Tu pedido original sigue activo tal cual estaba; inténtalo de nuevo en unos segundos.');
+    return;
+  }
 
   // Restaurar carrito con los productos anteriores
   Object.assign(cart, data.cart);
@@ -7193,7 +7224,15 @@ async function cancelarPedido() {
     };
   });
   if (!confirmado) return;
-  await _borrarPedidoDeFirebase(data.num, data.phone);
+  // Si el servidor no confirma la cancelación (red caída justo al pulsar),
+  // no se muestra "Pedido cancelado" — el pedido sigue vivo de verdad en
+  // cocina, así que decírselo al cliente como si ya estuviera anulado solo
+  // lo dejaría sin recogerlo ni avisar a nadie.
+  const _borrado = await _borrarPedidoDeFirebase(data.num, data.phone);
+  if (!_borrado) {
+    showAlert('No se pudo cancelar el pedido ' + data.num + ' — parece que se ha perdido la conexión. Tu pedido sigue activo; inténtalo de nuevo en unos segundos.');
+    return;
+  }
   window._lastOrderData = null;
   try {
     localStorage.removeItem('dpf_active_order');
@@ -7211,6 +7250,14 @@ async function cancelarPedido() {
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
 }
+// Devuelve true solo si el servidor confirmó de verdad que anuló el
+// pedido — antes esta función no devolvía nada, así que cancelarPedido()/
+// modificarPedido() seguían adelante igual (mostrando "cancelado" o
+// reabriendo el carrito para un pedido nuevo) aunque la petición hubiera
+// fallado por completo (red caída justo al pulsar). El pedido seguía vivo
+// en cocina/estadísticas mientras el cliente creía que estaba anulado, o
+// —peor— se creaba un pedido nuevo con el viejo todavía activo, y cocina
+// terminaba preparando dos.
 async function _borrarPedidoDeFirebase(orderNum, phone) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -7223,11 +7270,16 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
 
   // 1. Marcar como cancelado en memoria y localStorage — inmediato, para que
   // este mismo dispositivo lo refleje al instante sin esperar al servidor.
+  // Es optimista a propósito (para que se note en cocina sin retraso) — si
+  // el servidor termina rechazando la cancelación (paso 2), se deshace más
+  // abajo para no dejar este dispositivo con un estado que ya no es real.
+  const _estadoAnterior = window._orderStatusCache[_normOrderKey(orderNum)];
   window._orderStatusCache[_normOrderKey(orderNum)] = 'cancelado';
   try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
 
-  let telefonoParaRevertirSello = phone || null;
+  let telefonoParaRevertirSello = null;
   let slotToFree = null;
+  let cancelConfirmado = false;
 
   // 2. Marcar como cancelado y quitar de stats en Firebase — a través del
   // servidor (guardar-pedido.php, acción "cancelarPedido"), NO con una
@@ -7246,13 +7298,23 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
     });
     const data = await resp.json();
     if (data && data.success) {
-      if (data.phone) telefonoParaRevertirSello = data.phone;
+      cancelConfirmado = true;
+      telefonoParaRevertirSello = data.phone || phone || null;
       if (data.slot) slotToFree = data.slot;
     } else {
       console.warn('[cancelarPedido] el servidor no pudo anular el pedido:', data && data.error);
     }
   } catch (e) {
     console.warn('[cancelarPedido] fallo de red al anular el pedido:', e);
+  }
+
+  if (!cancelConfirmado) {
+    // Deshacer el marcado optimista del paso 1: el pedido sigue activo de
+    // verdad, así que este dispositivo no debe mostrarlo como cancelado.
+    if (_estadoAnterior === undefined) delete window._orderStatusCache[_normOrderKey(orderNum)];
+    else window._orderStatusCache[_normOrderKey(orderNum)] = _estadoAnterior;
+    try { localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache)); } catch {}
+    return false;
   }
 
   // 3. Borrar también de localStorage (caché local de este dispositivo)
@@ -7328,6 +7390,8 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   // pedido nunca lo tiene, y no le hace falta).
   if (typeof refreshKitchenGrid === 'function') refreshKitchenGrid();
   if (typeof loadLiveOrders === 'function') loadLiveOrders();
+
+  return true;
 }
 
 // ══════════════════════════════════════════
@@ -7818,6 +7882,13 @@ applyAutoDelete(); // auto-borrado del historial al cargar
       window.fb_listenStockData(data => {
         var _document$getElementB38, _document$getElementB39;
         if (!data) return;
+        // Última copia confirmada por el servidor que este dispositivo ha
+        // visto — saveStockData() (stock-empleados.js) la usa como base
+        // para saber qué grupos ha tocado de verdad este dispositivo desde
+        // la última sincronización, al combinar con lo que haya en el
+        // servidor en ese momento (evita que dos empleados editando
+        // categorías distintas a la vez se pisen el trabajo).
+        window._stockDataSyncedSnapshot = data;
         // Ignorar eco de nuestro propio guardado (menos de 2s)
         if (window._stockDataLocalWrite && Date.now() - window._stockDataLocalWrite < 2000) return;
         localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));

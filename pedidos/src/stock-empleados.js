@@ -75,16 +75,52 @@ function changeStockPwd() {
 function getStockData() {
   try {
     const saved = JSON.parse(localStorage.getItem(STOCK_DATA_KEY) || 'null');
-    if (saved) return saved;
+    if (saved) {
+      // Base de partida para saveStockData() hasta que llegue el primer
+      // dato real del listener de Firebase (ver init.js) — mejor que nada
+      // si se edita justo al abrir la página, antes de que dé tiempo a
+      // sincronizar.
+      if (!window._stockDataSyncedSnapshot) window._stockDataSyncedSnapshot = saved;
+      return saved;
+    }
   } catch {}
   // First time: preload defaults
   const data = JSON.parse(JSON.stringify(STOCK_DEFAULTS));
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
+// Antes esto sobreescribía TODO config/stockData con la copia local
+// completa (fb_saveStockData = un set() sin más). Si dos empleados editaban
+// categorías distintas en tablets distintas casi a la vez, el que guardaba
+// último borraba en silencio los cambios del otro (cada guardado partía de
+// su propia copia local, que podía ya estar desactualizada). Ahora usa una
+// transacción real de Firebase: si el servidor tiene algo más reciente que
+// lo que este dispositivo tenía sincronizado, se combinan los dos cambios
+// grupo a grupo en vez de que uno pise al otro entero — solo se sobreescribe
+// de verdad el/los grupo(s) que este dispositivo tocó.
 function saveStockData(data) {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_saveStockData) {
+  if (window.fb_transactJsonString) {
+    window._stockDataLocalWrite = Date.now();
+    const _antesDeEsteGuardado = window._stockDataSyncedSnapshot || {};
+    window.fb_transactJsonString('config/stockData', function (remoto) {
+      const base = remoto || {};
+      const grupos = new Set([...Object.keys(base), ...Object.keys(data)]);
+      const merged = {};
+      grupos.forEach(function (g) {
+        const tocadoAqui = JSON.stringify(data[g] || null) !== JSON.stringify(_antesDeEsteGuardado[g] || null);
+        merged[g] = tocadoAqui ? data[g] : base[g] !== undefined ? base[g] : data[g];
+      });
+      return merged;
+    }).then(function (finalData) {
+      if (finalData) {
+        window._stockDataSyncedSnapshot = finalData;
+        // Si el resultado final (combinado) trae algo de otro dispositivo
+        // que este todavía no tenía, refrescar también la copia local.
+        localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(finalData));
+      }
+    }).catch(function (e) { console.warn('[stock] fallo al guardar en Firebase:', e); });
+  } else if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }

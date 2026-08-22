@@ -1899,7 +1899,11 @@ async function resetDayStats() {
 }
 async function cancelarPedidoAdmin(orderNum, phone) {
   if (!confirm("\xBFCancelar el pedido ".concat(orderNum, "? Se eliminar\xE1 de estad\xEDsticas y cocina."))) return;
-  await _borrarPedidoDeFirebase(orderNum, phone);
+  const ok = await _borrarPedidoDeFirebase(orderNum, phone);
+  if (!ok) {
+    alert('No se pudo cancelar el pedido ' + orderNum + ' en el servidor (revisa la conexión) — sigue activo, inténtalo de nuevo.');
+    return;
+  }
   logActivity("❌ Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function toggleForceSlots() {
@@ -5001,17 +5005,34 @@ function _actualizarAvisoSaturacion(pendientes) {
   _setAvisoSaturacionEstado(activo, activo ? cfg.msg : '');
 }
 
+// Antes, si esta escritura a Firebase fallaba (wifi floja un instante), solo
+// quedaba un console.warn — esta misma tablet marcaba el pedido como
+// gestionado en su propia pantalla/localStorage, pero el resto de
+// dispositivos (fuente de verdad: Firebase) lo seguían viendo "nuevo".
+// Riesgo real con dos tablets de cocina a la vez: se prepara por duplicado,
+// o nadie lo entrega porque cada dispositivo cree que ya lo hizo otro.
+// Ahora reintenta unas veces con espera creciente, y si aun así no consigue
+// escribir, deja un aviso en Alertas (visible para el resto del personal,
+// no solo en la consola de ESE dispositivo).
 async function setOrderStatus(num, status) {
   const key = _normOrderKey(num);
   window._orderStatusCache[key] = status;
   // Save to localStorage as fallback
   localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
   // Sync to Firebase (fb_setOrderStatus ya normaliza internamente, pasamos clave original)
-  if (window.fb_setOrderStatus) {
+  if (!window.fb_setOrderStatus) return;
+  const _esperas = [800, 2500, 6000];
+  for (let intento = 0; intento <= _esperas.length; intento++) {
     try {
       await window.fb_setOrderStatus(num, status);
+      return;
     } catch (e) {
-      console.warn('Firebase status error', e);
+      console.warn('Firebase status error (intento ' + (intento + 1) + ')', e);
+      if (intento < _esperas.length) {
+        await new Promise(r => setTimeout(r, _esperas[intento]));
+      } else if (typeof logActivity === 'function') {
+        logActivity('🚨 No se pudo sincronizar el estado "' + status + '" del pedido ' + num + ' con el resto de dispositivos — revísalo a mano en "Pedidos en vivo"');
+      }
     }
   }
 }
@@ -8718,16 +8739,52 @@ function changeStockPwd() {
 function getStockData() {
   try {
     const saved = JSON.parse(localStorage.getItem(STOCK_DATA_KEY) || 'null');
-    if (saved) return saved;
+    if (saved) {
+      // Base de partida para saveStockData() hasta que llegue el primer
+      // dato real del listener de Firebase (ver init.js) — mejor que nada
+      // si se edita justo al abrir la página, antes de que dé tiempo a
+      // sincronizar.
+      if (!window._stockDataSyncedSnapshot) window._stockDataSyncedSnapshot = saved;
+      return saved;
+    }
   } catch {}
   // First time: preload defaults
   const data = JSON.parse(JSON.stringify(STOCK_DEFAULTS));
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
+// Antes esto sobreescribía TODO config/stockData con la copia local
+// completa (fb_saveStockData = un set() sin más). Si dos empleados editaban
+// categorías distintas en tablets distintas casi a la vez, el que guardaba
+// último borraba en silencio los cambios del otro (cada guardado partía de
+// su propia copia local, que podía ya estar desactualizada). Ahora usa una
+// transacción real de Firebase: si el servidor tiene algo más reciente que
+// lo que este dispositivo tenía sincronizado, se combinan los dos cambios
+// grupo a grupo en vez de que uno pise al otro entero — solo se sobreescribe
+// de verdad el/los grupo(s) que este dispositivo tocó.
 function saveStockData(data) {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_saveStockData) {
+  if (window.fb_transactJsonString) {
+    window._stockDataLocalWrite = Date.now();
+    const _antesDeEsteGuardado = window._stockDataSyncedSnapshot || {};
+    window.fb_transactJsonString('config/stockData', function (remoto) {
+      const base = remoto || {};
+      const grupos = new Set([...Object.keys(base), ...Object.keys(data)]);
+      const merged = {};
+      grupos.forEach(function (g) {
+        const tocadoAqui = JSON.stringify(data[g] || null) !== JSON.stringify(_antesDeEsteGuardado[g] || null);
+        merged[g] = tocadoAqui ? data[g] : base[g] !== undefined ? base[g] : data[g];
+      });
+      return merged;
+    }).then(function (finalData) {
+      if (finalData) {
+        window._stockDataSyncedSnapshot = finalData;
+        // Si el resultado final (combinado) trae algo de otro dispositivo
+        // que este todavía no tenía, refrescar también la copia local.
+        localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(finalData));
+      }
+    }).catch(function (e) { console.warn('[stock] fallo al guardar en Firebase:', e); });
+  } else if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }

@@ -34,17 +34,34 @@ function _actualizarAvisoSaturacion(pendientes) {
   _setAvisoSaturacionEstado(activo, activo ? cfg.msg : '');
 }
 
+// Antes, si esta escritura a Firebase fallaba (wifi floja un instante), solo
+// quedaba un console.warn — esta misma tablet marcaba el pedido como
+// gestionado en su propia pantalla/localStorage, pero el resto de
+// dispositivos (fuente de verdad: Firebase) lo seguían viendo "nuevo".
+// Riesgo real con dos tablets de cocina a la vez: se prepara por duplicado,
+// o nadie lo entrega porque cada dispositivo cree que ya lo hizo otro.
+// Ahora reintenta unas veces con espera creciente, y si aun así no consigue
+// escribir, deja un aviso en Alertas (visible para el resto del personal,
+// no solo en la consola de ESE dispositivo).
 async function setOrderStatus(num, status) {
   const key = _normOrderKey(num);
   window._orderStatusCache[key] = status;
   // Save to localStorage as fallback
   localStorage.setItem(ORDER_STATUS_KEY, JSON.stringify(window._orderStatusCache));
   // Sync to Firebase (fb_setOrderStatus ya normaliza internamente, pasamos clave original)
-  if (window.fb_setOrderStatus) {
+  if (!window.fb_setOrderStatus) return;
+  const _esperas = [800, 2500, 6000];
+  for (let intento = 0; intento <= _esperas.length; intento++) {
     try {
       await window.fb_setOrderStatus(num, status);
+      return;
     } catch (e) {
-      console.warn('Firebase status error', e);
+      console.warn('Firebase status error (intento ' + (intento + 1) + ')', e);
+      if (intento < _esperas.length) {
+        await new Promise(r => setTimeout(r, _esperas[intento]));
+      } else if (typeof logActivity === 'function') {
+        logActivity('🚨 No se pudo sincronizar el estado "' + status + '" del pedido ' + num + ' con el resto de dispositivos — revísalo a mano en "Pedidos en vivo"');
+      }
     }
   }
 }
