@@ -52,8 +52,13 @@ function saveTrustedExpiry() {
   const days = parseInt(document.getElementById('trusted-expiry-days')?.value || '30');
   if (isNaN(days) || days < 1) { alert('Introduce un número válido de días'); return; }
   localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
-  logActivity('🔐 Expiración de sesión configurada: ' + days + ' días');
-  alert('✅ Guardado. Se aplicará en el próximo inicio de sesión.');
+  // Antes esto solo vivía en localStorage de ESTE dispositivo — cambiarlo
+  // desde el móvil no se reflejaba al marcar de confianza el ordenador del
+  // local (cada uno usaba su propio valor, o el de por defecto), aunque el
+  // mensaje diera a entender que era un ajuste global. Ahora se sincroniza.
+  if (window.fb_saveTrustedDays) window.fb_saveTrustedDays(days).catch(function () {});
+  logActivity('🔐 Expiración de sesión configurada: ' + days + ' días (todos los dispositivos)');
+  alert('✅ Guardado. Se aplicará en el próximo inicio de sesión, en cualquier dispositivo.');
 }
 
 
@@ -81,6 +86,20 @@ const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
 const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
+
+// Trae el valor real desde Firebase al abrir el panel en un dispositivo
+// nuevo (o que no lo tenía sincronizado todavía) — ver saveTrustedExpiry().
+function _cargarTrustedDaysDesdeFirebase() {
+  if (!window.fb_loadTrustedDays) return;
+  window.fb_loadTrustedDays().then(function (days) {
+    if (!days) return;
+    localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
+    const input = document.getElementById('trusted-expiry-days');
+    if (input) input.value = String(days);
+  }).catch(function () {});
+}
+if (window._firebaseReady) _cargarTrustedDaysDesdeFirebase();
+else document.addEventListener('firebaseReady', _cargarTrustedDaysDesdeFirebase);
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);

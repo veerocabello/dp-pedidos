@@ -31,6 +31,24 @@ function toggleVacacionesModeAdmin() {
     if (typeof logActivity === 'function') {
       logActivity(nuevoEstado ? '🌴 Modo vacaciones activado' : '🌴 Modo vacaciones desactivado');
     }
+    if (nuevoEstado) {
+      // El bloqueo real de vacaciones ya lo hace el servidor en cada
+      // pedido (comprobarTiendaAbierta en guardar-pedido.php), pero
+      // "Pedidos"/"Abierto" pueden seguir mostrando su estado normal en el
+      // panel — dando a entender que la tienda sigue operativa cuando en
+      // realidad las vacaciones lo bloquean todo por detrás.
+      if (typeof showAlert === 'function') {
+        showAlert('Se bloquean todos los pedidos aunque "Pedidos"/"Abierto" sigan marcados como activos en el panel — no hace falta tocarlos aparte.', '🌴 Vacaciones activadas');
+      }
+    } else if (typeof getOrdersOpen === 'function' && !getOrdersOpen()) {
+      // Si "Pedidos" ya estaba pausado por otro motivo antes de entrar en
+      // vacaciones (pausa manual o auto-pausa), eso no se restaura solo al
+      // desactivar vacaciones — sin este aviso, el negocio podía parecer
+      // reabierto sin estarlo de verdad.
+      if (typeof showAlert === 'function') {
+        showAlert('"Pedidos" seguía marcado como PAUSADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
+      }
+    }
   }).catch(() => { if (btn) btn.textContent = '⚠️ Error'; });
 }
 
@@ -2177,13 +2195,17 @@ async function dcCargar() {
   // mano, así que no se listan aquí para no ahogar la lista.
   const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
+  const ahoraMs = Date.now();
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
     const remaining = d.maxUses - (d.uses || 0);
+    const caducidadTxt = d.expiraEn
+      ? (d.expiraEn < ahoraMs ? ' · <span style="color:#c0392b;font-weight:700">caducado</span>' : ' · caduca ' + new Date(d.expiraEn).toLocaleDateString('es-ES'))
+      : '';
     return '<div id="dc-row-' + escapeAttr(code) + '" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
       + '<div><strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
       + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
-      + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes</span></div>'
+      + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes' + caducidadTxt + '</span></div>'
       + '<button data-code="' + escapeAttr(code) + '" onclick="dcEliminar(this.dataset.code)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Eliminar</button>'
       + '</div>';
   }).join('');
@@ -2224,15 +2246,38 @@ async function dcCrear() {
   const code = (document.getElementById('dc-code').value || '').trim().toUpperCase();
   const pct = parseInt(document.getElementById('dc-pct').value);
   const maxUses = parseInt(document.getElementById('dc-uses').value);
+  const diasEl = document.getElementById('dc-dias');
+  const dias = diasEl && diasEl.value ? parseInt(diasEl.value) : null;
   if (!code) { alert('Introduce un código'); return; }
   if (!pct || pct < 1 || pct > 100) { alert('Introduce un % válido (1-100)'); return; }
   if (!maxUses || maxUses < 1) { alert('Introduce un número de usos'); return; }
+  if (dias !== null && (isNaN(dias) || dias < 1)) { alert('Los días de caducidad deben ser 1 o más (o déjalo en blanco)'); return; }
   if (!window.fb_saveDiscount) { alert('Firebase no disponible'); return; }
-  await window.fb_saveDiscount(code, { pct, maxUses, uses: 0, createdAt: Date.now() });
+  // fb_saveDiscount sobrescribe el código entero si ya existía — sin este
+  // aviso, crear (o crear por error) un código que ya existe reseteaba en
+  // silencio su contador de usos a 0, y de paso comparte espacio de
+  // nombres con los códigos RAS-/RUL- que genera la ruleta/rasca: chocar
+  // con uno de esos invalidaría el premio real de un cliente.
+  if (window.fb_loadDiscounts) {
+    const existentes = await window.fb_loadDiscounts().catch(() => ({}));
+    if (existentes && existentes[code]) {
+      const yaExiste = existentes[code];
+      const esPremio = !!yaExiste.origen;
+      if (!confirm(esPremio
+        ? 'Ese código ya existe como premio de la Ruleta/Rasca de un cliente — crearlo ahora invalidaría su premio real. ¿Seguro que quieres continuar?'
+        : 'Ya existe un código "' + code + '" (' + (yaExiste.uses || 0) + '/' + yaExiste.maxUses + ' usos). Crearlo de nuevo lo sobrescribe y resetea el contador de usos a 0. ¿Continuar?')) {
+        return;
+      }
+    }
+  }
+  const datos = { pct, maxUses, uses: 0, createdAt: Date.now() };
+  if (dias !== null) datos.expiraEn = Date.now() + dias * 24 * 60 * 60 * 1000;
+  await window.fb_saveDiscount(code, datos);
   document.getElementById('dc-code').value = '';
   document.getElementById('dc-pct').value = '';
   document.getElementById('dc-uses').value = '';
-  logActivity('🎁 Código de descuento creado: ' + code + ' (' + pct + '%, ' + maxUses + ' usos)');
+  if (diasEl) diasEl.value = '';
+  logActivity('🎁 Código de descuento creado: ' + code + ' (' + pct + '%, ' + maxUses + ' usos' + (dias !== null ? ', caduca en ' + dias + ' días' : '') + ')');
   dcCargar();
 }
 
@@ -2305,6 +2350,16 @@ async function orLanzar() {
     if (!productoIds.length) { alert('Elige al menos un producto'); return; }
   }
   if (!window.fb_saveOfertaRelampago) { alert('Firebase no disponible'); return; }
+  // Antes esto sobrescribía sin más una oferta que ya estuviera en marcha
+  // (fb_saveOfertaRelampago es un set() del nodo entero) — si esta pestaña
+  // u otra sesión de admin (la dueña + un empleado, por ejemplo) lanza una
+  // oferta mientras otra sigue corriendo, la primera se descartaba en
+  // silencio junto con el tiempo que le quedaba.
+  const activaAhora = window._ofertaRelampagoActiva;
+  if (activaAhora && typeof _ofertaRelampagoVigente === 'function' && _ofertaRelampagoVigente(activaAhora)) {
+    const restante = Math.max(0, Math.round((activaAhora.fin - Date.now()) / 60000));
+    if (!confirm('Ya hay una oferta relámpago activa (le quedan ' + restante + ' min). Lanzar esta la reemplaza y pierde el tiempo restante. ¿Continuar?')) return;
+  }
   const fin = Date.now() + minutos * 60000;
   const oferta = { tipo: alcance, productoIds, pct, fin };
   await window.fb_saveOfertaRelampago(oferta);
@@ -2412,8 +2467,13 @@ function saveTrustedExpiry() {
   const days = parseInt(document.getElementById('trusted-expiry-days')?.value || '30');
   if (isNaN(days) || days < 1) { alert('Introduce un número válido de días'); return; }
   localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
-  logActivity('🔐 Expiración de sesión configurada: ' + days + ' días');
-  alert('✅ Guardado. Se aplicará en el próximo inicio de sesión.');
+  // Antes esto solo vivía en localStorage de ESTE dispositivo — cambiarlo
+  // desde el móvil no se reflejaba al marcar de confianza el ordenador del
+  // local (cada uno usaba su propio valor, o el de por defecto), aunque el
+  // mensaje diera a entender que era un ajuste global. Ahora se sincroniza.
+  if (window.fb_saveTrustedDays) window.fb_saveTrustedDays(days).catch(function () {});
+  logActivity('🔐 Expiración de sesión configurada: ' + days + ' días (todos los dispositivos)');
+  alert('✅ Guardado. Se aplicará en el próximo inicio de sesión, en cualquier dispositivo.');
 }
 
 
@@ -2441,6 +2501,20 @@ const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
 const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
+
+// Trae el valor real desde Firebase al abrir el panel en un dispositivo
+// nuevo (o que no lo tenía sincronizado todavía) — ver saveTrustedExpiry().
+function _cargarTrustedDaysDesdeFirebase() {
+  if (!window.fb_loadTrustedDays) return;
+  window.fb_loadTrustedDays().then(function (days) {
+    if (!days) return;
+    localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
+    const input = document.getElementById('trusted-expiry-days');
+    if (input) input.value = String(days);
+  }).catch(function () {});
+}
+if (window._firebaseReady) _cargarTrustedDaysDesdeFirebase();
+else document.addEventListener('firebaseReady', _cargarTrustedDaysDesdeFirebase);
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -3012,6 +3086,22 @@ async function checkAdminPwd() {
 // showAdminSection is defined later with full support
 
 
+// Antes, cada guardado hacia Firebase de este archivo (precio, config,
+// gastos, ticket, pausa exprés...) hacía fb_save*(...).catch(() => {}) —
+// si la escritura remota fallaba (wifi caído justo al pulsar), el fallo
+// se tragaba en silencio: el admin ya había visto "✅ Guardado" antes
+// siquiera de intentar la escritura real, así que un cambio podía quedarse
+// sin aplicar indefinidamente sin que nadie se enterara (ni otros
+// dispositivos ni, más importante, el propio servidor de guardar-pedido.php,
+// que relee Firebase en cada pedido). Este helper deja rastro real: log en
+// consola (para depurar) + un aviso visible que dice qué no se guardó.
+function _avisarSiFalloGuardado(e, etiqueta) {
+  console.warn('[admin-config] fallo al guardar "' + etiqueta + '" en Firebase:', e);
+  if (typeof showAlert === 'function') {
+    showAlert('No se ha podido sincronizar "' + etiqueta + '" con el servidor (revisa la conexión) — el cambio se ha quedado solo en este dispositivo por ahora. Vuelve a intentarlo.', 'Aviso de guardado');
+  }
+}
+
 // ── PRODUCTOS (edición desde el panel) — leer/renderizar el menú para
 // cualquier visitante (getSavedMenu, loadSavedMenu, renderMenu) vive ahora
 // en nucleo-compartido.js. ──
@@ -3045,15 +3135,64 @@ function marcarPatatasAlergenosQuitables() {
     : 'Ya estaba todo así — ninguna patata ha cambiado.';
   if (typeof showAlert === 'function') showAlert(msg, 'Alérgenos de las patatas');
 }
+// Antes esto sobreescribía TODO config/menu con la copia local completa
+// (fb_saveMenu = un set() sin más, y encima sin comprobar si la escritura
+// llegaba a cuajar). Si dos pestañas de admin editaban productos distintos
+// casi a la vez, la que guardaba último borraba en silencio los cambios de
+// la otra — mismo patrón que ya se arregló para la lista de stock. Ahora
+// usa una transacción real: si el servidor tiene algo más reciente que lo
+// que este dispositivo tenía sincronizado, se combinan los dos cambios
+// producto a producto (por id) en vez de que uno pise al otro entero, y si
+// la escritura real falla del todo, se avisa con un mensaje claro en vez
+// de dar el guardado por bueno sin más.
 function saveMenu() {
-  const data = {
-    items: MENU,
-    ts: Date.now()
-  };
   localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
-  localStorage.setItem(MENU_KEY + '_ts', data.ts);
-  // Sync to Firebase so all devices get updated prices
-  if (window.fb_saveMenu) window.fb_saveMenu(data).catch(() => {});
+  localStorage.setItem(MENU_KEY + '_ts', Date.now());
+  if (!window.fb_transactJsonString) {
+    if (window.fb_saveMenu) window.fb_saveMenu({ items: MENU, ts: Date.now() }).catch(function (e) { _avisarSiFalloGuardado(e, 'la carta'); });
+    return Promise.resolve(true);
+  }
+  const antesPorId = {};
+  (window._menuSyncedSnapshot || []).forEach(function (i) { antesPorId[i.id] = i; });
+  const localPorId = {};
+  MENU.forEach(function (i) { localPorId[i.id] = i; });
+  return window.fb_transactJsonString('config/menu', function (remoto) {
+    const remotoItems = (remoto && Array.isArray(remoto.items)) ? remoto.items : (Array.isArray(remoto) ? remoto : []);
+    const merged = {};
+    const ordenIds = [];
+    remotoItems.forEach(function (ri) {
+      const tocadoAqui = JSON.stringify(localPorId[ri.id] || null) !== JSON.stringify(antesPorId[ri.id] || null);
+      if (localPorId.hasOwnProperty(ri.id)) {
+        merged[ri.id] = tocadoAqui ? localPorId[ri.id] : ri;
+        ordenIds.push(ri.id);
+      } else if (antesPorId.hasOwnProperty(ri.id)) {
+        // Este dispositivo lo tenía y ya no lo tiene: lo borró — se respeta
+        // el borrado en vez de resucitarlo con lo que traiga el servidor.
+      } else {
+        // Producto que otro dispositivo añadió después de la última
+        // sincronización de este — se conserva.
+        merged[ri.id] = ri;
+        ordenIds.push(ri.id);
+      }
+    });
+    // Productos que este dispositivo añadió y el servidor todavía no tenía.
+    MENU.forEach(function (li) {
+      if (!merged.hasOwnProperty(li.id)) {
+        merged[li.id] = li;
+        ordenIds.push(li.id);
+      }
+    });
+    return { items: ordenIds.map(function (id) { return merged[id]; }), ts: Date.now() };
+  }).then(function (finalData) {
+    if (finalData && Array.isArray(finalData.items)) window._menuSyncedSnapshot = finalData.items;
+    return true;
+  }).catch(function (e) {
+    console.warn('[saveMenu] fallo al guardar en Firebase:', e);
+    if (typeof showAlert === 'function') {
+      showAlert('No se ha podido guardar en el servidor (revisa la conexión). El cambio se ha quedado solo en este dispositivo por ahora — vuelve a intentarlo en unos segundos.', 'Aviso de guardado');
+    }
+    return false;
+  });
 }
 function renderAdminProducts() {
   const cats = [...new Set(MENU.map(i => i.cat))];
@@ -3159,9 +3298,24 @@ function saveProductEdit(id) {
   const nameEl = document.getElementById('edit-name-' + id);
   const descEl = document.getElementById('edit-desc-' + id);
   const priceEl = document.getElementById('edit-price-' + id);
-  if (nameEl && nameEl.value.trim()) item.name = nameEl.value.trim();
+  if (nameEl && nameEl.value.trim()) {
+    const nuevoNombre = nameEl.value.trim();
+    const nombreLower = nuevoNombre.toLowerCase();
+    if (MENU.some(m => m.id != id && m.name.trim().toLowerCase() === nombreLower)) {
+      alert('Ya existe otro producto con ese nombre — el servidor valida el precio de un pedido buscando por nombre exacto, así que dos productos no pueden compartirlo.');
+      return;
+    }
+    item.name = nuevoNombre;
+  }
   if (descEl) item.desc = descEl.value.trim();
-  if (priceEl) item.price = parseFloat(priceEl.value) || item.price;
+  if (priceEl) {
+    // parseFloat(val) || item.price solo protegía contra NaN/0 (0 es
+    // falsy) — un precio negativo como -5 es truthy en JS y se colaba tal
+    // cual, aunque el input tenga min="0" (el HTML no bloquea nada si el
+    // JS lee .value directamente sin comprobar el propio valor).
+    const nuevoPrecio = parseFloat(priceEl.value);
+    if (!isNaN(nuevoPrecio) && nuevoPrecio >= 0) item.price = nuevoPrecio;
+  }
   item.tags = DIETARY_TAGS.filter(t => {
     const cb = document.getElementById('edit-tag-' + t.id + '-' + id);
     return cb && cb.checked;
@@ -3185,7 +3339,9 @@ function saveProductEdit(id) {
 function updatePrice(id, val) {
   const item = MENU.find(m => m.id == id);
   if (item) {
-    item.price = parseFloat(val) || item.price;
+    const nuevoPrecio = parseFloat(val);
+    if (isNaN(nuevoPrecio) || nuevoPrecio < 0) return;
+    item.price = nuevoPrecio;
     saveMenu();
     renderMenu();
     showToast('prod-toast');
@@ -3194,13 +3350,17 @@ function updatePrice(id, val) {
 }
 function updateName(id, val) {
   const item = MENU.find(m => m.id == id);
-  if (val.trim() && item) {
-    item.name = val.trim();
-    saveMenu();
-    renderMenu();
-    showToast('prod-toast');
-    logActivity("✏️ Nombre actualizado: \"".concat(item.name, "\""));
+  const nuevoNombre = val.trim();
+  if (!nuevoNombre || !item) return;
+  if (MENU.some(m => m.id != id && m.name.trim().toLowerCase() === nuevoNombre.toLowerCase())) {
+    alert('Ya existe otro producto con ese nombre — el servidor valida el precio de un pedido buscando por nombre exacto, así que dos productos no pueden compartirlo.');
+    return;
   }
+  item.name = nuevoNombre;
+  saveMenu();
+  renderMenu();
+  showToast('prod-toast');
+  logActivity("✏️ Nombre actualizado: \"".concat(item.name, "\""));
 }
 function toggleProduct(id) {
   const item = MENU.find(m => m.id == id);
@@ -3340,21 +3500,72 @@ function importMenuJSON(event) {
   reader.readAsText(file);
   event.target.value = '';
 }
-function addSection() {
+async function addSection() {
   const input = document.getElementById('new-section-name');
   const cat = input ? input.value.trim() : '';
   if (!cat) { alert('Escribe el nombre de la categoría'); return; }
-  if (MENU.some(i => i.cat === cat)) { alert('Esa categoría ya existe'); return; }
-  // Añadir producto placeholder oculto para crear la categoría
-  const newId = Math.max(0, ...MENU.map(i => i.id)) + 1;
-  MENU.push({ id: newId, cat, name: '(producto de ejemplo)', desc: '', price: 0, hidden: true });
-  saveMenu();
+  // Comparación sin distinguir mayúsculas/minúsculas — "Bebidas" y
+  // "bebidas" antes se trataban como categorías distintas, generando dos
+  // secciones que en la carta pueden confundirse como si fueran la misma
+  // mal escrita.
+  const catLower = cat.toLowerCase();
+  if (MENU.some(i => i.cat.toLowerCase() === catLower)) { alert('Esa categoría ya existe'); return; }
+  // Añadir producto placeholder oculto para crear la categoría — el ID se
+  // reserva dentro de la misma transacción que lo escribe (ver
+  // _menuAgregarItemTransaccion), no calculado antes a partir de la copia
+  // local: dos pestañas de admin creando una categoría casi a la vez antes
+  // podían calcular el mismo ID nuevo y acabar con dos productos distintos
+  // compartiendo id (uno "desaparecía" al guardar el segundo).
+  const nuevo = await _menuAgregarItemTransaccion(function (id) {
+    return { id, cat, name: '(producto de ejemplo)', desc: '', price: 0, hidden: true };
+  }, cat);
+  if (!nuevo) return; // fallo de guardado, ya avisado dentro
   initTabs();
   renderMenu();
   renderAdminProducts();
   if (input) input.value = '';
   showToast('section-toast');
   logActivity('📂 Nueva categoría creada: ' + cat);
+}
+// Añade un producto nuevo con su id reservado de forma atómica: el
+// callback `build(id)` recibe el próximo id ya calculado a partir del
+// estado MÁS FRESCO del servidor (no de la copia local, que puede estar
+// desactualizada) y devuelve el item completo. Si Firebase no está
+// disponible, cae al cálculo local de toda la vida (mismo comportamiento
+// que antes). Devuelve el item ya insertado en MENU, o null si falló el
+// guardado (con el aviso ya mostrado).
+async function _menuAgregarItemTransaccion(build, cat) {
+  let nuevoItem = null;
+  if (window.fb_transactJsonString) {
+    try {
+      const finalData = await window.fb_transactJsonString('config/menu', function (remoto) {
+        const remotoItems = (remoto && Array.isArray(remoto.items)) ? remoto.items : (Array.isArray(remoto) ? remoto : []);
+        const idsRemotos = remotoItems.map(function (i) { return i.id; });
+        const idsLocales = MENU.map(function (i) { return i.id; });
+        const nuevoId = Math.max(0, ...idsRemotos, ...idsLocales) + 1;
+        nuevoItem = build(nuevoId);
+        const arr = remotoItems.slice();
+        let lastIdx = -1;
+        for (let i = 0; i < arr.length; i++) { if (arr[i].cat === cat) lastIdx = i; }
+        if (lastIdx === -1) arr.push(nuevoItem); else arr.splice(lastIdx + 1, 0, nuevoItem);
+        return { items: arr, ts: Date.now() };
+      });
+      if (finalData && Array.isArray(finalData.items)) window._menuSyncedSnapshot = finalData.items;
+    } catch (e) {
+      console.warn('[addProduct] fallo al guardar en Firebase:', e);
+      if (typeof showAlert === 'function') showAlert('No se ha podido crear en el servidor (revisa la conexión) — inténtalo de nuevo.', 'Aviso de guardado');
+      return null;
+    }
+  } else {
+    const newId = Math.max(0, ...MENU.map(function (i) { return i.id; })) + 1;
+    nuevoItem = build(newId);
+  }
+  let lastIdx = -1;
+  for (let i = 0; i < MENU.length; i++) { if (MENU[i].cat === cat) lastIdx = i; }
+  if (lastIdx === -1) MENU.push(nuevoItem); else MENU.splice(lastIdx + 1, 0, nuevoItem);
+  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
+  localStorage.setItem(MENU_KEY + '_ts', Date.now());
+  return nuevoItem;
 }
 function newCatSelectChange(sel) {
   const input = document.getElementById('new-cat-nombre');
@@ -3367,7 +3578,7 @@ function newCatSelectChange(sel) {
     input.value = '';
   }
 }
-function addProduct() {
+async function addProduct() {
   const name = document.getElementById('new-name').value.trim();
   const desc = document.getElementById('new-desc').value.trim();
   const price = parseFloat(document.getElementById('new-price').value);
@@ -3377,24 +3588,21 @@ function addProduct() {
     cat = inputNueva ? inputNueva.value.trim() : '';
     if (!cat) { alert('Escribe el nombre de la nueva categoría'); return; }
   }
-  if (!name || !cat || isNaN(price)) {
-    alert('Rellena nombre, categoría y precio');
+  if (!name || !cat || isNaN(price) || price < 0) {
+    alert('Rellena nombre, categoría y precio (0 o mayor)');
     return;
   }
-  const newId = Math.max(0, ...MENU.map(i => i.id)) + 1;
-  const newItem = { id: newId, cat, name, desc, price };
-  // Insertar justo después del último producto de la misma categoría,
-  // para que no aparezca suelto fuera de su sección en la carta
-  let lastIdx = -1;
-  for (let i = 0; i < MENU.length; i++) {
-    if (MENU[i].cat === cat) lastIdx = i;
+  // El servidor valida el precio de un pedido buscando el producto por
+  // NOMBRE exacto (corregirPreciosCatalogo) — dos productos con el mismo
+  // nombre harían que esa comprobación mirara el precio equivocado.
+  if (MENU.some(i => i.name.trim().toLowerCase() === name.toLowerCase())) {
+    alert('Ya existe un producto con ese nombre — usa uno distinto (aunque sea con un matiz) para que el servidor pueda identificarlo bien al validar el precio.');
+    return;
   }
-  if (lastIdx === -1) {
-    MENU.push(newItem);
-  } else {
-    MENU.splice(lastIdx + 1, 0, newItem);
-  }
-  saveMenu();
+  const nuevoItem = await _menuAgregarItemTransaccion(function (id) {
+    return { id, cat, name, desc, price };
+  }, cat);
+  if (!nuevoItem) return; // fallo de guardado, ya avisado dentro
   initTabs();
   renderMenu();
   renderAdminProducts();
@@ -3405,6 +3613,7 @@ function addProduct() {
   const nci = document.getElementById('new-cat-nombre');
   if (nci) { nci.value = ''; nci.style.display = 'none'; }
   showToast('prod-toast');
+  logActivity("➕ Producto nuevo: \"".concat(name, "\" — ").concat(price.toFixed(2), " €"));
 }
 
 // ── CONFIG (email/API keys de EmailJS) ──
@@ -3442,7 +3651,7 @@ function saveConfig() {
   c.emailjs_template_id = document.getElementById('cfg-tpl').value.trim();
   localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
   Object.assign(CONFIG, c);
-  if (window.fb_saveConfig) window.fb_saveConfig(c).catch(() => {});
+  if (window.fb_saveConfig) window.fb_saveConfig(c).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración general'); });
   showToast('cfg-toast');
 }
 
@@ -3624,7 +3833,7 @@ function loadOpenStatus() {
 function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
-  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(() => {});
+  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
   // Toggle manual → la auto-pausa se aparta 30 min y no reabre/cierra por su
   // cuenta encima de esta decisión (mismo mecanismo que activarFinDeNoche,
   // con un cooldown más corto porque esto es una pausa del día a día, no un
@@ -3639,11 +3848,11 @@ function toggleOpenStatus() {
   localStorage.setItem(OPEN_KEY, String(next));
   if (!next) {
     localStorage.setItem('dpf_open_manual_override', '1');
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(function (e) { _avisarSiFalloGuardado(e, 'estado abierto/cerrado'); });
     firebase.database().ref('config/openManualOverride').set(true).catch(() => {});
   } else {
     localStorage.removeItem('dpf_open_manual_override');
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(function (e) { _avisarSiFalloGuardado(e, 'estado abierto/cerrado'); });
     firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
   }
   updateOpenBtn(next);
@@ -3656,7 +3865,7 @@ function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE_LABEL_KEY, label);
-  if (window.fb_saveFeeConfig) window.fb_saveFeeConfig(enabled, amount, label).catch(function () {});
+  if (window.fb_saveFeeConfig) window.fb_saveFeeConfig(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Gastos de gestión ' + (enabled ? 'activados' : 'desactivados') + ' — ' + amount.toFixed(2) + '€');
 }
@@ -3690,7 +3899,7 @@ function saveFee2Config(enabled, amount, label) {
   localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE2_LABEL_KEY, label);
-  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function () {});
+  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Otro gasto fijo ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
 }
@@ -3699,7 +3908,7 @@ function saveFee2Config(enabled, amount, label) {
 function saveStudentDiscountConfig(enabled, pct) {
   localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
-  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function () {});
+  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function (e) { _avisarSiFalloGuardado(e, 'descuento estudiante/jubilado'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
 }
@@ -3708,7 +3917,7 @@ function saveStudentDiscountConfig(enabled, pct) {
 function saveLocalFeeCode(code) {
   const clean = (code || '').trim().toUpperCase();
   localStorage.setItem(LOCAL_FEE_CODE_KEY, clean);
-  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(clean).catch(function () {});
+  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(clean).catch(function (e) { _avisarSiFalloGuardado(e, 'código de pedido desde el local'); });
   logActivity(clean ? ('🏪 Código "pedido desde el local" actualizado: ' + clean) : '🏪 Código "pedido desde el local" desactivado');
 }
 function generarCodigoLocalNuevo() {
@@ -3722,7 +3931,7 @@ function generarCodigoLocalNuevo() {
 function saveTiendaEsperaMinutos(min) {
   const val = parseInt(min, 10) || 0;
   localStorage.setItem(TIENDA_ESPERA_KEY, String(val));
-  if (window.fb_saveTiendaEsperaMinutos) window.fb_saveTiendaEsperaMinutos(val).catch(function () {});
+  if (window.fb_saveTiendaEsperaMinutos) window.fb_saveTiendaEsperaMinutos(val).catch(function (e) { _avisarSiFalloGuardado(e, 'tiempo de espera en tienda'); });
   logActivity('⏱️ Tiempo de espera entre tickets del local: ' + (val ? (val + ' min') : 'desactivado'));
 }
 
@@ -3740,7 +3949,7 @@ function getAutoPausaConfig() {
 function saveAutoPausaConfig(enabled, umbral, msg) {
   const cfg = { enabled: !!enabled, umbral: Math.max(1, parseInt(umbral, 10) || 15), msg: msg || '🔥 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.' };
   localStorage.setItem(AUTO_PAUSA_CONFIG_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(cfg.enabled, cfg.umbral, cfg.msg).catch(() => {});
+  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(cfg.enabled, cfg.umbral, cfg.msg).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración de auto-pausa'); });
   logActivity((cfg.enabled ? '✅' : '⛔') + ' Auto-pausa por saturación ' + (cfg.enabled ? 'activada' : 'desactivada') + ' — a partir de ' + cfg.umbral + ' pedidos pendientes');
 }
 function loadAutoPausaConfigFromFirebase() {
@@ -3758,7 +3967,7 @@ function getAutoPausaEstado() {
 function _setAutoPausaEstado(activa, cooldownUntil) {
   const estado = { activa: !!activa, cooldownUntil: cooldownUntil || 0 };
   localStorage.setItem(AUTO_PAUSA_ESTADO_KEY, JSON.stringify(estado));
-  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(estado.activa, estado.cooldownUntil).catch(() => {});
+  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(estado.activa, estado.cooldownUntil).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de auto-pausa'); });
 }
 function loadAutoPausaEstadoFromFirebase() {
   if (!window.fb_listenAutoPausaEstado) return;
@@ -3775,8 +3984,8 @@ function _aplicarAutoPausa(activar) {
   if (activar) {
     if (!getOrdersOpen()) return; // ya está pausado (por lo que sea) — no hay nada que activar
     localStorage.setItem(ORDERS_KEY, 'false');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg || '').catch(() => {});
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg || '').catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
     localStorage.setItem(ORDERS_MSG_KEY, cfg.msg || '');
     _setAutoPausaEstado(true, 0);
     updateOrdersUI(false, cfg.msg);
@@ -3784,7 +3993,7 @@ function _aplicarAutoPausa(activar) {
   } else {
     if (!estado.activa) return; // el cierre actual no lo puso la auto-pausa — no reabrir solo
     localStorage.setItem(ORDERS_KEY, 'true');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
     _setAutoPausaEstado(false, 0);
     updateOrdersUI(true);
     logActivity('✅ Auto-pausa desactivada — la cola ha bajado, pedidos reactivados solos');
@@ -3830,7 +4039,7 @@ function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPed
     minPorPedido: Math.max(0, parseInt(minPorPedido, 10) || 3)
   };
   localStorage.setItem(AVISO_SAT_CONFIG_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido).catch(() => {});
+  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido).catch(function (e) { _avisarSiFalloGuardado(e, 'aviso de saturación'); });
   logActivity((cfg.enabled ? '✅' : '⛔') + ' Aviso previo de saturación ' + (cfg.enabled ? 'activado' : 'desactivado') + ' — a partir de ' + cfg.umbral + ' pedidos pendientes');
 }
 function _renderAvisoSaturacionUI() {
@@ -3868,13 +4077,13 @@ function guardarAvisoSaturacionConfig() {
 // vive en nucleo-compartido.js) ──
 function pausarExpres(minutos) {
   const hasta = Date.now() + Math.max(1, parseInt(minutos, 10) || 15) * 60000;
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(() => {});
+  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
   localStorage.setItem('dpf_pausa_expres_hasta', String(hasta));
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(hasta);
   logActivity('⏸️ Pausa exprés activada (' + minutos + ' min)');
 }
 function cancelarPausaExpres() {
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(() => {});
+  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
   localStorage.setItem('dpf_pausa_expres_hasta', '0');
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(0);
   logActivity('▶️ Pausa exprés cancelada a mano');
@@ -3922,7 +4131,7 @@ async function toggleSmsVerificacionActivaAdmin() {
 // ── CONFIGURACIÓN DEL TICKET (guardar desde el panel) ──
 function saveTicketConfig(cfg) {
   localStorage.setItem(TICKET_CONFIG_KEY, JSON.stringify(cfg));
-  if (window.fb_saveTicketConfig) window.fb_saveTicketConfig(cfg).catch(() => {});
+  if (window.fb_saveTicketConfig) window.fb_saveTicketConfig(cfg).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración del ticket'); });
   logActivity('🧾 Configuración del ticket actualizada');
 }
 
@@ -4042,10 +4251,10 @@ function savePauseMsg() {
   const msg = document.getElementById('orders-pause-msg').value.trim();
   if (msg) {
     localStorage.setItem(ORDERS_MSG_KEY, msg);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(() => {});
+    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
   } else {
     localStorage.removeItem(ORDERS_MSG_KEY);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg('').catch(() => {});
+    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg('').catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');
@@ -8031,6 +8240,15 @@ async function killAllSessions() {
 
 
 // ── PANEL ADMIN: FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
+// Antes cada fallo de Firebase se mostraba tal cual (alert('Error al X: ' +
+// e.message)) — texto técnico de Firebase, en inglés, sin decir qué hacer.
+// Este helper deja el mensaje real en la consola (por si hace falta
+// depurar) y le da a la dueña un texto claro y en español con la única
+// acción que de verdad puede tomar: revisar la conexión y reintentar.
+function _fidelizacionAvisoError(accion, e) {
+  console.warn('[fidelizacion-admin] ' + accion + ':', e);
+  return 'No se ha podido ' + accion + ' — parece un problema de conexión con el servidor. Comprueba tu wifi e inténtalo de nuevo en unos segundos.';
+}
 const FIDELIZACION_META_ADMIN = 10;
 // Umbral para marcar ritmo sospechoso: 2+ sellos separados por menos de
 // esto se considera posible abuso (pedidos reales no suelen ir tan seguidos).
@@ -8091,7 +8309,7 @@ async function marcarRitmoRevisado(telefono) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al marcar como revisado: ' + e.message);
+    alert(_fidelizacionAvisoError('marcar como revisado', e));
   }
 }
 async function sumarSelloFidelizacionRapido(telefono) {
@@ -8121,7 +8339,7 @@ async function sumarSelloFidelizacionRapido(telefono) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al sumar el sello: ' + e.message);
+    alert(_fidelizacionAvisoError('sumar el sello', e));
   }
 }
 async function entregarPremioFidelizacionRapido(telefono) {
@@ -8154,7 +8372,7 @@ async function entregarPremioFidelizacionRapido(telefono) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al marcar el premio como entregado: ' + e.message);
+    alert(_fidelizacionAvisoError('marcar el premio como entregado', e));
   }
 }
 async function renderFidelizacionList() {
@@ -8445,10 +8663,16 @@ async function anularCanjeFidelizacion(telefono, indice) {
     // el admin anulaba este canje.
     const mutator = function (current) {
       const c = current || {};
+      // El incremento de premiosPendientes vivía FUERA de este if, así que
+      // se ejecutaba siempre — si la lista en pantalla estaba
+      // desactualizada (otro admin ya había anulado/tocado este mismo
+      // canje, o el índice ya no era válido contra el dato más fresco de
+      // dentro de la transacción), anular una tarjeta obsoleta no borraba
+      // nada del historial pero SÍ regalaba un premio pendiente de más.
       if (Array.isArray(c.historialCanjes) && c.historialCanjes[indice]) {
         c.historialCanjes.splice(indice, 1);
+        c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
       }
-      c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
       return c;
     };
     if (window.fb_transactJsonString) {
@@ -8458,7 +8682,7 @@ async function anularCanjeFidelizacion(telefono, indice) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al anular el canje: ' + e.message);
+    alert(_fidelizacionAvisoError('anular el canje', e));
   }
 }
 async function borrarClienteFidelizacion(telefono) {
@@ -8478,7 +8702,7 @@ async function borrarClienteFidelizacion(telefono) {
     await window.fb_deleteFidelizacionCliente(telefono);
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al eliminar el cliente: ' + e.message);
+    alert(_fidelizacionAvisoError('eliminar el cliente', e));
   }
 }
 async function cargarPedidosClienteFidelizacion(telefono) {

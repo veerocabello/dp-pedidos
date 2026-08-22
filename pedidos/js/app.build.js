@@ -3722,6 +3722,13 @@ function _aplicarMenuDesdeFirebase(data) {
   }
   localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
   if (fbTs > 0) localStorage.setItem(MENU_KEY + '_ts', fbTs);
+  // Última copia confirmada por el servidor que este dispositivo ha visto
+  // — saveMenu() (admin-config.js) la usa como base para saber qué
+  // productos ha tocado de verdad este dispositivo desde la última
+  // sincronización, al combinar con lo que haya en el servidor en ese
+  // momento (evita que dos pestañas de admin editando productos distintos
+  // a la vez se pisen el trabajo — mismo patrón que ya se usa para stock).
+  window._menuSyncedSnapshot = JSON.parse(JSON.stringify(MENU));
   renderMenu();
 }
 

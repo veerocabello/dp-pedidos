@@ -253,13 +253,17 @@ async function dcCargar() {
   // mano, así que no se listan aquí para no ahogar la lista.
   const keys = Object.keys(discounts || {}).filter(code => !discounts[code].origen);
   if (!keys.length) { el.innerHTML = '<span style="color:#8A6A4E">Sin códigos creados</span>'; return; }
+  const ahoraMs = Date.now();
   el.innerHTML = keys.map(code => {
     const d = discounts[code];
     const remaining = d.maxUses - (d.uses || 0);
+    const caducidadTxt = d.expiraEn
+      ? (d.expiraEn < ahoraMs ? ' · <span style="color:#c0392b;font-weight:700">caducado</span>' : ' · caduca ' + new Date(d.expiraEn).toLocaleDateString('es-ES'))
+      : '';
     return '<div id="dc-row-' + escapeAttr(code) + '" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap;gap:6px">'
       + '<div><strong style="color:#3D1F0D">' + escapeHtml(code) + '</strong>'
       + ' <span style="background:rgba(244,196,48,0.08);color:#3D1F0D;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">' + d.pct + '%</span>'
-      + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes</span></div>'
+      + ' <span style="font-size:11px;color:#8A6A4E">' + (d.uses||0) + '/' + d.maxUses + ' usos · ' + remaining + ' restantes' + caducidadTxt + '</span></div>'
       + '<button data-code="' + escapeAttr(code) + '" onclick="dcEliminar(this.dataset.code)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Eliminar</button>'
       + '</div>';
   }).join('');
@@ -300,15 +304,38 @@ async function dcCrear() {
   const code = (document.getElementById('dc-code').value || '').trim().toUpperCase();
   const pct = parseInt(document.getElementById('dc-pct').value);
   const maxUses = parseInt(document.getElementById('dc-uses').value);
+  const diasEl = document.getElementById('dc-dias');
+  const dias = diasEl && diasEl.value ? parseInt(diasEl.value) : null;
   if (!code) { alert('Introduce un código'); return; }
   if (!pct || pct < 1 || pct > 100) { alert('Introduce un % válido (1-100)'); return; }
   if (!maxUses || maxUses < 1) { alert('Introduce un número de usos'); return; }
+  if (dias !== null && (isNaN(dias) || dias < 1)) { alert('Los días de caducidad deben ser 1 o más (o déjalo en blanco)'); return; }
   if (!window.fb_saveDiscount) { alert('Firebase no disponible'); return; }
-  await window.fb_saveDiscount(code, { pct, maxUses, uses: 0, createdAt: Date.now() });
+  // fb_saveDiscount sobrescribe el código entero si ya existía — sin este
+  // aviso, crear (o crear por error) un código que ya existe reseteaba en
+  // silencio su contador de usos a 0, y de paso comparte espacio de
+  // nombres con los códigos RAS-/RUL- que genera la ruleta/rasca: chocar
+  // con uno de esos invalidaría el premio real de un cliente.
+  if (window.fb_loadDiscounts) {
+    const existentes = await window.fb_loadDiscounts().catch(() => ({}));
+    if (existentes && existentes[code]) {
+      const yaExiste = existentes[code];
+      const esPremio = !!yaExiste.origen;
+      if (!confirm(esPremio
+        ? 'Ese código ya existe como premio de la Ruleta/Rasca de un cliente — crearlo ahora invalidaría su premio real. ¿Seguro que quieres continuar?'
+        : 'Ya existe un código "' + code + '" (' + (yaExiste.uses || 0) + '/' + yaExiste.maxUses + ' usos). Crearlo de nuevo lo sobrescribe y resetea el contador de usos a 0. ¿Continuar?')) {
+        return;
+      }
+    }
+  }
+  const datos = { pct, maxUses, uses: 0, createdAt: Date.now() };
+  if (dias !== null) datos.expiraEn = Date.now() + dias * 24 * 60 * 60 * 1000;
+  await window.fb_saveDiscount(code, datos);
   document.getElementById('dc-code').value = '';
   document.getElementById('dc-pct').value = '';
   document.getElementById('dc-uses').value = '';
-  logActivity('🎁 Código de descuento creado: ' + code + ' (' + pct + '%, ' + maxUses + ' usos)');
+  if (diasEl) diasEl.value = '';
+  logActivity('🎁 Código de descuento creado: ' + code + ' (' + pct + '%, ' + maxUses + ' usos' + (dias !== null ? ', caduca en ' + dias + ' días' : '') + ')');
   dcCargar();
 }
 
@@ -381,6 +408,16 @@ async function orLanzar() {
     if (!productoIds.length) { alert('Elige al menos un producto'); return; }
   }
   if (!window.fb_saveOfertaRelampago) { alert('Firebase no disponible'); return; }
+  // Antes esto sobrescribía sin más una oferta que ya estuviera en marcha
+  // (fb_saveOfertaRelampago es un set() del nodo entero) — si esta pestaña
+  // u otra sesión de admin (la dueña + un empleado, por ejemplo) lanza una
+  // oferta mientras otra sigue corriendo, la primera se descartaba en
+  // silencio junto con el tiempo que le quedaba.
+  const activaAhora = window._ofertaRelampagoActiva;
+  if (activaAhora && typeof _ofertaRelampagoVigente === 'function' && _ofertaRelampagoVigente(activaAhora)) {
+    const restante = Math.max(0, Math.round((activaAhora.fin - Date.now()) / 60000));
+    if (!confirm('Ya hay una oferta relámpago activa (le quedan ' + restante + ' min). Lanzar esta la reemplaza y pierde el tiempo restante. ¿Continuar?')) return;
+  }
   const fin = Date.now() + minutos * 60000;
   const oferta = { tipo: alcance, productoIds, pct, fin };
   await window.fb_saveOfertaRelampago(oferta);

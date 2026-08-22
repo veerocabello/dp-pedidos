@@ -1,4 +1,13 @@
 // ── PANEL ADMIN: FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────
+// Antes cada fallo de Firebase se mostraba tal cual (alert('Error al X: ' +
+// e.message)) — texto técnico de Firebase, en inglés, sin decir qué hacer.
+// Este helper deja el mensaje real en la consola (por si hace falta
+// depurar) y le da a la dueña un texto claro y en español con la única
+// acción que de verdad puede tomar: revisar la conexión y reintentar.
+function _fidelizacionAvisoError(accion, e) {
+  console.warn('[fidelizacion-admin] ' + accion + ':', e);
+  return 'No se ha podido ' + accion + ' — parece un problema de conexión con el servidor. Comprueba tu wifi e inténtalo de nuevo en unos segundos.';
+}
 const FIDELIZACION_META_ADMIN = 10;
 // Umbral para marcar ritmo sospechoso: 2+ sellos separados por menos de
 // esto se considera posible abuso (pedidos reales no suelen ir tan seguidos).
@@ -59,7 +68,7 @@ async function marcarRitmoRevisado(telefono) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al marcar como revisado: ' + e.message);
+    alert(_fidelizacionAvisoError('marcar como revisado', e));
   }
 }
 async function sumarSelloFidelizacionRapido(telefono) {
@@ -89,7 +98,7 @@ async function sumarSelloFidelizacionRapido(telefono) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al sumar el sello: ' + e.message);
+    alert(_fidelizacionAvisoError('sumar el sello', e));
   }
 }
 async function entregarPremioFidelizacionRapido(telefono) {
@@ -122,7 +131,7 @@ async function entregarPremioFidelizacionRapido(telefono) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al marcar el premio como entregado: ' + e.message);
+    alert(_fidelizacionAvisoError('marcar el premio como entregado', e));
   }
 }
 async function renderFidelizacionList() {
@@ -413,10 +422,16 @@ async function anularCanjeFidelizacion(telefono, indice) {
     // el admin anulaba este canje.
     const mutator = function (current) {
       const c = current || {};
+      // El incremento de premiosPendientes vivía FUERA de este if, así que
+      // se ejecutaba siempre — si la lista en pantalla estaba
+      // desactualizada (otro admin ya había anulado/tocado este mismo
+      // canje, o el índice ya no era válido contra el dato más fresco de
+      // dentro de la transacción), anular una tarjeta obsoleta no borraba
+      // nada del historial pero SÍ regalaba un premio pendiente de más.
       if (Array.isArray(c.historialCanjes) && c.historialCanjes[indice]) {
         c.historialCanjes.splice(indice, 1);
+        c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
       }
-      c.premiosPendientes = (typeof c.premiosPendientes === 'number' ? c.premiosPendientes : 0) + 1;
       return c;
     };
     if (window.fb_transactJsonString) {
@@ -426,7 +441,7 @@ async function anularCanjeFidelizacion(telefono, indice) {
     }
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al anular el canje: ' + e.message);
+    alert(_fidelizacionAvisoError('anular el canje', e));
   }
 }
 async function borrarClienteFidelizacion(telefono) {
@@ -446,7 +461,7 @@ async function borrarClienteFidelizacion(telefono) {
     await window.fb_deleteFidelizacionCliente(telefono);
     renderFidelizacionList();
   } catch (e) {
-    alert('Error al eliminar el cliente: ' + e.message);
+    alert(_fidelizacionAvisoError('eliminar el cliente', e));
   }
 }
 async function cargarPedidosClienteFidelizacion(telefono) {

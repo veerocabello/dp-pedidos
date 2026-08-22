@@ -466,6 +466,11 @@ function _initFirebase() {
   // TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda)
   window.fb_saveTiendaEsperaMinutos = async function(min) { await jset("config/tiendaEsperaMinutos", min); };
   window.fb_listenTiendaEsperaMinutos = function(cb) { return jlisten("config/tiendaEsperaMinutos", function(sn){ cb(sn.exists()?sn.val():0); }); };
+  // DÍAS DE EXPIRACIÓN DE "DISPOSITIVO DE CONFIANZA" — antes solo vivía en
+  // localStorage de cada dispositivo (cambiarlo desde el móvil no se
+  // reflejaba al marcar de confianza el ordenador del local).
+  window.fb_saveTrustedDays = async function(days) { await jset("config/trustedDeviceDays", days); };
+  window.fb_loadTrustedDays = async function() { var sn = await jget("config/trustedDeviceDays"); return sn.exists() ? sn.val() : null; };
   // VERIFICACIÓN SMS OBLIGATORIA — interruptor de emergencia (Twilio caído,
   // etc.). Si no hay valor guardado se trata como activada (true), que es
   // el comportamiento de siempre — así una instalación que nunca lo toque

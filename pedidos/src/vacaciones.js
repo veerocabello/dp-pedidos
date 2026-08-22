@@ -31,6 +31,24 @@ function toggleVacacionesModeAdmin() {
     if (typeof logActivity === 'function') {
       logActivity(nuevoEstado ? '🌴 Modo vacaciones activado' : '🌴 Modo vacaciones desactivado');
     }
+    if (nuevoEstado) {
+      // El bloqueo real de vacaciones ya lo hace el servidor en cada
+      // pedido (comprobarTiendaAbierta en guardar-pedido.php), pero
+      // "Pedidos"/"Abierto" pueden seguir mostrando su estado normal en el
+      // panel — dando a entender que la tienda sigue operativa cuando en
+      // realidad las vacaciones lo bloquean todo por detrás.
+      if (typeof showAlert === 'function') {
+        showAlert('Se bloquean todos los pedidos aunque "Pedidos"/"Abierto" sigan marcados como activos en el panel — no hace falta tocarlos aparte.', '🌴 Vacaciones activadas');
+      }
+    } else if (typeof getOrdersOpen === 'function' && !getOrdersOpen()) {
+      // Si "Pedidos" ya estaba pausado por otro motivo antes de entrar en
+      // vacaciones (pausa manual o auto-pausa), eso no se restaura solo al
+      // desactivar vacaciones — sin este aviso, el negocio podía parecer
+      // reabierto sin estarlo de verdad.
+      if (typeof showAlert === 'function') {
+        showAlert('"Pedidos" seguía marcado como PAUSADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
+      }
+    }
   }).catch(() => { if (btn) btn.textContent = '⚠️ Error'; });
 }
 
