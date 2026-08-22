@@ -703,8 +703,9 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
     $ofertaProductoVigente = _ofertaRelampagoVigentePHP($oferta, 'producto') && is_array($oferta['productoIds'] ?? null);
 
     $avisos = [];
+    $agotados = [];
     $deltaTotal = 0;
-    $corregidos = array_map(function ($it) use ($menuPorNombre, $ofertaProductoVigente, $oferta, &$avisos, &$deltaTotal) {
+    $corregidos = array_map(function ($it) use ($menuPorNombre, $ofertaProductoVigente, $oferta, &$avisos, &$deltaTotal, &$agotados) {
         $nombre = $it['name'] ?? null;
         if (!$nombre || !isset($menuPorNombre[$nombre])) return $it; // custom/extra, no catalogado aquí
         $qty = isset($it['qty']) ? (float)$it['qty'] : null;
@@ -718,6 +719,16 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
             return $it;
         }
         $mi = $menuPorNombre[$nombre];
+        // Marcado "agotado" DESPUÉS de que el cliente ya lo tuviera en el
+        // carrito: la web ya lo quita al confirmar (_limpiarItemsCarritoInvalidos
+        // en carrito-checkout.js), pero eso no evita que alguien llame a
+        // este script directamente saltándose la web — a diferencia de un
+        // precio que no cuadra, un producto agotado no tiene "precio
+        // corregido" que valga: no se puede preparar, así que el pedido
+        // entero se rechaza más abajo en vez de solo avisar.
+        if (!empty($mi['soldout']) && $qty > 0) {
+            $agotados[] = $nombre;
+        }
         $precioReal = round((float)$mi['price'], 2);
         if ($ofertaProductoVigente && isset($mi['id']) && in_array($mi['id'], $oferta['productoIds'])) {
             $pctSeguro = max(0, min(100, (float)$oferta['pct']));
@@ -732,7 +743,7 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
         }
         return $it;
     }, $items);
-    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2)];
+    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'agotados' => array_values(array_unique($agotados))];
 }
 
 // ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
@@ -1137,6 +1148,32 @@ function confirmarReservaSlot($databaseURL, $accessToken, $fecha, $slotTime) {
     }
 }
 
+// Libera YA una reserva de turno abandonada, en vez de esperar a que
+// caduque sola a los SLOT_RESERVA_TTL_SEGUNDOS (12 min) — se llama cuando
+// el propio cliente avisa que ha abandonado (recargó la página, canceló el
+// modal de SMS...) antes de llegar a confirmar el pedido. Solo quita UNA
+// reserva sin confirmar de slotReservas/ y decrementa slots/ a la par — si
+// no queda ninguna reserva sin confirmar en ese turno (ya se confirmó de
+// verdad, o ya se podó por caducada), no hace nada: no se puede usar para
+// decrementar más allá de las reservas genuinamente pendientes, así que no
+// sirve para hacer trampa y colar más pedidos de los que caben de verdad.
+function liberarReservaNoConfirmada($databaseURL, $accessToken, $fecha, $slotTime) {
+    if (!$slotTime) return;
+    $path = 'slotReservas/' . $fecha . '/' . $slotTime;
+    for ($intento = 0; $intento < 3; $intento++) {
+        $leido = fbGetConEtag($databaseURL, $path, $accessToken);
+        $reservas = is_array($leido['data']) ? $leido['data'] : [];
+        if (!$reservas) return;
+        $primeraClave = array_key_first($reservas);
+        unset($reservas[$primeraClave]);
+        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $reservas ?: null, $leido['etag'])) {
+            liberarSlot($databaseURL, $accessToken, $fecha, $slotTime);
+            return;
+        }
+        usleep(rand(20000, 80000));
+    }
+}
+
 try {
     // $rawInput ya se leyó arriba (antes de la comprobación de "ping") —
     // php://input no se puede leer dos veces, así que se reutiliza en vez
@@ -1255,6 +1292,22 @@ try {
         echo json_encode($reservado
             ? ['success' => true]
             : ['success' => false, 'error' => 'No se pudo reservar el turno, inténtalo de nuevo']);
+        exit;
+    }
+
+    // ── Liberar una reserva de turno abandonada (recarga de página,
+    // modal de SMS cancelado...) sin esperar a que caduque sola a los 12
+    // minutos — ver liberarReservaNoConfirmada() arriba. Siempre responde
+    // éxito (no hay nada que el cliente pueda hacer si falla, y no bloquea
+    // ningún flujo — es solo un aviso de "ya no lo quiero" best-effort).
+    if (($payload['action'] ?? '') === 'liberarReservaSlot') {
+        $slotTime = isset($payload['slotTime']) ? trim((string)$payload['slotTime']) : '';
+        if (preg_match('/^\d{1,2}:\d{2}$/', $slotTime)) {
+            $accessToken = obtenerTokenAcceso($rutaCredenciales);
+            $todayKey = date('Y-m-d');
+            liberarReservaNoConfirmada($databaseURL, $accessToken, $todayKey, $slotTime);
+        }
+        echo json_encode(['success' => true]);
         exit;
     }
 
@@ -1554,6 +1607,18 @@ try {
         $total = round($total + $corrPrecios['deltaTotal'], 2);
         if ($total < 0) $total = 0;
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de catálogo corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPrecios['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
+    }
+    // Producto marcado "agotado" en el panel DESPUÉS de que el cliente ya
+    // lo tuviera en el carrito — la web ya lo quita antes de confirmar
+    // (_limpiarItemsCarritoInvalidos en carrito-checkout.js), pero eso no
+    // evita que alguien llame a este script directamente saltándose la
+    // web. A diferencia de un precio que no cuadra, esto no tiene "importe
+    // corregido" que valga — no se puede preparar, así que se rechaza el
+    // pedido entero en vez de solo avisar.
+    if (!empty($corrPrecios['agotados'])) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — producto agotado: ' . implode(', ', $corrPrecios['agotados']));
+        echo json_encode(['success' => false, 'error' => 'Uno de los productos de tu pedido (' . implode(', ', $corrPrecios['agotados']) . ') se ha agotado. Recarga la página e inténtalo de nuevo.']);
+        exit;
     }
     $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta, $phoneClean);
     if ($avisoTotal) {

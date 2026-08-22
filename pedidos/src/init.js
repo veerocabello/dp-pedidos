@@ -487,12 +487,54 @@ async function smsResendCode() {
 }
 
 function smsCancelVerify() {
+  // Si este pedido había reservado un turno de verdad en el servidor, se
+  // libera ya en vez de dejarlo "ocupado" hasta que caduque solo a los 12
+  // minutos — el cliente acaba de decir explícitamente que no sigue con
+  // este pedido. Best-effort: si falla (sin conexión ahora mismo), la
+  // caducidad automática del servidor sigue siendo la red de seguridad.
+  if (window._pendingOrderData && window._pendingOrderData.slotTime && typeof _fetchConTimeout === 'function') {
+    _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: window._pendingOrderData.slotTime })
+    }, 6000).catch(() => {});
+  }
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
   window._pendingOrderData = null;
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
   const btn = document.getElementById('submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pedido →'; }
 }
+
+// Si el cliente reservó un turno y luego recargó la página (o cerró la
+// pestaña) antes de terminar el pedido — con SMS a medias, o simplemente
+// se lo pensó mejor — window._pendingOrderData (solo en memoria) se pierde
+// sin más, así que ni smsCancelVerify() ni _finalizarPedido() llegan a
+// liberar la reserva: antes se quedaba "ocupada" hasta que caducaba sola a
+// los 12 minutos (ver SLOT_RESERVA_TTL_SEGUNDOS en guardar-pedido.php), sin
+// avisar a nadie de que en realidad estaba libre. La marca en localStorage
+// que deja submitOrder() al reservar sobrevive a la recarga — en cuanto la
+// web vuelve a abrirse, se detecta y se libera al instante en vez de
+// esperar la caducidad automática.
+function _liberarReservaSlotAbandonada() {
+  let marca;
+  try { marca = JSON.parse(localStorage.getItem('dpf_slot_reservado') || 'null'); } catch (e) { return; }
+  if (!marca || !marca.slotTime) return;
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
+  // Margen igual al TTL del servidor — pasado eso ya se habrá podado sola,
+  // no hace falta ni intentarlo.
+  if (Date.now() - (marca.ts || 0) > 12 * 60 * 1000) return;
+  if (typeof _fetchConTimeout !== 'function') return;
+  _fetchConTimeout('guardar-pedido.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: marca.slotTime })
+  }, 6000).catch(() => {});
+}
+document.addEventListener('DOMContentLoaded', function () {
+  setTimeout(_liberarReservaSlotAbandonada, 1500);
+});
 
 
 // ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable

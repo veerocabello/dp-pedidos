@@ -343,8 +343,20 @@ function removeExtrasItem(key) {
   renderMenu();
   renderCart();
 }
+// Antes usaba siempre c.basePrice, fijado UNA sola vez al añadir el
+// producto al carrito (confirmExtras()/confirmCheddar()) — a diferencia de
+// `cart` (precio en vivo vía _precioConOferta) y `custCart` (recalcula
+// item.price en cada render), estas líneas nunca se refrescaban. Si el
+// precio de una patata cambiaba desde el panel mientras el cliente la
+// tenía ya en el carrito (antes de confirmar), el carrito y la pantalla de
+// confirmación seguían mostrando el precio viejo. Ahora se busca el precio
+// en vivo del mismo MENU que usa el resto — c.basePrice se queda solo como
+// respaldo por si el producto ya no está en el catálogo (p.ej. lo borró el
+// admin mientras estaba en el carrito; ver _limpiarItemsCarritoInvalidos).
 function getExtrasItemPrice(c) {
-  let p = c.basePrice + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
+  const _itemMenu = typeof MENU !== 'undefined' ? MENU.find(m => m.id == c.menuId) : null;
+  const _base = _itemMenu ? _itemMenu.price : c.basePrice;
+  let p = _base + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
   (c.ingredientesExtra || []).forEach(ing => {
     if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
   });

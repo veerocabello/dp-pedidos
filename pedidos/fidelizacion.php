@@ -365,6 +365,27 @@ try {
 
     // ── CONSULTAR: sellos/premios actuales de este teléfono ──
     if ($action === 'consultar') {
+        // Sin login de cliente en toda la web, no hay forma de demostrar de
+        // verdad que quien consulta es el dueño del teléfono — pedir una
+        // verificación SMS solo para mirar la tarjeta de sellos sería
+        // fricción/coste real por algo que hoy es gratis y al instante
+        // (se comprueba mientras el cliente escribe su propio número en el
+        // formulario, antes incluso de llegar al SMS del pedido). Como
+        // defensa en profundidad SÍ tiene sentido cortar el caso más común
+        // de abuso real: un script externo llamando a este endpoint
+        // directamente (sin pasar por la web) para recorrer números y
+        // fisgonear premios ajenos uno detrás de otro. Exigir que la
+        // petición traiga el Origin/Referer del propio sitio no lo hace
+        // imposible (se puede falsificar con curl -H), pero sí exige saber
+        // que hace falta falsificarlo — corta de raíz cualquier bot/script
+        // "de andar por casa" que pruebe el endpoint sin más, sin tocar en
+        // nada la experiencia real de un cliente usando la web.
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
+        if (!preg_match('#^https://(pedidos\.)?dulcepatatafood\.es(/|$)#', $origin)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Origen no permitido']);
+            exit;
+        }
         // El teléfono no demuestra que quien pregunta es su dueño (sin login
         // de cliente en toda la web) — el límite general de arriba (30
         // peticiones/5min por IP) no distingue si son 30 consultas del mismo

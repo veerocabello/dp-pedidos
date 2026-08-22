@@ -343,8 +343,20 @@ function removeExtrasItem(key) {
   renderMenu();
   renderCart();
 }
+// Antes usaba siempre c.basePrice, fijado UNA sola vez al añadir el
+// producto al carrito (confirmExtras()/confirmCheddar()) — a diferencia de
+// `cart` (precio en vivo vía _precioConOferta) y `custCart` (recalcula
+// item.price en cada render), estas líneas nunca se refrescaban. Si el
+// precio de una patata cambiaba desde el panel mientras el cliente la
+// tenía ya en el carrito (antes de confirmar), el carrito y la pantalla de
+// confirmación seguían mostrando el precio viejo. Ahora se busca el precio
+// en vivo del mismo MENU que usa el resto — c.basePrice se queda solo como
+// respaldo por si el producto ya no está en el catálogo (p.ej. lo borró el
+// admin mientras estaba en el carrito; ver _limpiarItemsCarritoInvalidos).
 function getExtrasItemPrice(c) {
-  let p = c.basePrice + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
+  const _itemMenu = typeof MENU !== 'undefined' ? MENU.find(m => m.id == c.menuId) : null;
+  const _base = _itemMenu ? _itemMenu.price : c.basePrice;
+  let p = _base + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
   (c.ingredientesExtra || []).forEach(ing => {
     if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
   });
@@ -5480,18 +5492,28 @@ function removeItem(id) {
 // con el id cambiado desde el panel de admin mientras el cliente lo tenía
 // añadido) — devuelve cuántos se han quitado, para que submitOrder() pueda
 // avisar en vez de enviarlos igualmente.
+// También quita lo que se haya marcado "agotado" DESPUÉS de que el cliente
+// ya lo tuviera en el carrito: marcar agotado solo bloqueaba AÑADIRLO de
+// nuevo (ver changeQty), no lo que ya estaba dentro — si cocina se quedaba
+// sin un ingrediente a media tarde y el admin lo marcaba, un pedido con ese
+// producto podía confirmarse igual (ni la web ni guardar-pedido.php lo
+// comprobaban al guardar).
 function _limpiarItemsCarritoInvalidos() {
   let quitados = 0;
+  function _disponible(id) {
+    const item = MENU.find(m => m.id == id);
+    return item && !item.soldout;
+  }
   Object.keys(cart).forEach(id => {
-    if (!MENU.find(m => m.id == id)) { delete cart[id]; quitados++; }
+    if (!_disponible(id)) { delete cart[id]; quitados++; }
   });
   Object.keys(custCart).forEach(key => {
     const c = custCart[key];
-    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete custCart[key]; quitados++; }
+    if (c && c.qty > 0 && !_disponible(c.menuId)) { delete custCart[key]; quitados++; }
   });
   Object.keys(extrasCart).forEach(key => {
     const c = extrasCart[key];
-    if (c && c.qty > 0 && !MENU.find(m => m.id == c.menuId)) { delete extrasCart[key]; quitados++; }
+    if (c && c.qty > 0 && !_disponible(c.menuId)) { delete extrasCart[key]; quitados++; }
   });
   return quitados;
 }
@@ -6247,6 +6269,17 @@ async function _submitOrderInner() {
       renderSlotPicker();
       return;
     }
+    // Marca en localStorage de que este turno queda reservado en el
+    // servidor a partir de aquí — si el cliente recarga la página o cierra
+    // la pestaña antes de terminar (SMS incluido), _pendingOrderData (solo
+    // en memoria) se pierde y ya no hay forma de saber qué turno liberar.
+    // Con esta marca, al volver a abrir la web se detecta y se libera de
+    // inmediato (ver _liberarReservaSlotAbandonada en init.js) en vez de
+    // esperar a que caduque sola a los 12 minutos, dejando el hueco
+    // "ocupado" para otros clientes mientras tanto sin motivo real.
+    // _finalizarPedido()/smsCancelVerify() la borran en cuanto el pedido
+    // se confirma de verdad o se cancela a propósito.
+    try { localStorage.setItem('dpf_slot_reservado', JSON.stringify({ slotTime: selectedSlot, ts: Date.now() })); } catch (e) {}
   }
   const notes = document.getElementById("customer-notes").value.trim();
   if (notes.length > 300) {
@@ -6549,16 +6582,19 @@ async function _submitOrderInner() {
   // conflicto con el descuento de estudiante/jubilado (_discountAmt quedó
   // en 0 más arriba), no se envía — no se ha llegado a usar de verdad, así
   // que no debe consumir ningún uso del cupón.
+  // El código/checkbox se guardan para el envío, pero NO se limpian de la
+  // pantalla todavía — antes se borraban aquí mismo, antes incluso de saber
+  // si el SMS se iba a poder mandar/verificar. Si el envío fallaba, el
+  // cliente cancelaba el modal, o tardaba y quería reintentar, el pedido
+  // real no se había confirmado pero el descuento ya había desaparecido de
+  // la vista: si volvía a pulsar "Confirmar" sin darse cuenta, ese segundo
+  // intento partía de _activeDiscount ya vacío y pagaba el precio completo
+  // sin ningún aviso. Ahora se limpian en _finalizarPedido() — el único
+  // punto que se alcanza de verdad cuando el pedido va a confirmarse (con
+  // o sin SMS de por medio) — así que mientras el cliente sigue en el
+  // modal de verificación (o lo cancela y quiere reintentar), el código
+  // sigue aplicado y visible tal cual lo dejó.
   const _discountCodeUsado = (_activeDiscount && _discountAmt > 0) ? _activeDiscount.code : null;
-  _activeDiscount = null;
-  document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(el => { el.value = ''; });
-  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => { el.textContent = ''; });
-  // Desmarcar la casilla estudiante/jubilado para el siguiente pedido — no
-  // debe quedar marcada por defecto sin que el cliente vuelva a elegirlo.
-  const _studentCb = document.getElementById('student-discount-checkbox');
-  if (_studentCb) _studentCb.checked = false;
-  const _studentCbDrawer = document.getElementById('drawer-student-discount-checkbox');
-  if (_studentCbDrawer) _studentCbDrawer.checked = false;
   // ── Verificación SMS ──────────────────────────────────────
   // Guardar datos del pedido pendiente hasta que se verifique el teléfono
   window._pendingOrderData = {
@@ -6652,10 +6688,27 @@ async function _finalizarPedido() {
   const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
   window._pendingOrderData = null;
+  // El turno se confirma más abajo en el servidor (confirmarReservaSlot,
+  // dentro del guardado del ticket) — ya no hace falta la marca de "turno
+  // reservado pendiente de liberar" de arriba.
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
 
   // Cerrar modal SMS si está abierto
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
+
+  // El pedido va a confirmarse de verdad (llegamos aquí solo tras un SMS
+  // verificado, o directo si no hacía falta) — ahora sí se limpian el
+  // código de descuento y la casilla de estudiante/jubilado de la
+  // pantalla, para el siguiente pedido (ver el comentario en
+  // _submitOrderInner de por qué ya no se hacía ahí).
+  _activeDiscount = null;
+  document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(el => { el.value = ''; });
+  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => { el.textContent = ''; });
+  const _studentCb = document.getElementById('student-discount-checkbox');
+  if (_studentCb) _studentCb.checked = false;
+  const _studentCbDrawer = document.getElementById('drawer-student-discount-checkbox');
+  if (_studentCbDrawer) _studentCbDrawer.checked = false;
 
   // Guardar el pedido en el servidor: ticket completo + estadísticas del
   // día + uso del código de descuento (si lo hubo). tickets/ y stats/
@@ -8138,12 +8191,54 @@ async function smsResendCode() {
 }
 
 function smsCancelVerify() {
+  // Si este pedido había reservado un turno de verdad en el servidor, se
+  // libera ya en vez de dejarlo "ocupado" hasta que caduque solo a los 12
+  // minutos — el cliente acaba de decir explícitamente que no sigue con
+  // este pedido. Best-effort: si falla (sin conexión ahora mismo), la
+  // caducidad automática del servidor sigue siendo la red de seguridad.
+  if (window._pendingOrderData && window._pendingOrderData.slotTime && typeof _fetchConTimeout === 'function') {
+    _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: window._pendingOrderData.slotTime })
+    }, 6000).catch(() => {});
+  }
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
   window._pendingOrderData = null;
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
   const btn = document.getElementById('submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pedido →'; }
 }
+
+// Si el cliente reservó un turno y luego recargó la página (o cerró la
+// pestaña) antes de terminar el pedido — con SMS a medias, o simplemente
+// se lo pensó mejor — window._pendingOrderData (solo en memoria) se pierde
+// sin más, así que ni smsCancelVerify() ni _finalizarPedido() llegan a
+// liberar la reserva: antes se quedaba "ocupada" hasta que caducaba sola a
+// los 12 minutos (ver SLOT_RESERVA_TTL_SEGUNDOS en guardar-pedido.php), sin
+// avisar a nadie de que en realidad estaba libre. La marca en localStorage
+// que deja submitOrder() al reservar sobrevive a la recarga — en cuanto la
+// web vuelve a abrirse, se detecta y se libera al instante en vez de
+// esperar la caducidad automática.
+function _liberarReservaSlotAbandonada() {
+  let marca;
+  try { marca = JSON.parse(localStorage.getItem('dpf_slot_reservado') || 'null'); } catch (e) { return; }
+  if (!marca || !marca.slotTime) return;
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
+  // Margen igual al TTL del servidor — pasado eso ya se habrá podado sola,
+  // no hace falta ni intentarlo.
+  if (Date.now() - (marca.ts || 0) > 12 * 60 * 1000) return;
+  if (typeof _fetchConTimeout !== 'function') return;
+  _fetchConTimeout('guardar-pedido.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: marca.slotTime })
+  }, 6000).catch(() => {});
+}
+document.addEventListener('DOMContentLoaded', function () {
+  setTimeout(_liberarReservaSlotAbandonada, 1500);
+});
 
 
 // ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
