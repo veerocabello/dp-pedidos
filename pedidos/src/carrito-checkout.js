@@ -1583,7 +1583,7 @@ async function _finalizarPedido() {
           window._pendingTicketData = null;
           if (typeof _actualizarTiempoEstimadoTrasGuardar === 'function') _actualizarTiempoEstimadoTrasGuardar(data);
         }
-        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum); }
+        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum, data.error || 'No se pudo registrar el pedido'); }
       })
       .catch((e) => {
         // No se borra el marcador aquí: no hubo respuesta del servidor (fallo
@@ -1634,12 +1634,28 @@ async function _finalizarPedido() {
 // igual y solo quedaba un aviso en el log de actividad que ve el admin —
 // nadie en cocina se enteraba de que el pedido no había llegado. Ahora, si
 // el cliente sigue en la pantalla de éxito de ESE pedido, se lo decimos.
-function _avisarClienteFalloGuardado(orderNum) {
+//
+// `motivoRechazo` distingue dos casos que antes se mostraban igual:
+//  - Sin conexión con el servidor (fetch nunca respondió): el pedido puede
+//    haber llegado a guardarse igualmente, así que tiene sentido pedir al
+//    cliente que enseñe una captura por si acaso.
+//  - Rechazo real del servidor (data.success === false, con un motivo
+//    concreto: código de descuento caducado a mitad de compra, tienda
+//    cerrada justo entonces, etc.): el pedido NO se ha guardado en ningún
+//    sitio, así que enseñar una captura no sirve — hay que decírselo claro
+//    y que vuelva a intentarlo desde el principio.
+function _avisarClienteFalloGuardado(orderNum, motivoRechazo) {
   const successVisible = document.getElementById('success-screen')?.style.display === 'block';
   const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);
   if (!successVisible || !mismoNum) return;
   const warning = document.getElementById('success-save-warning');
-  if (warning) warning.style.display = 'block';
+  if (!warning) return;
+  if (motivoRechazo) {
+    warning.innerHTML = '⚠️ Tu pedido <b>NO se ha podido registrar</b>: ' + escapeHtml(motivoRechazo) + '. Enseñar esta pantalla en el mostrador no sirve en este caso — por favor, vuelve a hacer el pedido desde el principio.';
+  } else {
+    warning.innerHTML = '⚠️ Hubo un problema de conexión al guardar tu pedido. Por favor, <b>haz una captura de esta pantalla</b> y muéstrala en el mostrador al recogerlo, por si no nos llega.';
+  }
+  warning.style.display = 'block';
 }
 
 // ── PROGRAMA DE FIDELIZACIÓN (SELLO DIGITAL) ──────────────────────────────

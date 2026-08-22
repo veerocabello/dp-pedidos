@@ -1518,6 +1518,13 @@ try {
     if ($discountCode) {
         $errorDescuento = discountCodeInvalido($databaseURL, $accessToken, $discountCode);
         if ($errorDescuento) {
+            // Un rechazo aquí significa que el cliente ya pasó por SMS y
+            // pulsó "confirmar" de verdad — a diferencia de un simple fallo
+            // de red, el pedido no queda guardado en ningún sitio. Antes
+            // esto solo se veía en un log de actividad LOCAL del navegador
+            // del cliente (nunca llegaba a Firebase, porque el cliente no
+            // tiene sesión de admin) — el personal no se enteraba nunca.
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — código de descuento ' . $discountCode . ': ' . $errorDescuento);
             echo json_encode(['success' => false, 'error' => $errorDescuento]);
             exit;
         }
@@ -1591,6 +1598,7 @@ try {
             echo json_encode(['success' => true, 'yaGuardado' => true]);
             exit;
         }
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — número ' . $orderNum . ' ya usado por otro teléfono');
         echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
@@ -1610,6 +1618,7 @@ try {
         $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
         $localCodeRecibido = isset($payload['localCode']) ? (string)$payload['localCode'] : '';
         if (!validarSmsToken($smsToken, $phoneClean) && !localCodeValido($databaseURL, $accessToken, $localCodeRecibido, $todayKey)) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — verificación SMS no válida/caducada');
             echo json_encode(['success' => false, 'error' => 'No se ha podido verificar tu teléfono. Vuelve a intentarlo desde el principio del pedido.']);
             exit;
         }
@@ -1624,6 +1633,7 @@ try {
     if ($discountCode) {
         $errorReserva = reservarUsoDescuento($databaseURL, $accessToken, $discountCode);
         if ($errorReserva) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — código de descuento ' . $discountCode . ' se agotó justo entonces: ' . $errorReserva);
             echo json_encode(['success' => false, 'error' => $errorReserva]);
             exit;
         }
@@ -1654,6 +1664,7 @@ try {
         // uso quedaría "gastado" sin que se hubiera llegado a crear ningún
         // pedido con él.
         if ($discountCode) liberarUsoDescuento($databaseURL, $accessToken, $discountCode);
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — no se pudo escribir el ticket ' . $orderNum . ' en Firebase (colisión o fallo de escritura)');
         echo json_encode(['success' => false, 'error' => 'No se pudo guardar el pedido, inténtalo de nuevo.']);
         exit;
     }

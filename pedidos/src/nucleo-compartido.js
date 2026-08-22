@@ -426,6 +426,8 @@ function confirmCheddar() {
     document.getElementById('cheddar-error').style.display = 'block';
     return;
   }
+  const item = MENU.find(m => m.id == CHEDDAR_ID);
+  if (!item) return;
   const carneLabel = _cheddarCarne === 'picada' ? 'Carne Picada' : 'Carne Kebab';
   const key = 'cheddar:' + _cheddarCarne;
   if (!extrasCart[key]) {
@@ -435,7 +437,7 @@ function confirmCheddar() {
       queso: false,
       gratinado: false,
       key,
-      basePrice: 8.50,
+      basePrice: item.price,
       cheddarCarne: carneLabel
     };
   }
