@@ -59,7 +59,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
        página, antes de que el cliente decidiera nada en el aviso de
        cookies y sin estar declarada en la política de privacidad (envía
        la IP del visitante a Google). Ver css/fonts-local.css. -->
-  <link href="css/fonts-local.css?v=1787395566747" rel="stylesheet">
+  <link href="css/fonts-local.css?v=1787396439906" rel="stylesheet">
 <!-- La imagen del hero se carga por CSS (background-image), así que el
      navegador no se entera de que existe hasta que termina de leer el CSS
      — este preload se lo adelanta, para que empiece a bajar en paralelo
