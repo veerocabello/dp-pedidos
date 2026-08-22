@@ -491,11 +491,26 @@ function empEditarModal(id) {
 function empToggleDia(btn) {
   btn.classList.toggle('activo');
 }
-function empModalGuardar() {
+async function empModalGuardar() {
   const nombre = document.getElementById('emp-nombre').value.trim();
   const pin = document.getElementById('emp-pin').value.trim();
-  if (!nombre || pin.length !== 4) {
-    alert('Nombre y PIN de 4 dígitos son obligatorios');
+  // El campo es texto libre (sin patrón numérico) — antes solo se
+  // comprobaba la longitud, así que un PIN tipo "AB12" se guardaba tal
+  // cual. El teclado de la pantalla de fichar solo tiene dígitos 0-9, así
+  // que ese empleado se quedaba sin ninguna forma de teclear su PIN real,
+  // bloqueado sin que nadie se diera cuenta hasta que se quejara.
+  if (!nombre || !/^\d{4}$/.test(pin)) {
+    alert('Nombre y PIN de exactamente 4 dígitos (0-9) son obligatorios');
+    return;
+  }
+  const dni = document.getElementById('emp-dni').value.trim();
+  // El DNI se usa tal cual en el "Registro diario de jornada de trabajo"
+  // exportado — un documento legal, así que al menos se comprueba que
+  // tenga la forma de un DNI/NIE español real (8 dígitos + letra, o
+  // X/Y/Z + 7 dígitos + letra) antes de guardarlo. Se deja vacío sin
+  // avisar (el campo no es obligatorio para poder fichar).
+  if (dni && !/^([0-9]{8}|[XYZxyz][0-9]{7})[A-Za-z]$/.test(dni)) {
+    alert('El DNI/NIE no tiene un formato válido (8 dígitos + letra, o X/Y/Z + 7 dígitos + letra) — déjalo en blanco si no lo tienes a mano ahora.');
     return;
   }
   const dias = [];
@@ -503,7 +518,7 @@ function empModalGuardar() {
   const emp = {
     id: document.getElementById('emp-edit-id').value || 'emp_' + Date.now(),
     nombre,
-    dni: document.getElementById('emp-dni').value.trim(),
+    dni,
     pin,
     tel: document.getElementById('emp-tel').value.trim(),
     dias,
@@ -518,9 +533,38 @@ function empModalGuardar() {
     alert('PIN ya en uso');
     return;
   }
-  const idx = all.findIndex(e => e.id === emp.id);
-  if (idx >= 0) all[idx] = emp;else all.push(emp);
-  empSaveAll(all);
+  // La comprobación de arriba solo mira la copia LOCAL (config/empleados
+  // se guardaba con un set() plano, sin transacción) — si dos admins
+  // guardan casi a la vez desde dispositivos distintos, cada uno puede no
+  // ver todavía el PIN que acaba de asignar el otro. Sin esto, dos
+  // empleados podían acabar con el mismo PIN sin que ninguno de los dos lo
+  // viera venir — y en fichar-pin-check.php, el PRIMER empleado que
+  // coincida con ese PIN se queda con el login: el segundo ficharía en
+  // silencio a nombre del primero. La comprobación real de verdad tiene
+  // que hacerse contra el estado MÁS FRESCO del servidor, dentro de la
+  // misma transacción que escribe.
+  if (window.fb_transactJsonString) {
+    let colision = false;
+    const finalData = await window.fb_transactJsonString('config/empleados', function (remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : all.slice();
+      if (arr.some(function (x) { return x.pin === emp.pin && x.id !== emp.id; })) {
+        colision = true;
+        return undefined; // aborta la transacción, no se escribe nada
+      }
+      const i = arr.findIndex(function (x) { return x.id === emp.id; });
+      if (i >= 0) arr[i] = emp; else arr.push(emp);
+      return arr;
+    });
+    if (colision) {
+      alert('Ese PIN se ha asignado a otro empleado justo ahora (puede que desde otro dispositivo) — elige uno distinto.');
+      return;
+    }
+    if (finalData) localStorage.setItem(EMP_KEY, JSON.stringify(finalData));
+  } else {
+    const idx = all.findIndex(e => e.id === emp.id);
+    if (idx >= 0) all[idx] = emp; else all.push(emp);
+    empSaveAll(all);
+  }
   document.getElementById('emp-modal').style.display = 'none';
   empRenderLista();
   if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
@@ -528,9 +572,17 @@ function empModalGuardar() {
 }
 function empEliminar(id) {
   const e = empLoadAll().find(x => x.id === id);
-  if (!e || !confirm('¿Eliminar a ' + e.nombre + '?')) return;
+  if (!e) return;
+  // Antes esto borraba TAMBIÉN todo el historial de fichajes del empleado
+  // (no solo lo pendiente) con un confirm() que solo decía "¿Eliminar a
+  // X?" sin avisar de eso — irreversible y sin backup. El registro de
+  // jornada tiene que conservarse aunque el trabajador cause baja, así que
+  // ahora "Eliminar" solo quita a la persona de la lista activa (para
+  // corregir un alta duplicada/por error) y el historial de fichajes se
+  // queda intacto. Para un empleado que se va de verdad, "🛌 De baja" es
+  // la vía correcta: no borra nada y se puede reactivar si vuelve.
+  if (!confirm('¿Eliminar a ' + e.nombre + ' de la lista? El historial de fichajes que ya tenga NO se borra (queda guardado igual).\n\nSi es porque el empleado ha dejado el trabajo, mejor usa "🛌 De baja" en vez de esto — no se puede deshacer.')) return;
   empSaveAll(empLoadAll().filter(x => x.id !== id));
-  fichajesSave(fichajesLoad().filter(f => f.empId !== id));
   empRenderLista();
   if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
   empRenderAdmin();
@@ -608,8 +660,13 @@ function empEditarFichaje(idx) {
   if (!fich[idx]) return;
   const f = fich[idx];
   const nuevaHora = prompt("Editar hora de ".concat(f.tipo, " del ").concat(f.fecha, ":\nHora actual: ").concat(f.hora, "\n\nNueva hora (formato HH:MM):"), f.hora);
-  if (!nuevaHora || !nuevaHora.match(/^\d{2}:\d{2}$/)) {
-    if (nuevaHora !== null) alert('Formato incorrecto. Usa HH:MM');
+  if (!nuevaHora) return;
+  // El formato HH:MM se comprobaba, pero no que las horas/minutos
+  // estuvieran en rango real (antes se aceptaba p.ej. "99:99").
+  const m = nuevaHora.match(/^(\d{2}):(\d{2})$/);
+  const horaValida = m && parseInt(m[1], 10) <= 23 && parseInt(m[2], 10) <= 59;
+  if (!horaValida) {
+    alert('Hora no válida. Usa HH:MM, con horas 00-23 y minutos 00-59');
     return;
   }
   fich[idx].hora = nuevaHora;

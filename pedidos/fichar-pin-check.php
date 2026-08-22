@@ -377,14 +377,26 @@ try {
         }
         $empleados = fbGetArrayString($databaseURL, 'config/empleados', $accessToken);
         $encontrado = null;
+        $coincidencias = 0;
         foreach ($empleados as $emp) {
             // hash_equals (no ===) por la misma razón que el resto de
             // comparaciones de secretos del fichero — tiempo constante en
             // vez de carácter a carácter.
             if (isset($emp['pin']) && hash_equals((string)$emp['pin'], $pin) && empty($emp['deBaja'])) {
-                $encontrado = $emp;
-                break;
+                $coincidencias++;
+                if (!$encontrado) $encontrado = $emp;
             }
+        }
+        // El panel ya no deja guardar un PIN duplicado (comprobación
+        // transaccional en empModalGuardar, js/auth.js), pero esto es la
+        // red de seguridad por si algún dato antiguo se quedó así: si dos
+        // empleados comparten PIN, se deja entrar igual (el primero que
+        // coincida — no se puede rechazar un fichaje real por un problema
+        // de datos ajeno a quien está delante del mostrador), pero se deja
+        // constancia clara para que se corrija cuanto antes, porque el
+        // segundo empleado está fichando en silencio a nombre del primero.
+        if ($coincidencias > 1) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Dos o más empleados tienen el mismo PIN de fichaje — revísalo en el panel, alguien puede estar fichando a nombre de otro sin darse cuenta');
         }
         if (!$encontrado) {
             dpf_fichar_pinfail_registrar($pinFailFile, $pinFailWindow);

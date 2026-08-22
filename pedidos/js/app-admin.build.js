@@ -9551,14 +9551,43 @@ function getStockHistorial() {
     return [];
   }
 }
+// Antes esto subía siempre el array LOCAL completo con un set() plano
+// (fb_saveStockHistorial) — si dos tablets guardaban una reposición casi a
+// la vez, el segundo guardado sobreescribía en Firebase la lista que
+// acababa de subir el primero, perdiéndola entera (mismo patrón ya
+// arreglado para stockData). Ahora se usa una transacción real que AÑADE
+// esta entrada a la lista más fresca del servidor, en vez de sobreescribir
+// con la copia local — stock/historial guarda el array nativo de Firebase
+// (no como JSON-string), así que toca fb_transactNative, no
+// fb_transactJsonString.
+// Tope de listas guardadas — antes esto crecía para siempre (solo un
+// botón manual de "Borrar listas antiguas" que hay que acordarse de
+// pulsar), agravando con el tiempo el riesgo de la transacción de arriba
+// (payload cada vez más grande que volver a subir). Se queda con las 100
+// más recientes automáticamente; el botón manual sigue ahí para limpiar
+// antes si se quiere.
+const STOCK_HISTORIAL_MAX = 100;
 function saveToStockHistorial(ts, lines) {
+  const entrada = { ts, lines };
+  if (window.fb_transactNative) {
+    window._stockLocalWrite = Date.now();
+    window.fb_transactNative('stock/historial', function (remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : getStockHistorial();
+      arr.push(entrada);
+      return arr.length > STOCK_HISTORIAL_MAX ? arr.slice(arr.length - STOCK_HISTORIAL_MAX) : arr;
+    }).then(function (finalArr) {
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(Array.isArray(finalArr) ? finalArr : [entrada]));
+    }).catch(function (e) {
+      console.warn('Firebase stock historial error:', e);
+      const hist = getStockHistorial();
+      hist.push(entrada);
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
+    });
+    return;
+  }
   const hist = getStockHistorial();
-  hist.push({
-    ts,
-    lines
-  });
+  hist.push(entrada);
   localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
-
   // 🔥 Subir a Firebase — reintenta si aún no está listo
   function subirAFirebase(intentos) {
     if (window.fb_saveStockHistorial) {
@@ -10463,42 +10492,78 @@ function _cargarDatosEmpleadosPrivados() {
 
 // ── ALERTAS FICHAJE BIMBA ──────────────────────────────────
 
+function _empMinFromHora(hora) {
+  var p = (hora || '').split(':').map(Number);
+  return p[0] * 60 + (p[1] || 0);
+}
+// El turno partido típico de este negocio (mañana + tarde) tiene DOS
+// horas de salida distintas — antes el aviso de "olvido" comparaba
+// SIEMPRE contra la de la tarde (tarOut||manOut), da igual cuál de las
+// dos entradas se hubiera quedado sin cerrar. Si lo que se olvidó fue la
+// salida de la MAÑANA, eso no se detectaba hasta pasada la hora de salida
+// de la TARDE, horas después de que hiciera falta el aviso. Aquí se
+// adivina a qué turno pertenece la entrada abierta (comparando su hora
+// contra las dos horas de entrada del contrato) para usar la salida de
+// ESE turno.
+function _empHoraSalidaEsperada(emp, horaEntradaAbierta) {
+  if (emp.manOut && emp.tarOut && emp.manIn && emp.tarIn && horaEntradaAbierta) {
+    var eMin = _empMinFromHora(horaEntradaAbierta);
+    var distMan = Math.abs(eMin - _empMinFromHora(emp.manIn));
+    var distTar = Math.abs(eMin - _empMinFromHora(emp.tarIn));
+    return distMan <= distTar ? emp.manOut : emp.tarOut;
+  }
+  return emp.tarOut || emp.manOut || null;
+}
+// Estado real de un empleado ahora mismo, mirando TODO su historial (no
+// solo los fichajes de HOY) — antes, una entrada huérfana de un día
+// anterior (turno olvidado, móvil sin batería...) dejaba de avisar en
+// cuanto pasaba la medianoche: ese día no había fichajes de hoy, así que
+// volvía a aparecer como "no ha fichado" en vez de seguir señalando el
+// olvido real, que se quedaba invisible salvo por un aviso puntual (en el
+// registro de actividad) el día que ese empleado volviera a fichar.
+function _empEstadoActual(emp, fichajes, today) {
+  var suyos = fichajes.filter(function (f) { return f.empId === emp.id; })
+    .sort(function (a, b) { return (a.fecha + (a.horaReal || a.hora)).localeCompare(b.fecha + (b.horaReal || b.hora)); });
+  var suyosHoy = suyos.filter(function (f) { return f.fecha === today; });
+  var entradasHoy = suyosHoy.filter(function (f) { return f.tipo === 'entrada'; });
+  var salidasHoy = suyosHoy.filter(function (f) { return f.tipo === 'salida'; });
+  var ultimaEntradaHoy = entradasHoy.length ? entradasHoy[entradasHoy.length - 1] : null;
+  var ultimaSalidaHoy = salidasHoy.length ? salidasHoy[salidasHoy.length - 1] : null;
+  var ultimo = suyos.length ? suyos[suyos.length - 1] : null;
+
+  if (!ultimo || ultimo.tipo === 'salida') {
+    return ultimaSalidaHoy
+      ? { estado: 'salida', entrada: ultimaEntradaHoy, salida: ultimaSalidaHoy }
+      : { estado: 'nada' };
+  }
+  // El último fichaje de siempre es una entrada sin cerrar.
+  if (ultimo.fecha !== today) {
+    // De un día anterior: es un huérfano de verdad, sin importar la hora.
+    return { estado: 'olvido', entrada: ultimo, deOtroDia: true };
+  }
+  var horaAbierta = ultimo.horaReal || ultimo.hora;
+  var horaSalidaEsperada = _empHoraSalidaEsperada(emp, horaAbierta);
+  var estado = 'entrada';
+  if (horaSalidaEsperada) {
+    var ahoraMin = new Date().getHours() * 60 + new Date().getMinutes();
+    var salidaMin = _empMinFromHora(horaSalidaEsperada);
+    var diff = ahoraMin - salidaMin;
+    if (diff < -12 * 60) diff += 24 * 60;
+    if (diff >= 60) estado = 'olvido';
+  }
+  return { estado: estado, entrada: ultimo };
+}
+
 // ── "TRABAJANDO AHORA" — tarjeta resumen en sección Empleados ──
 function _empEstadosFichajeHoy() {
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   var today = new Date().toISOString().slice(0, 10);
-  var ahora = new Date();
-  var ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
 
   return empleados.map(function(emp) {
-    var suyos = fichajesHoy.filter(function(f) { return f.empId === emp.id; })
-      .sort(function(a, b) { return (a.horaReal || a.hora).localeCompare(b.horaReal || b.hora); });
-    var entradas = suyos.filter(function(f) { return f.tipo === 'entrada'; });
-    var salidas = suyos.filter(function(f) { return f.tipo === 'salida'; });
-    var ultimaEntrada = entradas.length ? entradas[entradas.length - 1] : null;
-    var ultimaSalida = salidas.length ? salidas[salidas.length - 1] : null;
-
-    var estado;
-    if (!entradas.length) {
-      estado = 'nada';
-    } else if (salidas.length) {
-      estado = 'salida';
-    } else {
-      var horaContratoSalida = emp.tarOut || emp.manOut || null;
-      if (horaContratoSalida) {
-        var parts = horaContratoSalida.split(':').map(Number);
-        var salidaMin = parts[0] * 60 + parts[1];
-        var diff = ahoraMin - salidaMin;
-        if (diff < -12 * 60) diff += 24 * 60;
-        estado = diff >= 60 ? 'olvido' : 'entrada';
-      } else {
-        estado = 'entrada';
-      }
-    }
-    return { emp: emp, estado: estado, entrada: ultimaEntrada, salida: ultimaSalida };
+    var r = _empEstadoActual(emp, fichajes, today);
+    return { emp: emp, estado: r.estado, entrada: r.entrada || null, salida: r.salida || null, deOtroDia: r.deOtroDia || false };
   });
 }
 function empRenderAdmin() {
@@ -10512,7 +10577,10 @@ function empRenderAdmin() {
   var labels = {
     entrada: { icon: '🟢', color: '#166534', texto: function(r) { return 'Trabajando desde las ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—'); } },
     salida: { icon: '🔵', color: '#0C447C', texto: function(r) { return 'Fichó salida a las ' + (r.salida ? (r.salida.horaReal || r.salida.hora) : '—'); } },
-    olvido: { icon: '⚠️', color: '#9a3412', texto: function(r) { return 'Se olvidó fichar salida (entró ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—') + ')'; } },
+    olvido: { icon: '⚠️', color: '#9a3412', texto: function(r) {
+      if (r.deOtroDia && r.entrada) return 'Se olvidó fichar salida del ' + r.entrada.fecha.slice(5).replace('-', '/') + ' (entró ' + (r.entrada.horaReal || r.entrada.hora) + ')';
+      return 'Se olvidó fichar salida (entró ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—') + ')';
+    } },
     nada: { icon: '❌', color: '#991b1b', texto: function() { return 'Todavía no ha fichado'; } }
   };
   el.innerHTML = estados.map(function(r) {
@@ -10577,45 +10645,23 @@ function bimbaRenderFichajeLista() {
   if (!empleados.length) { lista.innerHTML = '<div style="font-size:13px;color:#8A6A4E">No hay empleados registrados</div>'; return; }
 
   var today = new Date().toISOString().slice(0, 10);
-  var ahora = new Date();
-  var ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
 
   var html = '';
   empleados.forEach(function(emp) {
-    var suyos = fichajesHoy.filter(function(f) { return f.empId === emp.id; })
-      .sort(function(a,b) { return (a.horaReal||a.hora).localeCompare(b.horaReal||b.hora); });
-    var entradas = suyos.filter(function(f) { return f.tipo === 'entrada'; });
-    var salidas  = suyos.filter(function(f) { return f.tipo === 'salida'; });
-    var ultimo   = suyos.length ? suyos[suyos.length-1] : null;
-
-    var estado; // 'entrada' | 'salida' | 'olvido' | 'nada'
-
-    if (!entradas.length) {
-      estado = 'nada';
-    } else if (salidas.length) {
-      estado = 'salida';
-    } else {
-      // Tiene entrada pero no salida — ¿lleva más de 1h desde hora de salida del contrato?
-      var horaContratoSalida = emp.tarOut || emp.manOut || null;
-      if (horaContratoSalida) {
-        var parts = horaContratoSalida.split(':').map(Number);
-        var salidaMin = parts[0] * 60 + parts[1];
-        // Manejar turno nocturno (salida al día siguiente)
-        var diff = ahoraMin - salidaMin;
-        if (diff < -12*60) diff += 24*60; // ajuste nocturno
-        estado = diff >= 60 ? 'olvido' : 'entrada';
-      } else {
-        estado = 'entrada';
-      }
-    }
+    // Mismo cálculo que "Trabajando ahora" (_empEstadoActual) — mira TODO
+    // el historial, no solo hoy (para no perder de vista un olvido de un
+    // día anterior), y adivina a qué turno pertenece la entrada abierta
+    // para comparar contra la hora de salida de ESE turno, no siempre la
+    // de la tarde.
+    var r = _empEstadoActual(emp, fichajes, today);
+    var estado = r.estado; // 'entrada' | 'salida' | 'olvido' | 'nada'
 
     var estilos = {
       entrada: { bg:'#f0fdf4', border:'#1D9E75', icon:'🟢', textColor:'#166534', label:'Fichó entrada',     boton:false },
       salida:  { bg:'#eff6ff', border:'#378ADD', icon:'🔵', textColor:'#0C447C', label:'Fichó salida',      boton:false },
-      olvido:  { bg:'#fff7ed', border:'#f97316', icon:'⚠️', textColor:'#9a3412', label:'Se olvidó fichar salida', boton:true },
+      olvido:  { bg:'#fff7ed', border:'#f97316', icon:'⚠️', textColor:'#9a3412', label: r.deOtroDia && r.entrada ? 'Se olvidó fichar salida del ' + r.entrada.fecha.slice(5).replace('-', '/') : 'Se olvidó fichar salida', boton:true },
       nada:    { bg:'#fff1f2', border:'#E24B4A', icon:'❌', textColor:'#991b1b', label:'No ha fichado',     boton:true  }
     };
     var s = estilos[estado];

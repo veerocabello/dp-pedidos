@@ -663,14 +663,43 @@ function getStockHistorial() {
     return [];
   }
 }
+// Antes esto subía siempre el array LOCAL completo con un set() plano
+// (fb_saveStockHistorial) — si dos tablets guardaban una reposición casi a
+// la vez, el segundo guardado sobreescribía en Firebase la lista que
+// acababa de subir el primero, perdiéndola entera (mismo patrón ya
+// arreglado para stockData). Ahora se usa una transacción real que AÑADE
+// esta entrada a la lista más fresca del servidor, en vez de sobreescribir
+// con la copia local — stock/historial guarda el array nativo de Firebase
+// (no como JSON-string), así que toca fb_transactNative, no
+// fb_transactJsonString.
+// Tope de listas guardadas — antes esto crecía para siempre (solo un
+// botón manual de "Borrar listas antiguas" que hay que acordarse de
+// pulsar), agravando con el tiempo el riesgo de la transacción de arriba
+// (payload cada vez más grande que volver a subir). Se queda con las 100
+// más recientes automáticamente; el botón manual sigue ahí para limpiar
+// antes si se quiere.
+const STOCK_HISTORIAL_MAX = 100;
 function saveToStockHistorial(ts, lines) {
+  const entrada = { ts, lines };
+  if (window.fb_transactNative) {
+    window._stockLocalWrite = Date.now();
+    window.fb_transactNative('stock/historial', function (remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : getStockHistorial();
+      arr.push(entrada);
+      return arr.length > STOCK_HISTORIAL_MAX ? arr.slice(arr.length - STOCK_HISTORIAL_MAX) : arr;
+    }).then(function (finalArr) {
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(Array.isArray(finalArr) ? finalArr : [entrada]));
+    }).catch(function (e) {
+      console.warn('Firebase stock historial error:', e);
+      const hist = getStockHistorial();
+      hist.push(entrada);
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
+    });
+    return;
+  }
   const hist = getStockHistorial();
-  hist.push({
-    ts,
-    lines
-  });
+  hist.push(entrada);
   localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
-
   // 🔥 Subir a Firebase — reintenta si aún no está listo
   function subirAFirebase(intentos) {
     if (window.fb_saveStockHistorial) {
