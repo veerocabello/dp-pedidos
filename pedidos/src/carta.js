@@ -628,8 +628,15 @@ function _renderAvisoSaturacionBanner(estado) {
 // ningún aviso nuevo de Firebase justo en ese instante.
 window._ofertaRelampagoActiva = null;
 let _ofertaRelampagoTickInterval = null;
+// Hora real (la del servidor, no la del dispositivo) — window._dpfServerTimeOffsetMs
+// lo mantiene un listener de Firebase (ver nucleo-compartido.js) con la
+// diferencia entre los dos relojes; hasta que llegue el primer valor,
+// offset es 0 y se comporta igual que antes (Date.now() a secas).
+function _ahoraServidor() {
+  return Date.now() + (window._dpfServerTimeOffsetMs || 0);
+}
 function _ofertaRelampagoVigente(o) {
-  return !!(o && o.fin && o.pct > 0 && Date.now() < o.fin);
+  return !!(o && o.fin && o.pct > 0 && _ahoraServidor() < o.fin);
 }
 // Precio real de un producto del menú, aplicando la oferta relámpago si está
 // vigente y es justo ese producto. Todo lo que calcula un total a partir de
@@ -653,7 +660,7 @@ function _renderOfertaRelampagoBanner() {
     el.style.display = 'none';
     return;
   }
-  const restante = Math.max(0, o.fin - Date.now());
+  const restante = Math.max(0, o.fin - _ahoraServidor());
   const m = Math.floor(restante / 60000);
   const s = Math.floor((restante % 60000) / 1000);
   let destino = 'todo el pedido';
@@ -1003,13 +1010,14 @@ function renderCart() {
   const totalRowEl = document.getElementById("cart-total-row");
   const formEl = document.getElementById("order-form");
   const extLines = Object.values(extrasCart).filter(c => c.qty > 0);
+  const promoLines = Object.values(promosCart).filter(c => c.qty > 0);
   const totalItems = lines.reduce((s, _ref) => {
     let _ref2 = _slicedToArray(_ref, 2),
       q = _ref2[1];
     return s + q;
-  }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
+  }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0) + promoLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
-  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
+  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0 && promoLines.length === 0) {
     bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
@@ -1069,7 +1077,21 @@ function renderCart() {
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
     return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
-  const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
+  const promoLinesHtml = promoLines.map(c => {
+    const p = promosLoad().find(x => x.id === c.promoId);
+    if (!p) {
+      console.error('renderCart: promo no encontrada promoId=' + c.promoId);
+      return '';
+    }
+    const price = getPromoItemPrice(c);
+    const subtotal = price * c.qty;
+    total += subtotal;
+    const extras = [];
+    if (c.extraQueso) extras.push('+ Extra Queso +1,00€');
+    if (c.extraGratinado) extras.push('+ Gratinado +0,50€');
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">🔥 ' + escapeHtml(p.nombre) + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removePromoItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+  }).join('');
+  const cartHtml = linesHtml + custLinesHtml + extLinesHtml + promoLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
 
   // Mostrar línea de gastos de gestión si está activa — salvo que el

@@ -1124,6 +1124,23 @@ function promosSave(arr) {
   if (window.fb_savePromos) window.fb_savePromos(arr).catch(() => {});
 }
 
+// promosCart: key → { promoId, qty, extraQueso, extraGratinado, nota, key } —
+// línea propia del carrito, hermana de cart/custCart/extrasCart. Se guarda
+// solo el id de la promo (no una copia de nombre/precio) y se busca en
+// promosLoad() en cada render/envío, igual que custCart/extrasCart buscan
+// en MENU — así si el admin cambia el precio de una promo a medio pedido,
+// el carrito lo refleja en vivo en vez de quedarse con un precio viejo.
+const promosCart = {};
+function getPromoItemPrice(c) {
+  const p = promosLoad().find(function (x) { return x.id === c.promoId; });
+  if (!p) return 0;
+  return parseFloat(p.precio) + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+}
+function removePromoItem(key) {
+  delete promosCart[key];
+  renderCart();
+}
+
 function renderPromos() {
   var container = document.getElementById('promos-container');
   if (!container) return;
@@ -1148,7 +1165,7 @@ function promoAnadir(id) {
   var promos = promosLoad();
   var p = promos.find(function(x) { return x.id === id; });
   if (!p) return;
-  if (p.opcionQueso || p.opcionGratinado) {
+  if (p.opcionQueso || p.opcionGratinado || p.permiteNota) {
     promoAbrirModal(p);
   } else {
     promoAddToCart(p, {});
@@ -1191,10 +1208,12 @@ function promoAbrirModal(p) {
     extrasHtml += '</div>';
   }
 
-  extrasHtml += '<div style="margin-top:12px">' +
-    '<div style="font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Nota</div>' +
-    '<textarea id="promo-nota" placeholder="Instrucciones especiales..." style="width:100%;padding:10px 14px;border:1.5px solid #F5E6C8;border-radius:10px;font-size:13px;font-family:DM Sans,sans-serif;resize:none;box-sizing:border-box;background:#fff;outline:none;color:#2A1506" rows="2"></textarea>' +
-    '</div>';
+  if (p.permiteNota) {
+    extrasHtml += '<div style="margin-top:12px">' +
+      '<div style="font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Nota</div>' +
+      '<textarea id="promo-nota" placeholder="Instrucciones especiales..." style="width:100%;padding:10px 14px;border:1.5px solid #F5E6C8;border-radius:10px;font-size:13px;font-family:DM Sans,sans-serif;resize:none;box-sizing:border-box;background:#fff;outline:none;color:#2A1506" rows="2"></textarea>' +
+      '</div>';
+  }
 
   var div = document.createElement('div');
   div.id = 'promo-modal-overlay';
@@ -1237,19 +1256,49 @@ function promoConfirmarModal(id) {
   var p = promos.find(function(x) { return x.id === id; });
   if (!p) return;
   var opts = {};
-  var quesoEl = document.getElementById('promo-check-queso');
-  var gratinadoEl = document.getElementById('promo-check-gratinado');
-  if (quesoEl) opts.extraQueso = quesoEl.dataset.active === '1';
-  if (gratinadoEl) opts.extraGratinado = gratinadoEl.dataset.active === '1';
+  // Los checkboxes de queso/gratinado los pinta promoAbrirModal() con ids
+  // 'pcheck-queso'/'pcheck-gratinado' (no 'promo-check-*') y guardan su
+  // estado en data-on (no data-active) — antes este desajuste hacía que
+  // extraQueso/extraGratinado fueran siempre undefined, por mucho que el
+  // cliente marcara las casillas.
+  var quesoEl = document.getElementById('pcheck-queso');
+  var gratinadoEl = document.getElementById('pcheck-gratinado');
+  if (quesoEl) opts.extraQueso = quesoEl.dataset.on === '1';
+  if (gratinadoEl) opts.extraGratinado = gratinadoEl.dataset.on === '1';
+  var notaEl = document.getElementById('promo-nota');
+  // No hay (ni conviene inventar aquí) un sistema de nota POR LÍNEA que
+  // llegue al ticket/cocina — el único campo de nota que de verdad se
+  // imprime es el general del pedido (#customer-notes). Para que la nota
+  // de la promo no se pierda silenciosamente, se añade ahí, igual que si
+  // el cliente la hubiera escrito directamente en el campo general.
+  if (notaEl && notaEl.value.trim()) {
+    opts.nota = notaEl.value.trim();
+    var notesInput = document.getElementById('customer-notes');
+    if (notesInput) {
+      var prefix = p.nombre + ': ';
+      notesInput.value = (notesInput.value ? notesInput.value.trim() + '\n' : '') + prefix + opts.nota;
+    }
+  }
   promoAddToCart(p, opts);
   document.getElementById('promo-modal-overlay').remove();
 }
 
 function promoAddToCart(p, opts) {
-  if (!window.promoCart) window.promoCart = {};
   var key = 'promo_' + p.id + '_' + Date.now();
-  window.promoCart[key] = { promo: p, opts: opts, qty: 1 };
-  updateCart();
+  promosCart[key] = {
+    promoId: p.id,
+    qty: 1,
+    extraQueso: !!opts.extraQueso,
+    extraGratinado: !!opts.extraGratinado,
+    nota: opts.nota || '',
+    key: key
+  };
+  // (No existe ninguna función updateCart() en todo el proyecto — la
+  // llamada que había aquí antes de renderCart() lanzaba un
+  // ReferenceError y cortaba la ejecución antes de llegar siquiera al
+  // showToast de abajo, así que "+ Añadir" nunca llegaba a confirmar nada
+  // visible, aparte de escribir en el window.promoCart muerto.)
+  renderCart();
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
 
@@ -2390,11 +2439,22 @@ function _juegoGuardarToken(juego, token) {
 }
 
 async function _juegoGirar(juego, telefono) {
-  const res = await fetch('juegos.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
-  });
+  // Antes esto era un fetch() sin límite de tiempo — a diferencia del
+  // código de descuento manual (dcAplicar), que se blindó explícitamente
+  // contra este mismo problema. Si el servidor tardaba en responder, el
+  // botón se quedaba en "Girando…"/"Destapando…" para siempre, sin error
+  // ni forma de reintentar salvo recargar la página entera.
+  const res = await (typeof _fetchConTimeout === 'function'
+    ? _fetchConTimeout('juegos.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
+      }, 10000)
+    : fetch('juegos.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
+      }));
   return res.json();
 }
 
@@ -2402,6 +2462,18 @@ function _aplicarPremioComun(juego) {
   const st = window._juegoState;
   if (juego === 'ruleta') closeRuleta(); else closeRasca();
   if (st && st.code) {
+    // Antes esto aplicaba el código del premio sin comprobar si ya había
+    // uno manual metido a mano — como solo hay una casilla de código a la
+    // vez, si el manual tenía un % mayor se perdía en silencio (el
+    // mensaje de "¡Premio aplicado!" no avisaba de que había reemplazado
+    // otro código distinto). Ahora, si el que ya estaba aplicado era
+    // mejor, se avisa y se deja tal cual en vez de pisarlo.
+    if (_activeDiscount && _activeDiscount.code !== st.code && _activeDiscount.pct >= (st.pct || 0)) {
+      showAlert('Ya tienes aplicado el código ' + _activeDiscount.code + ' (-' + _activeDiscount.pct + '%), que es igual o mejor que el premio ganado — se mantiene el que ya tenías. Tu premio de "' + st.code + '" sigue disponible: quítalo del carrito el código actual si prefieres usar el del premio.', '¡Premio ganado!');
+      if (typeof openCartDrawer === 'function' && window.innerWidth <= 700) openCartDrawer();
+      else { const panel = document.querySelector('.order-panel'); if (panel) panel.scrollIntoView({ behavior: 'smooth' }); }
+      return;
+    }
     document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(input => { input.value = st.code; });
     if (typeof dcAplicar === 'function') dcAplicar(st.code);
     showAlert('🎉 ¡Código ' + st.code + ' aplicado! El descuento ya está en tu pedido.', '¡Premio aplicado!');
@@ -3657,6 +3729,20 @@ function initFirebaseListeners() {
   if (window.fb_listenMenu) {
     window.fb_listenMenu(_aplicarMenuDesdeFirebase);
   }
+
+  // Diferencia de reloj con el servidor — ver _ahoraServidor() en carta.js.
+  // Sin esto, la cuenta atrás y el precio rebajado de la oferta relámpago
+  // se decidían con Date.now() del propio móvil: con el reloj mal puesto,
+  // un cliente podía ver la oferta acabar antes de tiempo (perdiendo
+  // minutos reales) o seguir viéndola después de que ya hubiera expirado
+  // de verdad — y al confirmar, el servidor (que sí tiene la hora
+  // correcta) recalculaba el precio al alza, dando una sorpresa en el
+  // total frente a lo que se vio en pantalla.
+  if (window.fb_listenServerTimeOffset) {
+    window.fb_listenServerTimeOffset(function (offsetMs) {
+      window._dpfServerTimeOffsetMs = offsetMs;
+    });
+  }
   // Refresco periódico de la carta, además del listener en tiempo real de
   // arriba — si un cliente deja la pestaña abierta mucho rato (o el
   // navegador móvil suspende la conexión en segundo plano y no la
@@ -4455,8 +4541,15 @@ function _renderAvisoSaturacionBanner(estado) {
 // ningún aviso nuevo de Firebase justo en ese instante.
 window._ofertaRelampagoActiva = null;
 let _ofertaRelampagoTickInterval = null;
+// Hora real (la del servidor, no la del dispositivo) — window._dpfServerTimeOffsetMs
+// lo mantiene un listener de Firebase (ver nucleo-compartido.js) con la
+// diferencia entre los dos relojes; hasta que llegue el primer valor,
+// offset es 0 y se comporta igual que antes (Date.now() a secas).
+function _ahoraServidor() {
+  return Date.now() + (window._dpfServerTimeOffsetMs || 0);
+}
 function _ofertaRelampagoVigente(o) {
-  return !!(o && o.fin && o.pct > 0 && Date.now() < o.fin);
+  return !!(o && o.fin && o.pct > 0 && _ahoraServidor() < o.fin);
 }
 // Precio real de un producto del menú, aplicando la oferta relámpago si está
 // vigente y es justo ese producto. Todo lo que calcula un total a partir de
@@ -4480,7 +4573,7 @@ function _renderOfertaRelampagoBanner() {
     el.style.display = 'none';
     return;
   }
-  const restante = Math.max(0, o.fin - Date.now());
+  const restante = Math.max(0, o.fin - _ahoraServidor());
   const m = Math.floor(restante / 60000);
   const s = Math.floor((restante % 60000) / 1000);
   let destino = 'todo el pedido';
@@ -4830,13 +4923,14 @@ function renderCart() {
   const totalRowEl = document.getElementById("cart-total-row");
   const formEl = document.getElementById("order-form");
   const extLines = Object.values(extrasCart).filter(c => c.qty > 0);
+  const promoLines = Object.values(promosCart).filter(c => c.qty > 0);
   const totalItems = lines.reduce((s, _ref) => {
     let _ref2 = _slicedToArray(_ref, 2),
       q = _ref2[1];
     return s + q;
-  }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0);
+  }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0) + promoLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
-  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
+  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0 && promoLines.length === 0) {
     bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
@@ -4896,7 +4990,21 @@ function renderCart() {
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
     return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
-  const cartHtml = linesHtml + custLinesHtml + extLinesHtml + renderUpsellDulce();
+  const promoLinesHtml = promoLines.map(c => {
+    const p = promosLoad().find(x => x.id === c.promoId);
+    if (!p) {
+      console.error('renderCart: promo no encontrada promoId=' + c.promoId);
+      return '';
+    }
+    const price = getPromoItemPrice(c);
+    const subtotal = price * c.qty;
+    total += subtotal;
+    const extras = [];
+    if (c.extraQueso) extras.push('+ Extra Queso +1,00€');
+    if (c.extraGratinado) extras.push('+ Gratinado +0,50€');
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">🔥 ' + escapeHtml(p.nombre) + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removePromoItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+  }).join('');
+  const cartHtml = linesHtml + custLinesHtml + extLinesHtml + promoLinesHtml + renderUpsellDulce();
   bodyEl.innerHTML = cartHtml;
 
   // Mostrar línea de gastos de gestión si está activa — salvo que el
@@ -5527,6 +5635,10 @@ function _limpiarItemsCarritoInvalidos() {
     const c = extrasCart[key];
     if (c && c.qty > 0 && !_disponible(c.menuId)) { delete extrasCart[key]; quitados++; }
   });
+  Object.keys(promosCart).forEach(key => {
+    const c = promosCart[key];
+    if (c && c.qty > 0 && !promosLoad().some(p => p.id === c.promoId && p.visible !== false)) { delete promosCart[key]; quitados++; }
+  });
   return quitados;
 }
 
@@ -5688,7 +5800,12 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
   const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
-  const allLines = [...lines, ...custLines, ...extLines2];
+  const promoLines2 = Object.values(promosCart).filter(c => c.qty > 0).map(c => {
+    const p = promosLoad().find(x => x.id === c.promoId);
+    if (!p) return '';
+    return "".concat(c.qty, "x \uD83D\uDD25 ").concat(p.nombre, " \u2014 ").concat((getPromoItemPrice(c) * c.qty).toFixed(2), " \u20AC");
+  }).filter(Boolean);
+  const allLines = [...lines, ...custLines, ...extLines2, ...promoLines2];
   // El total final se recibe ya calculado desde submitOrder() (orderTotal)
   // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
   // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
@@ -5705,7 +5822,7 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
     if (!it) return s;
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
-  }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0) + Object.values(promosCart).filter(c => c.qty > 0).reduce((s, c) => s + getPromoItemPrice(c) * c.qty, 0);
   const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
   const extraLineas = [];
   if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
@@ -5919,7 +6036,7 @@ function cartHasPatatas() {
 
 // ¿El carrito tiene algún producto?
 function cartHasAnyItem() {
-  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0);
+  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0) || Object.values(promosCart).some(c => c.qty > 0);
 }
 
 // ¿Estamos en horario de turnos? Siempre activo — los slots pasados se deshabilitan solos
@@ -6131,7 +6248,7 @@ async function _submitOrderInner() {
     _alertaConFoco("El nombre es demasiado largo (máximo 60 caracteres)", "customer-name");
     return;
   }
-  if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0) {
+  if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0 && Object.values(promosCart).filter(c => c.qty > 0).length === 0) {
     showAlert("El pedido está vacío");
     return;
   }
@@ -6325,7 +6442,8 @@ async function _submitOrderInner() {
     return s + unitPrice * c.qty;
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
-  const subTotal = regularTotal + custTotal + extTotal;
+  const promoTotal = Object.values(promosCart).filter(c => c.qty > 0).reduce((s, c) => s + getPromoItemPrice(c) * c.qty, 0);
+  const subTotal = regularTotal + custTotal + extTotal + promoTotal;
   const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
@@ -6461,6 +6579,27 @@ async function _submitOrderInner() {
       extras: extras.length ? extras : undefined
     };
   }).filter(Boolean);
+  // Promos: mismo formato que extItems (subtotal = precio BASE × qty,
+  // extras aparte con nombres 'Extra Queso'/'Gratinado' — así
+  // corregirPreciosExtras() en guardar-pedido.php las revisa gratis, sin
+  // tener que duplicar esa tabla de precios otra vez) + promoId, que es
+  // con lo que el servidor busca la promo real en config/promos (ver
+  // corregirPreciosPromos allí) en vez de fiarse del nombre/precio que
+  // mande el navegador.
+  const promoItems = Object.values(promosCart).filter(c => c.qty > 0).map(c => {
+    const p = promosLoad().find(x => x.id === c.promoId);
+    if (!p) return null;
+    const extras = [];
+    if (c.extraQueso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.50 });
+    return {
+      name: p.nombre,
+      qty: c.qty,
+      subtotal: parseFloat(p.precio) * c.qty,
+      extras: extras.length ? extras : undefined,
+      promoId: p.id
+    };
+  }).filter(Boolean);
   const feeItems = feeEnabled ? [{
     name: feeLabel,
     qty: 1,
@@ -6506,7 +6645,7 @@ async function _submitOrderInner() {
   // bebidas al final), sin importar en qué orden se fueron añadiendo al
   // carrito — más fácil de montar en cocina. Los gastos/descuentos/avisos
   // van siempre después, tal cual ya estaban.
-  const foodItems = [...regularItems, ...custItems, ...extItems];
+  const foodItems = [...regularItems, ...custItems, ...extItems, ...promoItems];
   foodItems.sort((a, b) => _ticketCategoriaRank(a.name) - _ticketCategoriaRank(b.name));
   const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...ofertaRelampagoItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
@@ -7012,6 +7151,7 @@ async function showSuccess(orderNum, slotTime) {
     cart: JSON.parse(JSON.stringify(cart)),
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    promosCart: JSON.parse(JSON.stringify(promosCart)),
     ts: Date.now()
   };
 
@@ -7133,6 +7273,7 @@ function resetOrder() {
   cart = {};
   Object.keys(custCart).forEach(k => delete custCart[k]);
   Object.keys(extrasCart).forEach(k => delete extrasCart[k]);
+  Object.keys(promosCart).forEach(k => delete promosCart[k]);
   selectedSlot = null;
   document.getElementById("customer-name").value = "";
   document.getElementById("customer-phone").value = "";
@@ -7241,6 +7382,13 @@ async function modificarPedido() {
   });
   Object.keys(data.extrasCart).forEach(k => {
     extrasCart[k] = data.extrasCart[k];
+  });
+  // (data.promosCart || {}): pedidos ya guardados en localStorage antes de
+  // este cambio no llevan este campo — sin la guarda, Object.keys(undefined)
+  // rompería modificarPedido() para cualquiera con un pedido activo
+  // guardado justo en el momento del despliegue.
+  Object.keys(data.promosCart || {}).forEach(k => {
+    promosCart[k] = data.promosCart[k];
   });
   selectedSlot = data.slot;
 

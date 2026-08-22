@@ -795,6 +795,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       <div class="ruleta-resultado-emoji">😅</div>
       <div class="ruleta-resultado-titulo">Ya has girado hoy</div>
       <p class="ruleta-resultado-desc">Vuelve mañana para otra oportunidad 🎡</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:4px">¿Ganaste un premio y ya no ves el código (cambiaste de móvil, borraste datos del navegador...)? Llámanos al <a href="tel:+34604823180" style="color:inherit;font-weight:700">604 82 31 80</a> y te lo miramos.</p>
       <button class="ruleta-cerrar-btn" onclick="closeRuleta()">Vale, a pedir</button>
     </div>
   </div>
@@ -841,6 +842,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       <div class="rasca-resultado-emoji">😅</div>
       <div class="rasca-resultado-titulo">Ya rascaste hoy</div>
       <p class="rasca-resultado-desc">Vuelve mañana para otra tarjeta 🎫</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:4px">¿Ganaste un premio y ya no ves el código (cambiaste de móvil, borraste datos del navegador...)? Llámanos al <a href="tel:+34604823180" style="color:inherit;font-weight:700">604 82 31 80</a> y te lo miramos.</p>
       <button class="rasca-cerrar-btn solid" onclick="closeRasca()">Vale, a pedir</button>
     </div>
   </div>
@@ -1081,7 +1083,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787426825589" defer></script>
-<script src="js/app.js?v=1787426825584" defer></script>
+<script src="js/app.js?v=1787428320025" defer></script>
 <script src="js/auth.js?v=1787427300732" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript

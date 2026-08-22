@@ -1124,6 +1124,23 @@ function promosSave(arr) {
   if (window.fb_savePromos) window.fb_savePromos(arr).catch(() => {});
 }
 
+// promosCart: key → { promoId, qty, extraQueso, extraGratinado, nota, key } —
+// línea propia del carrito, hermana de cart/custCart/extrasCart. Se guarda
+// solo el id de la promo (no una copia de nombre/precio) y se busca en
+// promosLoad() en cada render/envío, igual que custCart/extrasCart buscan
+// en MENU — así si el admin cambia el precio de una promo a medio pedido,
+// el carrito lo refleja en vivo en vez de quedarse con un precio viejo.
+const promosCart = {};
+function getPromoItemPrice(c) {
+  const p = promosLoad().find(function (x) { return x.id === c.promoId; });
+  if (!p) return 0;
+  return parseFloat(p.precio) + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+}
+function removePromoItem(key) {
+  delete promosCart[key];
+  renderCart();
+}
+
 function renderPromos() {
   var container = document.getElementById('promos-container');
   if (!container) return;
@@ -1148,7 +1165,7 @@ function promoAnadir(id) {
   var promos = promosLoad();
   var p = promos.find(function(x) { return x.id === id; });
   if (!p) return;
-  if (p.opcionQueso || p.opcionGratinado) {
+  if (p.opcionQueso || p.opcionGratinado || p.permiteNota) {
     promoAbrirModal(p);
   } else {
     promoAddToCart(p, {});
@@ -1191,10 +1208,12 @@ function promoAbrirModal(p) {
     extrasHtml += '</div>';
   }
 
-  extrasHtml += '<div style="margin-top:12px">' +
-    '<div style="font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Nota</div>' +
-    '<textarea id="promo-nota" placeholder="Instrucciones especiales..." style="width:100%;padding:10px 14px;border:1.5px solid #F5E6C8;border-radius:10px;font-size:13px;font-family:DM Sans,sans-serif;resize:none;box-sizing:border-box;background:#fff;outline:none;color:#2A1506" rows="2"></textarea>' +
-    '</div>';
+  if (p.permiteNota) {
+    extrasHtml += '<div style="margin-top:12px">' +
+      '<div style="font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Nota</div>' +
+      '<textarea id="promo-nota" placeholder="Instrucciones especiales..." style="width:100%;padding:10px 14px;border:1.5px solid #F5E6C8;border-radius:10px;font-size:13px;font-family:DM Sans,sans-serif;resize:none;box-sizing:border-box;background:#fff;outline:none;color:#2A1506" rows="2"></textarea>' +
+      '</div>';
+  }
 
   var div = document.createElement('div');
   div.id = 'promo-modal-overlay';
@@ -1237,19 +1256,49 @@ function promoConfirmarModal(id) {
   var p = promos.find(function(x) { return x.id === id; });
   if (!p) return;
   var opts = {};
-  var quesoEl = document.getElementById('promo-check-queso');
-  var gratinadoEl = document.getElementById('promo-check-gratinado');
-  if (quesoEl) opts.extraQueso = quesoEl.dataset.active === '1';
-  if (gratinadoEl) opts.extraGratinado = gratinadoEl.dataset.active === '1';
+  // Los checkboxes de queso/gratinado los pinta promoAbrirModal() con ids
+  // 'pcheck-queso'/'pcheck-gratinado' (no 'promo-check-*') y guardan su
+  // estado en data-on (no data-active) — antes este desajuste hacía que
+  // extraQueso/extraGratinado fueran siempre undefined, por mucho que el
+  // cliente marcara las casillas.
+  var quesoEl = document.getElementById('pcheck-queso');
+  var gratinadoEl = document.getElementById('pcheck-gratinado');
+  if (quesoEl) opts.extraQueso = quesoEl.dataset.on === '1';
+  if (gratinadoEl) opts.extraGratinado = gratinadoEl.dataset.on === '1';
+  var notaEl = document.getElementById('promo-nota');
+  // No hay (ni conviene inventar aquí) un sistema de nota POR LÍNEA que
+  // llegue al ticket/cocina — el único campo de nota que de verdad se
+  // imprime es el general del pedido (#customer-notes). Para que la nota
+  // de la promo no se pierda silenciosamente, se añade ahí, igual que si
+  // el cliente la hubiera escrito directamente en el campo general.
+  if (notaEl && notaEl.value.trim()) {
+    opts.nota = notaEl.value.trim();
+    var notesInput = document.getElementById('customer-notes');
+    if (notesInput) {
+      var prefix = p.nombre + ': ';
+      notesInput.value = (notesInput.value ? notesInput.value.trim() + '\n' : '') + prefix + opts.nota;
+    }
+  }
   promoAddToCart(p, opts);
   document.getElementById('promo-modal-overlay').remove();
 }
 
 function promoAddToCart(p, opts) {
-  if (!window.promoCart) window.promoCart = {};
   var key = 'promo_' + p.id + '_' + Date.now();
-  window.promoCart[key] = { promo: p, opts: opts, qty: 1 };
-  updateCart();
+  promosCart[key] = {
+    promoId: p.id,
+    qty: 1,
+    extraQueso: !!opts.extraQueso,
+    extraGratinado: !!opts.extraGratinado,
+    nota: opts.nota || '',
+    key: key
+  };
+  // (No existe ninguna función updateCart() en todo el proyecto — la
+  // llamada que había aquí antes de renderCart() lanzaba un
+  // ReferenceError y cortaba la ejecución antes de llegar siquiera al
+  // showToast de abajo, así que "+ Añadir" nunca llegaba a confirmar nada
+  // visible, aparte de escribir en el window.promoCart muerto.)
+  renderCart();
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
 
@@ -2390,11 +2439,22 @@ function _juegoGuardarToken(juego, token) {
 }
 
 async function _juegoGirar(juego, telefono) {
-  const res = await fetch('juegos.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
-  });
+  // Antes esto era un fetch() sin límite de tiempo — a diferencia del
+  // código de descuento manual (dcAplicar), que se blindó explícitamente
+  // contra este mismo problema. Si el servidor tardaba en responder, el
+  // botón se quedaba en "Girando…"/"Destapando…" para siempre, sin error
+  // ni forma de reintentar salvo recargar la página entera.
+  const res = await (typeof _fetchConTimeout === 'function'
+    ? _fetchConTimeout('juegos.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
+      }, 10000)
+    : fetch('juegos.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'girar', juego, telefono, token: _juegoTokenGuardado(juego) })
+      }));
   return res.json();
 }
 
@@ -2402,6 +2462,18 @@ function _aplicarPremioComun(juego) {
   const st = window._juegoState;
   if (juego === 'ruleta') closeRuleta(); else closeRasca();
   if (st && st.code) {
+    // Antes esto aplicaba el código del premio sin comprobar si ya había
+    // uno manual metido a mano — como solo hay una casilla de código a la
+    // vez, si el manual tenía un % mayor se perdía en silencio (el
+    // mensaje de "¡Premio aplicado!" no avisaba de que había reemplazado
+    // otro código distinto). Ahora, si el que ya estaba aplicado era
+    // mejor, se avisa y se deja tal cual en vez de pisarlo.
+    if (_activeDiscount && _activeDiscount.code !== st.code && _activeDiscount.pct >= (st.pct || 0)) {
+      showAlert('Ya tienes aplicado el código ' + _activeDiscount.code + ' (-' + _activeDiscount.pct + '%), que es igual o mejor que el premio ganado — se mantiene el que ya tenías. Tu premio de "' + st.code + '" sigue disponible: quítalo del carrito el código actual si prefieres usar el del premio.', '¡Premio ganado!');
+      if (typeof openCartDrawer === 'function' && window.innerWidth <= 700) openCartDrawer();
+      else { const panel = document.querySelector('.order-panel'); if (panel) panel.scrollIntoView({ behavior: 'smooth' }); }
+      return;
+    }
     document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(input => { input.value = st.code; });
     if (typeof dcAplicar === 'function') dcAplicar(st.code);
     showAlert('🎉 ¡Código ' + st.code + ' aplicado! El descuento ya está en tu pedido.', '¡Premio aplicado!');
@@ -3656,6 +3728,20 @@ function initFirebaseListeners() {
   // Menu prices/names sync across devices
   if (window.fb_listenMenu) {
     window.fb_listenMenu(_aplicarMenuDesdeFirebase);
+  }
+
+  // Diferencia de reloj con el servidor — ver _ahoraServidor() en carta.js.
+  // Sin esto, la cuenta atrás y el precio rebajado de la oferta relámpago
+  // se decidían con Date.now() del propio móvil: con el reloj mal puesto,
+  // un cliente podía ver la oferta acabar antes de tiempo (perdiendo
+  // minutos reales) o seguir viéndola después de que ya hubiera expirado
+  // de verdad — y al confirmar, el servidor (que sí tiene la hora
+  // correcta) recalculaba el precio al alza, dando una sorpresa en el
+  // total frente a lo que se vio en pantalla.
+  if (window.fb_listenServerTimeOffset) {
+    window.fb_listenServerTimeOffset(function (offsetMs) {
+      window._dpfServerTimeOffsetMs = offsetMs;
+    });
   }
   // Refresco periódico de la carta, además del listener en tiempo real de
   // arriba — si un cliente deja la pestaña abierta mucho rato (o el

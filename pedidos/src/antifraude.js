@@ -48,6 +48,7 @@ async function showSuccess(orderNum, slotTime) {
     cart: JSON.parse(JSON.stringify(cart)),
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    promosCart: JSON.parse(JSON.stringify(promosCart)),
     ts: Date.now()
   };
 
@@ -169,6 +170,7 @@ function resetOrder() {
   cart = {};
   Object.keys(custCart).forEach(k => delete custCart[k]);
   Object.keys(extrasCart).forEach(k => delete extrasCart[k]);
+  Object.keys(promosCart).forEach(k => delete promosCart[k]);
   selectedSlot = null;
   document.getElementById("customer-name").value = "";
   document.getElementById("customer-phone").value = "";
@@ -277,6 +279,13 @@ async function modificarPedido() {
   });
   Object.keys(data.extrasCart).forEach(k => {
     extrasCart[k] = data.extrasCart[k];
+  });
+  // (data.promosCart || {}): pedidos ya guardados en localStorage antes de
+  // este cambio no llevan este campo — sin la guarda, Object.keys(undefined)
+  // rompería modificarPedido() para cualquiera con un pedido activo
+  // guardado justo en el momento del despliegue.
+  Object.keys(data.promosCart || {}).forEach(k => {
+    promosCart[k] = data.promosCart[k];
   });
   selectedSlot = data.slot;
 

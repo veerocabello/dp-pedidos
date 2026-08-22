@@ -117,6 +117,15 @@ function _initFirebase() {
     }, 200);
   }
 
+  // Diferencia entre el reloj de ESTE dispositivo y el reloj real del
+  // servidor de Firebase — nodo especial que Firebase mantiene solo para
+  // esto, no hace falta ningún endpoint propio. Se usa para que la cuenta
+  // atrás/precio de la oferta relámpago no dependa de que el reloj del
+  // móvil del cliente esté bien puesto (ver window._dpfServerTimeOffsetMs
+  // y _ahoraServidor() en carta.js).
+  window.fb_listenServerTimeOffset = function(cb) {
+    return db.ref('.info/serverTimeOffset').on('value', function(sn) { cb(sn.val() || 0); });
+  };
   var tK = function() { return new Date().toISOString().slice(0,10); };
   var jset = function(r,v) { return db.ref(r).set(v); };
   var jget = function(r) { return db.ref(r).once("value"); };

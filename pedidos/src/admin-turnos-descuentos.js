@@ -346,6 +346,137 @@ async function dcEliminar(code) {
   dcCargar();
 }
 
+// ── PROMOCIONES — panel admin (crear/editar/borrar/ocultar). El cliente
+// las ve y las añade al carrito desde la carta (promosLoad/renderPromos/
+// promoAddToCart, en nucleo-compartido.js — PROMOS_KEY/promosLoad/promosSave
+// también viven ahí, se reutilizan aquí tal cual). Igual que la carta y los
+// empleados, config/promos se guarda con fb_transactJsonString en vez de un
+// set() a pelo, para que dos admins editando promos casi a la vez no se
+// pisen el cambio entero.
+function bimbaRenderPromos() {
+  const el = document.getElementById('bimba-promos-lista');
+  if (!el) return;
+  const promos = promosLoad();
+  if (!promos.length) { el.innerHTML = '<span style="color:#8A6A4E;font-size:13px">Sin promociones creadas todavía</span>'; return; }
+  el.innerHTML = promos.map(function(p) {
+    const precioTachado = p.precioAntes ? '<span style="text-decoration:line-through;color:#8A6A4E;margin-right:4px">' + parseFloat(p.precioAntes).toFixed(2) + ' €</span>' : '';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:140px"><strong style="color:#3D1F0D">' + escapeHtml(p.nombre) + '</strong>'
+      + ' <span style="font-size:12px;color:#8A6A4E">' + precioTachado + parseFloat(p.precio).toFixed(2) + ' €</span>'
+      + (p.visible === false ? ' <span style="font-size:11px;color:#c0392b;font-weight:700">(oculta)</span>' : '') + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      + '<button data-id="' + escapeAttr(p.id) + '" onclick="bimbaPromoToggleVisible(this.dataset.id)" style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;background:' + (p.visible === false ? '#aaa' : '#5ECC76') + ';color:#fff">' + (p.visible === false ? 'Oculta' : 'Visible') + '</button>'
+      + '<button data-id="' + escapeAttr(p.id) + '" onclick="bimbaPromoEditar(this.dataset.id)" style="padding:4px 10px;background:rgba(244,196,48,0.08);color:#3D1F0D;border:1.5px solid #3D1F0D;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">✏️ Editar</button>'
+      + '<button data-id="' + escapeAttr(p.id) + '" onclick="bimbaPromoEliminar(this.dataset.id)" style="padding:4px 10px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🗑️</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+function bimbaPromoNueva() {
+  document.getElementById('bimba-promo-edit-id').value = '';
+  document.getElementById('bimba-promo-nombre').value = '';
+  document.getElementById('bimba-promo-desc').value = '';
+  document.getElementById('bimba-promo-precio').value = '';
+  document.getElementById('bimba-promo-antes').value = '';
+  document.getElementById('bimba-promo-queso').checked = false;
+  document.getElementById('bimba-promo-gratinado').checked = false;
+  document.getElementById('bimba-promo-nota').checked = false;
+  const activaEl = document.getElementById('bimba-promo-activa');
+  if (activaEl) activaEl.checked = true;
+  document.getElementById('bimba-promo-form').style.display = 'block';
+}
+
+function bimbaPromoEditar(id) {
+  const p = promosLoad().find(function(x) { return x.id === id; });
+  if (!p) return;
+  document.getElementById('bimba-promo-edit-id').value = p.id;
+  document.getElementById('bimba-promo-nombre').value = p.nombre;
+  document.getElementById('bimba-promo-desc').value = p.descripcion || '';
+  document.getElementById('bimba-promo-precio').value = p.precio;
+  document.getElementById('bimba-promo-antes').value = p.precioAntes || '';
+  document.getElementById('bimba-promo-queso').checked = !!p.opcionQueso;
+  document.getElementById('bimba-promo-gratinado').checked = !!p.opcionGratinado;
+  document.getElementById('bimba-promo-nota').checked = !!p.permiteNota;
+  const activaEl = document.getElementById('bimba-promo-activa');
+  if (activaEl) activaEl.checked = p.visible !== false;
+  document.getElementById('bimba-promo-form').style.display = 'block';
+}
+
+async function bimbaGuardarPromo() {
+  const idEl = document.getElementById('bimba-promo-edit-id');
+  const nombre = (document.getElementById('bimba-promo-nombre').value || '').trim();
+  const descripcion = (document.getElementById('bimba-promo-desc').value || '').trim();
+  const precio = parseFloat(document.getElementById('bimba-promo-precio').value);
+  const antesEl = document.getElementById('bimba-promo-antes');
+  const precioAntes = antesEl && antesEl.value !== '' ? parseFloat(antesEl.value) : null;
+  const opcionQueso = document.getElementById('bimba-promo-queso').checked;
+  const opcionGratinado = document.getElementById('bimba-promo-gratinado').checked;
+  const permiteNota = document.getElementById('bimba-promo-nota').checked;
+  const activaEl = document.getElementById('bimba-promo-activa');
+  const visible = activaEl ? activaEl.checked : true;
+  if (!nombre) { alert('Introduce un nombre para la promoción'); return; }
+  if (isNaN(precio) || precio < 0) { alert('Introduce un precio válido (0 o más)'); return; }
+  if (precioAntes !== null && (isNaN(precioAntes) || precioAntes <= precio)) { alert('El precio tachado debe ser mayor que el precio de la promoción'); return; }
+  if (!window.fb_transactJsonString) { alert('Firebase no disponible — no se puede guardar'); return; }
+  const id = idEl.value || ('promo_' + Date.now());
+  const esNueva = !idEl.value;
+  const datosPromo = { id, nombre, descripcion, precio, precioAntes, opcionQueso, opcionGratinado, permiteNota, visible };
+  try {
+    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : [];
+      const idx = arr.findIndex(function(x) { return x.id === id; });
+      if (idx >= 0) arr[idx] = datosPromo; else arr.push(datosPromo);
+      return arr;
+    });
+    localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || [datosPromo]));
+    renderPromos();
+    bimbaRenderPromos();
+    document.getElementById('bimba-promo-form').style.display = 'none';
+    logActivity((esNueva ? '🔥 Promoción creada: ' : '✏️ Promoción editada: ') + nombre);
+  } catch (e) {
+    console.warn('[bimbaGuardarPromo] fallo al guardar en Firebase:', e);
+    alert('No se ha podido guardar la promoción (revisa la conexión). Vuelve a intentarlo.');
+  }
+}
+
+async function bimbaPromoEliminar(id) {
+  const p = promosLoad().find(function(x) { return x.id === id; });
+  if (!p) return;
+  if (!confirm('¿Eliminar la promoción "' + p.nombre + '"? Esto no afecta a los pedidos ya hechos con ella.')) return;
+  if (!window.fb_transactJsonString) { alert('Firebase no disponible'); return; }
+  try {
+    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : [];
+      return arr.filter(function(x) { return x.id !== id; });
+    });
+    localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || []));
+    renderPromos();
+    bimbaRenderPromos();
+    logActivity('🗑️ Promoción eliminada: ' + p.nombre);
+  } catch (e) {
+    console.warn('[bimbaPromoEliminar] fallo al eliminar en Firebase:', e);
+    alert('No se ha podido eliminar (revisa la conexión).');
+  }
+}
+
+async function bimbaPromoToggleVisible(id) {
+  if (!window.fb_transactJsonString) { alert('Firebase no disponible'); return; }
+  try {
+    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : [];
+      const idx = arr.findIndex(function(x) { return x.id === id; });
+      if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], { visible: arr[idx].visible === false });
+      return arr;
+    });
+    localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || []));
+    renderPromos();
+    bimbaRenderPromos();
+  } catch (e) {
+    console.warn('[bimbaPromoToggleVisible] fallo al guardar en Firebase:', e);
+    alert('No se ha podido cambiar la visibilidad (revisa la conexión).');
+  }
+}
+
 // ── OFERTA RELÁMPAGO — panel admin (lanzar/cancelar/ver estado). El
 // listener que hace que el cliente vea el banner/precio rebajado en vivo
 // (loadOfertaRelampagoFromFirebase) vive en nucleo-compartido.js — ver el
@@ -415,7 +546,7 @@ async function orLanzar() {
   // silencio junto con el tiempo que le quedaba.
   const activaAhora = window._ofertaRelampagoActiva;
   if (activaAhora && typeof _ofertaRelampagoVigente === 'function' && _ofertaRelampagoVigente(activaAhora)) {
-    const restante = Math.max(0, Math.round((activaAhora.fin - Date.now()) / 60000));
+    const restante = Math.max(0, Math.round((activaAhora.fin - (typeof _ahoraServidor === 'function' ? _ahoraServidor() : Date.now())) / 60000));
     if (!confirm('Ya hay una oferta relámpago activa (le quedan ' + restante + ' min). Lanzar esta la reemplaza y pierde el tiempo restante. ¿Continuar?')) return;
   }
   const fin = Date.now() + minutos * 60000;
@@ -450,7 +581,8 @@ function orRenderEstado(oferta) {
   const estadoEl = document.getElementById('or-estado');
   if (!form || !estadoEl) return;
   if (_orTickInterval) { clearInterval(_orTickInterval); _orTickInterval = null; }
-  const vigente = !!(oferta && oferta.fin && Date.now() < oferta.fin);
+  const _ahoraSrv = typeof _ahoraServidor === 'function' ? _ahoraServidor() : Date.now();
+  const vigente = !!(oferta && oferta.fin && _ahoraSrv < oferta.fin);
   if (!vigente) {
     form.style.display = 'block';
     estadoEl.style.display = 'none';
@@ -460,7 +592,7 @@ function orRenderEstado(oferta) {
   estadoEl.style.display = 'block';
   const destino = oferta.tipo === 'producto' ? _orNombresProductos(oferta.productoIds) : 'todo el pedido';
   const pintar = function () {
-    const restante = oferta.fin - Date.now();
+    const restante = oferta.fin - (typeof _ahoraServidor === 'function' ? _ahoraServidor() : Date.now());
     if (restante <= 0) { orRenderEstado(null); return; }
     const m = Math.floor(restante / 60000);
     const s = Math.floor((restante % 60000) / 1000);

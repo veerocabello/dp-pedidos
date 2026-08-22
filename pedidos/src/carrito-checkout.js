@@ -369,6 +369,10 @@ function _limpiarItemsCarritoInvalidos() {
     const c = extrasCart[key];
     if (c && c.qty > 0 && !_disponible(c.menuId)) { delete extrasCart[key]; quitados++; }
   });
+  Object.keys(promosCart).forEach(key => {
+    const c = promosCart[key];
+    if (c && c.qty > 0 && !promosLoad().some(p => p.id === c.promoId && p.visible !== false)) { delete promosCart[key]; quitados++; }
+  });
   return quitados;
 }
 
@@ -530,7 +534,12 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
   const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
     return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
   });
-  const allLines = [...lines, ...custLines, ...extLines2];
+  const promoLines2 = Object.values(promosCart).filter(c => c.qty > 0).map(c => {
+    const p = promosLoad().find(x => x.id === c.promoId);
+    if (!p) return '';
+    return "".concat(c.qty, "x \uD83D\uDD25 ").concat(p.nombre, " \u2014 ").concat((getPromoItemPrice(c) * c.qty).toFixed(2), " \u20AC");
+  }).filter(Boolean);
+  const allLines = [...lines, ...custLines, ...extLines2, ...promoLines2];
   // El total final se recibe ya calculado desde submitOrder() (orderTotal)
   // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
   // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
@@ -547,7 +556,7 @@ function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, fee
     if (!it) return s;
     const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + up * c.qty;
-  }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
+  }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0) + Object.values(promosCart).filter(c => c.qty > 0).reduce((s, c) => s + getPromoItemPrice(c) * c.qty, 0);
   const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
   const extraLineas = [];
   if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
@@ -761,7 +770,7 @@ function cartHasPatatas() {
 
 // ¿El carrito tiene algún producto?
 function cartHasAnyItem() {
-  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0);
+  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0) || Object.values(promosCart).some(c => c.qty > 0);
 }
 
 // ¿Estamos en horario de turnos? Siempre activo — los slots pasados se deshabilitan solos
@@ -973,7 +982,7 @@ async function _submitOrderInner() {
     _alertaConFoco("El nombre es demasiado largo (máximo 60 caracteres)", "customer-name");
     return;
   }
-  if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0) {
+  if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0 && Object.values(promosCart).filter(c => c.qty > 0).length === 0) {
     showAlert("El pedido está vacío");
     return;
   }
@@ -1167,7 +1176,8 @@ async function _submitOrderInner() {
     return s + unitPrice * c.qty;
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
-  const subTotal = regularTotal + custTotal + extTotal;
+  const promoTotal = Object.values(promosCart).filter(c => c.qty > 0).reduce((s, c) => s + getPromoItemPrice(c) * c.qty, 0);
+  const subTotal = regularTotal + custTotal + extTotal + promoTotal;
   const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const feeLabel = getFeeLabel();
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
@@ -1303,6 +1313,27 @@ async function _submitOrderInner() {
       extras: extras.length ? extras : undefined
     };
   }).filter(Boolean);
+  // Promos: mismo formato que extItems (subtotal = precio BASE × qty,
+  // extras aparte con nombres 'Extra Queso'/'Gratinado' — así
+  // corregirPreciosExtras() en guardar-pedido.php las revisa gratis, sin
+  // tener que duplicar esa tabla de precios otra vez) + promoId, que es
+  // con lo que el servidor busca la promo real en config/promos (ver
+  // corregirPreciosPromos allí) en vez de fiarse del nombre/precio que
+  // mande el navegador.
+  const promoItems = Object.values(promosCart).filter(c => c.qty > 0).map(c => {
+    const p = promosLoad().find(x => x.id === c.promoId);
+    if (!p) return null;
+    const extras = [];
+    if (c.extraQueso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.50 });
+    return {
+      name: p.nombre,
+      qty: c.qty,
+      subtotal: parseFloat(p.precio) * c.qty,
+      extras: extras.length ? extras : undefined,
+      promoId: p.id
+    };
+  }).filter(Boolean);
   const feeItems = feeEnabled ? [{
     name: feeLabel,
     qty: 1,
@@ -1348,7 +1379,7 @@ async function _submitOrderInner() {
   // bebidas al final), sin importar en qué orden se fueron añadiendo al
   // carrito — más fácil de montar en cocina. Los gastos/descuentos/avisos
   // van siempre después, tal cual ya estaban.
-  const foodItems = [...regularItems, ...custItems, ...extItems];
+  const foodItems = [...regularItems, ...custItems, ...extItems, ...promoItems];
   foodItems.sort((a, b) => _ticketCategoriaRank(a.name) - _ticketCategoriaRank(b.name));
   const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...ofertaRelampagoItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');

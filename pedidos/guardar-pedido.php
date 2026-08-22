@@ -763,6 +763,64 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
     return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'agotados' => array_values(array_unique($agotados))];
 }
 
+// ── Corrige (no solo avisa) el precio de las promociones (config/promos,
+// creadas desde el panel > Marketing > Promociones) — hasta ahora nada
+// comprobaba el precio de una promo al confirmar el pedido: el navegador
+// mandaba el subtotal tal cual lo tuviera calculado, y ni corregirPreciosCatalogo
+// (que solo mira config/menu) ni corregirPreciosExtras (que solo mira
+// extras {name,price}, no el precio base de la línea) la tocaban. Los
+// items de promo llegan con un campo "promoId" propio (ver promoItems en
+// carrito-checkout.js) — se busca por ese id en vez de por nombre, así un
+// nombre manipulado en el navegador no puede hacer que un item deje de
+// reconocerse como promo y se cuele sin comprobar. Los extras (Extra
+// Queso/Gratinado) de una promo SÍ los corrige ya corregirPreciosExtras
+// más arriba en el flujo (mismo formato {name,price} que los de un
+// producto normal), así que aquí solo hace falta el precio base.
+function corregirPreciosPromos($databaseURL, $accessToken, $items) {
+    $promosResp = fbGetJsonStringConEtag($databaseURL, 'config/promos', $accessToken);
+    $promosData = $promosResp['data'] ?? null;
+    $promos = is_array($promosData) ? $promosData : [];
+    $promoPorId = [];
+    foreach ($promos as $p) {
+        if (isset($p['id'])) $promoPorId[(string)$p['id']] = $p;
+    }
+    $avisos = [];
+    $noDisponibles = [];
+    $deltaTotal = 0;
+    $corregidos = array_map(function ($it) use ($promoPorId, &$avisos, &$deltaTotal, &$noDisponibles) {
+        if (!isset($it['promoId'])) return $it; // no es una línea de promo
+        $promoId = (string)$it['promoId'];
+        $nombreEnviado = $it['name'] ?? ('promo ' . $promoId);
+        if (!isset($promoPorId[$promoId]) || $promoPorId[$promoId]['visible'] === false) {
+            // Promo borrada, o desactivada por el admin, después de que el
+            // cliente ya la tuviera en el carrito — igual que un producto
+            // agotado, no hay precio corregido que valga: se rechaza el
+            // pedido entero más abajo en vez de solo avisar.
+            $noDisponibles[] = $nombreEnviado;
+            return $it;
+        }
+        $p = $promoPorId[$promoId];
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : null;
+        $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : null;
+        if ($qty === null || $subtotal === null) return $it;
+        $precioReal = round((float)($p['precio'] ?? 0), 2);
+        $precioEnviado = $subtotal / $qty;
+        // El nombre también se restaura al real — si el navegador mandó otro
+        // (manipulado, o simplemente desactualizado porque el admin renombró
+        // la promo a medio pedido), el ticket/cocina deben ver el nombre que
+        // el admin tiene configurado ahora, no el que trajera el cliente.
+        if (($it['name'] ?? null) !== ($p['nombre'] ?? null)) $it['name'] = $p['nombre'] ?? $nombreEnviado;
+        if (abs($precioEnviado - $precioReal) > 0.02) {
+            $avisos[] = sprintf('%s: enviado %.2f€, corregido a precio real %.2f€', $nombreEnviado, $precioEnviado, $precioReal);
+            $subtotalCorregido = round($precioReal * $qty, 2);
+            $deltaTotal += ($subtotalCorregido - $subtotal);
+            $it['subtotal'] = $subtotalCorregido;
+        }
+        return $it;
+    }, $items);
+    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'noDisponibles' => array_values(array_unique($noDisponibles))];
+}
+
 // ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
 // pedido) ── Antes esto solo se comprobaba en el navegador (isOutsideHours,
 // isTodayOpen, getOrdersOpen en admin-config.js) para decidir si mostrar el
@@ -1635,6 +1693,18 @@ try {
     if (!empty($corrPrecios['agotados'])) {
         fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — producto agotado: ' . implode(', ', $corrPrecios['agotados']));
         echo json_encode(['success' => false, 'error' => 'Uno de los productos de tu pedido (' . implode(', ', $corrPrecios['agotados']) . ') se ha agotado. Recarga la página e inténtalo de nuevo.']);
+        exit;
+    }
+    $corrPromos = corregirPreciosPromos($databaseURL, $accessToken, $items);
+    $items = $corrPromos['items'];
+    if ($corrPromos['avisos']) {
+        $total = round($total + $corrPromos['deltaTotal'], 2);
+        if ($total < 0) $total = 0;
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de promoción corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPromos['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
+    }
+    if (!empty($corrPromos['noDisponibles'])) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — promoción ya no disponible: ' . implode(', ', $corrPromos['noDisponibles']));
+        echo json_encode(['success' => false, 'error' => 'Una de las promociones de tu pedido (' . implode(', ', $corrPromos['noDisponibles']) . ') ya no está disponible. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
     $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta, $phoneClean);
