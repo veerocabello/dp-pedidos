@@ -5455,7 +5455,15 @@ async function _recuperarPedidoEnCurso() {
       console.log('[recuperación] Pedido ' + marcador.orderNum + ' recuperado tras un cierre inesperado');
       _ocultarAvisoFalloGuardado(marcador.orderNum);
     } else {
+      // Rechazo definitivo (no un simple fallo de red): antes esto solo se
+      // avisaba en la consola — si el cliente ya no seguía en la pantalla
+      // de éxito de ESE pedido (p.ej. bloqueó el móvil justo después de
+      // pedir y no volvió a abrir la web hasta más tarde, quizás para otra
+      // cosa), no se enteraba nunca de que su pedido no llegó a guardarse.
+      // showAlert() no depende de en qué pantalla esté, así que avisa igual
+      // aunque haya pasado un buen rato y esté haciendo otra cosa en la web.
       console.warn('[recuperación] Pedido ' + marcador.orderNum + ' rechazado al reintentar:', data.error);
+      showAlert('Tu pedido ' + marcador.orderNum + ' no se pudo confirmar (' + (data.error || 'error desconocido') + '). Por favor, haz el pedido de nuevo o llama para confirmarlo.', 'Pedido no confirmado');
     }
   } catch (e) {
     // Sigue sin red — se deja el marcador para reintentar la próxima vez
@@ -5520,19 +5528,28 @@ function formatNombreConBadgeNuevo(nombre) {
 // de Firebase, lo que exigía dejar esa escritura abierta a cualquier
 // visitante anónimo en las reglas — cualquiera podía rellenar
 // usedOrderNums/<fecha>/ sin llegar a pedir nada.
-// Fallback a aleatorio solo si el servidor no responde.
+// Fallback a aleatorio SOLO si el servidor no responde tras varios
+// intentos (antes era un único intento — un fallo puntual de red bastaba
+// para caer directo al aleatorio, que nunca se registra en
+// usedOrderNums/ y por tanto puede coincidir con un pedido real ya
+// existente; ese número "condenado" no tiene arreglo si colisiona, así que
+// merece la pena insistir un poco más con el servidor antes de resignarse
+// a él).
 async function generateOrderNumber() {
-  try {
-    const res = await _fetchConTimeout('guardar-pedido.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reservarNumeroPedido' })
-    }, 8000);
-    const data = await res.json();
-    if (data.success && data.orderNum) return data.orderNum;
-    console.warn('[orderNum] reserva en servidor falló:', data.error);
-  } catch (e) {
-    console.warn('[orderNum] fetch error:', e);
+  for (let intento = 0; intento < 3; intento++) {
+    try {
+      const res = await _fetchConTimeout('guardar-pedido.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reservarNumeroPedido' })
+      }, 8000);
+      const data = await res.json();
+      if (data.success && data.orderNum) return data.orderNum;
+      console.warn('[orderNum] reserva en servidor falló:', data.error);
+    } catch (e) {
+      console.warn('[orderNum] fetch error:', e);
+    }
+    if (intento < 2) await new Promise(r => setTimeout(r, 500));
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
