@@ -6044,28 +6044,40 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
       push(prefix + nombrePrincipal.substring(0, W - prefix.length) + '\n');
       push(' '.repeat(Math.max(0, W - precio.length)) + precio + '\n');
     }
+    // Extras y cambios (ingredientes añadidos/sustituidos) en negrita +
+    // subrayado (estilo E, 2 puntos — el mismo que item.modText más abajo)
+    // para que destaquen en cocina, igual que ya se hacía con las
+    // modificaciones de producto.
     extrasNombre.forEach(extra => {
       const conParentesis = extra.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/, ' (+$1 EUR)').trim();
+      bold(true);
+      d.push(ESC, 0x2D, 0x02);
       push('     - ' + _ptEncodeStr(conParentesis).toUpperCase() + '\n');
+      d.push(ESC, 0x2D, 0x00);
+      bold(false);
     });
     if (Array.isArray(extrasArr)) {
       extrasArr.forEach(extra => {
         const nombreExtra = _ptEncodeStr(((extra && extra.name) ? extra.name : extra) + '').toUpperCase();
         const precioExtraTxt = (extra && extra.price) ? '+' + parseFloat(extra.price).toFixed(2) + ' EUR' : '';
         const prefixExtra = '  - ';
+        bold(true);
+        d.push(ESC, 0x2D, 0x02);
         if (!precioExtraTxt) {
           push(prefixExtra + nombreExtra + '\n');
-          return;
-        }
-        // Precio del extra alineado a la misma columna derecha que el
-        // precio de la línea principal (misma W), no pegado al nombre.
-        const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
-        if (spacesExtra >= 1) {
-          push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
         } else {
-          push(prefixExtra + nombreExtra + '\n');
-          push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
+          // Precio del extra alineado a la misma columna derecha que el
+          // precio de la línea principal (misma W), no pegado al nombre.
+          const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
+          if (spacesExtra >= 1) {
+            push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
+          } else {
+            push(prefixExtra + nombreExtra + '\n');
+            push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
+          }
         }
+        d.push(ESC, 0x2D, 0x00);
+        bold(false);
       });
     }
     // item.modText (opcional, aún no lo rellena ningún pedido real — solo

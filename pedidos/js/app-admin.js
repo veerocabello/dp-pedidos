@@ -223,12 +223,12 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),c(),(e.items||[]).forEach(g=>{const x=_ptEncodeStr(g.name||"").split(" + "),y=x[0].toUpperCase(),u=x.slice(1),f=g.extras||[],m=(g.subtotal||0).toFixed(2)+" EUR",b=o.anchoPapel===58?32:48,h=g.qty+"x ",S=b-h.length-y.length-m.length;S>=0?s(h+y+" ".repeat(S)+m+`
 `):(s(h+y.substring(0,b-h.length)+`
 `),s(" ".repeat(Math.max(0,b-m.length))+m+`
-`)),u.forEach(E=>{const _=E.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/," (+$1 EUR)").trim();s("     - "+_ptEncodeStr(_).toUpperCase()+`
-`)}),Array.isArray(f)&&f.forEach(E=>{const _=_ptEncodeStr((E&&E.name?E.name:E)+"").toUpperCase(),v=E&&E.price?"+"+parseFloat(E.price).toFixed(2)+" EUR":"",w="  - ";if(!v){s(w+_+`
-`);return}const I=b-w.length-_.length-v.length;I>=1?s(w+_+" ".repeat(I)+v+`
+`)),u.forEach(E=>{const _=E.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/," (+$1 EUR)").trim();p(!0),i.push(n,45,2),s("     - "+_ptEncodeStr(_).toUpperCase()+`
+`),i.push(n,45,0),p(!1)}),Array.isArray(f)&&f.forEach(E=>{const _=_ptEncodeStr((E&&E.name?E.name:E)+"").toUpperCase(),v=E&&E.price?"+"+parseFloat(E.price).toFixed(2)+" EUR":"",w="  - ";if(p(!0),i.push(n,45,2),!v)s(w+_+`
+`);else{const I=b-w.length-_.length-v.length;I>=1?s(w+_+" ".repeat(I)+v+`
 `):(s(w+_+`
 `),s(" ".repeat(Math.max(0,b-v.length))+v+`
-`))}),g.modText&&(s(" ".repeat(h.length)),p(!0),i.push(n,45,2),s(g.modText+`
+`))}i.push(n,45,0),p(!1)}),g.modText&&(s(" ".repeat(h.length)),p(!0),i.push(n,45,2),s(g.modText+`
 `),i.push(n,45,0),p(!1))}),s(`------------------------------------------------
 `),e.fidelizacionElegible&&(r(),p(!0),l(),s(`*** COMPROBAR SELLOS ***
 `),d(),p(!1),s(`------------------------------------------------
