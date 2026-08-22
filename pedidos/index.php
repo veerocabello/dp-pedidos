@@ -1081,7 +1081,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787395566747" defer></script>
-<script src="js/app.js?v=1787410803927" defer></script>
+<script src="js/app.js?v=1787411945406" defer></script>
 <script src="js/auth.js?v=1786522396000" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript

@@ -4486,6 +4486,42 @@ function changeQty(id, delta) {
     openExtrasModal(id);
     return;
   }
+  // El botón "−" de la tarjeta (delta<0) para Al Gusto/Bomba, Cheddar-Bacon
+  // y las patatas con extras NO puede operar sobre cart[id] — esos
+  // productos no viven ahí, viven en custCart/extrasCart bajo una clave por
+  // cada combinación de salsas/ingredientes/queso/gratinado (puede haber
+  // varias líneas distintas para el mismo producto). Antes de este fix el
+  // botón se pintaba activo pero no hacía nada: el "−" caía al camino
+  // genérico de abajo, que sí existe pero mira cart[id] (siempre vacío para
+  // estos productos), así que ni quitaba ni avisaba de nada.
+  // Sin forma de saber cuál de las líneas quiere reducir el cliente (la
+  // tarjeta solo conoce el total agrupado), se quita 1 de la ÚLTIMA
+  // combinación añadida — el mismo criterio de "lo último que pediste" que
+  // ya usa duplicarCustItem() para ofrecer repetir/variar un pedido.
+  if (delta < 0) {
+    if (id === 15 || id === 16) {
+      const keys = Object.keys(custCart).filter(k => custCart[k].menuId === id && custCart[k].qty > 0);
+      if (keys.length) {
+        const k = keys[keys.length - 1];
+        custCart[k].qty--;
+        if (custCart[k].qty <= 0) delete custCart[k];
+        renderMenu();
+        renderCart();
+      }
+      return;
+    }
+    if (id === CHEDDAR_ID || (ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(id))) {
+      const keys = Object.keys(extrasCart).filter(k => extrasCart[k].menuId === id && extrasCart[k].qty > 0);
+      if (keys.length) {
+        const k = keys[keys.length - 1];
+        extrasCart[k].qty--;
+        if (extrasCart[k].qty <= 0) delete extrasCart[k];
+        renderMenu();
+        renderCart();
+      }
+      return;
+    }
+  }
   // Defensa en profundidad: renderMenu() ya oculta los controles +/- de un
   // producto agotado/oculto, así que hoy esto no es alcanzable desde la UI
   // normal — pero changeQty() en sí no comprobaba nada, así que cualquier
