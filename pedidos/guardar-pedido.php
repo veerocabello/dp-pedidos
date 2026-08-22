@@ -1263,6 +1263,50 @@ try {
     // (generateOrderNumber() en carrito-checkout.js) escribiendo directo
     // en Firebase, lo que exigía dejar usedOrderNums/ abierto a escritura
     // anónima en las reglas.
+    // ── Consultar un código de descuento (validar antes de aplicarlo) ──
+    // Antes el navegador leía discounts/<código> directamente de Firebase
+    // (fb_getDiscount), lo que exigía dejar ese nodo abierto a lectura
+    // pública para cualquiera ("$code": {".read": true}) — no solo para
+    // quien escribiera el código real en la web, sino para cualquiera que
+    // supiera la URL de la API REST de Firebase, código a código. Además de
+    // permitir enumerar códigos válidos, esa lectura pública también
+    // devolvía el teléfono que ganó el código en la ruleta/rasca
+    // (hallazgo de la auditoría de seguridad pre-apertura). Ahora lo hace
+    // este script con la cuenta de servicio y solo devuelve el % de
+    // descuento — nunca el teléfono ni el resto del nodo.
+    if (($payload['action'] ?? '') === 'consultarDescuento') {
+        if (!dpf_check_limit($tmp_dir . '/dpf_consultardescuento_ip_' . md5($ip) . '.json', 30, $window)) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+            exit;
+        }
+        $codigo = isset($payload['code']) ? strtoupper(trim((string)$payload['code'])) : '';
+        if ($codigo === '' || !preg_match('/^[A-Z0-9_-]{1,40}$/', $codigo)) {
+            echo json_encode(['success' => false, 'error' => 'Código no válido']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $discResp = fbGetConEtag($databaseURL, 'discounts/' . $codigo, $accessToken);
+        $disc = is_array($discResp['data']) ? $discResp['data'] : null;
+        if (!$disc || !isset($disc['pct'])) {
+            echo json_encode(['success' => false, 'error' => 'Código no válido']);
+            exit;
+        }
+        if (is_numeric($disc['expiraEn'] ?? null) && (float)$disc['expiraEn'] < (microtime(true) * 1000)) {
+            echo json_encode(['success' => false, 'error' => 'Este código ha caducado']);
+            exit;
+        }
+        $usosActuales = is_numeric($disc['uses'] ?? null) ? (int)$disc['uses'] : 0;
+        $usosMax = is_numeric($disc['maxUses'] ?? null) ? (int)$disc['maxUses'] : 0;
+        if ($usosActuales >= $usosMax) {
+            echo json_encode(['success' => false, 'error' => 'Este código ya no tiene usos disponibles']);
+            exit;
+        }
+        $pctSeguro = max(0, min(100, (float)$disc['pct']));
+        echo json_encode(['success' => true, 'pct' => $pctSeguro]);
+        exit;
+    }
+
     if (($payload['action'] ?? '') === 'reservarNumeroPedido') {
         $accessToken = obtenerTokenAcceso($rutaCredenciales);
         $todayKey = date('Y-m-d');

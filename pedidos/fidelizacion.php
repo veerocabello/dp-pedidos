@@ -398,6 +398,38 @@ try {
             flock($fp, LOCK_UN);
             fclose($fp);
         }
+        // El límite de arriba solo cubre una ventana de 5 minutos — fuera de
+        // ella se resetea, así que alguien con paciencia podía seguir
+        // consultando 5 números nuevos cada 5 minutos indefinidamente (hasta
+        // ~1440/día desde una sola IP) y acabar fisgoneando sellos/premios
+        // de mucha gente sin demostrar que el teléfono es suyo (hallazgo de
+        // la auditoría de seguridad pre-apertura). Este segundo límite,
+        // contado por día natural, no molesta al uso normal (una familia
+        // consultando 2-3 números en una visita) pero corta la
+        // enumeración sostenida en el tiempo.
+        $max_telefonos_distintos_dia = 20;
+        $vistos_dia_file = $tmp_dir . '/dpf_fidelizacion_vistosdia_' . md5($ip) . '_' . date('Y-m-d') . '.json';
+        $fpDia = fopen($vistos_dia_file, 'c+');
+        if ($fpDia !== false) {
+            flock($fpDia, LOCK_EX);
+            $sizeDia = filesize($vistos_dia_file) ?: 0;
+            $rawDia = $sizeDia > 0 ? fread($fpDia, $sizeDia) : '';
+            $vistosDia = json_decode($rawDia, true) ?: [];
+            if (!isset($vistosDia[$telefono]) && count($vistosDia) >= $max_telefonos_distintos_dia) {
+                flock($fpDia, LOCK_UN);
+                fclose($fpDia);
+                http_response_code(429);
+                echo json_encode(['success' => false, 'error' => 'Demasiadas consultas distintas hoy. Inténtalo mañana.']);
+                exit;
+            }
+            $vistosDia[$telefono] = true;
+            ftruncate($fpDia, 0);
+            rewind($fpDia);
+            fwrite($fpDia, json_encode($vistosDia));
+            fflush($fpDia);
+            flock($fpDia, LOCK_UN);
+            fclose($fpDia);
+        }
         $leido = fbGetClienteConEtag($databaseURL, $telefono, $accessToken);
         $cliente = $leido['cliente'];
         $sellos = is_numeric($cliente['sellos'] ?? null) ? (int)$cliente['sellos'] : 0;

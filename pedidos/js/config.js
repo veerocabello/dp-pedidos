@@ -328,7 +328,6 @@ function _initFirebase() {
   // CÓDIGOS DE DESCUENTO
   window.fb_saveDiscount = async function(code, data) { await jset("discounts/" + code.toUpperCase(), data); };
   window.fb_loadDiscounts = async function() { var sn=await jget("discounts"); return sn.exists()?sn.val():{}; };
-  window.fb_getDiscount = async function(code) { var sn=await jget("discounts/"+code.toUpperCase()); return sn.exists()?sn.val():null; };
   window.fb_deleteDiscount = async function(code) { await jset("discounts/"+code.toUpperCase(), null); };
   window.fb_incrementDiscountUse = async function(code) {
     await firebase.database().ref("discounts/"+code.toUpperCase()+"/uses").transaction(function(v){ return (v||0)+1; });

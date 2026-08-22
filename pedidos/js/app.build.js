@@ -482,19 +482,32 @@ function filterMenuBySearch(query) {
 // cosa del panel admin, en admin-turnos-descuentos.js. ──
 let _activeDiscount = null; // { code, pct }
 
+// Antes esto leía discounts/<código> directamente de Firebase
+// (fb_getDiscount), lo que exigía dejar ese nodo abierto a lectura pública
+// para cualquiera — no solo para quien escribiera el código en la web, sino
+// para cualquiera que supiera la URL de la API REST de Firebase, código a
+// código, incluyendo el teléfono que ganó cada código en la ruleta/rasca
+// (hallazgo de la auditoría de seguridad pre-apertura). Ahora se valida en
+// el servidor (guardar-pedido.php, acción "consultarDescuento"), que solo
+// devuelve el % de descuento si el código es válido.
 async function dcAplicar(code) {
   if (!code) { _activeDiscount = null; renderCart(); return; }
   code = code.trim().toUpperCase();
-  if (!window.fb_getDiscount) { showDiscountError('Firebase no disponible'); return; }
-  const d = await window.fb_getDiscount(code).catch(() => null);
-  if (!d) { showDiscountError('Código no válido'); return; }
-  // Los premios de la ruleta/rasca caducan a las 48h (expiraEn) — los
-  // códigos creados a mano desde el panel no llevan ese campo, así que
-  // esta comprobación no les afecta.
-  if (d.expiraEn && Date.now() > d.expiraEn) { showDiscountError('Este código ha caducado'); return; }
-  if ((d.uses || 0) >= d.maxUses) { showDiscountError('Este código ya no tiene usos disponibles'); return; }
-  _activeDiscount = { code, pct: d.pct };
-  showDiscountOk(code, d.pct);
+  let data;
+  try {
+    const res = await fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'consultarDescuento', code })
+    });
+    data = await res.json();
+  } catch (e) {
+    showDiscountError('No se pudo comprobar el código, inténtalo de nuevo');
+    return;
+  }
+  if (!data || !data.success) { showDiscountError((data && data.error) || 'Código no válido'); return; }
+  _activeDiscount = { code, pct: data.pct };
+  showDiscountOk(code, data.pct);
   renderCart();
 }
 

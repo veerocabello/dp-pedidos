@@ -61,7 +61,7 @@
 </IfModule>
 
 # ── Bloquear acceso directo a archivos PHP sensibles ──
-<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log)$">
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|menu-render\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log|menu-cache\.json)$">
     Require all denied
 </FilesMatch>
 
