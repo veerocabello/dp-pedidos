@@ -356,7 +356,12 @@ const DIETARY_TAGS = [
   { id: 'pescado', emoji: '🐟', label: 'Pescado', color: '#1B4F72', img: 'img/alergenos/pescado.webp' },
   { id: 'cacahuetes', emoji: '🥜', label: 'Cacahuetes', color: '#8B5A2B', img: 'img/alergenos/cacahuetes.webp' },
   { id: 'soja', emoji: '🫘', label: 'Soja', color: '#27632A', img: 'img/alergenos/soja.webp' },
-  { id: 'leche', emoji: '🥛', label: 'Leche', color: '#5DADE2', img: 'img/alergenos/leche.webp' },
+  // "Lácteos" en vez de "Leche" — en la carta esto casi siempre es por el
+  // queso de la salsa/topping, no por leche tal cual; removableAs hace que
+  // el aviso de "puedes pedirlo sin..." diga "sin queso" (lo que de verdad
+  // se puede quitar) aunque la etiqueta/título del alérgeno siga diciendo
+  // "Lácteos" (la categoría oficial del alérgeno).
+  { id: 'leche', emoji: '🥛', label: 'Lácteos', removableAs: 'queso', color: '#5DADE2', img: 'img/alergenos/leche.webp' },
   { id: 'frutos_cascara', emoji: '🌰', label: 'Frutos de cáscara', color: '#C0392B', img: 'img/alergenos/frutos_cascara.webp' },
   { id: 'apio', emoji: '🥬', label: 'Apio', color: '#58B368', img: 'img/alergenos/apio.webp' },
   { id: 'mostaza', emoji: '🟡', label: 'Mostaza', color: '#D4AC0D', img: 'img/alergenos/mostaza.webp' },
@@ -418,7 +423,7 @@ function dietaryTagsHtml(item) {
     if (!t) return '';
     const nota = notas[tid] || '';
     const mensaje = nota
-      || (item.ingredientesQuitables ? ('Puedes pedir este producto sin ' + t.label.toLowerCase() + ' si lo prefieres.') : ('Este producto contiene ' + t.label.toLowerCase() + '.'));
+      || (item.ingredientesQuitables ? ('Puedes pedir este producto sin ' + (t.removableAs || t.label.toLowerCase()) + ' si lo prefieres.') : ('Este producto contiene ' + t.label.toLowerCase() + '.'));
     const onclick = "if(typeof showAlert==='function')showAlert('" + _jsAttrEscape(mensaje) + "','" + _jsAttrEscape(t.label) + "')";
     if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onclick="' + onclick + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
     return '<span class="allergen-icon" style="background:' + t.color + '" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onclick="' + onclick + '">' + t.emoji + '</span>';

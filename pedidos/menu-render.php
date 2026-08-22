@@ -95,7 +95,7 @@ const DPF_DIETARY_TAGS = [
     'pescado'        => ['emoji' => '🐟', 'label' => 'Pescado', 'color' => '#1B4F72', 'img' => 'img/alergenos/pescado.webp'],
     'cacahuetes'     => ['emoji' => '🥜', 'label' => 'Cacahuetes', 'color' => '#8B5A2B', 'img' => 'img/alergenos/cacahuetes.webp'],
     'soja'           => ['emoji' => '🫘', 'label' => 'Soja', 'color' => '#27632A', 'img' => 'img/alergenos/soja.webp'],
-    'leche'          => ['emoji' => '🥛', 'label' => 'Leche', 'color' => '#5DADE2', 'img' => 'img/alergenos/leche.webp'],
+    'leche'          => ['emoji' => '🥛', 'label' => 'Lácteos', 'color' => '#5DADE2', 'img' => 'img/alergenos/leche.webp'],
     'frutos_cascara' => ['emoji' => '🌰', 'label' => 'Frutos de cáscara', 'color' => '#C0392B', 'img' => 'img/alergenos/frutos_cascara.webp'],
     'apio'           => ['emoji' => '🥬', 'label' => 'Apio', 'color' => '#58B368', 'img' => 'img/alergenos/apio.webp'],
     'mostaza'        => ['emoji' => '🟡', 'label' => 'Mostaza', 'color' => '#D4AC0D', 'img' => 'img/alergenos/mostaza.webp'],
