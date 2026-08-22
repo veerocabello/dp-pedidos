@@ -734,6 +734,35 @@ function doPrint() {
 function printLastTicket() {
   if (_lastTicketData) openPrintModal(_lastTicketData);
 }
+// Antes, si había más de un dispositivo con sesión de admin y
+// "auto-imprimir" activado (una tablet de repuesto, el móvil de un
+// encargado...), cada uno detectaba el pedido nuevo por su cuenta y lo
+// imprimía sin coordinarse con los demás — mismo pedido, varias copias en
+// cocina. Usa una transacción real de Firebase (config/impresionesAutoClaim,
+// vía fb_transactJsonString) para que solo el primer dispositivo que llegue
+// "gane" ese pedido; si la propia reclamación falla por un problema de red
+// (no porque ya esté reclamada), se imprime igual — es mejor arriesgarse a
+// una copia de más por un fallo puntual que perder la impresión automática
+// del todo.
+async function _reclamarImpresionAuto(orderNum) {
+  if (!orderNum || !window.fb_transactJsonString) return true;
+  // Un nodo por día (igual que usedOrderNums/<fecha> y demás estructuras de
+  // este estilo) — así no crece sin límite para siempre, cada día es un
+  // mapa pequeño y aparte.
+  const todayKey = new Date().toISOString().slice(0, 10);
+  try {
+    const resultado = await window.fb_transactJsonString('config/impresionesAutoClaim/' + todayKey, current => {
+      const mapa = (current && typeof current === 'object') ? current : {};
+      if (mapa[orderNum]) return undefined; // ya reclamado por otro dispositivo: abortar sin escribir
+      mapa[orderNum] = Date.now();
+      return mapa;
+    });
+    return !!(resultado && resultado[orderNum]);
+  } catch (e) {
+    console.warn('[impresora] no se pudo reclamar la impresión automática, se imprime igual', e);
+    return true;
+  }
+}
 // Envía un pedido nuevo directo a la impresora térmica sin pasar por el
 // modal de vista previa — lo dispara el listener de fb_listenStats cuando
 // getTicketConfig().autoImprimir está activo. Sin el flag _reimprimir de

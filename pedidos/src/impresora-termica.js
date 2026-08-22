@@ -788,6 +788,18 @@ function _ptColaCargar() {
 function _ptColaGuardar(cola) {
   try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
   _ptColaActualizarUI();
+  // Respaldo en Firebase — antes esta cola vivía SOLO en el localStorage de
+  // este dispositivo: si la pestaña se cerraba o el dispositivo se
+  // reiniciaba con tickets pendientes de reimprimir (impresora sin papel o
+  // desconectada), se perdían de la cola sin que nadie en cocina se
+  // enterara — el pedido seguía existiendo, pero había que darse cuenta a
+  // mano mirando "Nuevos". Solo si hay sesión de admin activa, igual que el
+  // resto de guardados de este tipo (evita permission_denied en intentos
+  // de login). Ver _ptColaRestaurarDesdeFirebase() más abajo, que recupera
+  // esto al volver a cargar la página.
+  if (window.fb_saveColaImpresion && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_saveColaImpresion(cola).catch(() => {});
+  }
 }
 function _ptColaAgregar(ticket) {
   if (!ticket || !ticket.orderNum) return;
@@ -807,6 +819,31 @@ function _ptColaActualizarUI() {
   });
 }
 document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
+// Recupera, al cargar la página, los tickets que este (u otro) dispositivo
+// dejó pendientes de reimprimir antes de cerrarse/reiniciarse — se fusiona
+// con lo que ya haya en el localStorage local (por número de pedido, sin
+// duplicar) en vez de reemplazarlo. Si no hay sesión de admin, la lectura
+// simplemente no llega a nada (permission_denied silencioso). Este archivo
+// vive en el bundle admin, que se carga bajo demanda (no en el arranque
+// normal de la web) — para cuando este código se ejecuta, la página ya
+// lleva rato cargada, así que se llama directamente en vez de esperar a
+// DOMContentLoaded (ese evento ya habría pasado).
+async function _ptColaRestaurarDesdeFirebase() {
+  if (!window.fb_loadColaImpresion) return;
+  try {
+    const remota = await window.fb_loadColaImpresion();
+    if (!Array.isArray(remota) || !remota.length) return;
+    const local = _ptColaCargar();
+    const localNums = new Set(local.map(t => t.orderNum));
+    const faltantes = remota.filter(t => t && t.orderNum && !localNums.has(t.orderNum));
+    if (faltantes.length) {
+      _ptColaGuardar(local.concat(faltantes));
+      if (_ptIsConnected()) _ptColaProcesar();
+    }
+  } catch (e) { console.warn('[impresora] no se pudo restaurar la cola de impresión pendiente', e); }
+}
+_ptColaActualizarUI();
+_ptColaRestaurarDesdeFirebase();
 
 // Vacía la cola cuando la impresora reconecta — de una en una y en orden;
 // si alguna vuelve a fallar (se ha caído otra vez a media cola), se para
@@ -1126,6 +1163,18 @@ async function _ptComprobarPapel() {
     // no se muestra el aviso de papel, el resto sigue funcionando igual.
   }
 }
+// Antes este aviso era solo visual, sin sonido — a diferencia del de
+// impresora desconectada (sonido + banner + se repite solo si sigue sin
+// arreglarse). En un día con mucho volumen, quedarse sin papel es más
+// probable que un corte de conexión, y era justo el caso peor cubierto:
+// el ticket se sigue dando por "impreso" (los bytes sí se mandan) aunque
+// no salga papel de verdad, así que sin sonido es fácil no darse cuenta
+// hasta que se acumulan varios pedidos sin imprimir. Mismo patrón que
+// _ptAvisoDesconexionImpresora: solo suena al pasar de "con papel" a
+// "sin papel" (no en cada sondeo de 8s mientras sigue sin papel), y se
+// repite sola cada PT_AVISO_ESCALADO_MS si nadie lo soluciona.
+let _ptTeniaPapel = true;
+let _ptAvisoPapelEscaladoTimer = null;
 function _ptPapelUI(sinPapel) {
   document.querySelectorAll('.pt-papel-aviso').forEach(el => {
     // El banner grande de la pantalla de cocina necesita "flex" (para
@@ -1134,6 +1183,23 @@ function _ptPapelUI(sinPapel) {
     // defecto — cada elemento indica el suyo con data-show-display.
     el.style.display = sinPapel ? (el.dataset.showDisplay || 'block') : 'none';
   });
+  if (_ptTeniaPapel && sinPapel) {
+    _ptSonarAvisoPapel();
+    if (_ptAvisoPapelEscaladoTimer) clearInterval(_ptAvisoPapelEscaladoTimer);
+    _ptAvisoPapelEscaladoTimer = setInterval(() => {
+      if (!_ptTeniaPapel) { _ptSonarAvisoPapel(); } else { clearInterval(_ptAvisoPapelEscaladoTimer); _ptAvisoPapelEscaladoTimer = null; }
+    }, PT_AVISO_ESCALADO_MS);
+  } else if (!sinPapel && _ptAvisoPapelEscaladoTimer) {
+    clearInterval(_ptAvisoPapelEscaladoTimer);
+    _ptAvisoPapelEscaladoTimer = null;
+  }
+  _ptTeniaPapel = !sinPapel;
+}
+function _ptSonarAvisoPapel() {
+  if (typeof playNotificationSound === 'function') {
+    const tipo = (typeof getSoundDesconexionType === 'function') ? getSoundDesconexionType() : 'urgente';
+    playNotificationSound(tipo);
+  }
 }
 
 if (navigator.usb) {

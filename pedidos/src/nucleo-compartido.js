@@ -3372,7 +3372,14 @@ function initFirebaseListeners() {
           // elementos, no los últimos (si no, siempre se coge el pedido más viejo).
           const _nuevosPedidos = (stats.orders || []).slice(0, diff);
           if (getTicketConfig().autoImprimir) {
-            _nuevosPedidos.forEach(_autoImprimirPedido);
+            // Cada pedido se reclama por su cuenta (ver _reclamarImpresionAuto
+            // en historial-export.js) — evita que dos dispositivos con
+            // auto-imprimir activado impriman el mismo pedido dos veces.
+            _nuevosPedidos.forEach(async o => {
+              if (typeof _reclamarImpresionAuto !== 'function' || await _reclamarImpresionAuto(o.num)) {
+                _autoImprimirPedido(o);
+              }
+            });
           }
           // Se SUMA cada pedido nuevo al contador (por número, no se puede
           // duplicar) en vez de sobreescribirlo — antes, si llegaban dos
