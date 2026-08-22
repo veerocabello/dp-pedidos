@@ -725,10 +725,27 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
         // este script directamente saltándose la web — a diferencia de un
         // precio que no cuadra, un producto agotado no tiene "precio
         // corregido" que valga: no se puede preparar, así que el pedido
-        // entero se rechaza más abajo en vez de solo avisar.
+        // entero se rechaza más abajo en vez de solo avisar. Esto SÍ se
+        // comprueba también para Al Gusto/Bomba (justo debajo se exceptúa
+        // solo la comparación de precio, no esta).
         if (!empty($mi['soldout']) && $qty > 0) {
             $agotados[] = $nombre;
         }
+        // Patata Al Gusto (id 15) / Bomba (id 16): el comentario de esta
+        // función siempre dijo que estas dos NO se tocan aquí porque su
+        // precio depende de queso/gratinado extra (una lógica que no
+        // conviene duplicar en PHP) — pero el código de más abajo no tenía
+        // ninguna excepción real para ellas: al llevar un nombre de
+        // catálogo real ("Patata Al Gusto"), SÍ se colaban en la
+        // corrección de precio de más abajo, que compara contra
+        // $mi['price'] (el precio BASE, sin queso/gratinado) y "corregía"
+        // el subtotal recibido (que sí incluye esos extras) de vuelta al
+        // precio base — descontando en silencio el extra que cocina sí
+        // sirve, en el 100% de estos pedidos con queso o gratinado extra.
+        // Se restaura aquí la excepción que el comentario ya decía que
+        // existía: comprobarTotalSospechoso() más abajo sigue de red para
+        // un total global disparatado.
+        if (isset($mi['id']) && in_array($mi['id'], [15, 16], true)) return $it;
         $precioReal = round((float)$mi['price'], 2);
         if ($ofertaProductoVigente && isset($mi['id']) && in_array($mi['id'], $oferta['productoIds'])) {
             $pctSeguro = max(0, min(100, (float)$oferta['pct']));
