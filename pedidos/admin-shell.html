@@ -35,6 +35,11 @@
   </div>
   <!-- COLA DE IMPRESIÓN PENDIENTE — cocina (se imprime sola al reconectar) -->
   <div class="pt-cola-contador" data-show-display="flex" style="display:none;background:#3D1F0D;padding:10px 20px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:13px;font-weight:700;color:var(--gold)"></div>
+  <!-- PEDIDO NO GUARDADO EN ESTADÍSTICAS — el ticket sí existe, pero no llegó a "Pedidos en vivo" (banner grande, con sonido, igual de urgente que el de impresora desconectada) -->
+  <div class="pedido-perdido-aviso" data-show-display="flex" style="display:none;background:#7a1a0e;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <span class="pedido-perdido-aviso-texto" style="font-size:15px;font-weight:700;color:var(--white)">⚠️ Hay pedidos que no aparecieron aquí — revisa la pestaña Alertas</span>
+    <button onclick="showAdminSection('alertas', document.querySelector('[data-section=alertas]'))" style="padding:10px 18px;background:var(--white);color:#7a1a0e;border:none;border-radius:99px;font-size:13px;font-weight:900;cursor:pointer;font-family:'Playfair Display',serif;white-space:nowrap">Ver en Alertas</button>
+  </div>
   <!-- AUDIO UNLOCK — cocina -->
   <div id="kitchen-audio-banner" style="background:var(--amber);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
     <span style="font-size:15px;font-weight:700;color:var(--white)">🔇 Activa el audio para recibir alertas de nuevos pedidos</span>

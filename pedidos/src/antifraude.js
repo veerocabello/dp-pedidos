@@ -83,8 +83,11 @@ async function showSuccess(orderNum, slotTime) {
     if (phone) localStorage.setItem('dpf_cliente_telefono', phone);
   } catch (e) {}
 
-  // Registrar el slot
-  if (slotTime) incrementSlot(slotTime);
+  // El turno ya se reservó de verdad ANTES de llegar aquí (ver
+  // incrementSlot() dentro de submitOrder(), en carrito-checkout.js) —
+  // reservarlo aquí, con el pedido ya confirmado en pantalla, era
+  // justo lo que permitía sobrevender un turno de verdad si varios
+  // clientes pedían casi a la vez para el mismo turno.
 
   // Nombre del cliente
   const customerInfoEl = document.getElementById('success-customer-info');

@@ -499,15 +499,23 @@ async function dcAplicar(code) {
 }
 
 function showDiscountError(msg) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#c0392b'; el.textContent = '❌ ' + msg; }
+  // El cajón móvil tiene su propio campo de código (antes solo existía en
+  // el panel de escritorio, oculto por CSS en móvil — ver _syncCartDrawer
+  // en carrito-checkout.js) — se actualizan los dos, exista o no cada uno
+  // en el DOM en este momento.
+  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => {
+    el.style.color = '#c0392b';
+    el.textContent = '❌ ' + msg;
+  });
   _activeDiscount = null;
   renderCart();
 }
 
 function showDiscountOk(code, pct) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#27855a'; el.textContent = '✅ Código ' + code + ' aplicado — ' + pct + '% de descuento'; }
+  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => {
+    el.style.color = '#27855a';
+    el.textContent = '✅ Código ' + code + ' aplicado — ' + pct + '% de descuento';
+  });
 }
 
 function getDiscountAmount(subtotal) {
@@ -2344,8 +2352,7 @@ function _aplicarPremioComun(juego) {
   const st = window._juegoState;
   if (juego === 'ruleta') closeRuleta(); else closeRasca();
   if (st && st.code) {
-    const input = document.getElementById('discount-input');
-    if (input) input.value = st.code;
+    document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(input => { input.value = st.code; });
     if (typeof dcAplicar === 'function') dcAplicar(st.code);
     showAlert('🎉 ¡Código ' + st.code + ' aplicado! El descuento ya está en tu pedido.', '¡Premio aplicado!');
   }
@@ -3185,6 +3192,39 @@ function initFirebaseListeners() {
       var _alertasSection = document.getElementById('admin-alertas');
       if (_alertasSection && _alertasSection.classList.contains('active')) renderIncidencias();
       if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  }
+
+  // Aviso urgente si un pedido no llegó a "Pedidos en vivo" (guardar-pedido.php
+  // no pudo actualizar stats/<fecha> tras varios intentos, aunque el ticket sí
+  // se guardó bien) — antes esto solo subía un numerito discreto en la
+  // pestaña Alertas, fácil de no ver en mitad del ajetreo de apertura. Ahora
+  // suena y aparece el mismo tipo de banner grande que el de impresora
+  // desconectada, hasta que se resuelva desde Alertas. Se guarda qué
+  // números de pedido ya sonaron para no repetir el aviso en cada snapshot
+  // (Firebase reenvía el nodo entero cada vez que cambia algo, no solo lo
+  // nuevo).
+  if (window.fb_listenActivityLog) {
+    let _pedidosPerdidosAvisados = [];
+    try { _pedidosPerdidosAvisados = JSON.parse(localStorage.getItem('dpf_pedidos_perdidos_avisados') || '[]'); } catch (e) {}
+    window.fb_listenActivityLog(log => {
+      if (!Array.isArray(log)) return;
+      const pendientes = log.filter(e => e && e.tipo === 'pedido_no_guardado' && !e.resolved);
+      const nuevos = pendientes.filter(e => e.orderNum && !_pedidosPerdidosAvisados.includes(e.orderNum));
+      if (nuevos.length) {
+        _pedidosPerdidosAvisados = _pedidosPerdidosAvisados.concat(nuevos.map(e => e.orderNum)).slice(-200);
+        try { localStorage.setItem('dpf_pedidos_perdidos_avisados', JSON.stringify(_pedidosPerdidosAvisados)); } catch (e) {}
+        if (typeof playNotificationSound === 'function') playNotificationSound('urgente');
+      }
+      const textoEl = document.querySelector('.pedido-perdido-aviso-texto');
+      if (textoEl) {
+        textoEl.textContent = pendientes.length === 1
+          ? '⚠️ 1 pedido no apareció aquí — revisa la pestaña Alertas'
+          : '⚠️ ' + pendientes.length + ' pedidos no aparecieron aquí — revisa la pestaña Alertas';
+      }
+      document.querySelectorAll('.pedido-perdido-aviso').forEach(el => {
+        el.style.display = pendientes.length ? (el.dataset.showDisplay || 'block') : 'none';
+      });
     });
   }
 
@@ -4733,7 +4773,12 @@ function renderCart() {
       console.error('renderCart: extras item no encontrado menuId=' + c.menuId);
       return '';
     }
-    const itemName = _extItem.name;
+    // La carne elegida en Cheddar-Bacon (Carne Picada/Carne Kebab) antes
+    // solo se guardaba para el correo de respaldo (getExtrasItemLabel, ver
+    // buildTicketText en carrito-checkout.js) — ni el propio cliente podía
+    // comprobar en su carrito qué carne había elegido, y si ese correo
+    // fallaba (no bloquea el pedido), cocina tenía que adivinarla.
+    const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')') : _extItem.name;
     const extras = [];
     if (c.queso) extras.push('+ Extra Queso +1,00€');
     (c.ingredientesExtra || []).forEach(ing => {
@@ -5148,6 +5193,16 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     // lo ya escrito, salía vacío otra vez aunque el cliente no lo notara y
     // confirmara el pedido creyendo que la nota seguía puesta.
     const _notasActualDrawer = (document.getElementById('drawer-customer-notes') || {}).value || (document.getElementById('customer-notes') || {}).value || '';
+    // El código de descuento antes solo se podía escribir en el panel de
+    // escritorio (#discount-input), que está oculto por CSS en móvil — el
+    // cajón nunca ofrecía dónde escribirlo, así que un cliente con un
+    // código (de un cartel, una publicación, o de un amigo) simplemente no
+    // tenía forma de aplicarlo desde el móvil. Mismo motivo que
+    // nombre/teléfono/notas arriba para no perder lo ya escrito al
+    // repintar: si ya hay un descuento aplicado de verdad (_activeDiscount,
+    // p.ej. el premio de la ruleta/rasca, que sí se aplica solo desde
+    // cualquier pantalla), se muestra ese código.
+    const _codigoActualDrawer = (document.getElementById('drawer-discount-input') || {}).value || (_activeDiscount ? _activeDiscount.code : '') || '';
     const _digitsActualDrawer = _telActualDrawer.replace(/\D/g, '').slice(0, 9);
     const _premioHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div id=\"fidelizacion-premio-aviso\" style=\"background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:#5a3e1b;font-weight:600\">\uD83C\uDF81 \xA1Tienes una patata gratis disponible! A\xF1ade cualquier patata del men\xFA y se aplicar\xE1 el descuento autom\xE1ticamente al confirmar.</div>"
@@ -5157,10 +5212,14 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     const _studentDiscountHtmlDrawer = studentDiscountEnabledCfg
       ? "<div style=\"margin-top:14px\"><div id=\"drawer-student-discount-box\" style=\"background:#fff;border:1.5px solid ".concat(_estudianteCheckedDrawer ? '#E8943A' : '#F5E6C8', ";border-radius:12px;padding:11px 14px\"><label style=\"display:flex;align-items:center;gap:10px;cursor:pointer\"><input type=\"checkbox\" id=\"drawer-student-discount-checkbox\" ").concat(_estudianteCheckedDrawer ? 'checked' : '', " onchange=\"document.getElementById('student-discount-checkbox').checked=this.checked;renderCart()\" style=\"width:18px;height:18px;flex-shrink:0;accent-color:#3D1F0D\"><span style=\"font-size:13px;color:#3D1F0D;font-weight:600\">\uD83E\uDEAA Soy estudiante o jubilado</span></label><div style=\"display:").concat(_estudianteCheckedDrawer ? 'block' : 'none', ";font-size:12px;color:#8A6A4E;line-height:1.45;margin-top:8px;padding-left:28px\">\u26A0\uFE0F Se pedir\xE1 el carn\xE9 en el mostrador.<br><b style=\"color:#C2711A\">Si no se presenta, el descuento no se aplicar\xE1</b> y se cobrar\xE1 el precio normal.</div></div></div>")
       : '';
+    const _discountFeedbackInicialDrawer = _activeDiscount
+      ? { color: '#27855a', texto: '✅ Código ' + _activeDiscount.code + ' aplicado — ' + _activeDiscount.pct + '% de descuento' }
+      : { color: '', texto: '' };
+    const _discountHtmlDrawer = "<div style=\"background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:16px\"><div style=\"position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8\">🏷️</div><label style=\"font-size:11px;font-weight:700;color:#3D1F0D;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px\">C\xF3digo de descuento (opcional)</label><div style=\"display:flex;gap:8px\"><input id=\"drawer-discount-input\" type=\"text\" placeholder=\"\" style=\"flex:1;padding:9px 12px;border:1px solid rgba(61,31,13,.10);border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none;background:#fff\" value=\"".concat(_codigoActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"this.value=this.value.toUpperCase();document.getElementById('discount-input').value=this.value\"><button type=\"button\" onclick=\"dcAplicar(document.getElementById('drawer-discount-input').value)\" style=\"padding:9px 14px;background:#3D1F0D;color:#FFF8EE;border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">Aplicar</button></div><div id=\"drawer-discount-feedback\" style=\"font-size:12px;margin-top:6px;min-height:18px;color:").concat(_discountFeedbackInicialDrawer.color, "\">").concat(_discountFeedbackInicialDrawer.texto, "</div></div>");
     const _recordatorioConfirmarHtml = (window._fidelizacionPremioActivo && window._fidelizacionPremioActivo === _digitsActualDrawer)
       ? "<div style=\"border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-top:14px;margin-bottom:-6px;font-size:11.5px;font-weight:700;color:#5a3e1b\">\uD83C\uDF81 No olvides tu patata gratis antes de confirmar</div>"
       : '';
-    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" autocomplete=\"name\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" autocomplete=\"tel\" inputmode=\"tel\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        <div id=\"drawer-customer-phone-feedback\" style=\"font-size:11.5px;margin-top:4px;display:none\"></div>\n        ").concat(_premioHtml, "\n        <div style=\"background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px\">\n          <div style=\"position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8\">\uD83D\uDCF1</div>\n          <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          <p style=\"font-size:11.5px;color:#8A6A4E;margin:2px 0 0\">Solo para confirmar el pedido</p>\n          <p style=\"font-size:11.5px;color:#8A6A4E;margin:1px 0 0\">\uD83D\uDD12 No lo compartimos con nadie</p>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\">").concat(escapeHtml(_notasActualDrawer), "</textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_studentDiscountHtmlDrawer, "\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
+    html += "\n    <div style=\"margin-top:16px\">\n      <div class=\"form-group\">\n        <label>Tu nombre y apellido *</label>\n        <input type=\"text\" id=\"drawer-customer-name\" placeholder=\"\" maxlength=\"60\" autocomplete=\"name\" value=\"".concat(_nombreActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"document.getElementById('customer-name').value=this.value\">\n      </div>\n      <div class=\"form-group\">\n        <label>Tel\xE9fono</label>\n        <input type=\"tel\" id=\"drawer-customer-phone\" placeholder=\"\" maxlength=\"11\" autocomplete=\"tel\" inputmode=\"tel\" value=\"").concat(_telActualDrawer.replace(/"/g, '&quot;'), "\" oninput=\"formatPhone(this);document.getElementById('customer-phone').value=this.value\">\n        <div id=\"drawer-customer-phone-feedback\" style=\"font-size:11.5px;margin-top:4px;display:none\"></div>\n        ").concat(_premioHtml, "\n        <div style=\"background:#fff;border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px\">\n          <div style=\"position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:#F5E6C8\">\uD83D\uDCF1</div>\n          <p style=\"font-size:12px;font-weight:700;color:#3D1F0D;margin:0\">Se verificar\xE1 tu n\xFAmero por SMS</p>\n          <p style=\"font-size:11.5px;color:#8A6A4E;margin:2px 0 0\">Solo para confirmar el pedido</p>\n          <p style=\"font-size:11.5px;color:#8A6A4E;margin:1px 0 0\">\uD83D\uDD12 No lo compartimos con nadie</p>\n        </div>\n      </div>\n      <div class=\"form-group\">\n        <label>Notas del pedido</label>\n        <textarea id=\"drawer-customer-notes\" placeholder=\"\" maxlength=\"300\" oninput=\"document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')\">").concat(escapeHtml(_notasActualDrawer), "</textarea>\n        <div id=\"drawer-notes-char-count\" style=\"text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px\">300 caracteres restantes</div>\n      </div>\n      ").concat(_discountHtmlDrawer, "\n      <div id=\"drawer-slot-picker-group\" style=\"display:none;margin-top:14px\">\n        <label style=\"display:block;font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px\">\uD83D\uDD50 Hora de recogida *</label>\n        <p style=\"font-size:12px;color:#8A6A4E;margin-bottom:10px\">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>\n        <div id=\"drawer-slot-grid\" style=\"display:grid;grid-template-columns:1fr 1fr\"></div>\n        <div id=\"drawer-slot-error\" style=\"display:none;font-size:12px;color:#c0392b;margin-top:6px;font-weight:600\">\u26A0\uFE0F Por favor elige una hora de recogida</div>\n      </div>\n      ").concat(_studentDiscountHtmlDrawer, "\n      ").concat(_recordatorioConfirmarHtml, "\n      <button class=\"submit-btn\" onclick=\"submitOrderFromDrawer()\" style=\"margin-top:8px\">\n        Confirmar pedido \u2192\n      </button>\n    </div>");
   } else {
     const lockedMsg = document.getElementById('cart-locked-detail');
     html += "\n    <div style=\"margin-top:16px;background:#3D1F0D;border-radius:12px;padding:20px 16px;text-align:center\">\n      <div style=\"font-size:32px;margin-bottom:8px\">\uD83D\uDD12</div>\n      <div style=\"font-family:'Playfair Display',serif;font-size:17px;font-weight:900;color:#FFF8EE;margin-bottom:6px\">Pedidos cerrados</div>\n      <div style=\"font-size:13px;color:rgba(255,248,238,0.7);line-height:1.5\">".concat(lockedMsg ? lockedMsg.textContent : '', "</div>\n    </div>");
@@ -5643,6 +5702,15 @@ function getSlotCount(slotTime) {
   const slot = slotTime ? slotTime.trim() : slotTime;
   return (stats.orders || []).filter(o => o.slot && o.slot.trim() === slot).length;
 }
+// Devuelve true/false según si la reserva real (atómica, con cuenta de
+// servicio) se hizo de verdad — antes esto se llamaba ya con el pedido
+// confirmado en pantalla (showSuccess(), ver antifraude.js) y una respuesta
+// negativa no se comunicaba a nadie: el turno se podía sobrevender de
+// verdad si varios clientes pasaban a la vez la comprobación "blanda"
+// anterior (solo una lectura, sin reservar nada) antes de que ninguno
+// llegara a reservar. Ahora se llama ANTES de guardar el pedido (ver
+// submitOrder) y si falla, se aborta el pedido igual que antes se abortaba
+// con la comprobación blanda — así el hueco no se puede sobrevender.
 async function incrementSlot(slotTime) {
   // Update local cache immediately for UI responsiveness
   _slotsCache[slotTime] = (_slotsCache[slotTime] || 0) + 1;
@@ -5666,7 +5734,9 @@ async function incrementSlot(slotTime) {
       _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
       saveSlotsData(getSlotsData());
       console.warn('Slot reserve rejected by server', data && data.error);
+      return false;
     }
+    return true;
   } catch (e) {
     // Fallo de red/timeout: deshacer el incremento optimista en vez de
     // dejarlo inflado — no sabemos si la reserva llegó a cuajar en el
@@ -5676,6 +5746,11 @@ async function incrementSlot(slotTime) {
     _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
     saveSlotsData(getSlotsData());
     console.warn('Slot reserve error', e);
+    // Fallo de red (no "turno lleno" confirmado): dejar pasar el pedido en
+    // vez de bloquearlo — es mejor arriesgarse a una sobreventa puntual por
+    // un fallo de conexión que impedir pedidos legítimos porque el propio
+    // aviso de reserva no llegó a viajar.
+    return true;
   }
 }
 async function decrementSlot(slotTime) {
@@ -6037,24 +6112,38 @@ async function _submitOrderInner() {
   const _enTiendaSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
   const needsSlot = cartHasAnyItem() && isSlotHour() && !_enTiendaSubmit;
   if (needsSlot && !selectedSlot) {
-    document.getElementById('slot-error').style.display = 'block';
-    document.getElementById('slot-picker-group').scrollIntoView({
-      behavior: 'smooth',
-      block: 'center'
-    });
+    const _slotErrorDesktop = document.getElementById('slot-error');
+    const _slotErrorDrawer = document.getElementById('drawer-slot-error');
+    if (_slotErrorDesktop) _slotErrorDesktop.style.display = 'block';
+    if (_slotErrorDrawer) _slotErrorDrawer.style.display = 'block';
+    // En móvil, el panel de escritorio (donde vive #slot-error) está oculto
+    // por CSS bajo 700px — este aviso nunca llegaba a verse ahí, así que el
+    // botón "Confirmar pedido" del cajón móvil parecía no hacer nada.
+    // showAlert() no depende de qué parte del DOM esté visible, así que
+    // siempre se ve, tanto en el cajón móvil como en escritorio.
+    showAlert('Por favor, elige una hora de recogida antes de confirmar.');
+    const _grupoDrawer = document.getElementById('drawer-slot-picker-group');
+    const _grupoDesktop = document.getElementById('slot-picker-group');
+    const _grupoVisible = (_grupoDrawer && _grupoDrawer.offsetParent !== null) ? _grupoDrawer
+      : (_grupoDesktop && _grupoDesktop.offsetParent !== null) ? _grupoDesktop
+      : (_grupoDrawer || _grupoDesktop);
+    if (_grupoVisible) {
+      _grupoVisible.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
     return;
   }
-  // Revalidar capacidad usando Firebase para evitar race condition entre dispositivos
+  // Reservar el turno de verdad (atómico, en el servidor) ANTES de guardar
+  // el pedido — no solo mirar si está lleno. Antes esto solo se comprobaba
+  // con una lectura (podía pasarla más de un cliente a la vez) y la reserva
+  // real no se hacía hasta que el pedido YA estaba confirmado en pantalla
+  // (ver incrementSlot() en showSuccess()/antifraude.js) — eso permitía que
+  // un turno se sobrevendiera de verdad si varios pedían casi a la vez para
+  // el mismo turno. Ahora la reserva ocurre aquí, antes incluso de pedir el
+  // código SMS, y si el turno ya está lleno de verdad, se aborta el pedido
+  // igual que antes se abortaba con la comprobación blanda.
   if (needsSlot) {
-    let liveCount = getSlotCount(selectedSlot); // valor local como fallback
-    if (window.fb_getSlotCount) {
-      try {
-        liveCount = await window.fb_getSlotCount(selectedSlot);
-      } catch (e) {
-        console.warn('Firebase slot check error', e);
-      }
-    }
-    if (liveCount >= getSlotMax()) {
+    const reservado = await incrementSlot(selectedSlot);
+    if (!reservado) {
       showAlert("El turno de las ".concat(selectedSlot, " se ha llenado justo ahora. Por favor elige otro."));
       selectedSlot = null;
       renderSlotPicker();
@@ -6203,6 +6292,15 @@ async function _submitOrderInner() {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return null;
     const extras = [];
+    // La carne elegida en Cheddar-Bacon (Carne Picada/Carne Kebab) antes no
+    // llegaba ni al carrito del cliente ni al ticket de cocina — solo se
+    // guardaba para el correo de respaldo (buildTicketText), que puede
+    // fallar sin bloquear el pedido, así que cocina se quedaba sin saber
+    // qué carne poner. Va como un extra informativo (precio 0) en vez de
+    // dentro de "name", para no romper la comprobación de precio del
+    // servidor contra config/menu (corregirPreciosCatalogo en
+    // guardar-pedido.php busca por nombre EXACTO del producto).
+    if (c.cheddarCarne) extras.push({ name: c.cheddarCarne, price: 0 });
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
@@ -6355,10 +6453,8 @@ async function _submitOrderInner() {
   // que no debe consumir ningún uso del cupón.
   const _discountCodeUsado = (_activeDiscount && _discountAmt > 0) ? _activeDiscount.code : null;
   _activeDiscount = null;
-  const dcInput = document.getElementById('discount-input');
-  const dcFeedback = document.getElementById('discount-feedback');
-  if (dcInput) dcInput.value = '';
-  if (dcFeedback) dcFeedback.textContent = '';
+  document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(el => { el.value = ''; });
+  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => { el.textContent = ''; });
   // Desmarcar la casilla estudiante/jubilado para el siguiente pedido — no
   // debe quedar marcada por defecto sin que el cliente vuelva a elegirlo.
   const _studentCb = document.getElementById('student-discount-checkbox');
@@ -6772,8 +6868,11 @@ async function showSuccess(orderNum, slotTime) {
     if (phone) localStorage.setItem('dpf_cliente_telefono', phone);
   } catch (e) {}
 
-  // Registrar el slot
-  if (slotTime) incrementSlot(slotTime);
+  // El turno ya se reservó de verdad ANTES de llegar aquí (ver
+  // incrementSlot() dentro de submitOrder(), en carrito-checkout.js) —
+  // reservarlo aquí, con el pedido ya confirmado en pantalla, era
+  // justo lo que permitía sobrevender un turno de verdad si varios
+  // clientes pedían casi a la vez para el mismo turno.
 
   // Nombre del cliente
   const customerInfoEl = document.getElementById('success-customer-info');

@@ -94,6 +94,41 @@ if (!dpf_fichar_check_limit($ip_file, $max_ip, $window)) {
     exit;
 }
 
+// ── Límite específico de PIN de fichaje INCORRECTOS (aparte del general de
+// arriba, que cuenta TODAS las acciones — login, historial, registrar). Con
+// solo el límite general (15 peticiones/5min), alguien podía probar los
+// 10.000 PIN de 4 dígitos posibles desde una sola conexión en 2-3 días sin
+// que nadie se enterara (hallazgo de la auditoría de seguridad
+// pre-apertura). Aquí solo cuentan los intentos que FALLAN (un PIN correcto
+// no gasta presupuesto) y con un límite mucho más estricto — 5 fallos cada
+// 15 minutos por conexión, que estira ese mismo ataque a más de 20 días.
+function dpf_fichar_pinfail_bajo_limite($file, $max, $window) {
+    $size = @filesize($file) ?: 0;
+    if ($size === 0) return true;
+    $raw = @file_get_contents($file);
+    $log = json_decode($raw, true) ?: [];
+    $now = time();
+    $log = array_filter($log, function ($ts) use ($now, $window) { return ($now - $ts) < $window; });
+    return count($log) < $max;
+}
+function dpf_fichar_pinfail_registrar($file, $window) {
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return;
+    if (!flock($fp, LOCK_EX)) { fclose($fp); return; }
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) { return ($now - $ts) < $window; }));
+    $log[] = $now;
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+
 // ── Credenciales de Firebase (fuera de public_html, mismo sitio de siempre) ──
 $rutaCredenciales = __DIR__ . '/../../firebase-credenciales.json';
 $databaseURL = 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app';
@@ -328,6 +363,13 @@ try {
 
     // ── LOGIN: comprobar PIN contra la lista completa ──
     if ($action === 'login') {
+        $pinFailFile = $tmp_dir . '/dpf_fichar_pinfail_ip_' . md5($ip) . '.json';
+        $pinFailWindow = 900; // 15 minutos
+        if (!dpf_fichar_pinfail_bajo_limite($pinFailFile, 5, $pinFailWindow)) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'error' => 'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.']);
+            exit;
+        }
         $pin = isset($payload['pin']) ? preg_replace('/[^0-9]/', '', (string)$payload['pin']) : '';
         if (strlen($pin) !== 4) {
             echo json_encode(['success' => false, 'error' => 'PIN inválido']);
@@ -345,6 +387,14 @@ try {
             }
         }
         if (!$encontrado) {
+            dpf_fichar_pinfail_registrar($pinFailFile, $pinFailWindow);
+            // Avisar a caja al tercer fallo seguido, sin esperar a que se
+            // agote el límite del todo — así se puede revisar mientras pasa.
+            $fallosRaw = @file_get_contents($pinFailFile);
+            $fallos = $fallosRaw ? (json_decode($fallosRaw, true) ?: []) : [];
+            if (count($fallos) === 3) {
+                fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Varios PIN de fichaje incorrectos seguidos desde la misma conexión — posible intento de adivinar un PIN');
+            }
             echo json_encode(['success' => false, 'error' => 'PIN incorrecto']);
             exit;
         }

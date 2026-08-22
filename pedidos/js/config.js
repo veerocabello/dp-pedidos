@@ -190,6 +190,7 @@ function _initFirebase() {
   // ACTIVITY LOG
   window.fb_saveActivityLog = async function(l) { await jset("config/activityLog",jstr(l)); };
   window.fb_loadActivityLog = async function() { var sn=await jget("config/activityLog"); return sn.exists()?jparse(sn.val()):null; };
+  window.fb_listenActivityLog = function(cb) { return jlisten("config/activityLog",function(sn){cb(sn.exists()?jparse(sn.val()):null);}); };
   // AUTO-BORRADO
   window.fb_saveAutoDelete = async function(d) { await jset("config/autoDeleteDays",d); };
   window.fb_loadAutoDelete = async function() { var sn=await jget("config/autoDeleteDays"); return sn.exists()?sn.val():null; };

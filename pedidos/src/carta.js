@@ -1010,7 +1010,12 @@ function renderCart() {
       console.error('renderCart: extras item no encontrado menuId=' + c.menuId);
       return '';
     }
-    const itemName = _extItem.name;
+    // La carne elegida en Cheddar-Bacon (Carne Picada/Carne Kebab) antes
+    // solo se guardaba para el correo de respaldo (getExtrasItemLabel, ver
+    // buildTicketText en carrito-checkout.js) — ni el propio cliente podía
+    // comprobar en su carrito qué carne había elegido, y si ese correo
+    // fallaba (no bloquea el pedido), cocina tenía que adivinarla.
+    const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')') : _extItem.name;
     const extras = [];
     if (c.queso) extras.push('+ Extra Queso +1,00€');
     (c.ingredientesExtra || []).forEach(ing => {

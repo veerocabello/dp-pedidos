@@ -499,15 +499,23 @@ async function dcAplicar(code) {
 }
 
 function showDiscountError(msg) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#c0392b'; el.textContent = '❌ ' + msg; }
+  // El cajón móvil tiene su propio campo de código (antes solo existía en
+  // el panel de escritorio, oculto por CSS en móvil — ver _syncCartDrawer
+  // en carrito-checkout.js) — se actualizan los dos, exista o no cada uno
+  // en el DOM en este momento.
+  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => {
+    el.style.color = '#c0392b';
+    el.textContent = '❌ ' + msg;
+  });
   _activeDiscount = null;
   renderCart();
 }
 
 function showDiscountOk(code, pct) {
-  const el = document.getElementById('discount-feedback');
-  if (el) { el.style.color = '#27855a'; el.textContent = '✅ Código ' + code + ' aplicado — ' + pct + '% de descuento'; }
+  document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => {
+    el.style.color = '#27855a';
+    el.textContent = '✅ Código ' + code + ' aplicado — ' + pct + '% de descuento';
+  });
 }
 
 function getDiscountAmount(subtotal) {
@@ -2344,8 +2352,7 @@ function _aplicarPremioComun(juego) {
   const st = window._juegoState;
   if (juego === 'ruleta') closeRuleta(); else closeRasca();
   if (st && st.code) {
-    const input = document.getElementById('discount-input');
-    if (input) input.value = st.code;
+    document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(input => { input.value = st.code; });
     if (typeof dcAplicar === 'function') dcAplicar(st.code);
     showAlert('🎉 ¡Código ' + st.code + ' aplicado! El descuento ya está en tu pedido.', '¡Premio aplicado!');
   }
@@ -3185,6 +3192,39 @@ function initFirebaseListeners() {
       var _alertasSection = document.getElementById('admin-alertas');
       if (_alertasSection && _alertasSection.classList.contains('active')) renderIncidencias();
       if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    });
+  }
+
+  // Aviso urgente si un pedido no llegó a "Pedidos en vivo" (guardar-pedido.php
+  // no pudo actualizar stats/<fecha> tras varios intentos, aunque el ticket sí
+  // se guardó bien) — antes esto solo subía un numerito discreto en la
+  // pestaña Alertas, fácil de no ver en mitad del ajetreo de apertura. Ahora
+  // suena y aparece el mismo tipo de banner grande que el de impresora
+  // desconectada, hasta que se resuelva desde Alertas. Se guarda qué
+  // números de pedido ya sonaron para no repetir el aviso en cada snapshot
+  // (Firebase reenvía el nodo entero cada vez que cambia algo, no solo lo
+  // nuevo).
+  if (window.fb_listenActivityLog) {
+    let _pedidosPerdidosAvisados = [];
+    try { _pedidosPerdidosAvisados = JSON.parse(localStorage.getItem('dpf_pedidos_perdidos_avisados') || '[]'); } catch (e) {}
+    window.fb_listenActivityLog(log => {
+      if (!Array.isArray(log)) return;
+      const pendientes = log.filter(e => e && e.tipo === 'pedido_no_guardado' && !e.resolved);
+      const nuevos = pendientes.filter(e => e.orderNum && !_pedidosPerdidosAvisados.includes(e.orderNum));
+      if (nuevos.length) {
+        _pedidosPerdidosAvisados = _pedidosPerdidosAvisados.concat(nuevos.map(e => e.orderNum)).slice(-200);
+        try { localStorage.setItem('dpf_pedidos_perdidos_avisados', JSON.stringify(_pedidosPerdidosAvisados)); } catch (e) {}
+        if (typeof playNotificationSound === 'function') playNotificationSound('urgente');
+      }
+      const textoEl = document.querySelector('.pedido-perdido-aviso-texto');
+      if (textoEl) {
+        textoEl.textContent = pendientes.length === 1
+          ? '⚠️ 1 pedido no apareció aquí — revisa la pestaña Alertas'
+          : '⚠️ ' + pendientes.length + ' pedidos no aparecieron aquí — revisa la pestaña Alertas';
+      }
+      document.querySelectorAll('.pedido-perdido-aviso').forEach(el => {
+        el.style.display = pendientes.length ? (el.dataset.showDisplay || 'block') : 'none';
+      });
     });
   }
 

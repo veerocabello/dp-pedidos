@@ -600,6 +600,55 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
     _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas);
 }
 
+// ── Precio real de un "extra" de pago de un producto normal de la carta
+// (Extra Queso, Extra <ingrediente>, Extra salsa <salsa>, Gratinado) — la
+// misma tabla de precios que EXTRAS_ING_PRECIO1/07 y EXTRAS_SALSA_PRECIO en
+// src/nucleo-compartido.js. Si esos cambian alguna vez, hay que actualizar
+// también esta lista. Devuelve null si el nombre no se reconoce (p.ej. un
+// extra de texto plano de un producto personalizado Al Gusto/Bomba, que no
+// llega en esta forma {name,price} y por tanto nunca pasa por aquí).
+function _precioRealExtra($nombre) {
+    $n = trim((string)$nombre);
+    if ($n === 'Extra Queso') return 1.00;
+    if ($n === 'Gratinado') return 0.50;
+    if (strpos($n, 'Extra salsa ') === 0) return 0.90;
+    if (strpos($n, 'Extra ') === 0) {
+        $ing = substr($n, strlen('Extra '));
+        $precio1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
+        $precio07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+        if (in_array($ing, $precio1, true)) return 1.00;
+        if (in_array($ing, $precio07, true)) return 0.70;
+    }
+    return null;
+}
+// ── Corrige (no solo avisa) el precio de los "extras" de pago — antes solo
+// se acotaba cada precio a [0,999] sin comprobar que fuera el real, así que
+// un pedido podía llevar "Extra Queso"/"Extra Bacon"/etc. marcados en el
+// ticket de cocina pagando lo que el cliente quisiera por ellos (hallazgo
+// de la auditoría de seguridad pre-apertura — el hueco de precio más caro
+// de los encontrados, porque pasaba en cualquier pedido con extras).
+function corregirPreciosExtras($items) {
+    $avisos = [];
+    $deltaTotal = 0;
+    $corregidos = array_map(function ($it) use (&$avisos, &$deltaTotal) {
+        if (!is_array($it['extras'] ?? null)) return $it;
+        $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 1;
+        $it['extras'] = array_map(function ($e) use ($it, $qty, &$avisos, &$deltaTotal) {
+            if (!is_array($e) || !isset($e['name'])) return $e;
+            $precioReal = _precioRealExtra($e['name']);
+            $precioDeclarado = isset($e['price']) ? (float)$e['price'] : 0;
+            if ($precioReal !== null && abs($precioDeclarado - $precioReal) > 0.01) {
+                $avisos[] = sprintf('%s (%s): enviado %.2f€, corregido a %.2f€', $it['name'] ?? '?', $e['name'], $precioDeclarado, $precioReal);
+                $deltaTotal += ($precioReal - $precioDeclarado) * $qty;
+                $e['price'] = $precioReal;
+            }
+            return $e;
+        }, $it['extras']);
+        return $it;
+    }, $items);
+    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2)];
+}
+
 // ── Corrige (ya NO solo avisa) el precio de los productos de catálogo que
 // no coincidan con el precio real de config/menu — sustituye el subtotal
 // recibido por qty × precio real ANTES de guardar nada, así un total
@@ -771,24 +820,44 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
 //  - El código de descuento aplicado (si lo hay), por su % real guardado.
 //  - El premio de fidelización (patata gratis), aproximado como el precio
 //    unitario de la patata más cara del carrito — igual que calcula el
-//    propio navegador en _finalizarPedido() (carrito-checkout.js).
+//    propio navegador en _finalizarPedido() (carrito-checkout.js). SOLO se
+//    admite si el teléfono tiene de verdad un premio pendiente en
+//    fidelizacion/<telefono> (premiosPendientes > 0) — antes se admitía
+//    siempre, sin comprobar nada, así que CUALQUIER pedido podía llevar un
+//    descuento silencioso de hasta el precio de la patata más cara sin
+//    tener ni un solo sello (hallazgo de la auditoría de seguridad
+//    pre-apertura). Si Firebase no responde a esta comprobación, se trata
+//    igual que "sin premio" — es más seguro rechazar un pedido legítimo
+//    puntual por un fallo de red que dejar pasar el margen sin comprobar.
 //  - Un colchón fijo de 0,30€ además de lo anterior, para no rechazar un
 //    pedido legítimo por un redondeo o un caso límite que esta función no
 //    haya sabido calcular exactamente — ahora que esto bloquea el pedido
 //    de verdad conviene un margen algo más generoso que cuando solo era un
 //    aviso informativo (antes 0,05€).
-// No se puede saber desde aquí si el cliente REALMENTE tenía derecho al
-// premio de fidelización, así que se admite siempre como margen: es mejor
-// dejar pasar alguna vez ese caso puntual (que ya se avisa en su propio
-// sitio, ver fidelizacionElegible) que bloquear pedidos legítimos por él.
-function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta) {
+function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta, $phoneClean) {
     $itemsSum = 0;
     $maxPatataUnit = 0;
     foreach ($items as $it) {
         if (!empty($it['isFee'])) continue; // los gastos de gestión suman aparte, no hace falta cubrirlos con margen
         $subtotal = isset($it['subtotal']) ? (float)$it['subtotal'] : 0;
         $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 1;
-        $itemsSum += $subtotal;
+        // Los extras de pago (Extra Queso, Extra <ingrediente>, Gratinado...)
+        // viajan aparte de "subtotal" — antes esta suma no los contaba en
+        // absoluto, así que un pedido podía llevarlos marcados en el ticket
+        // de cocina sin que el total esperado los reflejara nunca (ya se
+        // corrigen al precio real más arriba, en corregirPreciosExtras, pero
+        // se suman aquí también con el precio que traigan por si alguno no
+        // se reconoció). El precio de cada extra es por unidad del producto,
+        // igual que calcula getExtrasItemPrice() en nucleo-compartido.js.
+        $extrasSum = 0;
+        if (is_array($it['extras'] ?? null)) {
+            foreach ($it['extras'] as $ex) {
+                if (is_array($ex) && isset($ex['price']) && is_numeric($ex['price'])) {
+                    $extrasSum += (float)$ex['price'];
+                }
+            }
+        }
+        $itemsSum += $subtotal + ($extrasSum * $qty);
         $nombre = isset($it['name']) ? mb_strtolower(trim((string)$it['name'])) : '';
         if (strpos($nombre, 'patata') === 0) {
             $unit = $subtotal / $qty;
@@ -834,12 +903,22 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
         $pctOfertaSeguro = max(0, min(100, (float)$oferta['pct']));
         $margenOfertaRelampago = $itemsSum * ($pctOfertaSeguro / 100);
     }
+    // El margen de la patata gratis SOLO se admite si el teléfono tiene de
+    // verdad un premio pendiente ahora mismo (ver comentario de la función).
+    $margenFidelizacion = 0;
+    if ($maxPatataUnit > 0 && $phoneClean && preg_match('/^\d{9}$/', $phoneClean)) {
+        $fidResp = fbGetConEtag($databaseURL, 'fidelizacion/' . $phoneClean . '/premiosPendientes', $accessToken);
+        $premiosPendientes = is_numeric($fidResp['data'] ?? null) ? (int)$fidResp['data'] : 0;
+        if ($premiosPendientes > 0) {
+            $margenFidelizacion = $maxPatataUnit;
+        }
+    }
     // El código de descuento, el de estudiante/jubilado y la oferta
     // relámpago NO se combinan entre sí (a petición expresa) — el navegador
     // ya envía como máximo uno de los tres "activo" a la vez, pero por si
     // alguien llamara a este endpoint directamente saltándose esa lógica,
     // aquí se admite como margen el mayor de los tres, nunca la suma.
-    $margen = $maxPatataUnit + max($descuentoCodigo, $margenEstudiante, $margenOfertaRelampago) + 0.30;
+    $margen = $margenFidelizacion + max($descuentoCodigo, $margenEstudiante, $margenOfertaRelampago) + 0.30;
     if ($total < ($itemsSum - $margen)) {
         return sprintf('total enviado %.2f€, suma de productos %.2f€ (margen de descuentos/premio admitido: %.2f€)', $total, $itemsSum, $margen);
     }
@@ -1406,6 +1485,13 @@ try {
     // funciones de abajo (antes cada una la pedía por su cuenta a Firebase).
     $orResp = fbGetConEtag($databaseURL, 'config/ofertaRelampago', $accessToken);
     $oferta = is_array($orResp['data']) ? $orResp['data'] : null;
+    $corrExtras = corregirPreciosExtras($items);
+    $items = $corrExtras['items'];
+    if ($corrExtras['avisos']) {
+        $total = round($total + $corrExtras['deltaTotal'], 2);
+        if ($total < 0) $total = 0;
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de extra corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrExtras['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
+    }
     $corrPrecios = corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta);
     $items = $corrPrecios['items'];
     if ($corrPrecios['avisos']) {
@@ -1418,7 +1504,7 @@ try {
         if ($total < 0) $total = 0;
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Precio de catálogo corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrPrecios['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
     }
-    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta);
+    $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta, $phoneClean);
     if ($avisoTotal) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido ' . $orderNum . ' rechazado por total manipulado — ' . $avisoTotal);
         echo json_encode(['success' => false, 'error' => 'No se pudo verificar el importe del pedido. Recarga la página e inténtalo de nuevo.']);
