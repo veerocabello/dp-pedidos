@@ -53,38 +53,6 @@ async function showTrustedBannerIfNeeded() {
     banner.style.display = 'none';
   }
 }
-function bimbaGenAdminToken() {
-  const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
-  localStorage.setItem(URL_TOKEN_KEY, token);
-  if (window.fb_saveUrlToken) window.fb_saveUrlToken(token).catch(() => {});
-  loadUrlTokenUI();
-  const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token admin generado';
-  t.style.display = 'block';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.display = 'none', 2000);
-}
-function bimbaCopyAdminUrl() {
-  const token = getUrlToken();
-  if (!token) {
-    bimbaGenAdminToken();
-    return;
-  }
-  const url = location.origin + location.pathname + '?key=' + token;
-  navigator.clipboard.writeText(url).catch(() => {
-    const a = document.createElement('textarea');
-    a.value = url;
-    document.body.appendChild(a);
-    a.select();
-    document.execCommand('copy');
-    document.body.removeChild(a);
-  });
-  const t = document.getElementById('bimba-url-toast');
-  t.textContent = '📋 URL admin copiada';
-  t.style.display = 'block';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.display = 'none', 2000);
-}
 function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
@@ -94,11 +62,34 @@ function bimbaGenBimbaToken() {
   // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
   // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
   if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
+  loadBimbaTokenUI();
   const t = document.getElementById('bimba-url-toast');
   t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
+}
+function clearBimbaToken() {
+  if (!confirm('¿Eliminar el token bimba? El enlace ?bimba=TOKEN dejará de funcionar.')) return;
+  localStorage.removeItem(BIMBA_TOKEN_KEY);
+  if (window.fb_saveBimbaToken) window.fb_saveBimbaToken('').catch(() => {});
+  loadBimbaTokenUI();
+  logActivity('📱 Token bimba eliminado');
+}
+function loadBimbaTokenUI() {
+  const token = getBimbaToken();
+  const inp = document.getElementById('bimba-token-display');
+  const full = document.getElementById('bimba-token-full');
+  if (!inp) return;
+  inp.value = token || '';
+  if (full) {
+    if (token) {
+      const url = "".concat(location.origin).concat(location.pathname, "?bimba=").concat(token);
+      full.textContent = '🔗 ' + url;
+    } else {
+      full.textContent = 'Sin token activo';
+    }
+  }
 }
 function bimbaCopyBimbaUrl() {
   const token = getBimbaToken();
@@ -295,7 +286,6 @@ function loadUrlTokenUI() {
   }
 }
 let _adminFailedAttempts = 0;
-let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
   const email = (((_document$getElementB5 = document.getElementById('admin-email-input')) === null || _document$getElementB5 === void 0 ? void 0 : _document$getElementB5.value) || '').trim();

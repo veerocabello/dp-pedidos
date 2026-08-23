@@ -248,32 +248,6 @@ function saveProductEdit(id) {
   showToast('prod-toast');
   logActivity("✏️ Producto editado: \"".concat(item.name, "\" — ").concat(item.price.toFixed(2), " €"));
 }
-function updatePrice(id, val) {
-  const item = MENU.find(m => m.id == id);
-  if (item) {
-    const nuevoPrecio = parseFloat(val);
-    if (isNaN(nuevoPrecio) || nuevoPrecio < 0) return;
-    item.price = nuevoPrecio;
-    saveMenu();
-    renderMenu();
-    showToast('prod-toast');
-    logActivity("💰 Precio actualizado: \"".concat(item.name, "\" → ").concat(item.price.toFixed(2), " €"));
-  }
-}
-function updateName(id, val) {
-  const item = MENU.find(m => m.id == id);
-  const nuevoNombre = val.trim();
-  if (!nuevoNombre || !item) return;
-  if (MENU.some(m => m.id != id && m.name.trim().toLowerCase() === nuevoNombre.toLowerCase())) {
-    alert('Ya existe otro producto con ese nombre — el servidor valida el precio de un pedido buscando por nombre exacto, así que dos productos no pueden compartirlo.');
-    return;
-  }
-  item.name = nuevoNombre;
-  saveMenu();
-  renderMenu();
-  showToast('prod-toast');
-  logActivity("✏️ Nombre actualizado: \"".concat(item.name, "\""));
-}
 function toggleProduct(id) {
   const item = MENU.find(m => m.id == id);
   if (!item) return;
@@ -573,6 +547,7 @@ function verDiasGuardados() {
   const NOMBRES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const raw = localStorage.getItem('dpf_horario');
   const el = document.getElementById('dias-diagnostico');
+  if (!el) return;
   let html = '';
   if (!raw) {
     html = '⚠️ Sin configuración guardada — se usan valores por defecto (Mar–Dom)<br>';
@@ -679,6 +654,7 @@ function loadAdminHorario() {
     }).catch(e => console.warn('Error cargando horario de Firebase:', e));
   }
   loadSlotTurnosUI();
+  verDiasGuardados();
 }
 function saveHorario() {
   let diasAbiertos = [];
@@ -718,6 +694,7 @@ function saveHorario() {
   }
   updateFooterHorario(h);
   showToast('local-toast');
+  verDiasGuardados();
   logActivity('🕐 Horario actualizado — Días: ' + diasAbiertos.map(d => DIAS_NAMES[d]).join(', '));
 }
 
@@ -775,30 +752,6 @@ function saveFeeConfig(enabled, amount, label) {
   if (window.fb_saveFeeConfig) window.fb_saveFeeConfig(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Gastos de gestión ' + (enabled ? 'activados' : 'desactivados') + ' — ' + amount.toFixed(2) + '€');
-}
-function loadFeeUI() {
-  const btn = document.getElementById('fee-toggle-btn');
-  const amountInput = document.getElementById('fee-amount-input');
-  const labelInput = document.getElementById('fee-label-input');
-  if (!btn) return;
-  const enabled = getFeeEnabled();
-  btn.className = 'open-toggle ' + (enabled ? 'abierto' : 'cerrado');
-  btn.textContent = enabled ? '✅ Gastos activados' : '⛔ Gastos desactivados';
-  if (amountInput) amountInput.value = getFeeAmount().toFixed(2);
-  if (labelInput) labelInput.value = getFeeLabel();
-}
-function toggleFeeEnabled() {
-  const enabled = !getFeeEnabled();
-  saveFeeConfig(enabled, getFeeAmount(), getFeeLabel());
-  loadFeeUI();
-  showToast('fee-toast');
-}
-function saveFeeFromPanel() {
-  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
-  const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
-  saveFeeConfig(getFeeEnabled(), amount, label);
-  loadFeeUI();
-  showToast('fee-toast');
 }
 
 // ── SEGUNDO GASTO FIJO (guardar desde el panel) ──
@@ -1142,16 +1095,6 @@ function bimbaGuardarTicketConfig() {
     msgEl.textContent = '✅ Guardado';
     setTimeout(() => { msgEl.textContent = ''; }, 2500);
   }
-}
-
-function toggleIngredientesPanel(btn) {
-  const panel = document.getElementById('ingredientes-panel');
-  if (!panel) return;
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  btn.textContent = open ? '✏️ Editar' : '✕ Cerrar';
-  btn.style.background = open ? '#3D1F0D' : '#F5E6C8';
-  btn.style.color = open ? '#FFF8EE' : '#3D1F0D';
 }
 
 function savePauseMsg() {

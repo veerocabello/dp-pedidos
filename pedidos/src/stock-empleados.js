@@ -49,29 +49,6 @@ const STOCK_GROUP_LABELS = {
     if (changed) localStorage.setItem('dpf_stock_data', JSON.stringify(data));
   } catch (e) {}
 })();
-function getStockPwd() {
-  return localStorage.getItem(STOCK_PWD_KEY) || '';
-}
-function changeStockPwd() {
-  const n1 = document.getElementById('stock-pwd-new').value;
-  const n2 = document.getElementById('stock-pwd-rep').value;
-  const err = document.getElementById('stock-pwd-error');
-  err.textContent = '';
-  if (n1.length < 4) {
-    err.textContent = 'La clave debe tener al menos 4 caracteres';
-    return;
-  }
-  if (n1 !== n2) {
-    err.textContent = 'Las claves no coinciden';
-    return;
-  }
-  localStorage.setItem(STOCK_PWD_KEY, n1);
-  if (window.fb_saveStockPwd) window.fb_saveStockPwd(n1).catch(() => {});
-  document.getElementById('stock-pwd-new').value = '';
-  document.getElementById('stock-pwd-rep').value = '';
-  showToast('stock-pwd-toast');
-  logActivity('\uD83D\uDCE6 Clave de stock actualizada');
-}
 function getStockData() {
   try {
     const saved = JSON.parse(localStorage.getItem(STOCK_DATA_KEY) || 'null');
@@ -322,13 +299,6 @@ function stockOverlayDrop(e) {
   saveStockData(data);
   renderStockItems();
 }
-function openStockFromAdmin() {
-  document.body.style.overflow = '';
-  window._stockFromAdmin = true;
-  window._adminWasLoggedIn = _adminLoggedIn;
-  document.getElementById('admin-overlay').classList.add('hidden-for-stock');
-  openStockOverlay();
-}
 function openStockInline() {
   // Guardar sección activa para restaurarla al cerrar
   const activeSection = document.querySelector('.admin-section.active');
@@ -557,17 +527,6 @@ function stockQty(i, delta) {
   if (next < 0) { delete _stockSelections[ing]; } else { _stockSelections[ing] = next; }
   renderStockItems();
 }
-function toggleStockItem(ing) {
-  _stockSelections[ing] = _stockSelections[ing] ? 0 : 1;
-  if (!_stockSelections[ing]) delete _stockSelections[ing];
-  renderStockItems();
-}
-function changeStockQty(ing, delta) {
-  const next = Math.max(0, (_stockSelections[ing] || 0) + delta);
-  if (next === 0) delete _stockSelections[ing];else _stockSelections[ing] = next;
-  renderStockItems();
-}
-
 // ── Unidad por ingrediente ──
 function stockSetUnit(ing, unit) {
   if (!window._stockUnits) window._stockUnits = {};

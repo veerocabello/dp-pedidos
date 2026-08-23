@@ -5,8 +5,7 @@
 // números en la lista negra o que superen el límite anti-spam. La UI de
 // admin para editar esa lista/configuración vive en admin-antispam-stats.js,
 // igual que loadDayStats/resetSlots/confirmClearDay/resetDayStats/
-// cancelarPedidoAdmin (panel de estadísticas del día) y
-// toggleForceSlots/updateForceSlotsBtn (ajuste de "forzar turnos").
+// cancelarPedidoAdmin (panel de estadísticas del día).
 async function showSuccess(orderNum, slotTime, discountCode) {
   // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
   // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo

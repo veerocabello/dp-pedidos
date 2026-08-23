@@ -148,9 +148,15 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     if (window.fb_loadActivityLog) {
       window.fb_loadActivityLog().then(log => {
         if (log && log.length) {
-          var _document$getElementB35;
           localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
-          if ((_document$getElementB35 = document.getElementById('admin-log')) !== null && _document$getElementB35 !== void 0 && _document$getElementB35.classList.contains('active')) renderActivityLog();
+          // La pestaña "📋 Actividad" (Accesos) muestra/oculta su panel con
+          // style.display, no con la clase .active del viejo patrón de
+          // secciones — antes esto comprobaba un id (#admin-log) que ya no
+          // existe (la sección "log" secreta se quitó, ver checkLogSecret),
+          // así que nunca llegaba a refrescar aunque la pestaña estuviera
+          // abierta cuando llegaban datos frescos de Firebase.
+          const activityPanel = document.getElementById('accesos-tab-actividad');
+          if (activityPanel && activityPanel.style.display === 'block' && typeof renderActivityLog === 'function') renderActivityLog();
         }
       }).catch(() => {});
     }

@@ -50,7 +50,10 @@ function _cargarDatosEmpleadosPrivados() {
   }
   if (window.fb_loadBimbaToken) {
     window.fb_loadBimbaToken().then(t => {
-      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+      if (t) {
+        localStorage.setItem(BIMBA_TOKEN_KEY, t);
+        if (typeof loadBimbaTokenUI === 'function') loadBimbaTokenUI();
+      }
     }).catch(() => {});
   }
   if (window.fb_loadStockPwd) {
@@ -124,51 +127,6 @@ function _empEstadoActual(emp, fichajes, today) {
   return { estado: estado, entrada: ultimo };
 }
 
-// ── "TRABAJANDO AHORA" — tarjeta resumen en sección Empleados ──
-function _empEstadosFichajeHoy() {
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-
-  return empleados.map(function(emp) {
-    var r = _empEstadoActual(emp, fichajes, today);
-    return { emp: emp, estado: r.estado, entrada: r.entrada || null, salida: r.salida || null, deOtroDia: r.deOtroDia || false };
-  });
-}
-function empRenderAdmin() {
-  var el = document.getElementById('emp-trabajando-ahora');
-  if (!el) return;
-  var estados = _empEstadosFichajeHoy();
-  if (!estados.length) {
-    el.innerHTML = '<div style="color:#8A6A4E">No hay empleados registrados</div>';
-    return;
-  }
-  var labels = {
-    entrada: { icon: '🟢', color: '#166534', texto: function(r) { return 'Trabajando desde las ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—'); } },
-    salida: { icon: '🔵', color: '#0C447C', texto: function(r) { return 'Fichó salida a las ' + (r.salida ? (r.salida.horaReal || r.salida.hora) : '—'); } },
-    olvido: { icon: '⚠️', color: '#9a3412', texto: function(r) {
-      if (r.deOtroDia && r.entrada) return 'Se olvidó fichar salida del ' + r.entrada.fecha.slice(5).replace('-', '/') + ' (entró ' + (r.entrada.horaReal || r.entrada.hora) + ')';
-      return 'Se olvidó fichar salida (entró ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—') + ')';
-    } },
-    nada: { icon: '❌', color: '#991b1b', texto: function() { return 'Todavía no ha fichado'; } }
-  };
-  el.innerHTML = estados.map(function(r) {
-    var l = labels[r.estado];
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F5E6C8">'
-      + '<span style="font-size:18px">' + l.icon + '</span>'
-      + '<div><div style="font-weight:700;color:#2A1506;font-size:13px">' + r.emp.nombre + '</div>'
-      + '<div style="font-size:12px;color:' + l.color + '">' + l.texto(r) + '</div></div>'
-      + '</div>';
-  }).join('');
-}
-function empRefrescar() {
-  var el = document.getElementById('emp-trabajando-ahora');
-  if (el) el.innerHTML = '<div style="color:#8A6A4E">Cargando...</div>';
-  var p1 = window.fb_loadEmpleados ? window.fb_loadEmpleados().then(function(arr) { if (arr) localStorage.setItem('dpf_empleados', JSON.stringify(arr)); }).catch(function() {}) : Promise.resolve();
-  var p2 = window.fb_loadFichajes ? window.fb_loadFichajes().then(function(arr) { if (arr) localStorage.setItem('dpf_fichajes', JSON.stringify(arr)); }).catch(function() {}) : Promise.resolve();
-  Promise.all([p1, p2]).then(empRenderAdmin);
-}
 function bimbaIrAFichajes() {
   document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
   var sec = document.getElementById('admin-bimba-fichajes');

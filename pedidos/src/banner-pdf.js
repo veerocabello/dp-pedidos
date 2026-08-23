@@ -484,31 +484,6 @@ function exportDayPDFFromHistorial(date, btn) {
   });
   _exportDayDataPDF(day.orders, day.total, fecha, date, btn);
 }
-async function exportDayPDF(btn) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats = null;
-  if (window.fb_getStats) {
-    try {
-      stats = await window.fb_getStats(todayKey);
-    } catch {}
-  }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {}
-  }
-  if (!stats || !stats.orders || !stats.orders.length) {
-    alert('No hay pedidos hoy para exportar');
-    return;
-  }
-  const fecha = new Date().toLocaleDateString('es-ES', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-  _exportDayDataPDF(stats.orders, stats.total, fecha, todayKey, btn);
-}
 function _exportDayDataPDF(orders, total, fecha, dateKey, btn) {
   const t = total || orders.reduce((a, o) => a + (o.total || 0), 0);
   const ordersHtml = orders.map(o => {
@@ -690,24 +665,25 @@ function showAdminSection(id, btn) {
   if (id === 'local') {
     loadSoundConfigUI();
     loadSoundDesconexionConfigUI();
-    updateForceSlotsBtn();
     loadSlotTurnosUI();
-    loadFeeUI();
     loadModifyWindowInput();
     if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
     if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
     if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
     loadBannerDia();
   }
-  // Nota: 'log', 'pwd', 'stock-config', 'accesos' y 'empleados' NO se
-  // abren nunca a través de showAdminSection() — son secciones del acceso
-  // restringido "bimba" y cada una tiene hoy su propia función dedicada,
-  // que además ya hace su propia inicialización: checkLogSecret()
-  // (admin-turnos-descuentos.js), bimbaIrAContrasena(), bimbaVolverAlPanel()
+  // Nota: 'pwd', 'stock-config', 'accesos' y 'empleados' NO se abren nunca
+  // a través de showAdminSection() — son secciones del acceso restringido
+  // "bimba" y cada una tiene hoy su propia función dedicada, que además ya
+  // hace su propia inicialización: bimbaIrAContrasena(), bimbaVolverAlPanel()
   // (que además apunta a "stock-config", no "admin-empleados" — ese id ni
   // siquiera existe ya, es "admin-bimba-empleados"), bimbaIrAAccesos() y
-  // bimbaIrAEmpleados() (todas en js/auth.js). Si alguna vez hace falta
-  // reintroducir estos ids aquí, que sea a propósito, no por accidente.
+  // bimbaIrAEmpleados() (todas en js/auth.js). El gesto secreto "log" (que
+  // sí usaba esta función, vía checkLogSecret) se quitó por completo:
+  // apuntaba a un id ("admin-log") que ya no existía, y la misma vista de
+  // actividad ya está disponible sin trucos en la pestaña "📋 Actividad"
+  // de Accesos. Si alguna vez hace falta reintroducir estos ids aquí, que
+  // sea a propósito, no por accidente.
   if (id === 'pedidos-config') {
     loadAntiSpamFromFirebase();
     // Inicializar cooldown y daily limit

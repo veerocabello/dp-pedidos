@@ -79,40 +79,6 @@ function renderBlacklist() {
   el.innerHTML = list.map(phone => "<div style=\"display:flex;align-items:center;justify-content:space-between;background:#FFF8EE;border:1.5px solid #e74c3c;border-radius:8px;padding:8px 12px\">\n      <span style=\"font-size:14px;font-weight:700;color:#3D1F0D;letter-spacing:.05em\">".concat(phone.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3'), "</span>\n      <button onclick=\"removeFromBlacklist('").concat(phone, "')\" style=\"background:#c0392b;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">Desbloquear</button>\n    </div>")).join('');
 }
 
-// Función legacy, sin llamadas en ningún sitio — recordOrderStats (el que
-// de verdad se usa) vive en nucleo-compartido.js.
-function recordOrderStats_BASE(orderNum, name, total, slotTime) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  try {
-    stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-  } catch {
-    stats = {};
-  }
-  if (stats.date !== todayKey) {
-    // Archivar día anterior en historial antes de resetear
-    if (stats.date && stats.count > 0) saveToHistorial(stats);
-    stats = {
-      date: todayKey,
-      count: 0,
-      total: 0,
-      orders: []
-    };
-  }
-  stats.count++;
-  stats.total = parseFloat((stats.total + total).toFixed(2));
-  stats.orders.unshift({
-    num: orderNum,
-    name,
-    total,
-    time: new Date().toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-    slot: slotTime || null
-  });
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-}
 function loadDayStats() {
   const todayKey = new Date().toISOString().slice(0, 10);
   // Intentar cargar desde Firebase primero (fuente de verdad entre dispositivos)
@@ -237,19 +203,4 @@ async function cancelarPedidoAdmin(orderNum, phone) {
   // pendiente real que la pare.
   if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   logActivity("❌ Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
-}
-function toggleForceSlots() {
-  const active = localStorage.getItem('dpf_force_slots') === '1';
-  localStorage.setItem('dpf_force_slots', active ? '0' : '1');
-  updateForceSlotsBtn();
-  renderSlotPicker();
-}
-function updateForceSlotsBtn() {
-  const btn = document.getElementById('force-slots-btn');
-  if (!btn) return;
-  const active = localStorage.getItem('dpf_force_slots') === '1';
-  btn.textContent = active ? '✅ Activado' : '⚪ Desactivado';
-  btn.style.background = active ? '#e8f8ed' : '#fafafa';
-  btn.style.borderColor = active ? '#5ECC76' : '#ddd';
-  btn.style.color = active ? '#27855a' : '#888';
 }

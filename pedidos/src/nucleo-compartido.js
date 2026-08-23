@@ -801,7 +801,6 @@ async function openAdmin() {
   // Asegurar que pointer-events está restaurado (por si stock lo dejó bloqueado)
   const adminOverlay = document.getElementById('admin-overlay');
   if (adminOverlay) adminOverlay.style.pointerEvents = '';
-  window._secretKeyBuf = '';
   // Always reset to default section (Carta) so bimba config never bleeds through
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
@@ -1292,18 +1291,6 @@ function promoAnadir(id) {
   } else {
     promoAddToCart(p, {});
   }
-}
-
-function promoSelectOpc(el, grupo) {
-  var parent = el.parentElement;
-  parent.querySelectorAll('span').forEach(function(s) {
-    s.style.background = '#fff';
-    s.style.color = '#3D1F0D';
-    s.style.border = '1.5px solid #F5E6C8';
-  });
-  el.style.background = '#3D1F0D';
-  el.style.color = '#FFF8EE';
-  el.style.border = '1.5px solid #3D1F0D';
 }
 
 function promoAbrirModal(p) {
@@ -2848,7 +2835,6 @@ function aplicarPremioRuleta() { _aplicarPremioComun('ruleta'); }
 
 // ── RASCA Y GANA ────────────────────────────────────────────────────────
 let _rascaEjecutando = false;
-let _rascaScratching = false;
 let _rascaRevelado = false;
 
 function openRasca() {
@@ -3527,7 +3513,7 @@ function initFirebaseListeners() {
   if (window.fb_listenSlots) {
     window.fb_listenSlots(slots => {
       // Re-render slot picker si está visible (cliente eligiendo)
-      const picker = document.getElementById('slot-picker');
+      const picker = document.getElementById('slot-picker-group');
       if (picker && picker.offsetParent !== null) {
         renderSlotPicker();
         // Si el slot seleccionado se llenó, avisar al cliente
@@ -3806,10 +3792,8 @@ function initFirebaseListeners() {
   // Empleados sync — sincronizar lista de empleados en tiempo real
   if (window.fb_listenEmpleados) {
     window.fb_listenEmpleados(arr => {
-      var _document$getElementB17;
       if (!arr || !arr.length) return;
       localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-      if ((_document$getElementB17 = document.getElementById('admin-empleados')) !== null && _document$getElementB17 !== void 0 && _document$getElementB17.classList.contains('active')) empRenderAdmin();
     });
   }
 
@@ -3817,9 +3801,7 @@ function initFirebaseListeners() {
   if (window.fb_loadFichajes) {
     window.fb_loadFichajes().then(arr => {
       if (arr && arr.length) {
-        var _document$getElementB18;
         localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-        if ((_document$getElementB18 = document.getElementById('admin-empleados')) !== null && _document$getElementB18 !== void 0 && _document$getElementB18.classList.contains('active')) empRenderAdmin();
       }
     }).catch(() => {});
   }

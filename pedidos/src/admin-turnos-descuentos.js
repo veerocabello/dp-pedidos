@@ -214,20 +214,6 @@ async function activarFinDeNoche() {
   logActivity('🌙 Fin de noche activado — ' + pedidos + ' pedidos · ' + total + ' €');
   showToast('local-toast');
 }
-function checkLogSecret(val) {
-  if (val.toLowerCase() === 'log') {
-    document.getElementById('log-secret-input').value = '';
-    document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-    const logSection = document.getElementById('admin-log');
-    if (logSection) {
-      logSection.classList.add('active');
-      renderActivityLog();
-    }
-  }
-}
-// Single unified secret key buffer
-window._secretKeyBuf = '';
 // Acceso por teclado bimba desactivado — usar URL ?bimba=TOKEN
 
 // (Antes había aquí un sistema de "contraseña de administración" propio,

@@ -240,14 +240,6 @@ function switchFidelizacionTab(tab) {
     editarView.style.display = 'block';
   }
 }
-function toggleFidelizacionListaClientes() {
-  const el = document.getElementById('fidelizacion-list');
-  const icon = document.getElementById('fidelizacion-lista-toggle-icon');
-  if (!el) return;
-  const abierta = el.style.display === 'flex';
-  el.style.display = abierta ? 'none' : 'flex';
-  if (icon) icon.textContent = abierta ? '▶' : '▼';
-}
 function _filtrarYPintarFidelizacion() {
   // Si el usuario escribe en el buscador, desplegamos la lista automáticamente
   // y quitamos cualquier filtro por tipo activo (chips), para que no se mezclen
@@ -500,17 +492,6 @@ async function cargarPedidosClienteFidelizacion(telefono) {
   } catch (e) {
     el.innerHTML = '<div style="color:#c0392b">Error al buscar pedidos: ' + e.message + '</div>';
   }
-}
-function cargarFidelizacionParaEditar(telefono) {
-  if (typeof switchFidelizacionTab === 'function') switchFidelizacionTab('editar');
-  window.fb_loadFidelizacionCliente(telefono).then(c => {
-    document.getElementById('fidel-edit-phone').value = telefono;
-    document.getElementById('fidel-edit-nombre').value = (c && c.nombre) || '';
-    document.getElementById('fidel-edit-sellos').value = (c && typeof c.sellos === 'number') ? c.sellos : 0;
-    document.getElementById('fidel-edit-premios-pendientes').value = (c && typeof c.premiosPendientes === 'number') ? c.premiosPendientes : ((c && c.premioDisponible) ? 1 : 0);
-    document.getElementById('fidel-edit-veces-completado').value = (c && typeof c.vecesCompletado === 'number') ? c.vecesCompletado : 0;
-    document.getElementById('fidel-edit-phone').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
 }
 // Escritura compartida por el formulario de la pestaña "Editar manualmente"
 // y por el modal de ajustes rápidos (⚙️) de cada tarjeta — los dos ajustan

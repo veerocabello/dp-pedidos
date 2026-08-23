@@ -530,11 +530,6 @@ function getSlotMax() {
   return parseInt(localStorage.getItem(SLOT_MAX_KEY) || '4', 10);
 }
 
-// Para compatibilidad con código legacy que usa SLOT_MAX directamente
-function getSlotMaxVal() {
-  return getSlotMax();
-}
-
 // Genera lista de todos los slots de todos los turnos activos
 function getSlots() {
   const turnos = getSlotTurnos();
@@ -569,11 +564,6 @@ function getSlots() {
   return slots;
 }
 
-// Alias para compatibilidad — ahora SLOT_MAX es dinámico
-const SLOT_START_H = 19,
-  SLOT_START_M = 30; // solo para referencia legacy
-const SLOT_END_H = 23,
-  SLOT_END_M = 30;
 let SLOT_MAX = getSlotMax(); // sincronizado con localStorage
 
 // Lee ocupación de slots guardada en localStorage (por día)
@@ -606,19 +596,6 @@ function getSlotsData() {
 function saveSlotsData(data) {
   _slotsCache = data.slots || {};
   localStorage.setItem(SLOTS_KEY, JSON.stringify(data)); // fallback
-}
-function getSlotCount(slotTime) {
-  // Count from actual orders for accuracy
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  try {
-    stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-  } catch {
-    stats = {};
-  }
-  if (!stats || stats.date !== todayKey) return _slotsCache[slotTime] || 0;
-  const slot = slotTime ? slotTime.trim() : slotTime;
-  return (stats.orders || []).filter(o => o.slot && o.slot.trim() === slot).length;
 }
 // Devuelve true/false según si la reserva real (atómica, con cuenta de
 // servicio) se hizo de verdad — antes esto se llamaba ya con el pedido
@@ -1840,16 +1817,6 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.
-}
-function _mostrarAvisoFidelizacionCompletada() {
-  // Aviso simple superpuesto a la pantalla de éxito; no bloquea el flujo.
-  try {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:16px 22px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:9999;max-width:90vw;text-align:center;font-family:\'DM Sans\',sans-serif;font-size:14.5px;font-weight:600';
-    el.innerHTML = '🎉 ¡Has completado tus 10 pedidos! Tu patata gratis estará disponible en tu próximo pedido.';
-    document.body.appendChild(el);
-    setTimeout(() => { el.style.transition = 'opacity 0.5s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 6000);
-  } catch (e) {}
 }
 
 // ── Tiempo de modificación de pedido (en minutos) ──

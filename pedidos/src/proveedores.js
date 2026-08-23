@@ -1,6 +1,5 @@
 /* ── PEDIDOS PROVEEDORES v2 ── */
 // ── PEDIDOS PROVEEDORES v2 ──
-const PP_KEY = 'dpf_pp2';
 const PP_PROVS = [{
   id: 'ali',
   label: 'Ali'
@@ -577,8 +576,6 @@ const PP_ITEMS = [
   nombre: 'Galleta Digestive',
   qty: ''
 }];
-let _ppCurrentItem = null; // kept for legacy localStorage compat
-
 const _origOpenStock = window.openStockConfigSecret;
 window.openStockConfigSecret = function () {
   if (_origOpenStock) _origOpenStock();

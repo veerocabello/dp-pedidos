@@ -53,32 +53,6 @@ function getBimbaToken() {
   });
 })();
 */
-window._secretKeyBuf = '';
-document.addEventListener('keydown', function (e) {
-  var _document$getElementB8;
-  if (((_document$getElementB8 = document.getElementById('stock-overlay')) === null || _document$getElementB8 === void 0 ? void 0 : _document$getElementB8.style.display) === 'block') return;
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-  if (e.key.length === 1) {
-    var _document$getElementB9;
-    window._secretKeyBuf += e.key.toLowerCase();
-    if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
-    // en cualquier parte de la página se ha quitado — comprobaba el hash en
-    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
-    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
-    if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
-      const inp = document.getElementById('log-secret-input');
-      if (inp) {
-        inp.value = window._secretKeyBuf.slice(-10);
-        checkLogSecret(inp.value);
-      }
-    }
-  } else if (e.key === 'Backspace') {
-    window._secretKeyBuf = window._secretKeyBuf.slice(0, -1);
-  } else {
-    window._secretKeyBuf = '';
-  }
-});
 
 // ══════════════════════════════════════════════
 //  LOG DE ACTIVIDAD — VISTA DE ADMIN
@@ -499,14 +473,6 @@ function saveAutoDelete() {
   if (info) info.textContent = days === 0 ? 'Desactivado' : "✅ Se borrar\xE1n entradas con m\xE1s de ".concat(days, " d\xEDas");
   logActivity("⚙️ Auto-borrado historial configurado: ".concat(days === 0 ? 'desactivado' : days + ' días'));
 }
-function loadAutoDeleteUI() {
-  const days = getAutoDeleteDays();
-  const sel = document.getElementById('autodelete-days');
-  if (sel) sel.value = days;
-  const info = document.getElementById('autodelete-info');
-  if (info) info.textContent = days === 0 ? 'Desactivado' : "Se borran entradas con m\xE1s de ".concat(days, " d\xEDas");
-}
-
 // ══════════════════════════════════════════════
 //  EXPORTAR HISTORIAL CIFRADO (AES-256 via Web Crypto)
 // ══════════════════════════════════════════════
@@ -934,23 +900,4 @@ async function printOrderFromStats(num, name, time, total, slot) {
     total: parseFloat(total),
     time
   });
-}
-async function exportTicketPDFFromStats(num, name, time, total, slot) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats = null;
-  if (window.fb_getStats) {
-    try {
-      stats = await window.fb_getStats(todayKey);
-    } catch {}
-  }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {}
-  }
-  const order = stats && stats.orders ? stats.orders.find(o => o.num === num) : null;
-  const items = order && order.items ? order.items : [];
-  const phone = order && order.phone ? order.phone : '';
-  const notes = order && order.notes ? order.notes : '';
-  exportTicketPDF(num, name, time, total, slot, items, phone, notes);
 }

@@ -801,7 +801,6 @@ async function openAdmin() {
   // Asegurar que pointer-events está restaurado (por si stock lo dejó bloqueado)
   const adminOverlay = document.getElementById('admin-overlay');
   if (adminOverlay) adminOverlay.style.pointerEvents = '';
-  window._secretKeyBuf = '';
   // Always reset to default section (Carta) so bimba config never bleeds through
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
@@ -1292,18 +1291,6 @@ function promoAnadir(id) {
   } else {
     promoAddToCart(p, {});
   }
-}
-
-function promoSelectOpc(el, grupo) {
-  var parent = el.parentElement;
-  parent.querySelectorAll('span').forEach(function(s) {
-    s.style.background = '#fff';
-    s.style.color = '#3D1F0D';
-    s.style.border = '1.5px solid #F5E6C8';
-  });
-  el.style.background = '#3D1F0D';
-  el.style.color = '#FFF8EE';
-  el.style.border = '1.5px solid #3D1F0D';
 }
 
 function promoAbrirModal(p) {
@@ -2848,7 +2835,6 @@ function aplicarPremioRuleta() { _aplicarPremioComun('ruleta'); }
 
 // ── RASCA Y GANA ────────────────────────────────────────────────────────
 let _rascaEjecutando = false;
-let _rascaScratching = false;
 let _rascaRevelado = false;
 
 function openRasca() {
@@ -3527,7 +3513,7 @@ function initFirebaseListeners() {
   if (window.fb_listenSlots) {
     window.fb_listenSlots(slots => {
       // Re-render slot picker si está visible (cliente eligiendo)
-      const picker = document.getElementById('slot-picker');
+      const picker = document.getElementById('slot-picker-group');
       if (picker && picker.offsetParent !== null) {
         renderSlotPicker();
         // Si el slot seleccionado se llenó, avisar al cliente
@@ -3806,10 +3792,8 @@ function initFirebaseListeners() {
   // Empleados sync — sincronizar lista de empleados en tiempo real
   if (window.fb_listenEmpleados) {
     window.fb_listenEmpleados(arr => {
-      var _document$getElementB17;
       if (!arr || !arr.length) return;
       localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-      if ((_document$getElementB17 = document.getElementById('admin-empleados')) !== null && _document$getElementB17 !== void 0 && _document$getElementB17.classList.contains('active')) empRenderAdmin();
     });
   }
 
@@ -3817,9 +3801,7 @@ function initFirebaseListeners() {
   if (window.fb_loadFichajes) {
     window.fb_loadFichajes().then(arr => {
       if (arr && arr.length) {
-        var _document$getElementB18;
         localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-        if ((_document$getElementB18 = document.getElementById('admin-empleados')) !== null && _document$getElementB18 !== void 0 && _document$getElementB18.classList.contains('active')) empRenderAdmin();
       }
     }).catch(() => {});
   }
@@ -5970,11 +5952,6 @@ function getSlotMax() {
   return parseInt(localStorage.getItem(SLOT_MAX_KEY) || '4', 10);
 }
 
-// Para compatibilidad con código legacy que usa SLOT_MAX directamente
-function getSlotMaxVal() {
-  return getSlotMax();
-}
-
 // Genera lista de todos los slots de todos los turnos activos
 function getSlots() {
   const turnos = getSlotTurnos();
@@ -6009,11 +5986,6 @@ function getSlots() {
   return slots;
 }
 
-// Alias para compatibilidad — ahora SLOT_MAX es dinámico
-const SLOT_START_H = 19,
-  SLOT_START_M = 30; // solo para referencia legacy
-const SLOT_END_H = 23,
-  SLOT_END_M = 30;
 let SLOT_MAX = getSlotMax(); // sincronizado con localStorage
 
 // Lee ocupación de slots guardada en localStorage (por día)
@@ -6046,19 +6018,6 @@ function getSlotsData() {
 function saveSlotsData(data) {
   _slotsCache = data.slots || {};
   localStorage.setItem(SLOTS_KEY, JSON.stringify(data)); // fallback
-}
-function getSlotCount(slotTime) {
-  // Count from actual orders for accuracy
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  try {
-    stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-  } catch {
-    stats = {};
-  }
-  if (!stats || stats.date !== todayKey) return _slotsCache[slotTime] || 0;
-  const slot = slotTime ? slotTime.trim() : slotTime;
-  return (stats.orders || []).filter(o => o.slot && o.slot.trim() === slot).length;
 }
 // Devuelve true/false según si la reserva real (atómica, con cuenta de
 // servicio) se hizo de verdad — antes esto se llamaba ya con el pedido
@@ -7281,16 +7240,6 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.
 }
-function _mostrarAvisoFidelizacionCompletada() {
-  // Aviso simple superpuesto a la pantalla de éxito; no bloquea el flujo.
-  try {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:16px 22px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:9999;max-width:90vw;text-align:center;font-family:\'DM Sans\',sans-serif;font-size:14.5px;font-weight:600';
-    el.innerHTML = '🎉 ¡Has completado tus 10 pedidos! Tu patata gratis estará disponible en tu próximo pedido.';
-    document.body.appendChild(el);
-    setTimeout(() => { el.style.transition = 'opacity 0.5s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 6000);
-  } catch (e) {}
-}
 
 // ── Tiempo de modificación de pedido (en minutos) ──
 function saveModifyWindow() {
@@ -7328,8 +7277,7 @@ function loadModifyWindowInput() {
 // números en la lista negra o que superen el límite anti-spam. La UI de
 // admin para editar esa lista/configuración vive en admin-antispam-stats.js,
 // igual que loadDayStats/resetSlots/confirmClearDay/resetDayStats/
-// cancelarPedidoAdmin (panel de estadísticas del día) y
-// toggleForceSlots/updateForceSlotsBtn (ajuste de "forzar turnos").
+// cancelarPedidoAdmin (panel de estadísticas del día).
 async function showSuccess(orderNum, slotTime, discountCode) {
   // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
   // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
@@ -8376,9 +8324,15 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     if (window.fb_loadActivityLog) {
       window.fb_loadActivityLog().then(log => {
         if (log && log.length) {
-          var _document$getElementB35;
           localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
-          if ((_document$getElementB35 = document.getElementById('admin-log')) !== null && _document$getElementB35 !== void 0 && _document$getElementB35.classList.contains('active')) renderActivityLog();
+          // La pestaña "📋 Actividad" (Accesos) muestra/oculta su panel con
+          // style.display, no con la clase .active del viejo patrón de
+          // secciones — antes esto comprobaba un id (#admin-log) que ya no
+          // existe (la sección "log" secreta se quitó, ver checkLogSecret),
+          // así que nunca llegaba a refrescar aunque la pestaña estuviera
+          // abierta cuando llegaban datos frescos de Firebase.
+          const activityPanel = document.getElementById('accesos-tab-actividad');
+          if (activityPanel && activityPanel.style.display === 'block' && typeof renderActivityLog === 'function') renderActivityLog();
         }
       }).catch(() => {});
     }

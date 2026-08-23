@@ -151,7 +151,6 @@
         <button class="admin-tab" data-section="alertas" onclick="showAdminSection('alertas', this)"><span class="admin-tab-icon">🔔</span><span>Alertas</span><span class="admin-tab-badge" id="alertas-tab-badge" style="display:none">0</span></button>
         <!-- Empleados movido a ⚙️ con contraseña bimba -->
       </div>
-        <input id="log-secret-input" placeholder="" oninput="checkLogSecret(this.value)" style="width:60px;opacity:0;position:absolute;pointer-events:none" tabindex="-1">
 
       <!-- PRODUCTOS -->
       <div class="admin-section" id="admin-productos">
@@ -179,11 +178,12 @@
             </div>
             <div>
               <label class="admin-field-label">Categoría</label>
-              <select id="new-cat" style="width:100%">
+              <select id="new-cat" style="width:100%" onchange="newCatSelectChange(this)">
                 <option value="">-- Categoria --</option>
                 <option>Patatas</option><option>Boniato</option>
                 <option>Paninis</option><option>Cookies</option>
                 <option>Tartas</option><option>Bebidas</option>
+                <option value="__nueva__">+ Nueva categoría...</option>
               </select>
             </div>
           </div>
@@ -361,7 +361,9 @@
               <div style="text-align:center"><label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">🌙 Tardes hasta</label><input type="time" id="h-tar-close" value="23:45" style="width:80px;padding:5px 6px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none"></div>
             </div>
             <button class="admin-save-btn" onclick="saveHorario()">Guardar horario</button>
+            <button class="admin-save-btn" onclick="resetDiasMartDom()" style="background:var(--brown)">↩️ Resetear a Martes–Domingo</button>
             <div class="admin-toast" id="local-toast">✅ Horario actualizado</div>
+            <div id="dias-diagnostico" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6"></div>
           </div>
         </div>
 
@@ -482,6 +484,11 @@
             <div id="live-slots-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr))"></div>
           </div>
         </div>
+        <!-- Bloquear categorías enteras (ej. cerrar "Postres" de golpe en vez de producto a producto) -->
+        <div class="stat-panel">
+          <div class="stat-panel-head">🚫 Bloquear categorías</div>
+          <div style="padding:12px;display:flex;flex-wrap:wrap;gap:8px" id="cat-block-grid"></div>
+        </div>
         <!-- Lista de pedidos en vivo -->
         <div id="live-orders-list" style="display:flex;flex-direction:column">
           <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin pedidos por ahora</div>
@@ -506,6 +513,13 @@
           <div class="stat-panel-head">🧾 Pedidos de hoy</div>
           <div id="stat-orders-list" class="stat-orders-list">
             <div style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">Sin pedidos por ahora</div>
+          </div>
+        </div>
+
+        <div class="stat-panel">
+          <div class="stat-panel-head">🕐 Turnos — ocupación de hoy</div>
+          <div style="padding:12px">
+            <div id="admin-slots-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr))"></div>
           </div>
         </div>
 
@@ -622,6 +636,20 @@
           </div>
           <div id="url-token-full" style="margin-top:8px;font-size:11px;color:var(--muted);word-break:break-all"></div>
           <div id="url-token-toast" style="display:none;background:var(--brown);color:var(--white);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;margin-top:8px">✅ URL copiada al portapapeles</div>
+        </div>
+
+        <!-- TOKEN BIMBA (acceso rápido del personal, sin contraseña) -->
+        <div style="margin-top:24px;padding-top:20px;border-top:1.5px solid var(--warm)">
+          <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">📱 Token de acceso bimba (personal)</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Genera un token secreto para el personal. Añade <code style="background:var(--warm);padding:1px 5px;border-radius:4px">?bimba=TOKEN</code> a la URL y se abre el acceso rápido, sin contraseña. Caduca solo a los 90 días.</p>
+          <div style="display:flex;align-items:center;flex-wrap:wrap">
+            <input type="text" id="bimba-token-display" readonly placeholder="Sin token generado" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            <button class="admin-save-btn" onclick="bimbaGenBimbaToken()" style="padding:8px 14px;font-size:12px">🎲 Generar</button>
+            <button class="admin-save-btn" onclick="bimbaCopyBimbaUrl()" style="padding:8px 14px;font-size:12px;background:var(--brown)">📋 Copiar URL</button>
+            <button class="admin-save-btn" onclick="clearBimbaToken()" style="padding:8px 14px;font-size:12px;background:var(--brown)">🗑️ Eliminar</button>
+          </div>
+          <div id="bimba-token-full" style="margin-top:8px;font-size:11px;color:var(--muted);word-break:break-all"></div>
+          <div id="bimba-url-toast" style="display:none;background:var(--brown);color:var(--white);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;margin-top:8px"></div>
         </div>
 
         <!-- EXPORTAR / IMPORTAR CONFIG -->
@@ -770,6 +798,12 @@
         <div class="stat-panel-head" style="border-radius:12px;margin-bottom:6px">🔔 Alertas</div>
         <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Pedidos que no se guardaron y precios que no cuadran con la carta — filtrado del registro de actividad.</div>
         <div id="alertas-list" style="display:flex;flex-direction:column;gap:10px"></div>
+
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:12px;margin-top:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">⚠️ Sincronización de emergencia</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Si esta tablet/móvil estuvo sin internet un rato y acumuló pedidos que no llegaron a Firebase (aunque no sepas cuáles), esto los sube todos de golpe, fusionándolos con lo que ya haya sin borrar nada.</div>
+          <button class="admin-save-btn" onclick="emergencySyncFromLocal()" style="background:var(--amber-dark);color:var(--white)">📤 Subir pedidos de este dispositivo</button>
+        </div>
 
         <div style="height:1.5px;background:var(--warm);margin:20px 0"></div>
 

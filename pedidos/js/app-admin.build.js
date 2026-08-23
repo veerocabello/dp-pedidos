@@ -71,7 +71,6 @@ var _stockLimpieza = {};
 
 /* ── PEDIDOS PROVEEDORES v2 ── */
 // ── PEDIDOS PROVEEDORES v2 ──
-const PP_KEY = 'dpf_pp2';
 const PP_PROVS = [{
   id: 'ali',
   label: 'Ali'
@@ -648,8 +647,6 @@ const PP_ITEMS = [
   nombre: 'Galleta Digestive',
   qty: ''
 }];
-let _ppCurrentItem = null; // kept for legacy localStorage compat
-
 const _origOpenStock = window.openStockConfigSecret;
 window.openStockConfigSecret = function () {
   if (_origOpenStock) _origOpenStock();
@@ -1900,40 +1897,6 @@ function renderBlacklist() {
   el.innerHTML = list.map(phone => "<div style=\"display:flex;align-items:center;justify-content:space-between;background:#FFF8EE;border:1.5px solid #e74c3c;border-radius:8px;padding:8px 12px\">\n      <span style=\"font-size:14px;font-weight:700;color:#3D1F0D;letter-spacing:.05em\">".concat(phone.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3'), "</span>\n      <button onclick=\"removeFromBlacklist('").concat(phone, "')\" style=\"background:#c0392b;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">Desbloquear</button>\n    </div>")).join('');
 }
 
-// Función legacy, sin llamadas en ningún sitio — recordOrderStats (el que
-// de verdad se usa) vive en nucleo-compartido.js.
-function recordOrderStats_BASE(orderNum, name, total, slotTime) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  try {
-    stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-  } catch {
-    stats = {};
-  }
-  if (stats.date !== todayKey) {
-    // Archivar día anterior en historial antes de resetear
-    if (stats.date && stats.count > 0) saveToHistorial(stats);
-    stats = {
-      date: todayKey,
-      count: 0,
-      total: 0,
-      orders: []
-    };
-  }
-  stats.count++;
-  stats.total = parseFloat((stats.total + total).toFixed(2));
-  stats.orders.unshift({
-    num: orderNum,
-    name,
-    total,
-    time: new Date().toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-    slot: slotTime || null
-  });
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-}
 function loadDayStats() {
   const todayKey = new Date().toISOString().slice(0, 10);
   // Intentar cargar desde Firebase primero (fuente de verdad entre dispositivos)
@@ -2058,21 +2021,6 @@ async function cancelarPedidoAdmin(orderNum, phone) {
   // pendiente real que la pare.
   if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   logActivity("❌ Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
-}
-function toggleForceSlots() {
-  const active = localStorage.getItem('dpf_force_slots') === '1';
-  localStorage.setItem('dpf_force_slots', active ? '0' : '1');
-  updateForceSlotsBtn();
-  renderSlotPicker();
-}
-function updateForceSlotsBtn() {
-  const btn = document.getElementById('force-slots-btn');
-  if (!btn) return;
-  const active = localStorage.getItem('dpf_force_slots') === '1';
-  btn.textContent = active ? '✅ Activado' : '⚪ Desactivado';
-  btn.style.background = active ? '#e8f8ed' : '#fafafa';
-  btn.style.borderColor = active ? '#5ECC76' : '#ddd';
-  btn.style.color = active ? '#27855a' : '#888';
 }
 
 // ── GESTIÓN DE TURNOS ADMIN ──
@@ -2291,20 +2239,6 @@ async function activarFinDeNoche() {
   logActivity('🌙 Fin de noche activado — ' + pedidos + ' pedidos · ' + total + ' €');
   showToast('local-toast');
 }
-function checkLogSecret(val) {
-  if (val.toLowerCase() === 'log') {
-    document.getElementById('log-secret-input').value = '';
-    document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-    const logSection = document.getElementById('admin-log');
-    if (logSection) {
-      logSection.classList.add('active');
-      renderActivityLog();
-    }
-  }
-}
-// Single unified secret key buffer
-window._secretKeyBuf = '';
 // Acceso por teclado bimba desactivado — usar URL ?bimba=TOKEN
 
 // (Antes había aquí un sistema de "contraseña de administración" propio,
@@ -2981,38 +2915,6 @@ async function showTrustedBannerIfNeeded() {
     banner.style.display = 'none';
   }
 }
-function bimbaGenAdminToken() {
-  const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
-  localStorage.setItem(URL_TOKEN_KEY, token);
-  if (window.fb_saveUrlToken) window.fb_saveUrlToken(token).catch(() => {});
-  loadUrlTokenUI();
-  const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token admin generado';
-  t.style.display = 'block';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.display = 'none', 2000);
-}
-function bimbaCopyAdminUrl() {
-  const token = getUrlToken();
-  if (!token) {
-    bimbaGenAdminToken();
-    return;
-  }
-  const url = location.origin + location.pathname + '?key=' + token;
-  navigator.clipboard.writeText(url).catch(() => {
-    const a = document.createElement('textarea');
-    a.value = url;
-    document.body.appendChild(a);
-    a.select();
-    document.execCommand('copy');
-    document.body.removeChild(a);
-  });
-  const t = document.getElementById('bimba-url-toast');
-  t.textContent = '📋 URL admin copiada';
-  t.style.display = 'block';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.display = 'none', 2000);
-}
 function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
@@ -3022,11 +2924,34 @@ function bimbaGenBimbaToken() {
   // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
   // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
   if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
+  loadBimbaTokenUI();
   const t = document.getElementById('bimba-url-toast');
   t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
+}
+function clearBimbaToken() {
+  if (!confirm('¿Eliminar el token bimba? El enlace ?bimba=TOKEN dejará de funcionar.')) return;
+  localStorage.removeItem(BIMBA_TOKEN_KEY);
+  if (window.fb_saveBimbaToken) window.fb_saveBimbaToken('').catch(() => {});
+  loadBimbaTokenUI();
+  logActivity('📱 Token bimba eliminado');
+}
+function loadBimbaTokenUI() {
+  const token = getBimbaToken();
+  const inp = document.getElementById('bimba-token-display');
+  const full = document.getElementById('bimba-token-full');
+  if (!inp) return;
+  inp.value = token || '';
+  if (full) {
+    if (token) {
+      const url = "".concat(location.origin).concat(location.pathname, "?bimba=").concat(token);
+      full.textContent = '🔗 ' + url;
+    } else {
+      full.textContent = 'Sin token activo';
+    }
+  }
 }
 function bimbaCopyBimbaUrl() {
   const token = getBimbaToken();
@@ -3223,7 +3148,6 @@ function loadUrlTokenUI() {
   }
 }
 let _adminFailedAttempts = 0;
-let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
   const email = (((_document$getElementB5 = document.getElementById('admin-email-input')) === null || _document$getElementB5 === void 0 ? void 0 : _document$getElementB5.value) || '').trim();
@@ -3622,32 +3546,6 @@ function saveProductEdit(id) {
   showToast('prod-toast');
   logActivity("✏️ Producto editado: \"".concat(item.name, "\" — ").concat(item.price.toFixed(2), " €"));
 }
-function updatePrice(id, val) {
-  const item = MENU.find(m => m.id == id);
-  if (item) {
-    const nuevoPrecio = parseFloat(val);
-    if (isNaN(nuevoPrecio) || nuevoPrecio < 0) return;
-    item.price = nuevoPrecio;
-    saveMenu();
-    renderMenu();
-    showToast('prod-toast');
-    logActivity("💰 Precio actualizado: \"".concat(item.name, "\" → ").concat(item.price.toFixed(2), " €"));
-  }
-}
-function updateName(id, val) {
-  const item = MENU.find(m => m.id == id);
-  const nuevoNombre = val.trim();
-  if (!nuevoNombre || !item) return;
-  if (MENU.some(m => m.id != id && m.name.trim().toLowerCase() === nuevoNombre.toLowerCase())) {
-    alert('Ya existe otro producto con ese nombre — el servidor valida el precio de un pedido buscando por nombre exacto, así que dos productos no pueden compartirlo.');
-    return;
-  }
-  item.name = nuevoNombre;
-  saveMenu();
-  renderMenu();
-  showToast('prod-toast');
-  logActivity("✏️ Nombre actualizado: \"".concat(item.name, "\""));
-}
 function toggleProduct(id) {
   const item = MENU.find(m => m.id == id);
   if (!item) return;
@@ -3947,6 +3845,7 @@ function verDiasGuardados() {
   const NOMBRES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const raw = localStorage.getItem('dpf_horario');
   const el = document.getElementById('dias-diagnostico');
+  if (!el) return;
   let html = '';
   if (!raw) {
     html = '⚠️ Sin configuración guardada — se usan valores por defecto (Mar–Dom)<br>';
@@ -4053,6 +3952,7 @@ function loadAdminHorario() {
     }).catch(e => console.warn('Error cargando horario de Firebase:', e));
   }
   loadSlotTurnosUI();
+  verDiasGuardados();
 }
 function saveHorario() {
   let diasAbiertos = [];
@@ -4092,6 +3992,7 @@ function saveHorario() {
   }
   updateFooterHorario(h);
   showToast('local-toast');
+  verDiasGuardados();
   logActivity('🕐 Horario actualizado — Días: ' + diasAbiertos.map(d => DIAS_NAMES[d]).join(', '));
 }
 
@@ -4149,30 +4050,6 @@ function saveFeeConfig(enabled, amount, label) {
   if (window.fb_saveFeeConfig) window.fb_saveFeeConfig(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Gastos de gestión ' + (enabled ? 'activados' : 'desactivados') + ' — ' + amount.toFixed(2) + '€');
-}
-function loadFeeUI() {
-  const btn = document.getElementById('fee-toggle-btn');
-  const amountInput = document.getElementById('fee-amount-input');
-  const labelInput = document.getElementById('fee-label-input');
-  if (!btn) return;
-  const enabled = getFeeEnabled();
-  btn.className = 'open-toggle ' + (enabled ? 'abierto' : 'cerrado');
-  btn.textContent = enabled ? '✅ Gastos activados' : '⛔ Gastos desactivados';
-  if (amountInput) amountInput.value = getFeeAmount().toFixed(2);
-  if (labelInput) labelInput.value = getFeeLabel();
-}
-function toggleFeeEnabled() {
-  const enabled = !getFeeEnabled();
-  saveFeeConfig(enabled, getFeeAmount(), getFeeLabel());
-  loadFeeUI();
-  showToast('fee-toast');
-}
-function saveFeeFromPanel() {
-  const amount = parseFloat(document.getElementById('fee-amount-input').value) || 0.50;
-  const label = document.getElementById('fee-label-input').value.trim() || 'Gastos de gestión online';
-  saveFeeConfig(getFeeEnabled(), amount, label);
-  loadFeeUI();
-  showToast('fee-toast');
 }
 
 // ── SEGUNDO GASTO FIJO (guardar desde el panel) ──
@@ -4518,16 +4395,6 @@ function bimbaGuardarTicketConfig() {
   }
 }
 
-function toggleIngredientesPanel(btn) {
-  const panel = document.getElementById('ingredientes-panel');
-  if (!panel) return;
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  btn.textContent = open ? '✏️ Editar' : '✕ Cerrar';
-  btn.style.background = open ? '#3D1F0D' : '#F5E6C8';
-  btn.style.color = open ? '#FFF8EE' : '#3D1F0D';
-}
-
 function savePauseMsg() {
   const msg = document.getElementById('orders-pause-msg').value.trim();
   if (msg) {
@@ -4596,32 +4463,6 @@ function getBimbaToken() {
   });
 })();
 */
-window._secretKeyBuf = '';
-document.addEventListener('keydown', function (e) {
-  var _document$getElementB8;
-  if (((_document$getElementB8 = document.getElementById('stock-overlay')) === null || _document$getElementB8 === void 0 ? void 0 : _document$getElementB8.style.display) === 'block') return;
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-  if (e.key.length === 1) {
-    var _document$getElementB9;
-    window._secretKeyBuf += e.key.toLowerCase();
-    if (window._secretKeyBuf.length > 30) window._secretKeyBuf = window._secretKeyBuf.slice(-30);
-    // Nota: el atajo de teclado que abría el panel bimba escribiendo el PIN
-    // en cualquier parte de la página se ha quitado — comprobaba el hash en
-    // el cliente (inseguro) y no se puede pasar a bimba-verify.php sin
-    // disparar una petición por cada tecla. Usa el candado (secureLockTap).
-    if ((_document$getElementB9 = document.getElementById('admin-overlay')) !== null && _document$getElementB9 !== void 0 && _document$getElementB9.classList.contains('open')) {
-      const inp = document.getElementById('log-secret-input');
-      if (inp) {
-        inp.value = window._secretKeyBuf.slice(-10);
-        checkLogSecret(inp.value);
-      }
-    }
-  } else if (e.key === 'Backspace') {
-    window._secretKeyBuf = window._secretKeyBuf.slice(0, -1);
-  } else {
-    window._secretKeyBuf = '';
-  }
-});
 
 // ══════════════════════════════════════════════
 //  LOG DE ACTIVIDAD — VISTA DE ADMIN
@@ -5042,14 +4883,6 @@ function saveAutoDelete() {
   if (info) info.textContent = days === 0 ? 'Desactivado' : "✅ Se borrar\xE1n entradas con m\xE1s de ".concat(days, " d\xEDas");
   logActivity("⚙️ Auto-borrado historial configurado: ".concat(days === 0 ? 'desactivado' : days + ' días'));
 }
-function loadAutoDeleteUI() {
-  const days = getAutoDeleteDays();
-  const sel = document.getElementById('autodelete-days');
-  if (sel) sel.value = days;
-  const info = document.getElementById('autodelete-info');
-  if (info) info.textContent = days === 0 ? 'Desactivado' : "Se borran entradas con m\xE1s de ".concat(days, " d\xEDas");
-}
-
 // ══════════════════════════════════════════════
 //  EXPORTAR HISTORIAL CIFRADO (AES-256 via Web Crypto)
 // ══════════════════════════════════════════════
@@ -5477,25 +5310,6 @@ async function printOrderFromStats(num, name, time, total, slot) {
     total: parseFloat(total),
     time
   });
-}
-async function exportTicketPDFFromStats(num, name, time, total, slot) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats = null;
-  if (window.fb_getStats) {
-    try {
-      stats = await window.fb_getStats(todayKey);
-    } catch {}
-  }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {}
-  }
-  const order = stats && stats.orders ? stats.orders.find(o => o.num === num) : null;
-  const items = order && order.items ? order.items : [];
-  const phone = order && order.phone ? order.phone : '';
-  const notes = order && order.notes ? order.notes : '';
-  exportTicketPDF(num, name, time, total, slot, items, phone, notes);
 }
 
 // ── PEDIDOS EN VIVO ──
@@ -8303,31 +8117,6 @@ function exportDayPDFFromHistorial(date, btn) {
   });
   _exportDayDataPDF(day.orders, day.total, fecha, date, btn);
 }
-async function exportDayPDF(btn) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats = null;
-  if (window.fb_getStats) {
-    try {
-      stats = await window.fb_getStats(todayKey);
-    } catch {}
-  }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {}
-  }
-  if (!stats || !stats.orders || !stats.orders.length) {
-    alert('No hay pedidos hoy para exportar');
-    return;
-  }
-  const fecha = new Date().toLocaleDateString('es-ES', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-  _exportDayDataPDF(stats.orders, stats.total, fecha, todayKey, btn);
-}
 function _exportDayDataPDF(orders, total, fecha, dateKey, btn) {
   const t = total || orders.reduce((a, o) => a + (o.total || 0), 0);
   const ordersHtml = orders.map(o => {
@@ -8509,24 +8298,25 @@ function showAdminSection(id, btn) {
   if (id === 'local') {
     loadSoundConfigUI();
     loadSoundDesconexionConfigUI();
-    updateForceSlotsBtn();
     loadSlotTurnosUI();
-    loadFeeUI();
     loadModifyWindowInput();
     if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
     if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
     if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
     loadBannerDia();
   }
-  // Nota: 'log', 'pwd', 'stock-config', 'accesos' y 'empleados' NO se
-  // abren nunca a través de showAdminSection() — son secciones del acceso
-  // restringido "bimba" y cada una tiene hoy su propia función dedicada,
-  // que además ya hace su propia inicialización: checkLogSecret()
-  // (admin-turnos-descuentos.js), bimbaIrAContrasena(), bimbaVolverAlPanel()
+  // Nota: 'pwd', 'stock-config', 'accesos' y 'empleados' NO se abren nunca
+  // a través de showAdminSection() — son secciones del acceso restringido
+  // "bimba" y cada una tiene hoy su propia función dedicada, que además ya
+  // hace su propia inicialización: bimbaIrAContrasena(), bimbaVolverAlPanel()
   // (que además apunta a "stock-config", no "admin-empleados" — ese id ni
   // siquiera existe ya, es "admin-bimba-empleados"), bimbaIrAAccesos() y
-  // bimbaIrAEmpleados() (todas en js/auth.js). Si alguna vez hace falta
-  // reintroducir estos ids aquí, que sea a propósito, no por accidente.
+  // bimbaIrAEmpleados() (todas en js/auth.js). El gesto secreto "log" (que
+  // sí usaba esta función, vía checkLogSecret) se quitó por completo:
+  // apuntaba a un id ("admin-log") que ya no existía, y la misma vista de
+  // actividad ya está disponible sin trucos en la pestaña "📋 Actividad"
+  // de Accesos. Si alguna vez hace falta reintroducir estos ids aquí, que
+  // sea a propósito, no por accidente.
   if (id === 'pedidos-config') {
     loadAntiSpamFromFirebase();
     // Inicializar cooldown y daily limit
@@ -8883,14 +8673,6 @@ function switchFidelizacionTab(tab) {
     editarView.style.display = 'block';
   }
 }
-function toggleFidelizacionListaClientes() {
-  const el = document.getElementById('fidelizacion-list');
-  const icon = document.getElementById('fidelizacion-lista-toggle-icon');
-  if (!el) return;
-  const abierta = el.style.display === 'flex';
-  el.style.display = abierta ? 'none' : 'flex';
-  if (icon) icon.textContent = abierta ? '▶' : '▼';
-}
 function _filtrarYPintarFidelizacion() {
   // Si el usuario escribe en el buscador, desplegamos la lista automáticamente
   // y quitamos cualquier filtro por tipo activo (chips), para que no se mezclen
@@ -9144,17 +8926,6 @@ async function cargarPedidosClienteFidelizacion(telefono) {
     el.innerHTML = '<div style="color:#c0392b">Error al buscar pedidos: ' + e.message + '</div>';
   }
 }
-function cargarFidelizacionParaEditar(telefono) {
-  if (typeof switchFidelizacionTab === 'function') switchFidelizacionTab('editar');
-  window.fb_loadFidelizacionCliente(telefono).then(c => {
-    document.getElementById('fidel-edit-phone').value = telefono;
-    document.getElementById('fidel-edit-nombre').value = (c && c.nombre) || '';
-    document.getElementById('fidel-edit-sellos').value = (c && typeof c.sellos === 'number') ? c.sellos : 0;
-    document.getElementById('fidel-edit-premios-pendientes').value = (c && typeof c.premiosPendientes === 'number') ? c.premiosPendientes : ((c && c.premioDisponible) ? 1 : 0);
-    document.getElementById('fidel-edit-veces-completado').value = (c && typeof c.vecesCompletado === 'number') ? c.vecesCompletado : 0;
-    document.getElementById('fidel-edit-phone').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
-}
 // Escritura compartida por el formulario de la pestaña "Editar manualmente"
 // y por el modal de ajustes rápidos (⚙️) de cada tarjeta — los dos ajustan
 // los mismos 4 campos (nombre/sellos/premiosPendientes/vecesCompletado) de
@@ -9339,29 +9110,6 @@ const STOCK_GROUP_LABELS = {
     if (changed) localStorage.setItem('dpf_stock_data', JSON.stringify(data));
   } catch (e) {}
 })();
-function getStockPwd() {
-  return localStorage.getItem(STOCK_PWD_KEY) || '';
-}
-function changeStockPwd() {
-  const n1 = document.getElementById('stock-pwd-new').value;
-  const n2 = document.getElementById('stock-pwd-rep').value;
-  const err = document.getElementById('stock-pwd-error');
-  err.textContent = '';
-  if (n1.length < 4) {
-    err.textContent = 'La clave debe tener al menos 4 caracteres';
-    return;
-  }
-  if (n1 !== n2) {
-    err.textContent = 'Las claves no coinciden';
-    return;
-  }
-  localStorage.setItem(STOCK_PWD_KEY, n1);
-  if (window.fb_saveStockPwd) window.fb_saveStockPwd(n1).catch(() => {});
-  document.getElementById('stock-pwd-new').value = '';
-  document.getElementById('stock-pwd-rep').value = '';
-  showToast('stock-pwd-toast');
-  logActivity('\uD83D\uDCE6 Clave de stock actualizada');
-}
 function getStockData() {
   try {
     const saved = JSON.parse(localStorage.getItem(STOCK_DATA_KEY) || 'null');
@@ -9612,13 +9360,6 @@ function stockOverlayDrop(e) {
   saveStockData(data);
   renderStockItems();
 }
-function openStockFromAdmin() {
-  document.body.style.overflow = '';
-  window._stockFromAdmin = true;
-  window._adminWasLoggedIn = _adminLoggedIn;
-  document.getElementById('admin-overlay').classList.add('hidden-for-stock');
-  openStockOverlay();
-}
 function openStockInline() {
   // Guardar sección activa para restaurarla al cerrar
   const activeSection = document.querySelector('.admin-section.active');
@@ -9847,17 +9588,6 @@ function stockQty(i, delta) {
   if (next < 0) { delete _stockSelections[ing]; } else { _stockSelections[ing] = next; }
   renderStockItems();
 }
-function toggleStockItem(ing) {
-  _stockSelections[ing] = _stockSelections[ing] ? 0 : 1;
-  if (!_stockSelections[ing]) delete _stockSelections[ing];
-  renderStockItems();
-}
-function changeStockQty(ing, delta) {
-  const next = Math.max(0, (_stockSelections[ing] || 0) + delta);
-  if (next === 0) delete _stockSelections[ing];else _stockSelections[ing] = next;
-  renderStockItems();
-}
-
 // ── Unidad por ingrediente ──
 function stockSetUnit(ing, unit) {
   if (!window._stockUnits) window._stockUnits = {};
@@ -10892,7 +10622,10 @@ function _cargarDatosEmpleadosPrivados() {
   }
   if (window.fb_loadBimbaToken) {
     window.fb_loadBimbaToken().then(t => {
-      if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
+      if (t) {
+        localStorage.setItem(BIMBA_TOKEN_KEY, t);
+        if (typeof loadBimbaTokenUI === 'function') loadBimbaTokenUI();
+      }
     }).catch(() => {});
   }
   if (window.fb_loadStockPwd) {
@@ -10966,51 +10699,6 @@ function _empEstadoActual(emp, fichajes, today) {
   return { estado: estado, entrada: ultimo };
 }
 
-// ── "TRABAJANDO AHORA" — tarjeta resumen en sección Empleados ──
-function _empEstadosFichajeHoy() {
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-
-  return empleados.map(function(emp) {
-    var r = _empEstadoActual(emp, fichajes, today);
-    return { emp: emp, estado: r.estado, entrada: r.entrada || null, salida: r.salida || null, deOtroDia: r.deOtroDia || false };
-  });
-}
-function empRenderAdmin() {
-  var el = document.getElementById('emp-trabajando-ahora');
-  if (!el) return;
-  var estados = _empEstadosFichajeHoy();
-  if (!estados.length) {
-    el.innerHTML = '<div style="color:#8A6A4E">No hay empleados registrados</div>';
-    return;
-  }
-  var labels = {
-    entrada: { icon: '🟢', color: '#166534', texto: function(r) { return 'Trabajando desde las ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—'); } },
-    salida: { icon: '🔵', color: '#0C447C', texto: function(r) { return 'Fichó salida a las ' + (r.salida ? (r.salida.horaReal || r.salida.hora) : '—'); } },
-    olvido: { icon: '⚠️', color: '#9a3412', texto: function(r) {
-      if (r.deOtroDia && r.entrada) return 'Se olvidó fichar salida del ' + r.entrada.fecha.slice(5).replace('-', '/') + ' (entró ' + (r.entrada.horaReal || r.entrada.hora) + ')';
-      return 'Se olvidó fichar salida (entró ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—') + ')';
-    } },
-    nada: { icon: '❌', color: '#991b1b', texto: function() { return 'Todavía no ha fichado'; } }
-  };
-  el.innerHTML = estados.map(function(r) {
-    var l = labels[r.estado];
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F5E6C8">'
-      + '<span style="font-size:18px">' + l.icon + '</span>'
-      + '<div><div style="font-weight:700;color:#2A1506;font-size:13px">' + r.emp.nombre + '</div>'
-      + '<div style="font-size:12px;color:' + l.color + '">' + l.texto(r) + '</div></div>'
-      + '</div>';
-  }).join('');
-}
-function empRefrescar() {
-  var el = document.getElementById('emp-trabajando-ahora');
-  if (el) el.innerHTML = '<div style="color:#8A6A4E">Cargando...</div>';
-  var p1 = window.fb_loadEmpleados ? window.fb_loadEmpleados().then(function(arr) { if (arr) localStorage.setItem('dpf_empleados', JSON.stringify(arr)); }).catch(function() {}) : Promise.resolve();
-  var p2 = window.fb_loadFichajes ? window.fb_loadFichajes().then(function(arr) { if (arr) localStorage.setItem('dpf_fichajes', JSON.stringify(arr)); }).catch(function() {}) : Promise.resolve();
-  Promise.all([p1, p2]).then(empRenderAdmin);
-}
 function bimbaIrAFichajes() {
   document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
   var sec = document.getElementById('admin-bimba-fichajes');
