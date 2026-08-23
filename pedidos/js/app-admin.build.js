@@ -4833,16 +4833,21 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
 // de intentos, que se resuelve solo pasados unos minutos). No se conserva
 // si el pedido original consumía un premio — eso es poco frecuente y, si
 // pasara, se ajusta a mano desde el panel de Fidelización.
-async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre) {
+async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre, fecha) {
   const card = document.getElementById(_alertaDomId(ts));
   const statusEl = card && card.querySelector('.alerta-retry-status');
   const btn = card && card.querySelector('.alerta-retry-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
   try {
+    // "fecha" es la fecha real del pedido (guardada en la propia alerta) —
+    // antes no se mandaba y el servidor siempre buscaba el ticket en el día
+    // de HOY, así que reintentar un día después de que ocurriera el fallo
+    // fallaba siempre con "pedido no encontrado", aunque el ticket sí
+    // existiera (bajo la fecha real, no la de hoy).
     const res = await fetch('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'registrarSello', telefono, orderNum, tienePatata: true, consumioPremio: false, nombre: nombre || '' })
+      body: JSON.stringify({ action: 'registrarSello', telefono, orderNum, tienePatata: true, consumioPremio: false, nombre: nombre || '', fecha: fecha || '' })
     });
     const data = await res.json();
     if (data.success || data.skipped) {
@@ -4852,6 +4857,32 @@ async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre) {
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '🎁 Reintentar sello'; }
+    if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
+  }
+}
+// Reintenta ANULAR un sello que falló al cancelar/modificar un pedido —
+// mismo botón de Alertas que reintentarSelloFidelizacion pero en sentido
+// contrario. Sin esto el cliente se quedaba con un sello (o una patata
+// gratis ya canjeada) de un pedido que ya no existe, para siempre.
+async function reintentarRevertirSelloFidelizacion(ts, orderNum, telefono) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  const btn = card && card.querySelector('.alerta-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
+  try {
+    const res = await fetch('fidelizacion.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'revertirSello', telefono, orderNum })
+    });
+    const data = await res.json();
+    if (data.success) {
+      resolverAlerta(ts);
+    } else {
+      throw new Error(data.error || 'El servidor rechazó la reversión');
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '↩️ Reintentar anular'; }
     if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
   }
 }
@@ -4977,7 +5008,9 @@ function renderAlertas() {
       } else if (e.tipo === 'ticket_no_impreso' && e.orderNum && e.fecha) {
         retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarImpresionTicket('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🖨️ Reintentar impresión</button>");
       } else if (e.tipo === 'sello_no_registrado' && e.orderNum && e.telefono) {
-        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
+      } else if (e.tipo === 'sello_no_revertido' && e.orderNum && e.telefono) {
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarRevertirSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">↩️ Reintentar anular</button>");
       }
       return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
     }).join('');
@@ -10551,10 +10584,20 @@ function _buscadorContenidoAdmin() {
   const items = [];
   if (typeof MENU !== 'undefined') {
     MENU.forEach(p => {
+      // p.price puede llegar no numérico o ausente (p.ej. sincronizado
+      // directo desde Firebase sin pasar por el formulario que valida) —
+      // antes p.price.toFixed(2) lanzaba una excepción sin capturar aquí
+      // (a diferencia del bloque de ingredientes justo abajo, que sí está
+      // protegido), y como esta función se llama en cada tecla del
+      // buscador, un único producto así dejaba de mostrar resultados por
+      // completo, sin ningún aviso.
+      const priceNum = Number(p.price);
+      const priceOk = isFinite(priceNum);
+      const precioTxt = priceOk ? priceNum.toFixed(2) + ' €' : 'precio no válido';
       items.push({
         icon: '🍽️', badge: 'prod', tipo: 'Producto', nombre: p.name,
-        ruta: 'Carta · ' + p.cat + ' · ' + p.price.toFixed(2) + ' €',
-        meta: [{ etiqueta: 'categoría', valor: p.cat }, { etiqueta: 'precio', valor: p.price.toFixed(2) }],
+        ruta: 'Carta · ' + p.cat + ' · ' + precioTxt,
+        meta: [{ etiqueta: 'categoría', valor: p.cat }, { etiqueta: 'precio', valor: priceOk ? priceNum.toFixed(2) : '—' }],
         go: () => {
           showAdminSection('productos', document.querySelector('.admin-tab[data-section="productos"]'));
           _buscadorScrollFlash('arow-' + p.id, 150);

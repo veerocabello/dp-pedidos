@@ -301,14 +301,21 @@ function normOrderKey($num) {
     return preg_replace('/^T/', '', str_replace('#', '', (string)$num));
 }
 
-// Comprueba que orderNum es un pedido REAL guardado hoy, con ese teléfono
-// exacto y con al menos un producto "Patata..." — antes registrarSello se
-// fiaba de lo que dijera el cliente (orderNum, tienePatata, teléfono), así
-// que se podían inventar números de pedido para sumar sellos y premios sin
-// límite, sin haber pedido nada de verdad.
+// Comprueba que orderNum es un pedido REAL guardado hoy (o en la fecha
+// indicada), con ese teléfono exacto y con al menos un producto "Patata..."
+// — antes registrarSello se fiaba de lo que dijera el cliente (orderNum,
+// tienePatata, teléfono), así que se podían inventar números de pedido
+// para sumar sellos y premios sin límite, sin haber pedido nada de verdad.
+// $fecha (Y-m-d) es opcional: al confirmar un pedido normal, el ticket
+// siempre está bajo la fecha de HOY, así que se omite y se usa date('Y-m-d')
+// — pero el botón "Reintentar sello" del panel de Alertas puede pulsarse
+// cualquier día después (antes siempre buscaba en el día de HOY del
+// servidor, así que si se reintentaba al día siguiente el pedido ya no
+// estaba ahí y fallaba con "Pedido no encontrado" — siempre, no como caso
+// raro). Aquí se acepta la fecha real del pedido para ese caso.
 // Devuelve el ticket (array) si es válido para sumar sello, o null si no.
-function ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono) {
-    $todayKey = date('Y-m-d');
+function ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono, $fecha = null) {
+    $todayKey = $fecha ?: date('Y-m-d');
     $ticketKey = normOrderKey($orderNum);
     $ch = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -508,12 +515,17 @@ try {
         $tienePatata = !empty($payload['tienePatata']);
         $consumioPremio = !empty($payload['consumioPremio']);
         $nombre = isset($payload['nombre']) ? mb_substr((string)$payload['nombre'], 0, 80) : '';
+        // Solo la envía el botón "Reintentar sello" del panel de Alertas
+        // (ver reintentarSelloFidelizacion en historial-export.js) — al
+        // confirmar un pedido normal no se manda, y ticketValidoParaSello()
+        // usa la fecha de hoy por defecto, que es la correcta en ese caso.
+        $fecha = isset($payload['fecha']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $payload['fecha']) ? $payload['fecha'] : null;
 
         if (!$orderNum || !$tienePatata) {
             echo json_encode(['success' => true, 'skipped' => true]);
             exit;
         }
-        $ticket = ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono);
+        $ticket = ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono, $fecha);
         if (!$ticket) {
             // Antes esto solo se registraba en el navegador del propio
             // cliente (con logActivity()), que no llega a Firebase para un
@@ -522,12 +534,16 @@ try {
             // panel de admin abierto en el mismo navegador. Ahora se
             // registra aquí, con la cuenta de servicio, para que sí llegue
             // siempre — y con los mismos campos que usa el botón "Reintentar
-            // sello" en el panel de Alertas.
+            // sello" en el panel de Alertas. "fecha" es la fecha real del
+            // pedido (hoy, salvo que ya sea un reintento) — así, si hace
+            // falta reintentar de nuevo más adelante, se sigue buscando en
+            // el día correcto en vez de en el de ese momento.
             fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo sumar el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') — pedido no encontrado', [
                 'tipo'     => 'sello_no_registrado',
                 'orderNum' => $orderNum,
                 'telefono' => $telefono,
                 'nombre'   => $nombre,
+                'fecha'    => $fecha ?: date('Y-m-d'),
             ]);
             echo json_encode(['success' => false, 'error' => 'Pedido no encontrado']);
             exit;
@@ -649,6 +665,7 @@ try {
                 'orderNum' => $orderNum,
                 'telefono' => $telefono,
                 'nombre'   => $nombre,
+                'fecha'    => $fecha ?: date('Y-m-d'),
             ]);
             echo json_encode(['success' => false, 'error' => 'No se pudo registrar, inténtalo de nuevo.']);
             exit;
@@ -693,6 +710,23 @@ try {
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
         $response = curl_exec($ch);
         curl_close($ch);
+        if ($response === false) {
+            // Igual que el fallo de fbGetClienteConEtag ya arreglado más
+            // arriba: un corte de red aquí NO significa "este pedido nunca
+            // sumó sello" — antes se confundían y el sello se quedaba
+            // puesto para siempre en un pedido ya cancelado, sin que nadie
+            // se enterase. Se avisa aquí mismo (en vez de dejar que suba al
+            // catch genérico) porque el cliente nunca comprueba la
+            // respuesta de esta llamada — sin este aviso en Alertas, el
+            // fallo no dejaría ningún rastro en ningún sitio.
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo revertir el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') — fallo de conexión al comprobar el ticket', [
+                'tipo'     => 'sello_no_revertido',
+                'orderNum' => $orderNum,
+                'telefono' => $telefono,
+            ]);
+            echo json_encode(['success' => false, 'error' => 'Fallo de conexión, inténtalo de nuevo.']);
+            exit;
+        }
         $ticket = json_decode($response, true);
         if (!is_array($ticket) || preg_replace('/[^0-9]/', '', (string)($ticket['phone'] ?? '')) !== $telefono) {
             echo json_encode(['success' => true, 'skipped' => true]);
@@ -772,6 +806,16 @@ try {
             }
             usleep(rand(20000, 80000));
         }
+        // Antes esto no dejaba ningún rastro — a diferencia de registrarSello
+        // (que sí avisa en Alertas si falla tras los 8 intentos), un fallo
+        // aquí significa que un cliente conserva un sello o una patata
+        // gratis ya canjeada de un pedido que se acaba de cancelar, sin que
+        // nadie se entere nunca.
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ No se pudo revertir el sello de fidelización del pedido ' . $orderNum . ' (tel. ' . $telefono . ') tras varios intentos', [
+            'tipo'     => 'sello_no_revertido',
+            'orderNum' => $orderNum,
+            'telefono' => $telefono,
+        ]);
         echo json_encode(['success' => false, 'error' => 'No se pudo revertir, inténtalo de nuevo.']);
         exit;
     }

@@ -90,10 +90,20 @@ function _buscadorContenidoAdmin() {
   const items = [];
   if (typeof MENU !== 'undefined') {
     MENU.forEach(p => {
+      // p.price puede llegar no numérico o ausente (p.ej. sincronizado
+      // directo desde Firebase sin pasar por el formulario que valida) —
+      // antes p.price.toFixed(2) lanzaba una excepción sin capturar aquí
+      // (a diferencia del bloque de ingredientes justo abajo, que sí está
+      // protegido), y como esta función se llama en cada tecla del
+      // buscador, un único producto así dejaba de mostrar resultados por
+      // completo, sin ningún aviso.
+      const priceNum = Number(p.price);
+      const priceOk = isFinite(priceNum);
+      const precioTxt = priceOk ? priceNum.toFixed(2) + ' €' : 'precio no válido';
       items.push({
         icon: '🍽️', badge: 'prod', tipo: 'Producto', nombre: p.name,
-        ruta: 'Carta · ' + p.cat + ' · ' + p.price.toFixed(2) + ' €',
-        meta: [{ etiqueta: 'categoría', valor: p.cat }, { etiqueta: 'precio', valor: p.price.toFixed(2) }],
+        ruta: 'Carta · ' + p.cat + ' · ' + precioTxt,
+        meta: [{ etiqueta: 'categoría', valor: p.cat }, { etiqueta: 'precio', valor: priceOk ? priceNum.toFixed(2) : '—' }],
         go: () => {
           showAdminSection('productos', document.querySelector('.admin-tab[data-section="productos"]'));
           _buscadorScrollFlash('arow-' + p.id, 150);
