@@ -143,11 +143,20 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     // para que destaquen en cocina, igual que ya se hacía con las
     // modificaciones de producto.
     extrasNombre.forEach(extra => {
+      // El subrayado antes envolvía la línea entera (nombre + "(+X EUR)"
+      // cuando lo había) — salía como una raya continua de borde a borde
+      // en vez de marcar solo el nombre del extra, que es lo que de verdad
+      // hace falta destacar (confirmado en papel real). Se apaga antes de
+      // imprimir la parte del precio entre paréntesis, si la hay.
       const conParentesis = extra.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/, ' (+$1 EUR)').trim();
+      const _idxParen = conParentesis.indexOf(' (+');
+      const _nombreExtraNombre = (_idxParen >= 0 ? conParentesis.slice(0, _idxParen) : conParentesis).toUpperCase();
+      const _precioExtraParen = _idxParen >= 0 ? conParentesis.slice(_idxParen).toUpperCase() : '';
       bold(true);
       d.push(ESC, 0x2D, 0x02);
-      push('     - ' + _ptEncodeStr(conParentesis).toUpperCase() + '\n');
+      push('     - ' + _ptEncodeStr(_nombreExtraNombre));
       d.push(ESC, 0x2D, 0x00);
+      push(_ptEncodeStr(_precioExtraParen) + '\n');
       bold(false);
     });
     if (Array.isArray(extrasArr)) {
@@ -155,22 +164,33 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
         const nombreExtra = _ptEncodeStr(((extra && extra.name) ? extra.name : extra) + '').toUpperCase();
         const precioExtraTxt = (extra && extra.price) ? '+' + parseFloat(extra.price).toFixed(2) + ' EUR' : '';
         const prefixExtra = '  - ';
+        // El subrayado marca solo el nombre del extra (prefijo + nombre),
+        // no la línea entera — antes envolvía también los espacios de
+        // relleno y el precio, saliendo como una raya continua de borde a
+        // borde del ticket en vez de resaltar solo lo que hace falta.
         bold(true);
-        d.push(ESC, 0x2D, 0x02);
         if (!precioExtraTxt) {
-          push(prefixExtra + nombreExtra + '\n');
+          d.push(ESC, 0x2D, 0x02);
+          push(prefixExtra + nombreExtra);
+          d.push(ESC, 0x2D, 0x00);
+          push('\n');
         } else {
           // Precio del extra alineado a la misma columna derecha que el
           // precio de la línea principal (misma W), no pegado al nombre.
           const spacesExtra = W - prefixExtra.length - nombreExtra.length - precioExtraTxt.length;
           if (spacesExtra >= 1) {
-            push(prefixExtra + nombreExtra + ' '.repeat(spacesExtra) + precioExtraTxt + '\n');
+            d.push(ESC, 0x2D, 0x02);
+            push(prefixExtra + nombreExtra);
+            d.push(ESC, 0x2D, 0x00);
+            push(' '.repeat(spacesExtra) + precioExtraTxt + '\n');
           } else {
-            push(prefixExtra + nombreExtra + '\n');
+            d.push(ESC, 0x2D, 0x02);
+            push(prefixExtra + nombreExtra);
+            d.push(ESC, 0x2D, 0x00);
+            push('\n');
             push(' '.repeat(Math.max(0, W - precioExtraTxt.length)) + precioExtraTxt + '\n');
           }
         }
-        d.push(ESC, 0x2D, 0x00);
         bold(false);
       });
     }
