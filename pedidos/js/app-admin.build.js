@@ -6996,6 +6996,20 @@ async function _ptReconectar() {
         _ptEndpointOut = resultado.epOut;
         _ptEndpointIn = resultado.epIn;
         _ptTransporte = 'usb';
+        // Igual que en Bluetooth (ver _ptBleConectarDispositivo): justo
+        // después de reconectar, algunas impresoras térmicas USB baratas
+        // todavía no están listas para imprimir de verdad aunque el
+        // sistema ya las dé por conectadas — el primer ticket de la cola
+        // pendiente se perdía en silencio (el USB acepta el envío, pero
+        // la impresora no llega a sacarlo, y sin ningún error de por
+        // medio el ticket se marcaba como impreso y se quitaba de la
+        // cola). Se manda primero un pulso inofensivo (consulta de estado
+        // de papel, no imprime nada) y se espera un margen antes de
+        // avisar de que ya está lista — así, si algo se pierde por este
+        // motivo de arranque, se pierde ese pulso de prueba y no el
+        // ticket real del cliente.
+        try { await _ptComprobarPapel(); } catch (e) {}
+        await new Promise(r => setTimeout(r, 800));
         _ptStatusUI(true);
         return true;
       }
