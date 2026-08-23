@@ -49,29 +49,39 @@ function dpf_gc_rate_limit_files() {
 }
 dpf_gc_rate_limit_files();
 
-// Todo esto (leer, contar, decidir, escribir) pasa con el lock exclusivo
-// abierto de principio a fin — si no, dos peticiones a la vez podían leer
-// el mismo estado antes de que ninguna escribiera y saltarse el límite.
-function dpf_check_limit($file, $max, $window) {
+// Solo consulta, sin gastar ningún intento — para rechazar rápido a quien ya
+// esté al límite sin tener que llamar a Twilio.
+function dpf_peek_limit($file, $max, $window) {
+    $raw = @file_get_contents($file);
+    $log = $raw ? (json_decode($raw, true) ?: []) : [];
+    $now = time();
+    $log = array_filter($log, function ($ts) use ($now, $window) {
+        return ($now - $ts) < $window;
+    });
+    return count($log) >= $max;
+}
+
+// Gasta un intento — se llama SOLO cuando Twilio ha respondido de verdad
+// (código correcto o incorrecto, cualquiera de los dos es un intento real).
+// Antes esto se gastaba ANTES de llamar a Twilio (dpf_check_limit hacía
+// consulta+gasto en un solo paso), así que un fallo de red o una caída
+// puntual de Twilio le costaba a un cliente real uno de sus 5 intentos sin
+// culpa suya — a diferencia de send-code.php, que ya se corrigió para esto
+// mismo.
+function dpf_consume_limit($file, $window) {
     $fp = fopen($file, 'c+');
-    if ($fp === false) return true; // no bloquear tráfico real por un fallo de disco
+    if ($fp === false) return;
     if (!flock($fp, LOCK_EX)) {
         fclose($fp);
-        return true;
+        return;
     }
     $now = time();
     $size = filesize($file) ?: 0;
     $raw = $size > 0 ? fread($fp, $size) : '';
     $log = json_decode($raw, true) ?: [];
-    // Borrar entradas antiguas
-    $log = array_values(array_filter($log, function($ts) use ($now, $window) {
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
         return ($now - $ts) < $window;
     }));
-    if (count($log) >= $max) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return false; // bloqueado
-    }
     $log[] = $now;
     ftruncate($fp, 0);
     rewind($fp);
@@ -79,11 +89,10 @@ function dpf_check_limit($file, $max, $window) {
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
-    return true;
 }
 
-// Comprobar límite por IP
-if (!dpf_check_limit($ip_file, $max_attempts, $window)) {
+// Comprobar límite por IP (sin gastarlo todavía)
+if (dpf_peek_limit($ip_file, $max_attempts, $window)) {
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
@@ -94,8 +103,8 @@ if (!dpf_check_limit($ip_file, $max_attempts, $window)) {
 require_once __DIR__ . '/twilio-config.php';
 
 $data = json_decode(file_get_contents('php://input'), true);
-$phone = isset($data['phone']) ? preg_replace('/[^0-9+]/', '', $data['phone']) : '';
-$code  = isset($data['code'])  ? preg_replace('/[^0-9]/', '', $data['code'])   : '';
+$phone = isset($data['phone']) ? preg_replace('/[^0-9+]/', '', (string)$data['phone']) : '';
+$code  = isset($data['code'])  ? preg_replace('/[^0-9]/', '', (string)$data['code'])   : '';
 
 if (empty($phone) || empty($code)) {
     echo json_encode(['error' => 'Datos incompletos']);
@@ -110,9 +119,9 @@ if (!str_starts_with($phone, '+')) {
     }
 }
 
-// Comprobar límite por teléfono (independiente del límite por IP)
+// Comprobar límite por teléfono (independiente del límite por IP, sin gastarlo todavía)
 $phone_file = $tmp_dir . '/dpf_verify_phone_' . md5($phone) . '.json';
-if (!dpf_check_limit($phone_file, $max_attempts, $window)) {
+if (dpf_peek_limit($phone_file, $max_attempts, $window)) {
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos para este número. Espera unos minutos.']);
     exit();
@@ -122,6 +131,8 @@ $url = 'https://verify.twilio.com/v2/Services/' . TWILIO_SERVICE_SID . '/Verific
 
 $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+curl_setopt($ch, CURLOPT_TIMEOUT, 8);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
     'To'   => $phone,
@@ -134,6 +145,16 @@ $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
 $result = json_decode($response, true);
+
+// Un intento solo cuenta de verdad si Twilio ha llegado a evaluar el código
+// (aprobado o no) — un fallo de red/timeout de nuestro lado, o un error del
+// propio Twilio (http_code distinto de 200), no es un intento del cliente y
+// no debe gastarle uno de sus 5.
+$twilioRespondioDeVerdad = $response !== false && $http_code === 200 && is_array($result) && isset($result['status']);
+if ($twilioRespondioDeVerdad) {
+    dpf_consume_limit($ip_file, $window);
+    dpf_consume_limit($phone_file, $window);
+}
 
 if (isset($result['status']) && $result['status'] === 'approved') {
     // Comprobante firmado de que ESTE teléfono verificó su código de
@@ -153,9 +174,11 @@ if (isset($result['status']) && $result['status'] === 'approved') {
     $smsToken = $telefonoLimpio . '|' . $exp . '|' . $firma;
     echo json_encode(['success' => true, 'verified' => true, 'smsToken' => $smsToken]);
 } else {
-    if ($http_code !== 200) {
+    if (!$twilioRespondioDeVerdad) {
         $log_line = '[' . date('Y-m-d H:i:s') . "] [verify-code] Twilio ERROR — phone=$phone http_code=$http_code response=$response" . PHP_EOL;
         error_log($log_line, 3, __DIR__ . '/twilio-errores.log');
+        echo json_encode(['success' => false, 'verified' => false, 'error' => 'No se pudo comprobar el código ahora mismo. Inténtalo de nuevo.']);
+    } else {
+        echo json_encode(['success' => false, 'verified' => false, 'error' => 'Código incorrecto']);
     }
-    echo json_encode(['success' => false, 'verified' => false, 'error' => 'Código incorrecto']);
 }

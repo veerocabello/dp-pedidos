@@ -78,6 +78,8 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
     $ch = curl_init('https://oauth2.googleapis.com/token');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
         'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -105,6 +107,8 @@ function fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
     $accessToken = obtenerTokenAcceso($rutaCredenciales);
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $response = curl_exec($ch);
     curl_close($ch);
@@ -116,6 +120,8 @@ function fbGetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
     $accessToken = obtenerTokenAcceso($rutaCredenciales);
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $response = curl_exec($ch);
     curl_close($ch);

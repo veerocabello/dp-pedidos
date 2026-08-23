@@ -95,6 +95,17 @@ if (!dpf_webhook_check_limit($ip_file, $max_ip, $window)) {
 
 // ── COMPROBACIÓN DE FIRMA: rechazar cualquier petición que no venga de Tally ──
 $rawBodyParaFirma = file_get_contents('php://input');
+// Nunca confiar en el tamaño real de la petición: un formulario de
+// incidencia real (nombre, teléfono, unas frases) no pasa de unos pocos KB
+// — igual que csp-report.php, se descarta sin más un cuerpo desproporcionado
+// antes de calcular el HMAC o intentar decodificarlo. El límite es más
+// generoso que el de csp-report.php porque aquí sí hay texto libre real de
+// un cliente (varias respuestas de formulario), no solo un aviso técnico.
+if (strlen($rawBodyParaFirma) > 65536) {
+    http_response_code(413);
+    echo json_encode(['error' => 'Petición demasiado grande']);
+    exit;
+}
 $firmaRecibida = $_SERVER['HTTP_TALLY_SIGNATURE'] ?? '';
 
 if (!defined('TALLY_SIGNING_SECRET') || !TALLY_SIGNING_SECRET) {
@@ -160,6 +171,8 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
     $ch = curl_init('https://oauth2.googleapis.com/token');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
         'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -223,6 +236,8 @@ try {
     $token = obtenerTokenAcceso($rutaCredenciales);
     $ch = curl_init($databaseURL . '/incidencias.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($incidencia));
     curl_setopt($ch, CURLOPT_HTTPHEADER, [

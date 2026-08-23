@@ -214,6 +214,8 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
     $ch = curl_init('https://oauth2.googleapis.com/token');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
         'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -241,6 +243,8 @@ function fbGetConEtag($databaseURL, $path, $accessToken) {
     $etag = null;
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
         if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
@@ -255,6 +259,8 @@ function fbGetConEtag($databaseURL, $path, $accessToken) {
 function fbPutSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
     if ($etag) $headers[] = 'If-Match: ' . $etag;

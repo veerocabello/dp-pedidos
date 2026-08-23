@@ -21,6 +21,14 @@ $tmp_dir   = sys_get_temp_dir();
 $window    = 600; // 10 minutos en segundos
 $max_ip    = 5;
 $max_phone_pre = 3; // antes de leer el teléfono limpiamos la IP
+// Límite aparte, más generoso, que SÍ se gasta pase lo que pase con Twilio
+// (a diferencia de $max_ip/$max_phone_pre, que solo se gastan si Twilio
+// confirma el envío — a propósito, para no penalizar a un cliente real por
+// una caída puntual de Twilio, ver dpf_consume_limit). Sin este freno
+// aparte, una caída SOSTENIDA de Twilio deja $max_ip sin gastarse nunca, y
+// la misma IP puede repetir peticiones sin ningún límite justo cuando más
+// falta hace uno.
+$max_ip_raw = 20;
 
 // NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
 // quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
@@ -31,6 +39,7 @@ $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 
 $ip_file = $tmp_dir . '/dpf_sms_ip_' . md5($ip) . '.json';
+$ip_file_raw = $tmp_dir . '/dpf_sms_ip_raw_' . md5($ip) . '.json';
 
 // Limpieza ocasional: sin esto se acumula un archivo por cada IP/teléfono
 // distinto para siempre (solo se filtran las entradas de dentro, nunca se
@@ -96,13 +105,18 @@ if (dpf_peek_limit($ip_file, $max_ip, $window)) {
     echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
 }
+if (dpf_peek_limit($ip_file_raw, $max_ip_raw, $window)) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
+    exit();
+}
 
 // ── FIN RATE LIMITING IP ───────────────────────────────────
 
 require_once __DIR__ . '/twilio-config.php';
 
 $data  = json_decode(file_get_contents('php://input'), true);
-$phone = isset($data['phone']) ? preg_replace('/[^0-9+]/', '', $data['phone']) : '';
+$phone = isset($data['phone']) ? preg_replace('/[^0-9+]/', '', (string)$data['phone']) : '';
 
 if (empty($phone)) {
     echo json_encode(['error' => 'Teléfono no válido']);
@@ -138,6 +152,8 @@ $url = 'https://verify.twilio.com/v2/Services/' . TWILIO_SERVICE_SID . '/Verific
 
 $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+curl_setopt($ch, CURLOPT_TIMEOUT, 8);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
     'To'      => $phone,
@@ -150,6 +166,12 @@ $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
 $result = json_decode($response, true);
+
+// Este límite se gasta SIEMPRE, éxito o fallo — es el freno de emergencia
+// contra una caída sostenida de Twilio (ver el comentario junto a
+// $max_ip_raw más arriba); el resto de límites de abajo, que solo se
+// gastan con éxito real, no cambian.
+dpf_consume_limit($ip_file_raw, $window);
 
 if ($http_code === 201 && isset($result['status']) && $result['status'] === 'pending') {
     // Solo se gastan los intentos de las dos ventanas (IP y teléfono) ahora
