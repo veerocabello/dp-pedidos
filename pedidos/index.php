@@ -587,10 +587,11 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:4px">
         <button onclick="shareOrderWhatsApp(currentOrderNum,currentOrderName,currentOrderSlot,currentOrderItems,currentOrderTotal)"
+          id="btn-whatsapp-share"
           style="padding:11px 20px;background:#25D366;color:var(--white);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
           💬 Compartir por WhatsApp
         </button>
-        <button class="new-order-btn" onclick="resetOrder()">Hacer otro pedido</button>
+        <button class="new-order-btn" id="btn-hacer-otro-pedido" onclick="resetOrder()">Hacer otro pedido</button>
       </div>
     </div>
   </div>

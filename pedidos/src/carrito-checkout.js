@@ -1362,6 +1362,19 @@ async function _submitOrderInner() {
     qty: 1,
     subtotal: -_studentDiscountAmt
   }] : [];
+  // El premio de fidelización, el descuento estudiante/jubilado y la oferta
+  // relámpago ya se veían como línea con importe negativo — el código de
+  // descuento (dcAplicar) se restaba del total pero nunca se añadía aquí,
+  // así que la suma de líneas no cuadraba con el total sin que se viera por
+  // qué. Igual que las demás, con importe negativo — no es un "producto",
+  // así que queda excluida de window.currentOrderItems (showSuccess(),
+  // antifraude.js) y no aparece en el mensaje de WhatsApp, mismo criterio
+  // que las otras tres.
+  const discountCodeItems = _discountAmt > 0 && _activeDiscount ? [{
+    name: '🏷️ Código ' + _activeDiscount.code + ' (-' + _activeDiscount.pct + '%)',
+    qty: 1,
+    subtotal: -_discountAmt
+  }] : [];
   // La oferta relámpago de tipo "producto" no necesita línea aparte: ya se
   // ve reflejada en el precio de esa línea de comida (_precioConOferta).
   const ofertaRelampagoItems = _ofertaTotalAmt > 0 ? [{
@@ -1384,7 +1397,7 @@ async function _submitOrderInner() {
   // van siempre después, tal cual ya estaban.
   const foodItems = [...regularItems, ...custItems, ...extItems, ...promoItems];
   foodItems.sort((a, b) => _ticketCategoriaRank(a.name) - _ticketCategoriaRank(b.name));
-  const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...fidelizacionItems, ...studentDiscountItems, ...ofertaRelampagoItems, ...fidelizacionAvisoItems];
+  const orderItems = [...foodItems, ...feeItems, ...fee2Items, ...discountCodeItems, ...fidelizacionItems, ...studentDiscountItems, ...ofertaRelampagoItems, ...fidelizacionAvisoItems];
   const now = new Date().toLocaleString('es-ES');
 
   // Estadística "¿le metes algo dulce/de beber?": si se llegó a mostrar

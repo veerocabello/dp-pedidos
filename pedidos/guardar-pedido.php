@@ -1569,9 +1569,29 @@ try {
             echo json_encode(['success' => false, 'error' => 'No autorizado']);
             exit;
         }
-        // 1. Marcar como cancelado — escritura directa a la clave del pedido,
-        // no hace falta condicional porque no comparte nodo con otros pedidos.
-        fbPutSiCoincide($databaseURL, 'orderStatus/' . $cFecha . '/' . $cKey, $accessToken, 'cancelado', null);
+        // 1. Marcar como cancelado — lectura+escritura condicional (mismo
+        // patrón que reservarNumeroPedido/reservarSlot más arriba), NO una
+        // escritura directa incondicional como antes. Ni "Modificar" ni
+        // "Cancelar" desactivaban sus botones en el navegador mientras
+        // esperaban esta respuesta (fallo ya corregido aparte en
+        // antifraude.js), así que un segundo click — o "Modificar" y
+        // "Cancelar" pulsados casi a la vez — disparaba una segunda llamada
+        // concurrente para el MISMO pedido; sin ningún candado aquí, ambas
+        // pasaban de largo y repetían la liberación del turno (paso 3) y la
+        // reversión de ventas (paso 4) dos veces, corrompiendo el aforo y
+        // las estadísticas del día. Si ya está cancelado, o si el PUT
+        // condicional falla porque otra petición ganó la carrera justo
+        // entre esta lectura y la escritura, se responde éxito sin repetir
+        // los pasos 2-4 — esa otra petición ya se encargó de ellos.
+        $cEstadoLeido = fbGetConEtag($databaseURL, 'orderStatus/' . $cFecha . '/' . $cKey, $accessToken);
+        if (($cEstadoLeido['data'] ?? null) === 'cancelado') {
+            echo json_encode(['success' => true, 'items' => null, 'phone' => $cTicket['phone'] ?? null, 'slot' => null]);
+            exit;
+        }
+        if (!fbPutSiCoincide($databaseURL, 'orderStatus/' . $cFecha . '/' . $cKey, $accessToken, 'cancelado', $cEstadoLeido['etag'])) {
+            echo json_encode(['success' => true, 'items' => null, 'phone' => $cTicket['phone'] ?? null, 'slot' => null]);
+            exit;
+        }
 
         // 2. Quitarlo de stats/<fecha> (lectura-modificación-escritura
         // condicional con reintento, igual que guardarPedidoEnStats).

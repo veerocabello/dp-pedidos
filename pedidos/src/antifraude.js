@@ -25,6 +25,20 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   if (_icon) _icon.textContent = '🥔';
   if (_title) _title.textContent = '¡Pedido confirmado!';
   if (_sub) _sub.textContent = 'Te esperamos en el local';
+  // Mismo motivo que el bloque de arriba: si el pedido anterior en esta
+  // visita se llegó a cancelar, cancelarPedido() dejó los botones de
+  // Modificar/Cancelar deshabilitados (para evitar un segundo click
+  // mientras esperaba al servidor) y ocultó el de WhatsApp (para que no
+  // generara un mensaje de un pedido ya eliminado) — sin resetear esto
+  // aquí, el pedido SIGUIENTE se confirmaba bien pero se quedaba sin poder
+  // modificarlo/cancelarlo ni compartirlo por WhatsApp.
+  if (typeof _setBotonEsperaServidor === 'function') {
+    _setBotonEsperaServidor(document.getElementById('btn-modificar-pedido'), false);
+    _setBotonEsperaServidor(document.getElementById('btn-cancelar-pedido'), false);
+    _setBotonEsperaServidor(document.getElementById('btn-hacer-otro-pedido'), false);
+  }
+  const _btnWspReset = document.getElementById('btn-whatsapp-share');
+  if (_btnWspReset) _btnWspReset.style.display = '';
   // Exponer datos del pedido para el botón de WhatsApp
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
@@ -275,6 +289,16 @@ function _startModifyTimer() {
   _tick();
   window._modifyTimerInterval = setInterval(_tick, 1000);
 }
+// Pequeño helper para deshabilitar/rehabilitar un botón mientras se espera
+// al servidor (modificarPedido/cancelarPedido) — además de el.disabled,
+// atenúa el botón para que se note que está "procesando" (ninguno de los
+// dos tenía antes ningún estilo :disabled propio ni de CSS global).
+function _setBotonEsperaServidor(el, disabled) {
+  if (!el) return;
+  el.disabled = disabled;
+  el.style.opacity = disabled ? '.6' : '';
+  el.style.cursor = disabled ? 'not-allowed' : 'pointer';
+}
 async function modificarPedido() {
   const data = window._lastOrderData;
   if (!data) return;
@@ -294,6 +318,23 @@ async function modificarPedido() {
   });
   if (!confirmado) return;
 
+  // Deshabilitar los botones mientras se espera al servidor — sin esto, un
+  // segundo click (o pulsar "Cancelar pedido" a la vez) durante el await
+  // disparaba una segunda llamada concurrente para el mismo pedido: el
+  // servidor liberaba el turno y revertía las ventas del producto una
+  // segunda vez (ver el fix de idempotencia en la acción 'cancelarPedido',
+  // guardar-pedido.php). "Hacer otro pedido" también se deshabilita — si el
+  // cliente lo pulsaba en este hueco y empezaba el carrito del pedido
+  // siguiente, esta función seguía con los datos capturados al principio y
+  // lo sobreescribía en silencio al terminar (ver la comprobación de más
+  // abajo, que además cubre cualquier otro camino que pudiera colarse).
+  const _btnMod = document.getElementById('btn-modificar-pedido');
+  const _btnCan = document.getElementById('btn-cancelar-pedido');
+  const _btnNuevo = document.getElementById('btn-hacer-otro-pedido');
+  _setBotonEsperaServidor(_btnMod, true);
+  _setBotonEsperaServidor(_btnCan, true);
+  _setBotonEsperaServidor(_btnNuevo, true);
+
   // Borrar pedido actual de Firebase y stats — si el servidor no llega a
   // confirmarlo (red caída justo al pulsar), NO se sigue adelante: hacerlo
   // de todas formas dejaría el pedido viejo vivo en cocina Y crearía uno
@@ -301,9 +342,21 @@ async function modificarPedido() {
   // preparando dos, uno de los cuales nadie recoge.
   const _borrado = await _borrarPedidoDeFirebase(data.num, data.phone);
   if (!_borrado) {
+    _setBotonEsperaServidor(_btnMod, false);
+    _setBotonEsperaServidor(_btnCan, false);
+    _setBotonEsperaServidor(_btnNuevo, false);
     showAlert('No se pudo modificar el pedido ' + data.num + ' — parece que se ha perdido la conexión. Tu pedido original sigue activo tal cual estaba; inténtalo de nuevo en unos segundos.');
     return;
   }
+
+  // Si en el rato que hemos esperado al servidor el cliente ya pulsó
+  // "Hacer otro pedido" (resetOrder() ya vació el carrito y puso
+  // window._lastOrderData a null para el pedido NUEVO que está
+  // empezando), no seguimos: continuar aquí sobreescribiría en silencio
+  // ese carrito/nombre/teléfono/turno nuevos con los del pedido antiguo
+  // que se acaba de anular. El pedido antiguo ya quedó anulado en el
+  // servidor de todas formas — eso no se deshace ni hace falta deshacerlo.
+  if (window._lastOrderData !== data) return;
 
   // Restaurar carrito con los productos anteriores
   Object.assign(cart, data.cart);
@@ -320,7 +373,6 @@ async function modificarPedido() {
   Object.keys(data.promosCart || {}).forEach(k => {
     promosCart[k] = data.promosCart[k];
   });
-  selectedSlot = data.slot;
 
   // Restaurar datos del cliente
   document.getElementById("customer-name").value = data.name || '';
@@ -356,6 +408,14 @@ async function modificarPedido() {
   }
   renderMenu();
   renderCart();
+  // El turno se restaura DESPUÉS de renderCart() (que ya deja pintados los
+  // botones de turno vía renderSlotPicker) para poder usar selectSlot(),
+  // la única función que además de fijar la variable también marca la
+  // casilla como seleccionada — antes se asignaba solo la variable interna
+  // (selectedSlot = data.slot), correcta para el envío pero sin ningún
+  // turno resaltado en pantalla: el cliente volvía al formulario y parecía
+  // que se había perdido la hora de recogida aunque no fuera así.
+  if (data.slot) selectSlot(data.slot);
   document.querySelector('.order-panel').scrollIntoView({
     behavior: 'smooth',
     block: 'start'
@@ -381,15 +441,35 @@ async function cancelarPedido() {
     };
   });
   if (!confirmado) return;
+
+  // Deshabilitar los botones mientras se espera al servidor — mismo motivo
+  // que en modificarPedido(): sin esto, un segundo click (o pulsar
+  // "Modificar pedido" a la vez) durante el await disparaba una segunda
+  // llamada concurrente para el mismo pedido, y el servidor liberaba el
+  // turno y revertía las ventas del producto una segunda vez.
+  const _btnMod2 = document.getElementById('btn-modificar-pedido');
+  const _btnCan2 = document.getElementById('btn-cancelar-pedido');
+  _setBotonEsperaServidor(_btnMod2, true);
+  _setBotonEsperaServidor(_btnCan2, true);
+
   // Si el servidor no confirma la cancelación (red caída justo al pulsar),
   // no se muestra "Pedido cancelado" — el pedido sigue vivo de verdad en
   // cocina, así que decírselo al cliente como si ya estuviera anulado solo
   // lo dejaría sin recogerlo ni avisar a nadie.
   const _borrado = await _borrarPedidoDeFirebase(data.num, data.phone);
   if (!_borrado) {
+    _setBotonEsperaServidor(_btnMod2, false);
+    _setBotonEsperaServidor(_btnCan2, false);
     showAlert('No se pudo cancelar el pedido ' + data.num + ' — parece que se ha perdido la conexión. Tu pedido sigue activo; inténtalo de nuevo en unos segundos.');
     return;
   }
+
+  // Igual que en modificarPedido(): si mientras esperábamos al servidor el
+  // cliente ya pulsó "Hacer otro pedido" y empezó uno nuevo, no pisamos esa
+  // pantalla con el aviso de "cancelado" del pedido antiguo — ese ya quedó
+  // anulado en el servidor de todas formas.
+  if (window._lastOrderData !== data) return;
+
   window._lastOrderData = null;
   try {
     localStorage.removeItem('dpf_active_order');
@@ -406,6 +486,13 @@ async function cancelarPedido() {
   if (sub) sub.textContent = 'Tu pedido ha sido eliminado';
   document.getElementById('order-modify-zone').style.display = 'none';
   document.getElementById('success-items-list').innerHTML = '';
+  // El botón de WhatsApp vive fuera de order-modify-zone (no se oculta con
+  // lo de arriba) y seguía visible justo debajo de "❌ Pedido cancelado",
+  // generando un mensaje de "Ven a recogerlo y paga en caja" para un
+  // pedido que ya no existe — se oculta aquí; showSuccess() lo vuelve a
+  // mostrar en cuanto haya un pedido nuevo de verdad confirmado.
+  const btnWsp = document.getElementById('btn-whatsapp-share');
+  if (btnWsp) btnWsp.style.display = 'none';
 }
 // Devuelve true solo si el servidor confirmó de verdad que anuló el
 // pedido — antes esta función no devolvía nada, así que cancelarPedido()/
