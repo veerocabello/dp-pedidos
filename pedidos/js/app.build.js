@@ -499,7 +499,7 @@ function openBoniatoBaconModal() {
     }).join('');
   }
   document.getElementById('boniato-bacon-error').style.display = 'none';
-  document.getElementById('boniato-bacon-modal').style.display = 'block';
+  document.getElementById('boniato-bacon-modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
 function closeBoniatoBaconModal() {

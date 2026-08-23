@@ -960,8 +960,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 </div>
 
 <!-- BONIATO BACON — SELECTOR DE SALSA -->
-<div id="boniato-bacon-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:2600;background:rgba(61,31,13,0.65);padding:16px">
-  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:400px;padding:24px;position:relative;margin:auto;max-height:85vh;overflow-y:auto">
+<div id="boniato-bacon-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:2600;background:rgba(61,31,13,0.65);align-items:center;justify-content:center;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:400px;padding:24px;position:relative;margin:auto;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
     <button onclick="closeBoniatoBaconModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">&#x2715;</button>
     <div style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:900;color:var(--brown);margin-bottom:4px">Boniato Bacon</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Salsa a elegir · bacon · queso mozzarella</div>
