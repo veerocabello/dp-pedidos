@@ -37,11 +37,29 @@ function _pdfStyles() {
 // veces se manda directo a una impresora fisica en vez de guardarlo).
 // html2pdf.js (cargado por CDN en index.html/fichar-publico.html) genera
 // el archivo .pdf directamente, sin pasar por ningun dialogo de impresion.
-function _descargarHtmlComoPDF(bodyHtml, filename) {
+function _descargarHtmlComoPDF(bodyHtml, filename, btn) {
   if (typeof html2pdf === 'undefined') {
     alert('No se pudo generar el PDF (no cargó la librería). Comprueba tu conexión y recarga la página.');
     return;
   }
+  // Con el historial completo la captura puede tardar varios segundos —
+  // antes ningún botón se desactivaba ni avisaba "generando…" mientras
+  // tanto, así que un doble clic disparaba dos generaciones a la vez,
+  // insertando el contenido duplicado en la página (dos contenedores
+  // clonados a la vez, uno por cada llamada).
+  if (btn) {
+    if (btn.disabled) return;
+    btn.dataset.pdfTextoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generando…';
+  }
+  const restaurarBtn = () => {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.pdfTextoOriginal;
+      delete btn.dataset.pdfTextoOriginal;
+    }
+  };
   const styleEl = document.createElement('style');
   styleEl.textContent = _pdfStyles();
   document.head.appendChild(styleEl);
@@ -71,13 +89,14 @@ function _descargarHtmlComoPDF(bodyHtml, filename) {
       filename,
       html2canvas: { scale: 2, backgroundColor: '#ffffff' },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    }).save().then(limpiar).catch((err) => {
+    }).save().then(() => { limpiar(); restaurarBtn(); }).catch((err) => {
       limpiar();
+      restaurarBtn();
       alert('⚠️ No se pudo generar el PDF: ' + (err && err.message || 'error desconocido'));
     });
   }));
 }
-function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
+function exportTicketPDF(num, name, time, total, slot, items, phone, notes, btn) {
   const fecha = new Date().toLocaleDateString('es-ES', {
     weekday: 'long',
     year: 'numeric',
@@ -103,7 +122,7 @@ function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
       ${notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic">📝 ${escapeHtml(notes)}</div>` : ''}
       <div style="text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E">Paga en caja cuando recojas 💛</div>
     </div>`;
-  _descargarHtmlComoPDF(body, 'ticket-' + (num || 'pedido') + '.pdf');
+  _descargarHtmlComoPDF(body, 'ticket-' + (num || 'pedido') + '.pdf', btn);
 }
 function _buildClientesMap() {
   const hist = getHistorial();
@@ -202,6 +221,14 @@ function renderClientes() {
     return;
   }
 
+  // Se reinicia en cada render (no solo la primera vez) — antes se iba
+  // guardando cada pedido visto en este objeto global sin limpiarlo nunca,
+  // así que en una sesión larga de mostrador (muchas búsquedas, cambios de
+  // orden) iba acumulando entradas indefinidamente. Solo hace falta que
+  // contenga los pedidos de LA lista que se acaba de pintar — cualquier
+  // fila anterior ya no tiene su elemento en el DOM, así que tampoco puede
+  // llegar a usar una entrada vieja.
+  window._dpfPedidosMap = {};
   let _lastLetter = null;
   listEl.innerHTML = filtered.map(c => {
     const canonName = _nombreCanonico(c);
@@ -241,7 +268,6 @@ function renderClientes() {
       : '';
     const phoneId = phoneClean || c.phone.replace(/\W/g, '');
 
-    if (!window._dpfPedidosMap) window._dpfPedidosMap = {};
     const ordersHtml = c.orders.slice().reverse().slice(0, 20).map((o) => {
       const mapKey = 'pm_' + phoneId + '_' + (o.num || '').replace(/\W/g, '');
       window._dpfPedidosMap[mapKey] = o;
@@ -440,10 +466,10 @@ function _renderHistorial() {
       day: 'numeric',
       month: 'short'
     });
-    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "')\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n    </div>");
+    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "',this)\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n    </div>");
   }).join('');
 }
-function exportDayPDFFromHistorial(date) {
+function exportDayPDFFromHistorial(date, btn) {
   const hist = getHistorial();
   const day = hist.find(d => d.date === date);
   if (!day || !day.orders || !day.orders.length) {
@@ -456,9 +482,9 @@ function exportDayPDFFromHistorial(date) {
     month: 'long',
     day: 'numeric'
   });
-  _exportDayDataPDF(day.orders, day.total, fecha, date);
+  _exportDayDataPDF(day.orders, day.total, fecha, date, btn);
 }
-async function exportDayPDF() {
+async function exportDayPDF(btn) {
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
@@ -481,9 +507,9 @@ async function exportDayPDF() {
     month: 'long',
     day: 'numeric'
   });
-  _exportDayDataPDF(stats.orders, stats.total, fecha, todayKey);
+  _exportDayDataPDF(stats.orders, stats.total, fecha, todayKey, btn);
 }
-function _exportDayDataPDF(orders, total, fecha, dateKey) {
+function _exportDayDataPDF(orders, total, fecha, dateKey, btn) {
   const t = total || orders.reduce((a, o) => a + (o.total || 0), 0);
   const ordersHtml = orders.map(o => {
     const itemsHtml = (o.items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
@@ -509,9 +535,9 @@ function _exportDayDataPDF(orders, total, fecha, dateKey) {
       </div>
       ${ordersHtml}
     </div>`;
-  _descargarHtmlComoPDF(body, 'pedidos-' + dateKey + '.pdf');
+  _descargarHtmlComoPDF(body, 'pedidos-' + dateKey + '.pdf', btn);
 }
-function exportHistorialPDF() {
+function exportHistorialPDF(btn) {
   const hist = getHistorial();
   if (!hist.length) {
     alert('No hay historial para exportar');
@@ -546,7 +572,7 @@ function exportHistorialPDF() {
       </div>
       ${daysHtml}
     </div>`;
-  _descargarHtmlComoPDF(body, 'historial-dulce-patata.pdf');
+  _descargarHtmlComoPDF(body, 'historial-dulce-patata.pdf', btn);
 }
 function expandHistorialDay(date) {
   const hist = getHistorial();
@@ -578,7 +604,7 @@ function expandHistorialDay(date) {
   }
   html += "<div style=\"font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px\">\uD83E\uDDFE Pedidos</div>";
   (day.orders || []).forEach(o => {
-    html += "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F5E6C8;font-size:13px;flex-wrap:wrap\">\n      <span style=\"font-weight:700;color:#3D1F0D\">".concat(escapeHtml(o.num), "</span>\n      <span style=\"flex:1;color:#2A1506\">").concat(escapeHtml(o.name), "</span>\n      ").concat(o.slot ? "<span style=\"background:rgba(244,196,48,0.08);color:#3D1F0D;font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px\">\uD83D\uDD50 ".concat(escapeHtml(o.slot), "</span>") : '', "\n      <span style=\"color:#8A6A4E;font-size:12px\">").concat(escapeHtml(o.time), "</span>\n      <span style=\"font-weight:700;color:#3D1F0D\">").concat(o.total.toFixed(2).replace('.', ','), " \u20AC</span>\n    </div>");
+    html += "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F5E6C8;font-size:13px;flex-wrap:wrap\">\n      <span style=\"font-weight:700;color:#3D1F0D\">".concat(escapeHtml(o.num), "</span>\n      <span style=\"flex:1;color:#2A1506\">").concat(escapeHtml(o.name), "</span>\n      ").concat(o.slot ? "<span style=\"background:rgba(244,196,48,0.08);color:#3D1F0D;font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px\">\uD83D\uDD50 ".concat(escapeHtml(o.slot), "</span>") : '', "\n      <span style=\"color:#8A6A4E;font-size:12px\">").concat(escapeHtml(o.time), "</span>\n      <span style=\"font-weight:700;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span>\n    </div>");
   });
   html += "<div style=\"text-align:right;margin-top:12px\"><button onclick=\"closeHistorialDayModal()\" style=\"background:#F5E6C8;border:none;border-radius:8px;padding:8px 20px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;color:#3D1F0D\">Cerrar</button></div>";
   const modal = document.getElementById('historial-day-modal');
@@ -657,15 +683,9 @@ function showAdminSection(id, btn) {
     clearUnseenOrders();
     loadCatBlockUI();
   }
-  if (id === 'log') renderActivityLog();
   if (id === 'alertas') {
     renderAlertas();
     if (typeof renderIncidencias === 'function') renderIncidencias();
-  }
-  if (id === 'pwd') loadUrlTokenUI();
-  if (id === 'stock-config') {
-    loadStockAdminList();
-    setTimeout(pp2CheckFirebaseBanner, 500);
   }
   if (id === 'local') {
     loadSoundConfigUI();
@@ -677,20 +697,17 @@ function showAdminSection(id, btn) {
     if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
     if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
     if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
-  }
-  if (id === 'accesos') {
-    renderAccesosLog();
-    renderActivityLog();
-  }
-  if (id === 'empleados') {
-    setTimeout(empRenderAdmin, 50);
-  }
-  if (id === 'local') {
     loadBannerDia();
   }
-  if (id === 'config') {
-    loadAntiSpamFromFirebase();
-  }
+  // Nota: 'log', 'pwd', 'stock-config', 'accesos' y 'empleados' NO se
+  // abren nunca a través de showAdminSection() — son secciones del acceso
+  // restringido "bimba" y cada una tiene hoy su propia función dedicada,
+  // que además ya hace su propia inicialización: checkLogSecret()
+  // (admin-turnos-descuentos.js), bimbaIrAContrasena(), bimbaVolverAlPanel()
+  // (que además apunta a "stock-config", no "admin-empleados" — ese id ni
+  // siquiera existe ya, es "admin-bimba-empleados"), bimbaIrAAccesos() y
+  // bimbaIrAEmpleados() (todas en js/auth.js). Si alguna vez hace falta
+  // reintroducir estos ids aquí, que sea a propósito, no por accidente.
   if (id === 'pedidos-config') {
     loadAntiSpamFromFirebase();
     // Inicializar cooldown y daily limit
