@@ -223,10 +223,10 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),c(),(e.items||[]).forEach(m=>{const v=_ptEncodeStr(m.name||"").split(" + "),b=v[0].toUpperCase(),f=v.slice(1),u=m.extras||[],g=(m.subtotal||0).toFixed(2)+" EUR",y=o.anchoPapel===58?32:48,E=m.qty+"x ",S=y-E.length-b.length-g.length;S>=0?s(E+b+" ".repeat(S)+g+`
 `):(s(E+b.substring(0,y-E.length)+`
 `),s(" ".repeat(Math.max(0,y-g.length))+g+`
-`)),f.forEach(w=>{const h=w.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/," (+$1 EUR)").trim(),_=h.indexOf(" (+"),x=(_>=0?h.slice(0,_):h).toUpperCase(),A=_>=0?h.slice(_).toUpperCase():"";p(!0),i.push(n,45,2),s("     - "+_ptEncodeStr(x)),i.push(n,45,0),s(_ptEncodeStr(A)+`
-`),p(!1)}),Array.isArray(u)&&u.forEach(w=>{const h=_ptEncodeStr((w&&w.name?w.name:w)+"").toUpperCase(),_=w&&w.price?"+"+parseFloat(w.price).toFixed(2)+" EUR":"",x="  - ";if(p(!0),!_)i.push(n,45,2),s(x+h),i.push(n,45,0),s(`
-`);else{const A=y-x.length-h.length-_.length;A>=1?(i.push(n,45,2),s(x+h),i.push(n,45,0),s(" ".repeat(A)+_+`
-`)):(i.push(n,45,2),s(x+h),i.push(n,45,0),s(`
+`)),f.forEach(w=>{const h=w.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/," (+$1 EUR)").trim(),_=h.indexOf(" (+"),x=(_>=0?h.slice(0,_):h).toUpperCase(),A=_>=0?h.slice(_).toUpperCase():"";p(!0),s("     - "),i.push(n,45,2),s(_ptEncodeStr(x)),i.push(n,45,0),s(_ptEncodeStr(A)+`
+`),p(!1)}),Array.isArray(u)&&u.forEach(w=>{const h=_ptEncodeStr((w&&w.name?w.name:w)+"").toUpperCase(),_=w&&w.price?"+"+parseFloat(w.price).toFixed(2)+" EUR":"",x="  - ";if(p(!0),!_)s(x),i.push(n,45,2),s(h),i.push(n,45,0),s(`
+`);else{const A=y-x.length-h.length-_.length;A>=1?(s(x),i.push(n,45,2),s(h),i.push(n,45,0),s(" ".repeat(A)+_+`
+`)):(s(x),i.push(n,45,2),s(h),i.push(n,45,0),s(`
 `),s(" ".repeat(Math.max(0,y-_.length))+_+`
 `))}p(!1)}),m.modText&&(s(" ".repeat(E.length)),p(!0),i.push(n,45,2),s(m.modText+`
 `),i.push(n,45,0),p(!1))}),s(`------------------------------------------------
