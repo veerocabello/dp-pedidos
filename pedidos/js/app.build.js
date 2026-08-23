@@ -7098,6 +7098,16 @@ async function _finalizarPedido() {
         if (data.success) {
           console.log('✅ Pedido guardado');
           window._pendingTicketData = null;
+          // El servidor reasigna un número nuevo si el que mandó el
+          // navegador (el aleatorio de emergencia de generateOrderNumber(),
+          // sin garantía de unicidad) coincidía con un ticket ya existente
+          // de OTRO pedido — antes eso rechazaba el pedido entero. La
+          // pantalla de éxito ya se mostró con el número viejo (se muestra
+          // al instante, sin esperar esta respuesta), así que hay que
+          // corregirla aquí en cuanto se sabe el número real.
+          if (data.orderNumReasignado && data.orderNumReasignado !== orderNum) {
+            if (typeof _aplicarReasignacionOrderNum === 'function') _aplicarReasignacionOrderNum(orderNum, data.orderNumReasignado);
+          }
           if (typeof _actualizarTiempoEstimadoTrasGuardar === 'function') _actualizarTiempoEstimadoTrasGuardar(data);
         }
         else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum, data.error || 'No se pudo registrar el pedido'); }
@@ -7161,6 +7171,37 @@ async function _finalizarPedido() {
 //    cerrada justo entonces, etc.): el pedido NO se ha guardado en ningún
 //    sitio, así que enseñar una captura no sirve — hay que decírselo claro
 //    y que vuelva a intentarlo desde el principio.
+// Corrige, en cuanto se sabe el número real, todo lo que este navegador ya
+// había mostrado/guardado con el número viejo — pasa cuando el servidor
+// reasigna un número nuevo porque el que mandó el navegador (el aleatorio
+// de emergencia de generateOrderNumber(), sin garantía de unicidad — ver
+// el comentario ahí) coincidía con el ticket de OTRO pedido ya existente
+// (ver el bloque de reasignación en guardar-pedido.php). La pantalla de
+// éxito ya se mostró con el número viejo (se muestra al instante, sin
+// esperar la respuesta del guardado), así que sin esto "Modificar"/
+// "Cancelar pedido" apuntarían a un ticket que nunca llegó a existir.
+function _aplicarReasignacionOrderNum(oldNum, newNum) {
+  const displayEl = document.getElementById('order-num-display');
+  if (displayEl && displayEl.textContent === String(oldNum)) displayEl.textContent = newNum;
+  if (window.currentOrderNum === oldNum) window.currentOrderNum = newNum;
+  if (window._lastOrderData && window._lastOrderData.num === oldNum) {
+    window._lastOrderData.num = newNum;
+    try { localStorage.setItem('dpf_active_order', JSON.stringify(window._lastOrderData)); } catch (e) {}
+  }
+  if (typeof _lastTicketData !== 'undefined' && _lastTicketData && _lastTicketData.orderNum === oldNum) {
+    _lastTicketData.orderNum = newNum;
+  }
+  if (window._selloEnCursoPorPedido && window._selloEnCursoPorPedido[oldNum]) {
+    window._selloEnCursoPorPedido[newNum] = window._selloEnCursoPorPedido[oldNum];
+    delete window._selloEnCursoPorPedido[oldNum];
+  }
+  const warning = document.getElementById('success-save-warning');
+  if (warning) {
+    warning.innerHTML = 'ℹ️ Tu número de pedido es <b>' + escapeHtml(String(newNum)) + '</b> (hubo una coincidencia rara al asignarlo) — usa este número al recogerlo.';
+    warning.style.display = 'block';
+  }
+  console.log('[orderNum] reasignado de ' + oldNum + ' a ' + newNum);
+}
 function _avisarClienteFalloGuardado(orderNum, motivoRechazo) {
   const successVisible = document.getElementById('success-screen')?.style.display === 'block';
   const mismoNum = document.getElementById('order-num-display')?.textContent === String(orderNum);

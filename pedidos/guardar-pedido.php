@@ -29,6 +29,24 @@
 //   → {"success":true}
 // ═══════════════════════════════════════════════════════════
 
+// Fija explícitamente la zona horaria del negocio para TODO el script —
+// antes solo dos sitios puntuales (fbAgregarActivityLog, el parseo de hora
+// del ticket en detectarPosibleDuplicado) la fijaban a mano con
+// `new DateTimeZone('Europe/Madrid')`, señal de que ya se sabía que no hay
+// que fiarse de la hora ambiente del servidor — pero el resto de fechas/
+// horas del archivo (comprobarTiendaAbierta() y, sobre todo, $todayKey =
+// date('Y-m-d'), la clave de fecha que usan slots/, stats/, tickets/ y
+// usedOrderNums/ en varias acciones) seguían usando date()/time() con la
+// zona horaria ambiente de PHP en el hosting, que no está garantizada en
+// ningún sitio del proyecto (no había ningún date_default_timezone_set).
+// Si el servidor no estuviera en Europe/Madrid, el horario configurado se
+// comparaba contra una hora desplazada, y — más grave todavía cerca de
+// medianoche — la propia CLAVE del día podía no coincidir con la que ya
+// usa el navegador (isOutsideHours()/isTodayOpen(), que si trabajan con la
+// hora local del cliente). Fijarlo aquí, una sola vez, corrige todo el
+// archivo a la vez sin tener que tocar cada sitio suelto.
+date_default_timezone_set('Europe/Madrid');
+
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -1243,18 +1261,32 @@ function podarReservasCaducadasSlot($databaseURL, $accessToken, $fecha, $slotTim
 // tocar el contador de slots/ (que ya refleja el hueco ocupado desde que
 // se reservó). No importa cuál de las entradas se borre exactamente: solo
 // hace falta que el número de reservas "podables" baje en una.
+// Devuelve true si encontró y consumió de verdad una reserva pendiente —
+// el camino normal, en el que slots/<fecha>/<turno> ya se incrementó al
+// llamar a la acción 'reservarSlot', antes de llegar aquí. Si devuelve
+// false, ninguna reserva pendiente cubre este pedido: el caso típico es
+// que 'reservarSlot' falló por red/timeout y el navegador, a propósito,
+// deja pasar el pedido igual (ver el comentario en incrementSlot(),
+// carrito-checkout.js — se prefiere arriesgar una sobreventa puntual a
+// bloquear un pedido legítimo por un fallo de conexión), o que la reserva
+// ya caducó y se podó (podarReservasCaducadasSlot) antes de que el
+// cliente llegara a confirmar. En los dos casos slots/ se quedaría sin
+// contar este pedido para siempre si no se hiciera nada más — el
+// llamador (guardado principal, más abajo) usa este resultado como señal
+// para incrementar slots/ de verdad, como red de seguridad final.
 function confirmarReservaSlot($databaseURL, $accessToken, $fecha, $slotTime) {
-    if (!$slotTime) return;
+    if (!$slotTime) return false;
     $path = 'slotReservas/' . $fecha . '/' . $slotTime;
     for ($intento = 0; $intento < 5; $intento++) {
         $leido = fbGetConEtag($databaseURL, $path, $accessToken);
         $reservas = is_array($leido['data']) ? $leido['data'] : [];
-        if (!$reservas) return; // nada que confirmar (ya se podó, o esta reserva es de otro proceso)
+        if (!$reservas) return false; // nada que confirmar (ya se podó, o nunca llegó a reservarse)
         $primeraClave = array_key_first($reservas);
         unset($reservas[$primeraClave]);
-        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $reservas ?: null, $leido['etag'])) return;
+        if (fbPutSiCoincide($databaseURL, $path, $accessToken, $reservas ?: null, $leido['etag'])) return true;
         usleep(rand(20000, 80000));
     }
+    return false;
 }
 
 // Libera YA una reserva de turno abandonada, en vez de esperar a que
@@ -1351,6 +1383,17 @@ try {
             'items' => is_array($ticket['items'] ?? null) ? $ticket['items'] : [],
             'time'  => $rHoraReal,
             'slot'  => $ticket['slotTime'] ?? null,
+            // El ticket original (tickets/<fecha>/<num>) sí guarda estos tres
+            // campos (ver $ticketData más abajo, en el guardado normal) —
+            // faltaban aquí, así que un pedido recuperado con "🔧 Reintentar
+            // guardado" perdía para siempre su prioridad de "En el local" en
+            // cocina, el aviso de comprobar carné de estudiante/jubilado (con
+            // el riesgo de aplicar ese descuento sin comprobarlo) y la
+            // elegibilidad de fidelización — y el ticket que se autoimprime
+            // desde stats/ tampoco llevaba esos avisos.
+            'esPedidoLocal' => $ticket['esPedidoLocal'] ?? false,
+            'esEstudianteJubilado' => $ticket['esEstudianteJubilado'] ?? false,
+            'fidelizacionElegible' => $ticket['fidelizacionElegible'] ?? false,
             'ts'    => $rTsReal,
         ];
         $rOk = guardarPedidoEnStats($databaseURL, $accessToken, $rFecha, $rNewOrder, $rTotal);
@@ -1483,21 +1526,33 @@ try {
         exit;
     }
 
-    if (($payload['action'] ?? '') === 'reservarNumeroPedido') {
-        $accessToken = obtenerTokenAcceso($rutaCredenciales);
-        $todayKey = date('Y-m-d');
-        $orderNumReservado = null;
+    // Reserva atómicamente un número de pedido nuevo en usedOrderNums/<fecha>
+    // — mismo mecanismo que usa la acción 'reservarNumeroPedido' de abajo,
+    // extraído aparte para poder reutilizarlo también cuando el guardado
+    // normal se encuentra con una colisión (ver el bloque "1. GUARDAR
+    // TICKET" más abajo: el navegador cae a un número aleatorio SIN
+    // garantía de unicidad si esta reserva atómica no respondió a tiempo
+    // — generateOrderNumber() en carrito-checkout.js — y ese número puede
+    // coincidir con un ticket real ya existente). Devuelve null si no se
+    // consigue tras varios intentos.
+    function dpf_reservarNuevoNumeroPedido($databaseURL, $accessToken, $todayKey) {
         for ($intento = 0; $intento < 50; $intento++) {
             $num = random_int(1000, 9999);
             $path = 'usedOrderNums/' . $todayKey . '/' . $num;
             $leido = fbGetConEtag($databaseURL, $path, $accessToken);
             if ($leido['data'] !== null) continue; // ya usado, probar otro
             if (fbPutSiCoincide($databaseURL, $path, $accessToken, true, $leido['etag'])) {
-                $orderNumReservado = 'T' . $num;
-                break;
+                return 'T' . $num;
             }
             // 412 (otro proceso lo reservó a la vez): probar con otro número
         }
+        return null;
+    }
+
+    if (($payload['action'] ?? '') === 'reservarNumeroPedido') {
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $todayKey = date('Y-m-d');
+        $orderNumReservado = dpf_reservarNuevoNumeroPedido($databaseURL, $accessToken, $todayKey);
         echo json_encode($orderNumReservado
             ? ['success' => true, 'orderNum' => $orderNumReservado]
             : ['success' => false, 'error' => 'No se pudo generar el número de pedido, inténtalo de nuevo']);
@@ -1830,6 +1885,7 @@ try {
     // exista ya, y la escritura es condicional (If-Match con el ETag de esa
     // misma lectura) para que dos peticiones casi simultáneas para el mismo
     // número no puedan pisarse entre sí tampoco.
+    $orderNumReasignado = null;
     $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
     $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
     if ($leidoTicket['data'] !== null) {
@@ -1846,9 +1902,34 @@ try {
             echo json_encode(['success' => true, 'yaGuardado' => true]);
             exit;
         }
-        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — número ' . $orderNum . ' ya usado por otro teléfono');
-        echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
-        exit;
+        // Colisión de verdad con OTRO pedido — el caso más habitual es el
+        // número de emergencia que genera el navegador si la reserva
+        // atómica (acción 'reservarNumeroPedido') no respondió a tiempo 3
+        // veces seguidas (ver generateOrderNumber(), carrito-checkout.js):
+        // ese número es un simple aleatorio SIN comprobar unicidad. Antes
+        // esto rechazaba el pedido entero sin más — justo cuando ese
+        // camino degradado es más probable (Firebase/red con problemas)
+        // también hay más clientes cayendo en él a la vez, y el cliente ya
+        // había verificado el SMS y reservado turno para nada. Ahora se
+        // intenta reasignar un número nuevo de verdad libre (mismo
+        // mecanismo atómico) y seguir con el guardado — el navegador
+        // corrige solo el número mostrado/guardado en cuanto llega la
+        // respuesta (ver 'orderNumReasignado' en la respuesta final, y
+        // _aplicarReasignacionOrderNum en carrito-checkout.js).
+        $orderNumReasignado = dpf_reservarNuevoNumeroPedido($databaseURL, $accessToken, $todayKey);
+        if (!$orderNumReasignado) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — número ' . $orderNum . ' ya usado por otro teléfono, y no se pudo reasignar uno nuevo');
+            echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
+            exit;
+        }
+        fbAgregarActivityLog($databaseURL, $accessToken, 'ℹ️ Pedido de ' . $name . ' (' . $phoneClean . ') — número ' . $orderNum . ' ya usado por otro teléfono, reasignado a ' . $orderNumReasignado . ' automáticamente');
+        $orderNum = $orderNumReasignado;
+        $ticketKey = normOrderKey($orderNum);
+        $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
+        // Releer para este nuevo path — $leidoTicket['etag'] de arriba
+        // pertenece al path VIEJO (el que estaba ocupado); la escritura
+        // condicional de más abajo necesita el etag del path nuevo.
+        $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
     }
 
     // ── VERIFICACIÓN SMS: SÍ bloquea el pedido (ver validarSmsToken arriba) ──
@@ -1917,7 +1998,37 @@ try {
         exit;
     }
     dpf_backup_pedido_local($ticketData);
-    if ($slotTime) confirmarReservaSlot($databaseURL, $accessToken, $todayKey, $slotTime);
+    if ($slotTime) {
+        $reservaConfirmada = confirmarReservaSlot($databaseURL, $accessToken, $todayKey, $slotTime);
+        if (!$reservaConfirmada) {
+            // Red de seguridad: este pedido va a guardarse igual — ya pasó
+            // SMS y el resto de comprobaciones, y rechazarlo aquí sería
+            // peor que contarlo con retraso — pero si no había ninguna
+            // reserva pendiente que confirmar, slots/ nunca llegó a contar
+            // este turno. Se incrementa aquí de verdad (mismo mecanismo
+            // atómico que la acción 'reservarSlot' más arriba) para que el
+            // aforo que ven los siguientes clientes sea el real. Si el
+            // turno ya está lleno para cuando se llega aquí, se
+            // incrementa igual (por encima del máximo) y se avisa en el
+            // registro de actividad — es una sobreventa real (no solo de
+            // contabilidad), así que la dueña necesita verlo, pero anular
+            // el pedido en este punto sería peor que dejarlo pasar.
+            $slotPath = 'slots/' . $todayKey . '/' . $slotTime;
+            $countSlotTrasIncrementar = null;
+            for ($intento = 0; $intento < 5; $intento++) {
+                $leidoSlot = fbGetConEtag($databaseURL, $slotPath, $accessToken);
+                $countSlot = is_numeric($leidoSlot['data']) ? (int)$leidoSlot['data'] : 0;
+                if (fbPutSiCoincide($databaseURL, $slotPath, $accessToken, $countSlot + 1, $leidoSlot['etag'])) {
+                    $countSlotTrasIncrementar = $countSlot + 1;
+                    break;
+                }
+                usleep(rand(20000, 80000));
+            }
+            if ($countSlotTrasIncrementar !== null && $countSlotTrasIncrementar > obtenerSlotMax($databaseURL, $accessToken)) {
+                fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Turno ' . $slotTime . ' posiblemente sobrevendido — el pedido ' . $orderNum . ' se contó tarde en slots/ (la reserva original falló por red/timeout) y ya superaba el aforo');
+            }
+        }
+    }
 
     // ── 2. ACTUALIZAR ESTADÍSTICAS DEL DÍA (lo que lee "Pedidos en vivo") ──
     // stats/<fecha> es UN único nodo compartido por todos los pedidos del
@@ -1990,7 +2101,7 @@ try {
         error_log('[guardar-pedido] No se pudo calcular el tiempo de espera estimado: ' . $e->getMessage());
     }
 
-    echo json_encode(['success' => true, 'pendientesHoy' => $tiempoEspera['pendientesHoy'], 'minutosEsperaExtra' => $tiempoEspera['minutosEsperaExtra']]);
+    echo json_encode(['success' => true, 'pendientesHoy' => $tiempoEspera['pendientesHoy'], 'minutosEsperaExtra' => $tiempoEspera['minutosEsperaExtra'], 'orderNumReasignado' => $orderNumReasignado]);
 } catch (Exception $e) {
     error_log('[guardar-pedido] Error: ' . $e->getMessage());
     http_response_code(500);
