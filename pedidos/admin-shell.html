@@ -464,6 +464,7 @@
           <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
           <div class="pt-papel-aviso" style="display:none;width:100%;order:98;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
           <div class="pt-desconexion-aviso" style="display:none;width:100%;order:97;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
+          <div class="pedido-perdido-aviso" data-show-display="block" style="display:none;width:100%;order:95;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#7a1a0e;cursor:pointer" onclick="showAdminSection('alertas', document.querySelector('[data-section=alertas]'))">⚠️ Hay pedidos que no aparecieron aquí — revisa la pestaña Alertas</div>
           <div class="pt-cola-contador" style="display:none;width:100%;order:96;background:#FDECD5;border:1.5px solid var(--amber);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
             <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
@@ -1681,6 +1682,7 @@
 
       <div class="pt-papel-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
       <div class="pt-desconexion-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
+      <div class="pedido-perdido-aviso" data-show-display="block" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#7a1a0e;cursor:pointer" onclick="showAdminSection('alertas', document.querySelector('[data-section=alertas]'))">⚠️ Hay pedidos que no aparecieron aquí — revisa la pestaña Alertas</div>
       <div class="pt-cola-contador" style="display:none;background:#FDECD5;border:1.5px solid var(--amber);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
         <span class="pt-conn-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>

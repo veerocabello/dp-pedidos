@@ -3437,7 +3437,7 @@ function initFirebaseListeners() {
       }
     } catch (e) {}
     window.fb_listenStats(todayKey, stats => {
-      var _document$getElementB11, _document$getElementB12, _document$getElementB13, _document$getElementB14;
+      var _document$getElementB11, _document$getElementB12;
       if (!stats) return;
       const newCount = stats.count || 0;
       // Update localStorage cache
@@ -3523,12 +3523,6 @@ function initFirebaseListeners() {
       // Refresh UI
       if ((_document$getElementB11 = document.getElementById('admin-pedidos')) !== null && _document$getElementB11 !== void 0 && _document$getElementB11.classList.contains('active')) loadLiveOrders();
       if ((_document$getElementB12 = document.getElementById('admin-stats')) !== null && _document$getElementB12 !== void 0 && _document$getElementB12.classList.contains('active')) loadDayStats();
-      if ((_document$getElementB13 = document.getElementById('admin-pedidos')) !== null && _document$getElementB13 !== void 0 && _document$getElementB13.classList.contains('active')) {
-        loadLiveOrders();
-      }
-      if ((_document$getElementB14 = document.getElementById('admin-stats')) !== null && _document$getElementB14 !== void 0 && _document$getElementB14.classList.contains('active')) {
-        loadDayStats();
-      }
       // Modo cocina (pantalla completa #kitchen-mode) — antes solo se
       // refrescaba con este listener si la pestaña "Pedidos en vivo" del
       // panel admin estaba abierta, así que un pedido nuevo o uno quitado
@@ -3607,6 +3601,26 @@ function initFirebaseListeners() {
     try {
       window._orderStatusCache = JSON.parse(localStorage.getItem(ORDER_STATUS_KEY) || '{}');
     } catch {}
+  }
+
+  // Estado "🖨️ Impreso" — solo lo consume el bundle admin (admin-accesos.js,
+  // _markAsImpreso/_printedOrders), que puede no estar cargado todavía
+  // cuando este listener se registra (se abre bajo demanda al abrir el
+  // panel) — de ahí el "typeof ... === 'function'" antes de usarlo, mismo
+  // patrón que el resto de listeners de este bloque.
+  if (window.fb_listenPrintedOrders) {
+    window.fb_listenPrintedOrders(printed => {
+      if (typeof _markAsImpreso !== 'function') return;
+      // El nodo se guarda con la clave normalizada (sin "T"/"#", igual que
+      // orderStatus/) — todo lo demás (_printedOrders, el botón
+      // data-print-num) usa el número tal cual ("T1234"), así que se
+      // reconstruye anteponiendo la "T" antes de comparar/marcar.
+      Object.keys(printed || {}).forEach(num => {
+        const orderNum = 'T' + num;
+        if (typeof _printedOrders !== 'undefined' && _printedOrders.has(orderNum)) return;
+        _markAsImpreso(orderNum, true);
+      });
+    });
   }
 
   // Load initial slots: use localStorage immediately, then update from Firebase

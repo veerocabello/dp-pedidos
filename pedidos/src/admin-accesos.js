@@ -1,5 +1,30 @@
 // ── IMPRIMIR TODOS + MARCA DE IMPRESO ────────────────────────────────────────
-const _printedOrders = new Set(); // IDs de pedidos ya impresos en esta sesión
+// Antes _printedOrders vivía solo en memoria de ESTE bundle cargado en ESTA
+// pestaña — recargar la página, o simplemente abrir una segunda pestaña/
+// tablet, hacía que todo volviera a mostrar "🖨️ Imprimir" aunque ya se
+// hubiera impreso, invitando a reimprimir de más. Ahora se guarda también
+// en localStorage (con fecha, para no arrastrar el número de un pedido de
+// ayer al de hoy con el mismo T####) y se sincroniza vía Firebase
+// (fb_setPrinted/fb_listenPrintedOrders, el listener vive en
+// nucleo-compartido.js porque este bundle admin puede no estar cargado
+// todavía cuando llega el primer snapshot) para que lo que imprime una
+// tablet lo vea también el resto.
+const PRINTED_ORDERS_KEY = 'dpf_printed_orders';
+const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
+(function _cargarPrintedOrdersLocal() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRINTED_ORDERS_KEY) || 'null');
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (saved && saved.date === todayKey && Array.isArray(saved.nums)) {
+      saved.nums.forEach(n => _printedOrders.add(n));
+    }
+  } catch (e) {}
+})();
+function _guardarPrintedOrdersLocal() {
+  try {
+    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: new Date().toISOString().slice(0, 10), nums: [..._printedOrders] }));
+  } catch (e) {}
+}
 
 async function imprimirTodosLosActivos() {
   const activos = (window._activosCache || []);
@@ -26,11 +51,26 @@ async function imprimirTodosLosActivos() {
   }
 }
 
-function _markAsImpreso(orderNum) {
+function _markAsImpreso(orderNum, _remoto) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  _guardarPrintedOrdersLocal();
+  // _remoto=true significa que esta marca ya viene de Firebase (otra
+  // tablet lo imprimió) — no hace falta volver a escribirlo allí.
+  if (!_remoto && window.fb_setPrinted) window.fb_setPrinted(orderNum).catch(() => {});
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Antes esto
+  // restaba 1 a mano de _alertPendingOrders, el contador suelto que ya se
+  // dejó de usar en pedidos-vivo-cocina.js (ver el comentario junto a
+  // _alertPendingOrderNumsSet ahí: un mismo pedido podía restar dos veces,
+  // o dos avisos casi seguidos podían pisarse el contador) — esta función
+  // se quedó sin actualizar en aquel cambio, así que reimprimir el MISMO
+  // pedido varias veces (el botón "🖨️ Impreso" se deja pulsable a
+  // propósito) seguía restando cada vez, pudiendo silenciar la alarma con
+  // pedidos reales aún sin atender. _marcarPedidoAtendido() usa el mismo
+  // Set por número de pedido que el resto de sitios que paran la alarma
+  // (setLiveStatus, markAllKitchenReady, cancelarPedidoAdmin) — no hace
+  // nada si ese pedido concreto ya no estaba pendiente, así que reimprimir
+  // de más deja de tener ningún efecto sobre el resto de la cola.
+  if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';

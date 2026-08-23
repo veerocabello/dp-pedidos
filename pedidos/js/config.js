@@ -179,6 +179,13 @@ function _initFirebase() {
   window.fb_loadTicketsByDate = async function(fecha) { var sn=await jget("tickets/"+fecha); return sn.exists()?sn.val():null; };
   window.fb_getOrderStatuses = async function() { var sn=await jget("orderStatus/"+tK()); return sn.exists()?sn.val():{}; };
   window.fb_listenOrderStatuses = function(cb) { return jlisten("orderStatus/"+tK(),function(sn){cb(sn.exists()?sn.val():{});}); };
+  // PEDIDOS YA IMPRESOS — nodo propio (no dentro de orderStatus, que guarda
+  // un string de estado por pedido, no un flag aparte) para que "🖨️
+  // Impreso" se sincronice entre pestañas/dispositivos igual que el resto
+  // del estado de cocina, en vez de vivir solo en memoria de cada tablet.
+  window.fb_setPrinted = async function(n) { await jset("printedOrders/"+tK()+"/"+n.replace("#","").replace("T",""),true); };
+  window.fb_getPrintedOrders = async function() { var sn=await jget("printedOrders/"+tK()); return sn.exists()?sn.val():{}; };
+  window.fb_listenPrintedOrders = function(cb) { return jlisten("printedOrders/"+tK(),function(sn){cb(sn.exists()?sn.val():{});}); };
   // OPEN
   window.fb_setOpen = async function(o) { await jset("config/open",o); };
   window.fb_listenOpen = function(cb) { return jlisten("config/open",function(sn){cb(sn.exists()?sn.val():true);}); };

@@ -693,11 +693,17 @@ function closePrintModal() {
 // de darse por vencido — un corte momentáneo de USB (la impresora a veces se
 // desconecta sola) ya no genera una alerta a la primera; solo si de verdad
 // fallan todos los intentos se avisa.
-function _imprimirConReintentos(ticketData, intentosRestantes, esperaMs) {
-  return imprimirTicketTermico(ticketData).catch(e => {
+function _imprimirConReintentos(ticketData, intentosRestantes, esperaMs, desdeCopia) {
+  return imprimirTicketTermico(ticketData, desdeCopia).catch(e => {
     if (intentosRestantes <= 1) throw e;
+    // Reanudar desde la copia que falló (e.copiaFallidaDesde, marcada por
+    // imprimirTicketTermico), no desde la 0 — si no, con más de 1 copia
+    // configurada, un corte a mitad de imprimir hacía que el reintento
+    // volviera a sacar por la impresora las copias anteriores que ya
+    // habían salido bien.
+    const siguienteDesde = typeof e.copiaFallidaDesde === 'number' ? e.copiaFallidaDesde : 0;
     return new Promise(resolve => setTimeout(resolve, esperaMs))
-      .then(() => _imprimirConReintentos(ticketData, intentosRestantes - 1, esperaMs));
+      .then(() => _imprimirConReintentos(ticketData, intentosRestantes - 1, esperaMs, siguienteDesde));
   });
 }
 function doPrint() {

@@ -566,6 +566,9 @@ const PT_BLE_SERVICIOS_CANDIDATOS = [
 
 let _ptBleDevice = null;
 let _ptBleCharacteristic = null;
+// Referencia estable al handler de 'gattserverdisconnected' — ver el
+// comentario junto a su addEventListener() más abajo (_ptBleConectarDispositivo).
+let _ptBleDisconnectHandler = null;
 
 async function _ptBleBuscarCaracteristicaEscritura(server) {
   for (const uuidServicio of PT_BLE_SERVICIOS_CANDIDATOS) {
@@ -605,11 +608,21 @@ async function _ptBleConectarDispositivo(device) {
   // impresora como lista.
   try { await _ptBlePulso(); } catch (e) {}
   await new Promise(r => setTimeout(r, 800));
-  device.addEventListener('gattserverdisconnected', () => {
+  // navigator.bluetooth.getDevices() (usado por _ptBleReconectar) devuelve
+  // el MISMO objeto BluetoothDevice en cada reconexión, no uno nuevo — sin
+  // quitar antes el listener de la conexión anterior, cada reconexión
+  // apilaba uno más sobre ese mismo objeto: un día con BLE inestable podía
+  // acumular decenas, y cada desconexión real disparaba _ptResetConexion()/
+  // _ptStatusUI(false)/_ptReconectar() una vez POR listener acumulado
+  // (mitigado por el candado _ptReconectando en _ptReconectar, pero trabajo
+  // redundante de todas formas).
+  if (_ptBleDisconnectHandler) device.removeEventListener('gattserverdisconnected', _ptBleDisconnectHandler);
+  _ptBleDisconnectHandler = () => {
     if (_ptTransporte === 'ble') _ptResetConexion();
     _ptStatusUI(false);
     _ptReconectar();
-  });
+  };
+  device.addEventListener('gattserverdisconnected', _ptBleDisconnectHandler);
   _ptStatusUI(true, '🟢 Impresora conectada (Bluetooth)');
 }
 
@@ -718,13 +731,22 @@ async function _ptBlePulso() {
 }
 
 // Imprime un ticket, repitiendo tantas copias como esté configurado.
-async function imprimirTicketTermico(ticket) {
+// desdeCopia (opcional) permite reanudar desde una copia concreta en vez de
+// desde la 0 — lo usa _imprimirConReintentos() (historial-export.js) para
+// que, si la copia N falla a mitad, el reintento del ticket entero no
+// vuelva a imprimir las copias 1..N-1 que ya habían salido bien.
+async function imprimirTicketTermico(ticket, desdeCopia) {
   const tc = getTicketConfig();
   const bytes = _ptBuildTicketBytes(ticket);
   _ptUltimoTicket = ticket;
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
-  for (let i = 0; i < copias; i++) {
-    await _ptEnviarBytes(bytes);
+  for (let i = desdeCopia || 0; i < copias; i++) {
+    try {
+      await _ptEnviarBytes(bytes);
+    } catch (e) {
+      e.copiaFallidaDesde = i;
+      throw e;
+    }
     _ptPapelRegistrarTicketImpreso();
     if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
   }

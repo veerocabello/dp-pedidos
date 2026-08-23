@@ -1294,6 +1294,20 @@ try {
             exit;
         }
         $rTotal = is_numeric($ticket['total'] ?? null) ? (float)$ticket['total'] : 0;
+        // El ticket original (tickets/<fecha>/<num>) sí guarda la hora real
+        // del pedido en 'time' (formato 'd/m/Y, H:i:s', puesto al guardarlo
+        // la primera vez) — antes esta recuperación ponía la hora/ts DEL
+        // REINTENTO en vez de la real, así que un pedido de hace rato podía
+        // salir marcado como "recién llegado" (is-new, ver refreshKitchenGrid
+        // en pedidos-vivo-cocina.js, que compara Date.now()-o.ts) y cocina
+        // lo preparaba fuera del orden real de llegada.
+        $rHoraReal = date('H:i'); // fallback si el parseo de abajo falla
+        $rTsReal = (int)(microtime(true) * 1000);
+        $rTicketFecha = DateTime::createFromFormat('d/m/Y, H:i:s', (string)($ticket['time'] ?? ''));
+        if ($rTicketFecha !== false) {
+            $rHoraReal = $rTicketFecha->format('H:i');
+            $rTsReal = $rTicketFecha->getTimestamp() * 1000;
+        }
         $rNewOrder = [
             'num'   => $ticket['orderNum'] ?? $rOrderNum,
             'name'  => $ticket['name'] ?? '',
@@ -1301,9 +1315,9 @@ try {
             'notes' => $ticket['notes'] ?? '',
             'total' => $rTotal,
             'items' => is_array($ticket['items'] ?? null) ? $ticket['items'] : [],
-            'time'  => date('H:i'),
+            'time'  => $rHoraReal,
             'slot'  => $ticket['slotTime'] ?? null,
-            'ts'    => (int)(microtime(true) * 1000),
+            'ts'    => $rTsReal,
         ];
         $rOk = guardarPedidoEnStats($databaseURL, $accessToken, $rFecha, $rNewOrder, $rTotal);
         if ($rOk) {

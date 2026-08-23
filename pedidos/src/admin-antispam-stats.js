@@ -230,6 +230,12 @@ async function cancelarPedidoAdmin(orderNum, phone) {
     alert('No se pudo cancelar el pedido ' + orderNum + ' en el servidor (revisa la conexión) — sigue activo, inténtalo de nuevo.');
     return;
   }
+  // Igual que marcar "Entregado"/"Listo" (ver setLiveStatus en
+  // pedidos-vivo-cocina.js), cancelar debe contar como "ya visto" para la
+  // alarma de "pedido nuevo" — si no, cancelar un pedido que aún no se
+  // había atendido dejaba la alarma sonando para siempre, sin nada
+  // pendiente real que la pare.
+  if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   logActivity("❌ Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function toggleForceSlots() {

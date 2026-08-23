@@ -1922,6 +1922,12 @@ async function cancelarPedidoAdmin(orderNum, phone) {
     alert('No se pudo cancelar el pedido ' + orderNum + ' en el servidor (revisa la conexión) — sigue activo, inténtalo de nuevo.');
     return;
   }
+  // Igual que marcar "Entregado"/"Listo" (ver setLiveStatus en
+  // pedidos-vivo-cocina.js), cancelar debe contar como "ya visto" para la
+  // alarma de "pedido nuevo" — si no, cancelar un pedido que aún no se
+  // había atendido dejaba la alarma sonando para siempre, sin nada
+  // pendiente real que la pare.
+  if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   logActivity("❌ Pedido ".concat(orderNum, " cancelado manualmente desde el panel"));
 }
 function toggleForceSlots() {
@@ -2546,7 +2552,32 @@ function orRenderEstado(oferta) {
 }
 
 // ── IMPRIMIR TODOS + MARCA DE IMPRESO ────────────────────────────────────────
-const _printedOrders = new Set(); // IDs de pedidos ya impresos en esta sesión
+// Antes _printedOrders vivía solo en memoria de ESTE bundle cargado en ESTA
+// pestaña — recargar la página, o simplemente abrir una segunda pestaña/
+// tablet, hacía que todo volviera a mostrar "🖨️ Imprimir" aunque ya se
+// hubiera impreso, invitando a reimprimir de más. Ahora se guarda también
+// en localStorage (con fecha, para no arrastrar el número de un pedido de
+// ayer al de hoy con el mismo T####) y se sincroniza vía Firebase
+// (fb_setPrinted/fb_listenPrintedOrders, el listener vive en
+// nucleo-compartido.js porque este bundle admin puede no estar cargado
+// todavía cuando llega el primer snapshot) para que lo que imprime una
+// tablet lo vea también el resto.
+const PRINTED_ORDERS_KEY = 'dpf_printed_orders';
+const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
+(function _cargarPrintedOrdersLocal() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRINTED_ORDERS_KEY) || 'null');
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (saved && saved.date === todayKey && Array.isArray(saved.nums)) {
+      saved.nums.forEach(n => _printedOrders.add(n));
+    }
+  } catch (e) {}
+})();
+function _guardarPrintedOrdersLocal() {
+  try {
+    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: new Date().toISOString().slice(0, 10), nums: [..._printedOrders] }));
+  } catch (e) {}
+}
 
 async function imprimirTodosLosActivos() {
   const activos = (window._activosCache || []);
@@ -2573,11 +2604,26 @@ async function imprimirTodosLosActivos() {
   }
 }
 
-function _markAsImpreso(orderNum) {
+function _markAsImpreso(orderNum, _remoto) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  _guardarPrintedOrdersLocal();
+  // _remoto=true significa que esta marca ya viene de Firebase (otra
+  // tablet lo imprimió) — no hace falta volver a escribirlo allí.
+  if (!_remoto && window.fb_setPrinted) window.fb_setPrinted(orderNum).catch(() => {});
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Antes esto
+  // restaba 1 a mano de _alertPendingOrders, el contador suelto que ya se
+  // dejó de usar en pedidos-vivo-cocina.js (ver el comentario junto a
+  // _alertPendingOrderNumsSet ahí: un mismo pedido podía restar dos veces,
+  // o dos avisos casi seguidos podían pisarse el contador) — esta función
+  // se quedó sin actualizar en aquel cambio, así que reimprimir el MISMO
+  // pedido varias veces (el botón "🖨️ Impreso" se deja pulsable a
+  // propósito) seguía restando cada vez, pudiendo silenciar la alarma con
+  // pedidos reales aún sin atender. _marcarPedidoAtendido() usa el mismo
+  // Set por número de pedido que el resto de sitios que paran la alarma
+  // (setLiveStatus, markAllKitchenReady, cancelarPedidoAdmin) — no hace
+  // nada si ese pedido concreto ya no estaba pendiente, así que reimprimir
+  // de más deja de tener ningún efecto sobre el resto de la cola.
+  if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';
@@ -5087,11 +5133,17 @@ function closePrintModal() {
 // de darse por vencido — un corte momentáneo de USB (la impresora a veces se
 // desconecta sola) ya no genera una alerta a la primera; solo si de verdad
 // fallan todos los intentos se avisa.
-function _imprimirConReintentos(ticketData, intentosRestantes, esperaMs) {
-  return imprimirTicketTermico(ticketData).catch(e => {
+function _imprimirConReintentos(ticketData, intentosRestantes, esperaMs, desdeCopia) {
+  return imprimirTicketTermico(ticketData, desdeCopia).catch(e => {
     if (intentosRestantes <= 1) throw e;
+    // Reanudar desde la copia que falló (e.copiaFallidaDesde, marcada por
+    // imprimirTicketTermico), no desde la 0 — si no, con más de 1 copia
+    // configurada, un corte a mitad de imprimir hacía que el reintento
+    // volviera a sacar por la impresora las copias anteriores que ya
+    // habían salido bien.
+    const siguienteDesde = typeof e.copiaFallidaDesde === 'number' ? e.copiaFallidaDesde : 0;
     return new Promise(resolve => setTimeout(resolve, esperaMs))
-      .then(() => _imprimirConReintentos(ticketData, intentosRestantes - 1, esperaMs));
+      .then(() => _imprimirConReintentos(ticketData, intentosRestantes - 1, esperaMs, siguienteDesde));
   });
 }
 function doPrint() {
@@ -5514,10 +5566,6 @@ function _renderLiveOrders(stats, todayKey) {
     return;
   }
   const activos = orders.filter(o => getOrderStatus(o.num) !== 'entregado' && getOrderStatus(o.num) !== 'listo' && getOrderStatus(o.num) !== 'cancelado');
-  if (!orders.length) {
-    container.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">Sin pedidos hoy</div>';
-    return;
-  }
 
   const nuevos = orders.filter(o => getOrderStatus(o.num) === 'nuevo');
   const enPrep = orders.filter(o => getOrderStatus(o.num) === 'recibido');
@@ -5823,8 +5871,16 @@ function refreshKitchenGrid() {
     const localBadgeK = o.esPedidoLocal ? '<span style="background:#166534;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🏪 EN EL LOCAL</span>' : '';
     const estudianteBadgeK = o.esEstudianteJubilado ? '<span style="background:#c2711a;color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;margin-left:6px">🪪 VERIFICAR CARNÉ</span>' : '';
     const cardStyleFinal = o.esPedidoLocal ? cardStyle + 'border-left:4px solid #166534;' : o.esEstudianteJubilado ? cardStyle + 'border-left:4px solid #c2711a;' : cardStyle;
-    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\',\'' + escapeAttr(o.phone||'') + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
-    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + estudianteBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
+    // Botón de (re)imprimir — Modo Cocina solo traía "Entregado"/"✕", así que
+    // si autoImprimir estaba desactivado o un ticket fallaba, quien
+    // trabajaba solo desde aquí no tenía forma de reimprimirlo sin salir al
+    // panel normal (donde este mismo botón ya existía, ver _buildCard más
+    // arriba). Mismo onclick que allí: imprime y, si el pedido seguía
+    // "nuevo", lo pasa a "recibido" — _markAsImpreso() ya se ocupa de
+    // marcarlo como visto para la alarma de "pedido nuevo".
+    const printBtnK = '<button data-num="' + escapeAttr(o.num) + '" data-name="' + escapeAttr(o.name) + '" data-time="' + escapeAttr(o.time) + '" data-total="' + parseFloat(o.total) + '" data-slot="' + escapeAttr(o.slot||'') + '" onclick="printOrderFromStats(this.dataset.num,this.dataset.name,this.dataset.time,this.dataset.total,this.dataset.slot);_markAsImpreso(this.dataset.num);if(getOrderStatus(this.dataset.num)===&quot;nuevo&quot;){setOrderStatus(this.dataset.num,&quot;recibido&quot;).catch(()=>{})}" style="width:52px;background:#3D1F0D;color:#F4C430;border:none;border-radius:10px;font-size:20px;cursor:pointer">🖨️</button>';
+    const btnsHtml = '<div style="display:flex;gap:8px;margin-top:4px">' + '<button onclick="setLiveStatus(\'' + escapeAttr(o.num) + '\',\'entregado\')" style="flex:1;padding:14px;background:#27855a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:900;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ Entregado</button>' + printBtnK + '<button onclick="cancelarPedidoAdmin(\'' + escapeAttr(o.num) + '\',\'' + escapeAttr(o.phone||'') + '\')" style="width:52px;background:#666;color:#e74c3c;border:none;border-radius:10px;font-size:22px;font-weight:900;cursor:pointer">✕</button>' + '</div>';
+    return '<div class="kitchen-card status-' + status + newClass + '" style="' + cardStyleFinal + '">' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' + '<div class="kitchen-card-num">' + escapeHtml(o.num) + (isUrgent ? ' 🔴' : '') + localBadgeK + estudianteBadgeK + '</div>' + (o.slot ? '<span style="background:#3D1F0D33;color:#3D1F0D;font-size:20px;font-weight:900;padding:5px 14px;border-radius:99px;border:1.5px solid #3D1F0D44">🕐 ' + escapeHtml(o.slot) + '</span>' : '') + '</div>' + '<div class="kitchen-card-name">' + escapeHtml(o.name) + '</div>' + '<div style="font-size:12px;color:' + timeColor + ';font-weight:700;margin-bottom:6px">' + (o.time ? 'Pedido: ' + escapeHtml(o.time) : '') + (slotLabel ? (o.time ? ' · ' : '') + escapeHtml(slotLabel) : '') + (isUrgent ? ' — URGENTE!' : '') + '</div>' + '<div style="border-top:1px solid #333;padding-top:8px;margin-top:2px;margin-bottom:4px">' + '<div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:6px">PRODUCTOS:</div>' + itemsHtml + '</div>' + '<div class="kitchen-status-btns">' + btnsHtml + '</div>' + '</div>';
   }).join('');
 }
 
@@ -6273,7 +6329,12 @@ function markAllKitchenReady() {
   // listener en tiempo real (fb_listenOrderStatuses) sobrescribe
   // window._orderStatusCache entero con lo que haya en Firebase, que nunca
   // se hab\u00eda enterado de este cambio.
-  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); });
+  // setOrderStatus() por sí sola NO toca el contador de la alarma de
+  // "pedido nuevo" (eso solo lo hace _marcarPedidoAtendido, ver
+  // setLiveStatus() más arriba) — sin esto, marcar todos como listos desde
+  // aquí dejaba la alarma sonando para siempre, sin ninguna forma de
+  // pararla salvo salir de Modo Cocina a otra pestaña del panel.
+  aCambiar.forEach(o => { setOrderStatus(o.num, 'listo'); _marcarPedidoAtendido(o.num); });
   refreshKitchenGrid();
   loadLiveOrders();
   logActivity("\u2705 ".concat(aCambiar.length, " pedido").concat(aCambiar.length !== 1 ? 's' : '', " marcado").concat(aCambiar.length !== 1 ? 's' : '', " como listo desde cocina"));
@@ -6863,6 +6924,9 @@ const PT_BLE_SERVICIOS_CANDIDATOS = [
 
 let _ptBleDevice = null;
 let _ptBleCharacteristic = null;
+// Referencia estable al handler de 'gattserverdisconnected' — ver el
+// comentario junto a su addEventListener() más abajo (_ptBleConectarDispositivo).
+let _ptBleDisconnectHandler = null;
 
 async function _ptBleBuscarCaracteristicaEscritura(server) {
   for (const uuidServicio of PT_BLE_SERVICIOS_CANDIDATOS) {
@@ -6902,11 +6966,21 @@ async function _ptBleConectarDispositivo(device) {
   // impresora como lista.
   try { await _ptBlePulso(); } catch (e) {}
   await new Promise(r => setTimeout(r, 800));
-  device.addEventListener('gattserverdisconnected', () => {
+  // navigator.bluetooth.getDevices() (usado por _ptBleReconectar) devuelve
+  // el MISMO objeto BluetoothDevice en cada reconexión, no uno nuevo — sin
+  // quitar antes el listener de la conexión anterior, cada reconexión
+  // apilaba uno más sobre ese mismo objeto: un día con BLE inestable podía
+  // acumular decenas, y cada desconexión real disparaba _ptResetConexion()/
+  // _ptStatusUI(false)/_ptReconectar() una vez POR listener acumulado
+  // (mitigado por el candado _ptReconectando en _ptReconectar, pero trabajo
+  // redundante de todas formas).
+  if (_ptBleDisconnectHandler) device.removeEventListener('gattserverdisconnected', _ptBleDisconnectHandler);
+  _ptBleDisconnectHandler = () => {
     if (_ptTransporte === 'ble') _ptResetConexion();
     _ptStatusUI(false);
     _ptReconectar();
-  });
+  };
+  device.addEventListener('gattserverdisconnected', _ptBleDisconnectHandler);
   _ptStatusUI(true, '🟢 Impresora conectada (Bluetooth)');
 }
 
@@ -7015,13 +7089,22 @@ async function _ptBlePulso() {
 }
 
 // Imprime un ticket, repitiendo tantas copias como esté configurado.
-async function imprimirTicketTermico(ticket) {
+// desdeCopia (opcional) permite reanudar desde una copia concreta en vez de
+// desde la 0 — lo usa _imprimirConReintentos() (historial-export.js) para
+// que, si la copia N falla a mitad, el reintento del ticket entero no
+// vuelva a imprimir las copias 1..N-1 que ya habían salido bien.
+async function imprimirTicketTermico(ticket, desdeCopia) {
   const tc = getTicketConfig();
   const bytes = _ptBuildTicketBytes(ticket);
   _ptUltimoTicket = ticket;
   const copias = Math.max(1, parseInt(tc.copias, 10) || 1);
-  for (let i = 0; i < copias; i++) {
-    await _ptEnviarBytes(bytes);
+  for (let i = desdeCopia || 0; i < copias; i++) {
+    try {
+      await _ptEnviarBytes(bytes);
+    } catch (e) {
+      e.copiaFallidaDesde = i;
+      throw e;
+    }
     _ptPapelRegistrarTicketImpreso();
     if (i < copias - 1) await new Promise(r => setTimeout(r, 300));
   }
