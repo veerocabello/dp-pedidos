@@ -5702,6 +5702,13 @@ function closeKitchenMode() {
   _soltarWakeLockCocina();
   // _adminLoggedIn permanece true — alertas siguen activas en cualquier pantalla
   document.getElementById('admin-overlay').style.display = '';
+  // Mientras se estaba en Modo Cocina, la pestaña "Pedidos en tiempo real"
+  // de detrás se quedó tal cual estaba al entrar — cocina refresca su
+  // propia cuadrícula sola cada 15s (refreshKitchenGrid), pero eso no
+  // repinta esta otra lista. Sin esto, al salir se veían pedidos nuevos o
+  // cambios de estado (marcado como listo/entregado desde otro
+  // dispositivo mientras tanto) solo cuando algo más disparara un refresco.
+  if (document.getElementById('admin-pedidos')?.classList.contains('active')) loadLiveOrders();
 }
 function updateKitchenClock() {
   const el = document.getElementById('kitchen-clock');
