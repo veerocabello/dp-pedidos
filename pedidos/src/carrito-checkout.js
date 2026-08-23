@@ -1242,6 +1242,9 @@ async function _submitOrderInner() {
     // servidor contra config/menu (corregirPreciosCatalogo en
     // guardar-pedido.php busca por nombre EXACTO del producto).
     if (c.cheddarCarne) extras.push({ name: c.cheddarCarne, price: 0 });
+    // Misma idea para la salsa elegida en Boniato Bacon — informativa,
+    // precio 0, para no romper la comprobación de precio del servidor.
+    if (c.boniatoSalsa) extras.push({ name: c.boniatoSalsa, price: 0 });
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;

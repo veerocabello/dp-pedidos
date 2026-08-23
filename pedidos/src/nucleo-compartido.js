@@ -355,11 +355,16 @@ function removeExtrasItem(key) {
 function duplicarExtrasItem(key) {
   const item = extrasCart[key];
   if (!item) return;
-  // Cheddar-Bacon usa su propio modal de elegir carne (openCheddarModal),
-  // no este — solo tiene 2 opciones sin más extras, así que reabrirlo
-  // limpio ya cubre el mismo caso de uso.
+  // Cheddar-Bacon y Boniato Bacon usan su propio modal de elegir carne/
+  // salsa (openCheddarModal/openBoniatoBaconModal), no este — solo tienen
+  // una elección sin más extras, así que reabrirlo limpio ya cubre el
+  // mismo caso de uso.
   if (item.cheddarCarne) {
     openCheddarModal();
+    return;
+  }
+  if (item.boniatoSalsa) {
+    openBoniatoBaconModal();
     return;
   }
   openExtrasModal(item.menuId);
@@ -464,6 +469,89 @@ function confirmCheddar() {
   }
   extrasCart[key].qty++;
   closeCheddarModal();
+  renderMenu();
+  renderCart();
+}
+
+// ══════════════════════════════════════════
+//  BONIATO BACON — SELECTOR DE SALSA (el cliente la añade al pedir)
+// ══════════════════════════════════════════
+// La carta prometía "Salsa a elegir" pero no existía ningún selector — el
+// click en "+" lo añadía directo con precio fijo, sin preguntar nunca la
+// salsa, así que cocina no tenía forma de saber cuál poner. Mismo patrón
+// que el selector de carne de Cheddar-Bacon (modal + extrasCart con un
+// campo informativo a precio 0), pero con las mismas salsas que ya ofrece
+// el personalizador (CUST_SAUCES, ver antifraude.js) en vez de una lista
+// aparte que pudiera desincronizarse de esa.
+const BONIATO_BACON_ID = 19;
+let _boniatoBaconSalsa = null;
+
+function openBoniatoBaconModal() {
+  _boniatoBaconSalsa = null;
+  const cont = document.getElementById('boniato-bacon-sauces');
+  if (cont) {
+    cont.innerHTML = (typeof CUST_SAUCES !== 'undefined' ? CUST_SAUCES : []).map(s => {
+      const optId = 'bb-opt-' + s.replace(/[^a-zA-Z0-9]/g, '_');
+      return '<label style="display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer;margin-bottom:8px" id="' + optId + '" onclick="selectBoniatoBaconSalsa(\'' + s.replace(/'/g, "&#39;") + '\')">'
+        + '<div id="bb-check-' + optId + '" style="width:22px;height:22px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;margin-right:10px;transition:all .15s"></div>'
+        + '<div style="font-weight:700;font-size:14px;color:#2A1506">' + s + '</div>'
+        + '</label>';
+    }).join('');
+  }
+  document.getElementById('boniato-bacon-error').style.display = 'none';
+  document.getElementById('boniato-bacon-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+function closeBoniatoBaconModal() {
+  document.getElementById('boniato-bacon-modal').style.display = 'none';
+  document.body.style.overflow = '';
+  _boniatoBaconSalsa = null;
+}
+function selectBoniatoBaconSalsa(salsa) {
+  _boniatoBaconSalsa = salsa;
+  document.getElementById('boniato-bacon-error').style.display = 'none';
+  (typeof CUST_SAUCES !== 'undefined' ? CUST_SAUCES : []).forEach(s => {
+    const optId = 'bb-opt-' + s.replace(/[^a-zA-Z0-9]/g, '_');
+    const label = document.getElementById(optId);
+    const check = document.getElementById('bb-check-' + optId);
+    const active = s === salsa;
+    if (label) {
+      label.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
+      label.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
+    }
+    if (check) {
+      check.style.background = active ? '#3D1F0D' : '#fff';
+      check.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
+      check.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
+    }
+  });
+}
+function confirmBoniatoBacon() {
+  if (isShopBlocked()) {
+    showClosedToast();
+    closeBoniatoBaconModal();
+    return;
+  }
+  if (!_boniatoBaconSalsa) {
+    document.getElementById('boniato-bacon-error').style.display = 'block';
+    return;
+  }
+  const item = MENU.find(m => m.id == BONIATO_BACON_ID);
+  if (!item) return;
+  const key = 'boniato-bacon:' + _boniatoBaconSalsa;
+  if (!extrasCart[key]) {
+    extrasCart[key] = {
+      menuId: BONIATO_BACON_ID,
+      qty: 0,
+      queso: false,
+      gratinado: false,
+      key,
+      basePrice: item.price,
+      boniatoSalsa: _boniatoBaconSalsa
+    };
+  }
+  extrasCart[key].qty++;
+  closeBoniatoBaconModal();
   renderMenu();
   renderCart();
 }
@@ -1072,7 +1160,7 @@ function renderMenu() {
   let lastCat = null;
   const html = filtered.map(item => {
     const isCustom = item.id === 15 || item.id === 16;
-    const isExtras = ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(item.id) || item.id === CHEDDAR_ID;
+    const isExtras = ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(item.id) || item.id === CHEDDAR_ID || item.id === BONIATO_BACON_ID;
     const qty = isCustom ? Object.values(custCart).filter(c => c.menuId === item.id).reduce((s,c) => s+c.qty, 0)
               : isExtras ? Object.values(extrasCart).filter(c => c.menuId === item.id).reduce((s,c) => s+c.qty, 0)
               : cart[item.id] || 0;

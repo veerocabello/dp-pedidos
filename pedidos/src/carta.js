@@ -705,6 +705,10 @@ function changeQty(id, delta) {
     openCheddarModal();
     return;
   }
+  if (id === BONIATO_BACON_ID && delta > 0) {
+    openBoniatoBaconModal();
+    return;
+  }
   if (ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(id) && delta > 0) {
     openExtrasModal(id);
     return;
@@ -733,7 +737,7 @@ function changeQty(id, delta) {
       }
       return;
     }
-    if (id === CHEDDAR_ID || (ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(id))) {
+    if (id === CHEDDAR_ID || id === BONIATO_BACON_ID || (ALL_EXTRAS_IDS && ALL_EXTRAS_IDS.has(id))) {
       const keys = Object.keys(extrasCart).filter(k => extrasCart[k].menuId === id && extrasCart[k].qty > 0);
       if (keys.length) {
         const k = keys[keys.length - 1];
@@ -1059,7 +1063,9 @@ function renderCart() {
     // llegaba a ningún sitio visible — ni el propio cliente podía
     // comprobar en su carrito qué carne había elegido, y cocina tenía que
     // adivinarla.
-    const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')') : _extItem.name;
+    const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')')
+      : c.boniatoSalsa ? (_extItem.name + ' (' + c.boniatoSalsa + ')')
+      : _extItem.name;
     const extras = [];
     if (c.queso) extras.push('+ Extra Queso +1,00€');
     (c.ingredientesExtra || []).forEach(ing => {

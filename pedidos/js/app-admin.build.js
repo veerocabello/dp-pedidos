@@ -2573,7 +2573,7 @@ function orPoblarSelectorProductos() {
   // extrasCart) y no pasan por el precio base de MENU al calcular el
   // carrito, así que un descuento aquí no llegaría a reflejarse en ellos.
   const productos = MENU.filter(function (i) {
-    return i.id !== 15 && i.id !== 16 && !(typeof ALL_EXTRAS_IDS !== 'undefined' && ALL_EXTRAS_IDS.has(i.id)) && !(typeof CHEDDAR_ID !== 'undefined' && i.id === CHEDDAR_ID);
+    return i.id !== 15 && i.id !== 16 && !(typeof ALL_EXTRAS_IDS !== 'undefined' && ALL_EXTRAS_IDS.has(i.id)) && !(typeof CHEDDAR_ID !== 'undefined' && i.id === CHEDDAR_ID) && !(typeof BONIATO_BACON_ID !== 'undefined' && i.id === BONIATO_BACON_ID);
   });
   // Agrupados por categoría (mismo orden en que aparecen en la carta), con
   // una casilla por producto — se puede marcar más de uno a la vez.

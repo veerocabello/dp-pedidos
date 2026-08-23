@@ -959,6 +959,22 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   </div>
 </div>
 
+<!-- BONIATO BACON — SELECTOR DE SALSA -->
+<div id="boniato-bacon-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:2600;background:rgba(61,31,13,0.65);padding:16px">
+  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:400px;padding:24px;position:relative;margin:auto;max-height:85vh;overflow-y:auto">
+    <button onclick="closeBoniatoBaconModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">&#x2715;</button>
+    <div style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:900;color:var(--brown);margin-bottom:4px">Boniato Bacon</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Salsa a elegir · bacon · queso mozzarella</div>
+    <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">&#x1F35B; Elige la salsa *</div>
+    <div id="boniato-bacon-sauces" style="display:flex;flex-direction:column;margin-bottom:20px"></div>
+    <div id="boniato-bacon-error" style="display:none;font-size:12px;color:var(--error);font-weight:600;margin-bottom:10px">&#x26A0;&#xFE0F; Elige la salsa para continuar</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:900;color:var(--amber-dark)">5,50 &#x20AC;</div>
+      <button onclick="confirmBoniatoBacon()" style="padding:12px 28px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;cursor:pointer" onmouseover="this.style.background='var(--amber-dark)'" onmouseout="this.style.background='var(--brown)'">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
 <!-- CUSTOMIZER MODAL -->
 <div id="customizer-modal" onclick="if(event.target===this)closeCustomizer()">
   <div class="customizer-box">
