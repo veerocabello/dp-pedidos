@@ -66,6 +66,19 @@ DirectoryIndex index.php index.html
     # terceros que cambie de dominio, una regla demasiado estricta para
     # una librería nueva, o un intento real de inyección, deja rastro en
     # csp-reports.log en vez de solo verse en la consola de quien lo sufre.
+    #
+    # 'unsafe-inline' en script-src (hallazgo de auditoría, Medio, revisado
+    # y ACEPTADO por ahora a propósito): protección de más para un futuro
+    # hipotético, no un agujero explotable hoy — toda la web usa
+    # onclick="..." directamente en el HTML (más de 500 en 25 archivos,
+    # muchos generados dinámicamente desde JS con el id/datos ya metidos
+    # dentro). Quitarlo exige sustituir TODOS esos manejadores por otro
+    # sistema (delegación de eventos + nonce por petición) sin poder
+    # probarlo en un navegador real conectado a Firebase antes de subirlo —
+    # riesgo real de romper algo en cocina/empleados/pedidos en silencio.
+    # Decisión de la dueña: dejarlo así por ahora, revisar en otro momento
+    # con tiempo y pruebas dedicadas, no metido en un lote junto a otros
+    # arreglos.
     Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com https://gc.zgo.at; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org https://dulcepatata.goatcounter.com; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'; report-uri /csp-report.php"
 </IfModule>
 

@@ -251,6 +251,18 @@ function fbGetConEtag($databaseURL, $path, $accessToken) {
         return strlen($header);
     });
     $response = curl_exec($ch);
+    // Antes un fallo de red/timeout aquí (curl_exec devuelve false) se
+    // trataba como si Firebase hubiera respondido "no hay nada" — con
+    // 'config/juegoActivo', eso hacía que una incidencia real de Firebase
+    // se presentara al cliente como "Este juego no está disponible ahora
+    // mismo" (mensaje que suena a que la dueña lo desactivó a propósito),
+    // en vez de un error de servidor reintentable. Lanzar aquí deja que el
+    // catch general de más abajo responda 'Error interno' (sí reintentable)
+    // en su lugar.
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer ' . $path . ' de Firebase');
+    }
     curl_close($ch);
     $data = json_decode($response, true);
     return ['data' => $data, 'etag' => $etag];

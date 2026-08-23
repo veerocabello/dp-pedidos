@@ -111,6 +111,17 @@ function fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $response = curl_exec($ch);
+    // Un fallo de red/timeout aquí (curl_exec devuelve false) antes se
+    // trataba igual que "el token no coincide" (json_decode(false) da
+    // null, is_string() falso, $val queda '') — un corte breve de Firebase
+    // consumía uno de los 5 intentos por IP de alguien con el enlace/PIN
+    // correcto. Lanzar aquí deja que el try/catch de quien llama (ya
+    // preparado para esto) responda 500 sin gastar el intento, en vez de
+    // dar por hecho que el secreto era incorrecto.
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer ' . $path . ' de Firebase');
+    }
     curl_close($ch);
     $val = json_decode($response, true);
     return is_string($val) ? $val : '';
@@ -124,6 +135,11 @@ function fbGetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $response = curl_exec($ch);
+    // Ver el comentario en fbGetStringConCuentaServicio — mismo motivo.
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer ' . $path . ' de Firebase');
+    }
     curl_close($ch);
     return json_decode($response, true);
 }

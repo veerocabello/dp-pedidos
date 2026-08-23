@@ -59,7 +59,14 @@ function dpf_menu_actual() {
         $valor = json_decode($respuesta, true);
         if (is_string($valor)) $valor = json_decode($valor, true);
         if (is_array($valor) && count($valor)) {
-            @file_put_contents($cacheFile, json_encode($valor));
+            // LOCK_EX — igual que el resto de ficheros de estado del
+            // proyecto (csp-reports.log, el log de pedidos no guardados en
+            // guardar-pedido.php): sin esto, dos visitas casi a la vez que
+            // refrescan la caché a la par podían intercalar sus escrituras
+            // y dejar el JSON a medias. Impacto ya era mínimo (json_decode
+            // de un JSON corrupto da null y esta función ya cae al menú por
+            // defecto), pero el lock lo evita directamente.
+            @file_put_contents($cacheFile, json_encode($valor), LOCK_EX);
             return $valor;
         }
     }
