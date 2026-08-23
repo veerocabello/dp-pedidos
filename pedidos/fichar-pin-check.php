@@ -102,29 +102,51 @@ if (!dpf_fichar_check_limit($ip_file, $max_ip, $window)) {
 // pre-apertura). Aquí solo cuentan los intentos que FALLAN (un PIN correcto
 // no gasta presupuesto) y con un límite mucho más estricto — 5 fallos cada
 // 15 minutos por conexión, que estira ese mismo ataque a más de 20 días.
-function dpf_fichar_pinfail_bajo_limite($file, $max, $window) {
-    $size = @filesize($file) ?: 0;
-    if ($size === 0) return true;
-    $raw = @file_get_contents($file);
-    $log = json_decode($raw, true) ?: [];
-    $now = time();
-    $log = array_filter($log, function ($ts) use ($now, $window) { return ($now - $ts) < $window; });
-    return count($log) < $max;
-}
-function dpf_fichar_pinfail_registrar($file, $window) {
+//
+// La comprobación y el registro del fallo se hacían por separado (mirar el
+// límite sin lock, y solo si el PIN resultaba incorrecto, registrar el
+// fallo bajo lock) — varias peticiones en paralelo podían mirar el límite
+// todas a la vez, verlo por debajo de 5, y fallar todas antes de que
+// ninguna llegara a registrar nada, triplicando (o más) el margen real por
+// encima de los 5 fallos previstos. Ahora dpf_fichar_pinfail_abrir()
+// reserva el lock exclusivo DESDE la comprobación, y se mantiene abierto
+// durante toda la comprobación del PIN (solo serializa peticiones de la
+// MISMA conexión — justo lo que hace falta para contar fallos de verdad) —
+// se libera con dpf_fichar_pinfail_registrar_y_cerrar() (PIN incorrecto,
+// añade el fallo) o dpf_fichar_pinfail_cerrar() (PIN correcto, no cuenta).
+function dpf_fichar_pinfail_abrir($file, $max, $window) {
     $fp = fopen($file, 'c+');
-    if ($fp === false) return;
-    if (!flock($fp, LOCK_EX)) { fclose($fp); return; }
+    if ($fp === false) return ['ok' => true, 'fp' => null, 'log' => []]; // no bloquear tráfico real por un fallo de disco
+    if (!flock($fp, LOCK_EX)) { fclose($fp); return ['ok' => true, 'fp' => null, 'log' => []]; }
     $now = time();
     $size = filesize($file) ?: 0;
     $raw = $size > 0 ? fread($fp, $size) : '';
     $log = json_decode($raw, true) ?: [];
     $log = array_values(array_filter($log, function ($ts) use ($now, $window) { return ($now - $ts) < $window; }));
-    $log[] = $now;
+    if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return ['ok' => false, 'fp' => null, 'log' => []];
+    }
+    return ['ok' => true, 'fp' => $fp, 'log' => $log];
+}
+// PIN incorrecto: añade el fallo y libera el lock. Devuelve el log
+// resultante (ya con el fallo nuevo) para que el llamador pueda contar
+// cuántos fallos van sin tener que releer el archivo aparte.
+function dpf_fichar_pinfail_registrar_y_cerrar($fp, $log, $file) {
+    if ($fp === null) return $log;
+    $log[] = time();
     ftruncate($fp, 0);
     rewind($fp);
     fwrite($fp, json_encode($log));
     fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return $log;
+}
+// PIN correcto: no cuenta como fallo, solo libera el lock.
+function dpf_fichar_pinfail_cerrar($fp) {
+    if ($fp === null) return;
     flock($fp, LOCK_UN);
     fclose($fp);
 }
@@ -176,6 +198,8 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
     $ch = curl_init('https://oauth2.googleapis.com/token');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
         'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -183,6 +207,9 @@ function obtenerTokenAcceso($rutaCredenciales) {
     ]));
     $response = curl_exec($ch);
     curl_close($ch);
+    if ($response === false) {
+        throw new Exception('Fallo de conexión al obtener el token de acceso');
+    }
     $data = json_decode($response, true);
     if (!isset($data['access_token'])) {
         throw new Exception('No se pudo obtener el token de acceso: ' . $response);
@@ -203,9 +230,23 @@ function obtenerTokenAcceso($rutaCredenciales) {
 function fbGetArrayString($databaseURL, $path, $accessToken) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $response = curl_exec($ch);
     curl_close($ch);
+    // Un corte de red aquí NO es lo mismo que "config/empleados está
+    // vacío" — antes se confundían, y en 'login' (más abajo) una lista de
+    // empleados vacía significa "ningún PIN puede ser correcto", así que
+    // un corte de Firebase se contaba como un PIN incorrecto real. Con el
+    // límite de 5 fallos/15min pensado para frenar fuerza bruta, bastaban
+    // 5 empleados fichando durante un corte breve para bloquear el
+    // fichaje de TODA la plantilla 15 minutos — y de paso disparaba el
+    // aviso de "🚨 varios PIN incorrectos" al admin como si fuera un
+    // ataque real.
+    if ($response === false) {
+        throw new Exception('Fallo de conexión al leer ' . $path . ' de Firebase');
+    }
     $raw = json_decode($response, true); // quita el primer nivel (respuesta de la REST API)
     if (!is_string($raw)) return [];
     $arr = json_decode($raw, true); // decodifica el string JSON de verdad
@@ -224,6 +265,8 @@ function fbGetArrayStringConEtag($databaseURL, $path, $accessToken) {
     $etag = null;
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
         if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
@@ -231,6 +274,9 @@ function fbGetArrayStringConEtag($databaseURL, $path, $accessToken) {
     });
     $response = curl_exec($ch);
     curl_close($ch);
+    if ($response === false) {
+        throw new Exception('Fallo de conexión al leer ' . $path . ' de Firebase');
+    }
     $raw = json_decode($response, true);
     $arr = is_string($raw) ? json_decode($raw, true) : null;
     return ['arr' => is_array($arr) ? $arr : [], 'etag' => $etag];
@@ -241,6 +287,8 @@ function fbGetArrayStringConEtag($databaseURL, $path, $accessToken) {
 function fbSetArrayStringSiCoincide($databaseURL, $path, $accessToken, $arr, $etag) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
     if ($etag) $headers[] = 'If-Match: ' . $etag;
@@ -331,6 +379,17 @@ function fbModificarFichajesSeguro($databaseURL, $accessToken, $mutator) {
 
 try {
     $raw = file_get_contents('php://input');
+    // A diferencia de otros endpoints ya corregidos, esta petición no tenía
+    // ningún límite de tamaño de cuerpo — cualquiera podía mandar varios MB
+    // por petición, gasto de CPU/memoria innecesario (aunque limitado por
+    // el límite de peticiones por IP de arriba). El límite es más generoso
+    // que csp-report.php porque "firma" lleva la firma manuscrita como PNG
+    // en base64 (canvas de 320×160 — de sobra con margen).
+    if (strlen($raw) > 204800) {
+        http_response_code(413);
+        echo json_encode(['success' => false, 'error' => 'Petición demasiado grande']);
+        exit;
+    }
     $payload = json_decode($raw, true);
     if (!$payload || !isset($payload['action'])) {
         http_response_code(400);
@@ -350,9 +409,17 @@ try {
         }
         $ch = curl_init($databaseURL . '/config/ficharToken.json');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 8);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
         $response = curl_exec($ch);
         curl_close($ch);
+        if ($response === false) {
+            // Un corte de red aquí NO significa "enlace inválido" — antes se
+            // confundían y el empleado veía "enlace no válido" en vez de un
+            // aviso de incidencia real.
+            throw new Exception('Fallo de conexión al comprobar el token de fichaje');
+        }
         $tokenReal = json_decode($response, true);
         // hash_equals (no ===) por consistencia con el resto de comparaciones
         // de secretos del fichero (verificarSessionToken más arriba) — mismo
@@ -365,13 +432,15 @@ try {
     if ($action === 'login') {
         $pinFailFile = $tmp_dir . '/dpf_fichar_pinfail_ip_' . md5($ip) . '.json';
         $pinFailWindow = 900; // 15 minutos
-        if (!dpf_fichar_pinfail_bajo_limite($pinFailFile, 5, $pinFailWindow)) {
+        $pinFailGate = dpf_fichar_pinfail_abrir($pinFailFile, 5, $pinFailWindow);
+        if (!$pinFailGate['ok']) {
             http_response_code(429);
             echo json_encode(['success' => false, 'error' => 'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.']);
             exit;
         }
         $pin = isset($payload['pin']) ? preg_replace('/[^0-9]/', '', (string)$payload['pin']) : '';
         if (strlen($pin) !== 4) {
+            dpf_fichar_pinfail_cerrar($pinFailGate['fp']); // formato inválido no cuenta como fallo, como antes
             echo json_encode(['success' => false, 'error' => 'PIN inválido']);
             exit;
         }
@@ -399,17 +468,18 @@ try {
             fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Dos o más empleados tienen el mismo PIN de fichaje — revísalo en el panel, alguien puede estar fichando a nombre de otro sin darse cuenta');
         }
         if (!$encontrado) {
-            dpf_fichar_pinfail_registrar($pinFailFile, $pinFailWindow);
             // Avisar a caja al tercer fallo seguido, sin esperar a que se
             // agote el límite del todo — así se puede revisar mientras pasa.
-            $fallosRaw = @file_get_contents($pinFailFile);
-            $fallos = $fallosRaw ? (json_decode($fallosRaw, true) ?: []) : [];
+            // $fallos ya es el log actualizado (con este fallo incluido),
+            // no hace falta releer el archivo aparte.
+            $fallos = dpf_fichar_pinfail_registrar_y_cerrar($pinFailGate['fp'], $pinFailGate['log'], $pinFailFile);
             if (count($fallos) === 3) {
                 fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Varios PIN de fichaje incorrectos seguidos desde la misma conexión — posible intento de adivinar un PIN');
             }
             echo json_encode(['success' => false, 'error' => 'PIN incorrecto']);
             exit;
         }
+        dpf_fichar_pinfail_cerrar($pinFailGate['fp']); // PIN correcto, no cuenta como fallo
         echo json_encode([
             'success'      => true,
             'empId'        => $encontrado['id'],
@@ -587,7 +657,11 @@ try {
             'horaReal' => $hora,
             'tipo'     => $tipo,
         ];
-        if (!empty($payload['firma'])) {
+        // A diferencia del resto de campos de este formulario (tipo, fecha,
+        // hora…), la firma no se normalizaba a texto antes de guardarla —
+        // si llegaba algo que no fuera texto plano (un array, un número),
+        // se colaba tal cual en el fichaje guardado.
+        if (!empty($payload['firma']) && is_string($payload['firma'])) {
             $nuevoFichaje['firma'] = $payload['firma'];
         }
 
