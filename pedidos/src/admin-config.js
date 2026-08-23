@@ -528,14 +528,15 @@ async function addProduct() {
   logActivity("➕ Producto nuevo: \"".concat(name, "\" — ").concat(price.toFixed(2), " €"));
 }
 
-// ── CONFIG (email/API keys de EmailJS) ──
+// ── CONFIG (email del local) — el envío de aviso por EmailJS que usaba
+// esto se quitó a petición de la dueña (plantilla caducada/borrada en
+// EmailJS, fallando en cada pedido; "Pedidos en vivo" + el panel ya avisan
+// de sobra sin depender de un tercero externo). Se deja el campo del email
+// del local por si sirve para algo más adelante, pero ya no dispara nada.
 function loadAdminConfig() {
   try {
     const c = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
     document.getElementById('cfg-email').value = c.store_email || CONFIG.store_email;
-    document.getElementById('cfg-pk').value = c.emailjs_public_key || CONFIG.emailjs_public_key;
-    document.getElementById('cfg-svc').value = c.emailjs_service_id || CONFIG.emailjs_service_id;
-    document.getElementById('cfg-tpl').value = c.emailjs_template_id || CONFIG.emailjs_template_id;
   } catch {}
   if (window.fb_loadConfig) {
     window.fb_loadConfig().then(c => {
@@ -544,9 +545,6 @@ function loadAdminConfig() {
       Object.assign(CONFIG, c);
       try {
         document.getElementById('cfg-email').value = c.store_email || CONFIG.store_email;
-        document.getElementById('cfg-pk').value = c.emailjs_public_key || CONFIG.emailjs_public_key;
-        document.getElementById('cfg-svc').value = c.emailjs_service_id || CONFIG.emailjs_service_id;
-        document.getElementById('cfg-tpl').value = c.emailjs_template_id || CONFIG.emailjs_template_id;
       } catch {}
     }).catch(() => {});
   }
@@ -558,9 +556,6 @@ function saveConfig() {
   let c = {};
   try { c = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}'); } catch {}
   c.store_email = document.getElementById('cfg-email').value.trim();
-  c.emailjs_public_key = document.getElementById('cfg-pk').value.trim();
-  c.emailjs_service_id = document.getElementById('cfg-svc').value.trim();
-  c.emailjs_template_id = document.getElementById('cfg-tpl').value.trim();
   localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
   Object.assign(CONFIG, c);
   if (window.fb_saveConfig) window.fb_saveConfig(c).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración general'); });

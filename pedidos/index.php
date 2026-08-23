@@ -1041,7 +1041,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">4. Conservación</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los pedidos se conservan mientras sea necesario para la gestión del negocio (atención de incidencias, fidelización, contabilidad) y no se eliminan de forma automática pasado un plazo fijo; puedes solicitar su supresión en cualquier momento (ver "Tus derechos" más abajo). Las copias de seguridad técnicas internas se conservan un máximo de 30 días, tras los cuales se eliminan automáticamente.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">5. Destinatarios</h3>
-    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE) y se envían al correo del local mediante <strong>EmailJS</strong>. Tu número de teléfono se envía también a <strong>Twilio</strong> (Twilio Inc., EEUU) para verificarlo por SMS al confirmar un pedido. Usamos <strong>GoatCounter</strong> para estadísticas de visitas de forma anónima (sin cookies de rastreo) y <strong>Sentry</strong> para detectar errores técnicos de la web (sin tu nombre ni tu teléfono asociados). No cedemos datos a terceros para fines comerciales.</p>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE). Tu número de teléfono se envía también a <strong>Twilio</strong> (Twilio Inc., EEUU) para verificarlo por SMS al confirmar un pedido. Usamos <strong>GoatCounter</strong> para estadísticas de visitas de forma anónima (sin cookies de rastreo) y <strong>Sentry</strong> para detectar errores técnicos de la web (sin tu nombre ni tu teléfono asociados). No cedemos datos a terceros para fines comerciales.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">6. Tus derechos</h3>
     <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición y portabilidad contactando por teléfono al <strong>604 82 31 80</strong>. También puedes reclamar ante la <a href="https://www.aepd.es" target="_blank" style="color:var(--brown);text-decoration:underline">Agencia Española de Protección de Datos (aepd.es)</a>.</p>
     <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">7. Almacenamiento local</h3>
@@ -1083,7 +1083,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787443449421" defer></script>
-<script src="js/app.js?v=1787445162520" defer></script>
+<script src="js/app.js?v=1787445906694" defer></script>
 <script src="js/auth.js?v=1787427300732" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript

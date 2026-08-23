@@ -3955,10 +3955,6 @@ scheduleSlotMidnightReset();
 //  CONFIGURACIÓN — rellena estos valores
 // ─────────────────────────────────────────
 const CONFIG = {
-  emailjs_public_key: "Euum_k_XJdrejjnKj",
-  // de emailjs.com
-  emailjs_service_id: "service_bil4ri5",
-  emailjs_template_id: "template_ee4f7sp",
   store_email: "dulcepatata.admin@gmail.com" // tu email de tienda
 };
 // ─────────────────────────────────────────
@@ -5812,71 +5808,6 @@ async function generateOrderNumber() {
   }
   return 'T' + (Math.floor(Math.random() * 9000) + 1000);
 }
-function buildTicketText(orderNum, name, phone, notes, slotTime, orderTotal, feeAmount, discountAmt, discountCode, fidelizacionDescuento, ofertaTotalAmt, ofertaTotalPct) {
-  const tc = getTicketConfig();
-  const lines = Object.entries(cart).map(_ref5 => {
-    let _ref6 = _slicedToArray(_ref5, 2),
-      id = _ref6[0],
-      qty = _ref6[1];
-    const item = MENU.find(m => m.id == id);
-    if (!item) {
-      console.error('buildTicketText: producto no encontrado id=' + id);
-      return '';
-    }
-    return "".concat(qty, "x ").concat(item.name, " \u2014 ").concat((_precioConOferta(item) * qty).toFixed(2), " \u20AC");
-  });
-  const custLines = Object.values(custCart).filter(c => c.qty > 0).map(c => {
-    const item = MENU.find(m => m.id == c.menuId);
-    if (!item) {
-      console.error('buildTicketText: producto custom no encontrado menuId=' + c.menuId);
-      return '';
-    }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
-    const extrasStr = [c.extraQueso ? 'Extra Queso' : '', c.extraGratinado ? 'Gratinado' : ''].filter(Boolean).join(' + ');
-    return c.qty + 'x ' + item.name + ' [' + details + (extrasStr ? ' + ' + extrasStr : '') + '] — ' + (unitPrice * c.qty).toFixed(2) + ' €';
-  });
-  const extLines2 = Object.values(extrasCart).filter(c => c.qty > 0).map(c => {
-    return "".concat(c.qty, "x ").concat(getExtrasItemLabel(c), " \u2014 ").concat((getExtrasItemPrice(c) * c.qty).toFixed(2), " \u20AC");
-  });
-  const promoLines2 = Object.values(promosCart).filter(c => c.qty > 0).map(c => {
-    const p = promosLoad().find(x => x.id === c.promoId);
-    if (!p) return '';
-    return "".concat(c.qty, "x \uD83D\uDD25 ").concat(p.nombre, " \u2014 ").concat((getPromoItemPrice(c) * c.qty).toFixed(2), " \u20AC");
-  }).filter(Boolean);
-  const allLines = [...lines, ...custLines, ...extLines2, ...promoLines2];
-  // El total final se recibe ya calculado desde submitOrder() (orderTotal)
-  // en vez de recalcularse aqu\u00ED desde cero \u2014 antes este texto sumaba solo
-  // los productos, sin aplicar gastos de gesti\u00F3n, c\u00F3digo de descuento ni
-  // premio de fidelizaci\u00F3n, as\u00ED que el "TOTAL:" del ticket enviado por
-  // email pod\u00EDa no coincidir con lo que de verdad se cobra.
-  const itemsSubtotal = Object.entries(cart).reduce((s, _ref7) => {
-    let _ref8 = _slicedToArray(_ref7, 2),
-      id = _ref8[0],
-      q = _ref8[1];
-    const it = MENU.find(m => m.id == id);
-    return s + (it ? _precioConOferta(it) * q : 0);
-  }, 0) + Object.values(custCart).filter(c => c.qty > 0).reduce((s, c) => {
-    const it = MENU.find(m => m.id == c.menuId);
-    if (!it) return s;
-    const up = it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
-    return s + up * c.qty;
-  }, 0) + Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0) + Object.values(promosCart).filter(c => c.qty > 0).reduce((s, c) => s + getPromoItemPrice(c) * c.qty, 0);
-  const total = typeof orderTotal === 'number' ? orderTotal : itemsSubtotal;
-  const extraLineas = [];
-  if (feeAmount > 0) extraLineas.push('Gastos de gesti\u00F3n: +' + feeAmount.toFixed(2) + ' \u20AC');
-  if (discountAmt > 0) extraLineas.push('Descuento' + (discountCode ? ' (' + discountCode + ')' : '') + ': -' + discountAmt.toFixed(2) + ' \u20AC');
-  if (ofertaTotalAmt > 0) extraLineas.push('Oferta rel\u00E1mpago (-' + ofertaTotalPct + '%): -' + ofertaTotalAmt.toFixed(2) + ' \u20AC');
-  if (fidelizacionDescuento > 0) extraLineas.push('Patata gratis (fidelizaci\u00F3n): -' + fidelizacionDescuento.toFixed(2) + ' \u20AC');
-  const extraLineasTxt = extraLineas.length ? extraLineas.join('\n') + '\n' : '';
-  const now = new Date().toLocaleString('es-ES');
-  const phoneCleanTxt = (phone || '').replace(/\D/g, '');
-  const avisoSelloTxt = (window._fidelizacionProximoSelloActivo && window._fidelizacionProximoSelloActivo === phoneCleanTxt)
-    ? "\n>>> 10\u00BA SELLO COMPLETADO. Avisar: premio disponible pr\u00F3ximo pedido <<<\n"
-    : "";
-  return "\n============================\n   ".concat(tc.nombre, "\n============================\nPEDIDO: ").concat(orderNum, "\nFecha: ").concat(now, "\n----------------------------\nCLIENTE: ").concat(name, "\n").concat(phone ? "Tel: " + phone : "", "\n----------------------------\nPRODUCTOS:\n").concat(allLines.join('\n'), "\n----------------------------\n").concat(extraLineasTxt, "TOTAL: ").concat(total.toFixed(2), " \u20AC\n  (").concat(tc.textoPago, ")\n----------------------------\n").concat(slotTime ? "RECOGIDA PATATA: " + slotTime + "h" : "", "\n").concat(notes ? "NOTAS: " + notes : "Sin notas", "\n").concat(avisoSelloTxt, "============================\n  ").trim();
-}
-
 // ══════════════════════════════════════════
 //  SISTEMA DE TURNOS DE RECOGIDA (DINÁMICO)
 // ══════════════════════════════════════════
@@ -6749,33 +6680,16 @@ async function _submitOrderInner() {
   _lastTicketData = ticketData;
   window._pendingTicketData = ticketData;
 
-  // Texto plano para el email (se mantiene igual)
-  const ticketText = buildTicketText(orderNum, name, phone, notes, selectedSlot, orderTotal, feeAmount, _discountAmt, (_activeDiscount ? _activeDiscount.code : null), _fidelizacionDescuento, _ofertaTotalAmt, _ofertaTotalPctSubmit);
   const btn = document.getElementById("submit-btn");
   btn.disabled = true;
   btn.textContent = "Enviando pedido…";
 
-  // ── Enviar por EmailJS ── (fallo no bloquea el pedido)
-  if (typeof emailjs !== "undefined") {
-    emailjs.init(CONFIG.emailjs_public_key);
-    try {
-      await emailjs.send(CONFIG.emailjs_service_id, CONFIG.emailjs_template_id, {
-        to_email: CONFIG.store_email,
-        order_num: orderNum,
-        customer: name,
-        phone: phone || "–",
-        notes: notes || "–",
-        ticket: ticketText,
-        pickup_time: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || "–"),
-        total: orderTotal.toFixed(2) + " €"
-      });
-    } catch (err) {
-      console.error("EmailJS error:", err);
-      logActivity("⚠️ Email de confirmación NO enviado — pedido " + orderNum + " — " + (err && err.text || err && err.message || "error desconocido"));
-    }
-  } else {
-    console.warn("EmailJS no cargado — email omitido");
-  }
+  // (Antes aquí se mandaba una copia del pedido al correo del local vía
+  // EmailJS, aparte del guardado real en Firebase — se quitó a petición de
+  // la dueña: la plantilla llevaba días caducada/borrada en EmailJS
+  // fallando en cada pedido, y "Pedidos en vivo" + el panel ya cubren de
+  // sobra el aviso de un pedido nuevo sin depender de un tercero externo.)
+
   // El uso del código de descuento se registra en el servidor al
   // finalizar el pedido (ver guardar-pedido.php) — incrementar
   // discounts/<code>/uses exige el UID de admin en las reglas, así que

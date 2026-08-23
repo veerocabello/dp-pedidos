@@ -1,24 +1,3 @@
-// ── Alerta de slot casi lleno ─────────────────────────────
-const _slotAlertSent = {};
-async function _checkSlotAlmostFull(slotTime, count, max) {
-  if (!slotTime || !max) return;
-  const pct = Math.round((count / max) * 100);
-  if (pct < 80) return;
-  const key = slotTime + '_' + count;
-  if (_slotAlertSent[key]) return;
-  _slotAlertSent[key] = true;
-  try {
-    if (typeof emailjs === 'undefined') return;
-    emailjs.init('Euum_k_XJdrejjnKj');
-    await emailjs.send('service_bil4ri5', 'template_ee4f7sp', {
-      slot:  slotTime,
-      count: count,
-      max:   max,
-      pct:   pct
-    });
-  } catch(e) {}
-}
-
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}

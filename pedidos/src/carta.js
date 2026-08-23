@@ -3,10 +3,6 @@
 //  CONFIGURACIÓN — rellena estos valores
 // ─────────────────────────────────────────
 const CONFIG = {
-  emailjs_public_key: "Euum_k_XJdrejjnKj",
-  // de emailjs.com
-  emailjs_service_id: "service_bil4ri5",
-  emailjs_template_id: "template_ee4f7sp",
   store_email: "dulcepatata.admin@gmail.com" // tu email de tienda
 };
 // ─────────────────────────────────────────
