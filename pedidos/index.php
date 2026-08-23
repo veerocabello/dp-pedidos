@@ -379,6 +379,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     <p id="allergen-hint">💡 Toca un icono de alérgeno para ver si se puede pedir sin él</p>
     <div id="promos-container"></div>
     <div class="menu-grid" id="menu-grid"><?= $dpf_menu_html ?></div>
+    <p id="menu-search-empty" style="display:none;text-align:center;color:var(--muted);font-size:13.5px;padding:20px 0">Sin resultados para tu búsqueda</p>
   </div>
 
   <!-- RIGHT: ORDER PANEL -->

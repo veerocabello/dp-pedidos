@@ -770,6 +770,16 @@ function confirmCustomizer() {
   const errEl = document.getElementById('cust-error');
   errEl.style.display = 'none';
 
+  // Antes solo se validaban máximos — se podía confirmar una Patata Al
+  // Gusto/Bomba completamente vacía (0 ingredientes y 0 salsas) al precio
+  // completo, sin aviso al cliente ni ninguna indicación útil para cocina
+  // de qué preparar.
+  if (custSelTotal() === 0) {
+    errEl.textContent = 'Elige al menos 1 salsa o ingrediente';
+    errEl.style.display = 'block';
+    return;
+  }
+
   // Validar máximos
   if (cfg.maxTotal !== null && custSelTotal() > cfg.maxTotal) {
     errEl.textContent = 'Máximo ' + cfg.maxTotal + ' ingredientes y/o salsas en total';

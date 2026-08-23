@@ -388,22 +388,6 @@ function getExtrasItemPrice(c) {
   (c.salsasExtra || []).forEach(() => { p += EXTRAS_SALSA_PRECIO; });
   return p;
 }
-function getExtrasItemLabel(c) {
-  const item = MENU.find(m => m.id == c.menuId);
-  if (!item) {
-    console.error('getExtrasItemLabel: producto no encontrado menuId=' + c.menuId);
-    return 'Producto desconocido';
-  }
-  if (c.cheddarCarne) return item.name + ' (' + c.cheddarCarne + ')';
-  const extras = [];
-  if (c.queso) extras.push('Extra Queso');
-  (c.ingredientesExtra || []).forEach(ing => extras.push('Extra ' + ing));
-  (c.salsasExtra || []).forEach(salsa => extras.push('Extra salsa ' + salsa));
-  // El gratinado siempre va el último, sea cual sea el resto de extras.
-  if (c.gratinado) extras.push('Gratinado');
-  return item.name + (extras.length ? ' + ' + extras.join(' + ') : '');
-}
-
 // ══════════════════════════════════════════
 //  PATATA CHEDDAR-BACON — SELECTOR DE CARNE (el cliente la añade al pedir)
 // ══════════════════════════════════════════
@@ -509,11 +493,36 @@ function initCatBlocks() {
 // ── Búsqueda en la carta ──────────────────────────────────
 function filterMenuBySearch(query) {
   const q = query.toLowerCase().trim();
-  document.querySelectorAll('.item-card').forEach(card => {
+  const grid = document.getElementById('menu-grid');
+  if (!grid) return;
+  let anyVisible = false;
+  grid.querySelectorAll('.item-card').forEach(card => {
     const name = (card.dataset.name || '').toLowerCase();
     const desc = (card.dataset.desc || '').toLowerCase();
-    card.style.display = (!q || name.includes(q) || desc.includes(q)) ? '' : 'none';
+    const match = !q || name.includes(q) || desc.includes(q);
+    card.style.display = match ? '' : 'none';
+    if (match) anyVisible = true;
   });
+  // Antes solo se ocultaban/mostraban las tarjetas de producto — los
+  // separadores de categoría y las subcabeceras de Tartas (que no son
+  // .item-card) se quedaban siempre visibles, así que una búsqueda que
+  // solo encajaba con uno o dos productos dejaba cabeceras "colgadas" sin
+  // ningún producto debajo. Cada separador se oculta ahora si ninguna de
+  // las tarjetas que le siguen (hasta el próximo separador) tiene match.
+  grid.querySelectorAll('.menu-cat-sep, .tarta-subsep').forEach(sep => {
+    let node = sep.nextElementSibling;
+    let hasMatch = false;
+    while (node && !node.classList.contains('menu-cat-sep') && !node.classList.contains('tarta-subsep')) {
+      if (node.classList.contains('item-card') && node.style.display !== 'none') { hasMatch = true; break; }
+      node = node.nextElementSibling;
+    }
+    sep.style.display = hasMatch ? '' : 'none';
+  });
+  // Aviso de "sin resultados" — antes, una búsqueda sin ninguna coincidencia
+  // dejaba la carta completamente vacía (o solo con cabeceras sin nada
+  // debajo) sin ningún mensaje, dando la impresión de que se había roto.
+  const emptyEl = document.getElementById('menu-search-empty');
+  if (emptyEl) emptyEl.style.display = (q && !anyVisible) ? 'block' : 'none';
 }
 
 // ── CÓDIGOS DE DESCUENTO — el cliente los aplica al pedir. Crear/borrar
@@ -1218,7 +1227,12 @@ function promoAbrirModal(p) {
   var checkStyle = 'width:22px;height:22px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:transparent;font-weight:700;transition:all .15s';
 
   function makeCheck(id, emoji, label, sub) {
-    return '<label style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:8px" onclick="var c=document.getElementById(\''+id+'\');var on=c.dataset.on===\'1\';c.dataset.on=on?\'0\':\'1\';c.style.background=on?\'#fff\':\'#3D1F0D\';c.style.borderColor=on?\'#F5E6C8\':\'#3D1F0D\';c.style.color=on?\'transparent\':\'#fff\';">' +
+    // El clic también recalcula el precio del botón de confirmar (ver
+    // _promoRecalcularPrecioModal más abajo) — antes ese texto se fijaba
+    // una sola vez al abrir el modal y nunca se actualizaba, así que
+    // marcar queso/gratinado no cambiaba lo que el cliente veía en el
+    // botón, aunque el carrito sí cobrara bien al confirmar de verdad.
+    return '<label style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 14px;cursor:pointer;margin-bottom:8px" onclick="var c=document.getElementById(\''+id+'\');var on=c.dataset.on===\'1\';c.dataset.on=on?\'0\':\'1\';c.style.background=on?\'#fff\':\'#3D1F0D\';c.style.borderColor=on?\'#F5E6C8\':\'#3D1F0D\';c.style.color=on?\'transparent\':\'#fff\';_promoRecalcularPrecioModal('+JSON.stringify(parseFloat(p.precio))+');">' +
       '<div><div style="font-weight:700;font-size:14px;color:#2A1506">' + emoji + ' ' + label + '</div><div style="font-size:12px;color:#8A6A4E">' + sub + '</div></div>' +
       '<div id="' + id + '" data-on="0" style="' + checkStyle + '">✓</div>' +
       '</label>';
@@ -1264,6 +1278,7 @@ function promoAbrirModal(p) {
   extrasEl.innerHTML = extrasHtml;
 
   var confirmBtn = document.createElement('button');
+  confirmBtn.id = 'promo-confirm-btn';
   confirmBtn.textContent = 'Añadir al carrito · ' + parseFloat(p.precio).toFixed(2).replace('.', ',') + ' €';
   confirmBtn.style.cssText = 'width:100%;padding:14px;background:#3D1F0D;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif;margin-top:16px';
   confirmBtn.onclick = function() { promoConfirmarModal(p.id); };
@@ -1274,6 +1289,17 @@ function promoAbrirModal(p) {
   inner.appendChild(confirmBtn);
   div.appendChild(inner);
   document.body.appendChild(div);
+}
+// Recalcula el texto del botón "Añadir al carrito · X €" del modal de
+// promo a partir de si queso/gratinado están marcados ahora mismo — misma
+// fórmula que getPromoItemPrice() usa para cobrar de verdad.
+function _promoRecalcularPrecioModal(precioBase) {
+  var btn = document.getElementById('promo-confirm-btn');
+  if (!btn) return;
+  var quesoEl = document.getElementById('pcheck-queso');
+  var gratinadoEl = document.getElementById('pcheck-gratinado');
+  var total = precioBase + (quesoEl && quesoEl.dataset.on === '1' ? 1.00 : 0) + (gratinadoEl && gratinadoEl.dataset.on === '1' ? 0.50 : 0);
+  btn.textContent = 'Añadir al carrito · ' + total.toFixed(2).replace('.', ',') + ' €';
 }
 
 function promoConfirmarModal(id) {
@@ -1309,20 +1335,34 @@ function promoConfirmarModal(id) {
 }
 
 function promoAddToCart(p, opts) {
-  var key = 'promo_' + p.id + '_' + Date.now();
-  promosCart[key] = {
-    promoId: p.id,
-    qty: 1,
-    extraQueso: !!opts.extraQueso,
-    extraGratinado: !!opts.extraGratinado,
-    nota: opts.nota || '',
-    key: key
-  };
-  // (No existe ninguna función updateCart() en todo el proyecto — la
-  // llamada que había aquí antes de renderCart() lanzaba un
-  // ReferenceError y cortaba la ejecución antes de llegar siquiera al
-  // showToast de abajo, así que "+ Añadir" nunca llegaba a confirmar nada
-  // visible, aparte de escribir en el window.promoCart muerto.)
+  // Igual que confirmExtras/confirmCheddar/confirmCustomizer: comprobar
+  // justo antes de meterla de verdad en el carrito (no al abrir el modal,
+  // por si la tienda cierra mientras el cliente lo tiene abierto) — antes
+  // ninguna de las tres funciones de promos lo comprobaba, así que se
+  // podía rellenar todo el formulario con una promo antes de enterarse de
+  // que estaba cerrado.
+  if (isShopBlocked()) {
+    showClosedToast();
+    return;
+  }
+  // Misma fusión por "huella" que ya usan extrasCart/custCart (ver
+  // confirmExtras más arriba) — antes cada click en "+ Añadir" creaba una
+  // línea nueva con clave Date.now() (siempre distinta), así que añadir la
+  // misma promo con las mismas opciones varias veces mostraba varias
+  // tarjetas "x1" en vez de una sola con la cantidad sumada.
+  var fingerprint = (opts.extraQueso ? 'Q' : '') + (opts.extraGratinado ? 'G' : '') + (opts.nota ? 'N' + opts.nota : '') || 'BASE';
+  var key = 'promo_' + p.id + ':' + fingerprint;
+  if (!promosCart[key]) {
+    promosCart[key] = {
+      promoId: p.id,
+      qty: 0,
+      extraQueso: !!opts.extraQueso,
+      extraGratinado: !!opts.extraGratinado,
+      nota: opts.nota || '',
+      key: key
+    };
+  }
+  promosCart[key].qty++;
   renderCart();
   showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
 }
@@ -3855,6 +3895,12 @@ function _aplicarMenuDesdeFirebase(data) {
   // a la vez se pisen el trabajo — mismo patrón que ya se usa para stock).
   window._menuSyncedSnapshot = JSON.parse(JSON.stringify(MENU));
   renderMenu();
+  // Antes solo se repintaba la carta — si un cliente tenía en el carrito
+  // un producto al que le acaban de cambiar el precio o marcar agotado
+  // desde el panel, el carrito/cajón seguía mostrando el precio y la
+  // disponibilidad viejos hasta que algo más forzara un repintado. Mismo
+  // patrón que ya usa _actualizarOfertaRelampago() para la oferta relámpago.
+  if (typeof renderCart === 'function') renderCart();
 }
 
 let _lastKnownOrderCount = null;
