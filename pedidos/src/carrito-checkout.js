@@ -908,7 +908,7 @@ async function _submitOrderInner() {
     showClosedToast();
     return;
   }
-  const name = document.getElementById("customer-name").value.trim();
+  let name = document.getElementById("customer-name").value.trim();
   if (!name) {
     _alertaConFoco("Por favor escribe tu nombre", "customer-name");
     return;
@@ -923,8 +923,8 @@ async function _submitOrderInner() {
   }
 
   // Validar teléfono
-  const phone = document.getElementById("customer-phone").value.trim();
-  const phoneClean = phone.replace(/[\s\-().+]/g, '');
+  let phone = document.getElementById("customer-phone").value.trim();
+  let phoneClean = phone.replace(/[\s\-().+]/g, '');
   if (!phone) {
     _alertaConFoco("Por favor escribe tu teléfono", "customer-phone");
     return;
@@ -1094,6 +1094,52 @@ async function _submitOrderInner() {
   const _horaTiendaAsignadaSubmit = _enTiendaSubmit && typeof _asignarHoraTiendaQR === 'function'
     ? await _asignarHoraTiendaQR()
     : null;
+  // Helper compartido para abortar limpio tras las esperas de red de más
+  // arriba (lista negra, cooldown, reserva de turno, número de pedido) —
+  // si hubo turno, se libera de verdad en el servidor en vez de dejarlo
+  // "fantasma" ocupando aforo hasta que caduque solo a los 12 minutos.
+  const _abortarTrasEsperas = async msg => {
+    if (needsSlot && selectedSlot && typeof _fetchConTimeout === 'function') {
+      try {
+        await _fetchConTimeout('guardar-pedido.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: selectedSlot })
+        }, 6000);
+      } catch (e) {}
+    }
+    try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
+    showAlert(msg);
+  };
+  // Repetir la comprobación de "carrito vacío" de más arriba — entre pulsar
+  // "Confirmar" y aquí han pasado esas mismas peticiones de red seguidas,
+  // varios segundos en el peor caso, y nada ha impedido seguir tocando el
+  // menú mientras tanto. Sin este segundo control, un carrito vaciado en
+  // ese rato podía enviarse igual — turno ya reservado — con 0 productos
+  // de comida, solo la línea de gastos de gestión.
+  if (Object.keys(cart).length === 0 && Object.values(custCart).filter(c => c.qty > 0).length === 0 && Object.values(extrasCart).filter(c => c.qty > 0).length === 0 && Object.values(promosCart).filter(c => c.qty > 0).length === 0) {
+    await _abortarTrasEsperas('Tu carrito se ha quedado vacío mientras se comprobaban tus datos. Añade algo antes de confirmar.');
+    if (typeof openCartDrawer === 'function') openCartDrawer();
+    return;
+  }
+  // Releer nombre/teléfono aquí, no solo al principio de la función —
+  // antes se capturaban una sola vez, antes de estas mismas esperas de
+  // red. Si el cliente corregía una errata justo después de pulsar
+  // "Confirmar" (sin ningún indicador de "procesando" hasta el final), el
+  // pedido se enviaba igual con el valor viejo, no con el que veía
+  // corregido en pantalla. Se revalida con el mismo criterio básico de
+  // más arriba — si ahora mismo no pasa, mejor pedir que confirme de
+  // nuevo que enviar un dato a medio corregir.
+  const _nameFresco = document.getElementById("customer-name").value.trim();
+  const _phoneFresco = document.getElementById("customer-phone").value.trim();
+  const _phoneCleanFresco = _phoneFresco.replace(/[\s\-().+]/g, '');
+  if (!_nameFresco || _nameFresco.length > 60 || !/^\d{9}$/.test(_phoneCleanFresco) || !/^[6789]/.test(_phoneCleanFresco)) {
+    await _abortarTrasEsperas('Revisa tu nombre y teléfono antes de confirmar — vuelve a pulsar "Confirmar pedido" cuando estén listos.');
+    return;
+  }
+  name = _nameFresco;
+  phone = _phoneFresco;
+  phoneClean = _phoneCleanFresco;
   const regularTotal = Object.entries(cart).reduce((s, _ref9) => {
     let _ref0 = _slicedToArray(_ref9, 2),
       id = _ref0[0],
@@ -1113,7 +1159,15 @@ async function _submitOrderInner() {
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
   const promoTotal = Object.values(promosCart).filter(c => c.qty > 0).reduce((s, c) => s + getPromoItemPrice(c) * c.qty, 0);
   const subTotal = regularTotal + custTotal + extTotal + promoTotal;
-  const _sinGastosPorCodigoLocalSubmit = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
+  // Misma variable ya evaluada más arriba (_enTiendaSubmit, antes de
+  // reservar el turno) — antes se volvía a llamar aquí a _modoLocalActivo()
+  // por su cuenta, separada por las esperas de reservar turno y generar
+  // número de pedido. Si el cliente activaba el código "pedido desde el
+  // local" justo en ese hueco, needsSlot ya se había decidido con el valor
+  // viejo (turno reservado de verdad) pero los gastos de gestión se exonerarían
+  // con el valor nuevo — un ticket con turno asignado Y exonerado como
+  // pedido de mostrador a la vez, dos cosas que no deberían coexistir.
+  const _sinGastosPorCodigoLocalSubmit = _enTiendaSubmit;
   const feeLabel = getFeeLabel();
   const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
   // Ver comentario largo en carta.js/renderCart(): el código local exime
@@ -1494,7 +1548,13 @@ async function _submitOrderInner() {
     }
   } else {
     showAlert('No se pudo enviar el código de verificación por SMS (' + (smsError || 'error desconocido') + '). Inténtalo de nuevo en unos minutos.');
-    window._pendingOrderData = null;
+    // Antes solo se borraba window._pendingOrderData sin liberar el turno
+    // ya reservado de verdad en el servidor (más arriba, antes de intentar
+    // el SMS) — quedaba "fantasma" ocupando aforo real hasta que caducara
+    // solo a los 12 minutos. smsCancelVerify() ya tiene ese mecanismo (el
+    // mismo que usa el cliente al cancelar el modal a mano): libera el
+    // turno en el servidor (best-effort) y limpia la marca local.
+    smsCancelVerify();
   }
   return; // El pedido se finaliza desde smsVerifyCode()
 }
