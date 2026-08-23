@@ -670,6 +670,65 @@ let _pp2DeleteSel = new Set();
 let _pp2CurrentItem = null;
 let _pp2SearchQuery = '';
 
+// ── Guardado con merge real (evita que dos dispositivos editando pedidos a
+// proveedores casi a la vez se pisen el cambio entero) — antes cada
+// pp2Save*() hacía fb_savePP2() = un jset()/set() directo con la copia
+// local completa de ese nodo, sin transacción. Con el auto-guardado cada
+// 10s mientras el overlay está abierto (ver openPedidosProvOverlay) la
+// ventana de colisión era aún mayor: si dos personas tenían el overlay
+// abierto a la vez, el último guardado ganaba entero, borrando en silencio
+// los cambios del otro. Mismo patrón ya usado en saveStockData()
+// (stock-empleados.js) y saveMenu() (admin-config.js): se compara contra
+// la última copia sincronizada de ESTE dispositivo para saber qué se tocó
+// aquí de verdad, y solo eso se impone sobre lo que haya en el servidor —
+// el resto se respeta tal cual esté (puede traer cambios de otro
+// dispositivo). window._pp2SyncedSnapshots se resetea al abrir el overlay
+// (con lo que ya hay en localStorage) y se actualiza tras cada guardado y
+// cada vez que llega un cambio remoto — ver openPedidosProvOverlay().
+window._pp2SyncedSnapshots = window._pp2SyncedSnapshots || {};
+function pp2TransactSave(key, data) {
+  if (!window.fb_transactJsonString) {
+    if (window.fb_savePP2) window.fb_savePP2(key, data).catch(() => {});
+    return;
+  }
+  const antes = window._pp2SyncedSnapshots[key];
+  window.fb_transactJsonString('pp2/' + key, function (remoto) {
+    // Objetos planos por id (state/provHab/minimos): se fusiona clave a
+    // clave — cada itemId que este dispositivo tocó desde la última
+    // sincronización gana con su valor local, el resto se respeta tal
+    // cual esté en el servidor.
+    if (data && typeof data === 'object' && !Array.isArray(data) && (!remoto || (typeof remoto === 'object' && !Array.isArray(remoto)))) {
+      const base = remoto || {};
+      const antesObj = antes || {};
+      const claves = new Set([...Object.keys(base), ...Object.keys(data)]);
+      const merged = {};
+      claves.forEach(function (k) {
+        const valorLocal = data[k] !== undefined ? data[k] : null;
+        const valorAntes = antesObj[k] !== undefined ? antesObj[k] : null;
+        const tocadaAqui = JSON.stringify(valorLocal) !== JSON.stringify(valorAntes);
+        merged[k] = (tocadaAqui || !(k in base)) ? data[k] : base[k];
+      });
+      return merged;
+    }
+    // Arrays (custom/hidden/historial/customProvs/order): no hay una
+    // "clave" con la que fusionar campo a campo, así que se aplica la
+    // regla más simple que sigue siendo real — si este dispositivo no ha
+    // cambiado nada desde la última sincronización, se respeta lo que
+    // haya en el servidor (puede venir de otro dispositivo); si sí ha
+    // cambiado, gana el cambio local.
+    if (remoto !== undefined && remoto !== null && JSON.stringify(data) === JSON.stringify(antes)) {
+      return remoto;
+    }
+    return data;
+  }).then(function (finalData) {
+    if (finalData !== null && finalData !== undefined) {
+      window._pp2SyncedSnapshots[key] = finalData;
+    }
+  }).catch(function (e) {
+    console.warn('[proveedores] fallo al guardar "' + key + '" en Firebase:', e);
+  });
+}
+
 // ── helpers ──────────────────────────────────────────────
 function pp2LoadState() {
   try {
@@ -682,7 +741,7 @@ function pp2SaveState(s) {
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
   if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
-    window.fb_savePP2('state', s).catch(() => {});
+    pp2TransactSave('state', s);
   }
 }
 function pp2LoadCustom() {
@@ -694,7 +753,7 @@ function pp2LoadCustom() {
 }
 function pp2SaveCustom(a) {
   localStorage.setItem(PP2_CUSTOM_KEY, JSON.stringify(a));
-  if (window.fb_savePP2) window.fb_savePP2('custom', a).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('custom', a);
 }
 function pp2LoadHidden() {
   try {
@@ -705,7 +764,7 @@ function pp2LoadHidden() {
 }
 function pp2SaveHidden(a) {
   localStorage.setItem(PP2_HIDDEN_KEY, JSON.stringify(a));
-  if (window.fb_savePP2) window.fb_savePP2('hidden', a).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('hidden', a);
 }
 function pp2LoadProvHab() {
   try {
@@ -716,7 +775,7 @@ function pp2LoadProvHab() {
 }
 function pp2SaveProvHab(o) {
   localStorage.setItem(PP2_PROV_HAB_KEY, JSON.stringify(o));
-  if (window.fb_savePP2) window.fb_savePP2('provHab', o).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('provHab', o);
 }
 function pp2LoadMinimos() {
   try {
@@ -727,7 +786,7 @@ function pp2LoadMinimos() {
 }
 function pp2SaveMinimos(o) {
   localStorage.setItem(PP2_MIN_KEY, JSON.stringify(o));
-  if (window.fb_savePP2) window.fb_savePP2('minimos', o).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('minimos', o);
 }
 function pp2LoadHistorial() {
   try {
@@ -745,7 +804,7 @@ function pp2LoadCustomProvs() {
 }
 function pp2SaveCustomProvs(a) {
   localStorage.setItem(PP2_CUSTOM_PROV_KEY, JSON.stringify(a));
-  if (window.fb_savePP2) window.fb_savePP2('customProvs', a).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('customProvs', a);
 }
 function pp2AllProvs() {
   const custom = pp2LoadCustomProvs();
@@ -798,12 +857,26 @@ function openPedidosProvOverlay() {
   _ov.style.display = 'block';
   _ov.scrollTop = 0;
   document.body.style.overflow = 'hidden';
+  // Punto de partida para el merge de pp2TransactSave — lo que este
+  // dispositivo ya tiene sincronizado al abrir el overlay. Se actualiza de
+  // nuevo en cuanto llega el primer snapshot real del listener (más abajo)
+  // y tras cada guardado, así que esto es solo el arranque.
+  window._pp2SyncedSnapshots = {
+    state: pp2LoadState(),
+    custom: pp2LoadCustom(),
+    hidden: pp2LoadHidden(),
+    provHab: pp2LoadProvHab(),
+    minimos: pp2LoadMinimos(),
+    historial: pp2LoadHistorial(),
+    customProvs: pp2LoadCustomProvs(),
+    order: pp2LoadOrder()
+  };
   // Guardado automático en Firebase cada 10 segundos
   if (window._pp2AutoSaveInterval) clearInterval(window._pp2AutoSaveInterval);
   window._pp2AutoSaveInterval = setInterval(function() {
     const s = pp2LoadState();
     if (Object.keys(s).length > 0 && window.fb_savePP2) {
-      window.fb_savePP2('state', s).catch(() => {});
+      pp2TransactSave('state', s);
     }
   }, 10000);
   document.getElementById('pp2-delete-confirm-area').style.display = 'none';
@@ -846,7 +919,12 @@ function openPedidosProvOverlay() {
           window._pp2Unsubscribe();
         } catch (e) {}
       }
-      window._pp2Unsubscribe = window.fb_listenPP2(() => {
+      window._pp2Unsubscribe = window.fb_listenPP2((d) => {
+        // Refrescar el punto de partida del merge con lo último que
+        // confirma el servidor — así el próximo guardado de este
+        // dispositivo compara contra datos reales, no contra lo que había
+        // al abrir el overlay hace rato.
+        if (d && typeof d === 'object') Object.assign(window._pp2SyncedSnapshots, d);
         if (document.getElementById('pedidos-prov-overlay').style.display !== 'none') {
           if (window._pp2LocalWrite && Date.now() - window._pp2LocalWrite < 2000) return;
           clearTimeout(window._pp2FirebaseRenderTO);
@@ -1306,19 +1384,38 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
-  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  hist.push({
-    fecha,
-    nota
-  }); // más antiguo primero, más reciente al final
+  const entrada = { fecha, nota };
+  const hist = pp2LoadHistorial();
+  hist.push(entrada); // más antiguo primero, más reciente al final
   if (hist.length > 50) hist.shift(); // máximo 50 entradas
   localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
-  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
+  // El historial es un log — no vale el merge genérico de pp2TransactSave
+  // (que solo sabe "gana el local o gana el remoto entero"): si dos
+  // dispositivos guardan un pedido casi a la vez, con eso solo se quedaría
+  // la entrada del que escriba último, perdiendo en silencio la del otro.
+  // Aquí se añade la entrada nueva DENTRO de la propia transacción, sobre
+  // el array más reciente que tenga el servidor en cada reintento — así
+  // ambas entradas quedan, sea cual sea el orden real de guardado.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('pp2/historial', function (remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : [];
+      arr.push(entrada);
+      if (arr.length > 50) arr.shift();
+      return arr;
+    }).then(function (finalData) {
+      if (finalData) {
+        window._pp2SyncedSnapshots.historial = finalData;
+        localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(finalData));
+      }
+    }).catch(function (e) { console.warn('[proveedores] fallo al guardar "historial" en Firebase:', e); });
+  } else if (window.fb_savePP2) {
+    window.fb_savePP2('historial', hist).catch(() => {});
+  }
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();
@@ -1544,7 +1641,7 @@ function pp2LoadOrder() {
 }
 function pp2SaveOrder(ids) {
   localStorage.setItem(PP2_ORDER_KEY, JSON.stringify(ids));
-  if (window.fb_savePP2) window.fb_savePP2('order', ids).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('order', ids);
 }
 
 // Returns all items in persisted order, patching in any new items at the end

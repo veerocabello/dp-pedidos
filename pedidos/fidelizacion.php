@@ -173,6 +173,8 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
     $ch = curl_init('https://oauth2.googleapis.com/token');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
         'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -203,12 +205,29 @@ function fbGetClienteConEtag($databaseURL, $telefono, $accessToken) {
     $etag = null;
     $ch = curl_init($databaseURL . '/fidelizacion/' . $telefono . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
         if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
         return strlen($header);
     });
     $response = curl_exec($ch);
+    // Antes un fallo de red/timeout aquí (curl_exec devuelve false) se
+    // trataba exactamente igual que "cliente nuevo, sin sellos todavía"
+    // (misma salida: cliente=null, etag=null) — con $etag=null,
+    // fbSetClienteSiCoincide() de abajo omite el If-Match y hace un PUT
+    // INCONDICIONAL, así que registrarSello() reconstruía al cliente desde
+    // cero (sellos=0, premiosPendientes=0, historialSellos=[]) y lo
+    // sobrescribía de verdad — un simple corte de red durante un pedido
+    // normal podía borrar los sellos/premios reales de un cliente
+    // existente. Lanzar aquí deja que el catch general de más abajo
+    // responda "Error interno" (reintentable) en vez de tratarlo como un
+    // cliente que nunca ha pedido.
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer fidelizacion/' . $telefono . ' de Firebase');
+    }
     curl_close($ch);
     $raw = json_decode($response, true);
     $cliente = is_string($raw) ? json_decode($raw, true) : null;
@@ -220,6 +239,8 @@ function fbGetClienteConEtag($databaseURL, $telefono, $accessToken) {
 function fbSetClienteSiCoincide($databaseURL, $telefono, $accessToken, $cliente, $etag) {
     $ch = curl_init($databaseURL . '/fidelizacion/' . $telefono . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
     if ($etag) $headers[] = 'If-Match: ' . $etag;
@@ -238,12 +259,22 @@ function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
     $etag = null;
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
         if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
         return strlen($header);
     });
     $response = curl_exec($ch);
+    // Mismo motivo que fbGetClienteConEtag: un fallo de red no debe
+    // confundirse con "nodo vacío" — aquí lo escribe registrarActivityLog
+    // en el "Registro de actividad" del panel, con un PUT incondicional si
+    // $etag sale null.
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer ' . $path . ' de Firebase');
+    }
     curl_close($ch);
     $raw = json_decode($response, true);
     $arr = is_string($raw) ? json_decode($raw, true) : null;
@@ -252,6 +283,8 @@ function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
 function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
     if ($etag) $headers[] = 'If-Match: ' . $etag;
@@ -279,6 +312,8 @@ function ticketValidoParaSello($databaseURL, $accessToken, $orderNum, $telefono)
     $ticketKey = normOrderKey($orderNum);
     $ch = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $response = curl_exec($ch);
     curl_close($ch);
@@ -653,6 +688,8 @@ try {
         $ticketKey = normOrderKey($orderNum);
         $ch = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 8);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
         $response = curl_exec($ch);
         curl_close($ch);
