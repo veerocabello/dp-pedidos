@@ -343,6 +343,31 @@ function removeExtrasItem(key) {
   renderMenu();
   renderCart();
 }
+// Igual que duplicarCustItem() (antifraude.js) pero para una patata normal
+// con extras de pago (Philadelphia, Carbonara, Carnívora...) — antes solo
+// existía el botón de quitar en esta línea del carrito, así que pedir una
+// segunda parecida pero no idéntica obligaba a rehacer todo el
+// personalizador desde cero. No toca la línea original: se reabre el
+// modal con las mismas casillas ya activadas (reutilizando toggleExtra/
+// toggleExtraIng/toggleExtraSalsa, que ya se encargan de la UI y del
+// precio) — si el cliente confirma sin cambiar nada, se suma 1 a esa misma
+// línea, igual que pedir dos iguales.
+function duplicarExtrasItem(key) {
+  const item = extrasCart[key];
+  if (!item) return;
+  // Cheddar-Bacon usa su propio modal de elegir carne (openCheddarModal),
+  // no este — solo tiene 2 opciones sin más extras, así que reabrirlo
+  // limpio ya cubre el mismo caso de uso.
+  if (item.cheddarCarne) {
+    openCheddarModal();
+    return;
+  }
+  openExtrasModal(item.menuId);
+  if (item.queso) toggleExtra('queso');
+  if (item.gratinado) toggleExtra('gratinado');
+  (item.ingredientesExtra || []).forEach(function (ing) { toggleExtraIng(ing); });
+  (item.salsasExtra || []).forEach(function (salsa) { toggleExtraSalsa(salsa); });
+}
 // Antes usaba siempre c.basePrice, fijado UNA sola vez al añadir el
 // producto al carrito (confirmExtras()/confirmCheddar()) — a diferencia de
 // `cart` (precio en vivo vía _precioConOferta) y `custCart` (recalcula

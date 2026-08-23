@@ -1075,7 +1075,7 @@ function renderCart() {
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="duplicarExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Duplicar para pedir otra con distintos extras" style="color:#8A6A4E">&#128203;</button>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const promoLinesHtml = promoLines.map(c => {
     const p = promosLoad().find(x => x.id === c.promoId);

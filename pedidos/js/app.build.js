@@ -343,6 +343,31 @@ function removeExtrasItem(key) {
   renderMenu();
   renderCart();
 }
+// Igual que duplicarCustItem() (antifraude.js) pero para una patata normal
+// con extras de pago (Philadelphia, Carbonara, Carnívora...) — antes solo
+// existía el botón de quitar en esta línea del carrito, así que pedir una
+// segunda parecida pero no idéntica obligaba a rehacer todo el
+// personalizador desde cero. No toca la línea original: se reabre el
+// modal con las mismas casillas ya activadas (reutilizando toggleExtra/
+// toggleExtraIng/toggleExtraSalsa, que ya se encargan de la UI y del
+// precio) — si el cliente confirma sin cambiar nada, se suma 1 a esa misma
+// línea, igual que pedir dos iguales.
+function duplicarExtrasItem(key) {
+  const item = extrasCart[key];
+  if (!item) return;
+  // Cheddar-Bacon usa su propio modal de elegir carne (openCheddarModal),
+  // no este — solo tiene 2 opciones sin más extras, así que reabrirlo
+  // limpio ya cubre el mismo caso de uso.
+  if (item.cheddarCarne) {
+    openCheddarModal();
+    return;
+  }
+  openExtrasModal(item.menuId);
+  if (item.queso) toggleExtra('queso');
+  if (item.gratinado) toggleExtra('gratinado');
+  (item.ingredientesExtra || []).forEach(function (ing) { toggleExtraIng(ing); });
+  (item.salsasExtra || []).forEach(function (salsa) { toggleExtraSalsa(salsa); });
+}
 // Antes usaba siempre c.basePrice, fijado UNA sola vez al añadir el
 // producto al carrito (confirmExtras()/confirmCheddar()) — a diferencia de
 // `cart` (precio en vivo vía _precioConOferta) y `custCart` (recalcula
@@ -5002,7 +5027,7 @@ function renderCart() {
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="duplicarExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Duplicar para pedir otra con distintos extras" style="color:#8A6A4E">&#128203;</button>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const promoLinesHtml = promoLines.map(c => {
     const p = promosLoad().find(x => x.id === c.promoId);
@@ -6553,7 +6578,18 @@ async function _submitOrderInner() {
       name: item.name,
       qty: c.qty,
       subtotal: unitPrice * c.qty,
-      extras
+      extras,
+      // menuId/saucesCount/ingredientsCount: para que el servidor pueda
+      // comprobar los límites del personalizador (Al Gusto: 1 salsa + 6
+      // ingredientes · Bomba: 9 entre salsas e ingredientes) sin tener que
+      // parsear las etiquetas de texto de "extras" — ver
+      // corregirLimitesPersonalizador() en guardar-pedido.php. Antes esos
+      // límites solo se comprobaban en el navegador (updateCustProgress),
+      // así que saltándose la web se podía forjar un pedido con más
+      // ingredientes/salsas de los permitidos pagando el mismo precio fijo.
+      menuId: c.menuId,
+      saucesCount: c.sauces.length,
+      ingredientsCount: c.ingredients.length
     };
   }).filter(Boolean);
   // Cada patata con extras (queso/gratinado/ingredientes) se desglosa en
@@ -6975,7 +7011,7 @@ async function _finalizarPedido() {
     });
   }
 
-  await showSuccess(orderNum, slotTime);
+  await showSuccess(orderNum, slotTime, discountCode);
   // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
   // guardar-pedido.php al guardar el pedido — hacerlo también aquí
   // contaría cada pedido dos veces.
@@ -7124,7 +7160,7 @@ function loadModifyWindowInput() {
 // igual que loadDayStats/resetSlots/confirmClearDay/resetDayStats/
 // cancelarPedidoAdmin (panel de estadísticas del día) y
 // toggleForceSlots/updateForceSlotsBtn (ajuste de "forzar turnos").
-async function showSuccess(orderNum, slotTime) {
+async function showSuccess(orderNum, slotTime, discountCode) {
   // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
   // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
   // que rompía el resaltado de campos con error en submitOrderFromDrawer).
@@ -7146,6 +7182,21 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
   window.currentOrderName = document.getElementById('customer-name') ? document.getElementById('customer-name').value.trim() : '';
+  // El botón "💬 Compartir por WhatsApp" (index.php) llama a
+  // shareOrderWhatsApp(currentOrderNum,...,currentOrderItems,currentOrderTotal)
+  // — currentOrderItems/currentOrderTotal nunca se llegaron a exponer aquí
+  // (solo los otros tres), así que ese botón lanzaba un ReferenceError sin
+  // llegar a abrir WhatsApp. shareOrderWhatsApp espera cada item con
+  // {qty,name,price}, así que se mapea desde _lastTicketData.items (que
+  // trae {name,qty,subtotal,...}) — y se dejan fuera los gastos de gestión
+  // y las líneas de descuento (isFee / subtotal negativo), que no son
+  // "productos" y solo añadirían ruido a un mensaje pensado para
+  // compartir con un amigo lo que se ha pedido.
+  window.currentOrderItems = (_lastTicketData && Array.isArray(_lastTicketData.items))
+    ? _lastTicketData.items.filter(function (it) { return !it.isFee && it.subtotal > 0; })
+      .map(function (it) { return { qty: it.qty, name: it.name, price: it.subtotal }; })
+    : [];
+  window.currentOrderTotal = _lastTicketData ? _lastTicketData.total : 0;
   const orderTotal = _lastTicketData ? _lastTicketData.total : 0;
   const name = document.getElementById("customer-name").value.trim();
   const phone = document.getElementById("customer-phone").value.replace(/[\s\-().+]/g, '').trim();
@@ -7166,6 +7217,14 @@ async function showSuccess(orderNum, slotTime) {
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
     promosCart: JSON.parse(JSON.stringify(promosCart)),
+    // El código de descuento aplicado a ESTE pedido — antes no se guardaba
+    // aquí, y para cuando se llega a este punto _activeDiscount ya se ha
+    // puesto a null (ver el comentario junto a esa línea en
+    // _finalizarPedido, carrito-checkout.js). Sin esto, modificarPedido()
+    // no tenía forma de volver a aplicarlo: el cliente podía acabar
+    // confirmando el pedido "modificado" pagando de más, sin descuento y
+    // sin ningún aviso de que se había perdido.
+    discountCode: discountCode || null,
     ts: Date.now()
   };
 
@@ -7328,6 +7387,16 @@ function getModifyWindowMs() {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
 }
+// NOTA (hallazgo de auditoría, Alto, revisado con la dueña y ACEPTADO por
+// ahora a propósito): este contador solo esconde los botones al llegar a
+// 0 — ni aquí ni en el servidor (guardar-pedido.php, action
+// 'cancelarPedido') se comprueba de verdad la antigüedad del pedido antes
+// de ejecutar modificar/cancelar. No se cierra porque el servidor no tiene
+// forma de distinguir esta acción del propio botón "✕" del panel de
+// admin (misma action, sin sesión de admin que comprobar) — un límite de
+// tiempo ahí bloquearía también a la dueña cancelando un pedido antiguo
+// desde el panel. Ver el comentario largo junto a 'cancelarPedido' en
+// guardar-pedido.php para el detalle completo.
 function _startModifyTimer() {
   if (window._modifyTimerInterval) clearInterval(window._modifyTimerInterval);
   const zone = document.getElementById('order-modify-zone');
@@ -7410,6 +7479,20 @@ async function modificarPedido() {
   document.getElementById("customer-name").value = data.name || '';
   document.getElementById("customer-phone").value = data.phone || '';
   document.getElementById("customer-notes").value = data.notes || '';
+
+  // Volver a aplicar el código de descuento que tenía este pedido — para
+  // cuando se llega aquí, _finalizarPedido() ya lo había limpiado del todo
+  // (ver el comentario junto a discountCode en el snapshot, showSuccess()),
+  // así que sin esto el total se recalculaba SIN el descuento y el cliente
+  // podía acabar confirmando de nuevo pagando más de lo que había aceptado,
+  // sin ningún aviso. Se reaplica con dcAplicar() (no a mano) para que
+  // vuelva a comprobarse contra el servidor — si el código ya caducó o
+  // se agotó justo en este rato, se avisa igual que la primera vez, en
+  // vez de dar por hecho que sigue siendo válido.
+  if (data.discountCode) {
+    document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(el => { el.value = data.discountCode; });
+    if (typeof dcAplicar === 'function') await dcAplicar(data.discountCode);
+  }
 
   // Volver al formulario
   document.querySelector('.order-panel').style.display = "block";

@@ -1273,7 +1273,18 @@ async function _submitOrderInner() {
       name: item.name,
       qty: c.qty,
       subtotal: unitPrice * c.qty,
-      extras
+      extras,
+      // menuId/saucesCount/ingredientsCount: para que el servidor pueda
+      // comprobar los límites del personalizador (Al Gusto: 1 salsa + 6
+      // ingredientes · Bomba: 9 entre salsas e ingredientes) sin tener que
+      // parsear las etiquetas de texto de "extras" — ver
+      // corregirLimitesPersonalizador() en guardar-pedido.php. Antes esos
+      // límites solo se comprobaban en el navegador (updateCustProgress),
+      // así que saltándose la web se podía forjar un pedido con más
+      // ingredientes/salsas de los permitidos pagando el mismo precio fijo.
+      menuId: c.menuId,
+      saucesCount: c.sauces.length,
+      ingredientsCount: c.ingredients.length
     };
   }).filter(Boolean);
   // Cada patata con extras (queso/gratinado/ingredientes) se desglosa en
@@ -1695,7 +1706,7 @@ async function _finalizarPedido() {
     });
   }
 
-  await showSuccess(orderNum, slotTime);
+  await showSuccess(orderNum, slotTime, discountCode);
   // El registro en phoneLog (para el cooldown/límite diario) ya lo hace
   // guardar-pedido.php al guardar el pedido — hacerlo también aquí
   // contaría cada pedido dos veces.

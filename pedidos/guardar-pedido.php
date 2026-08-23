@@ -821,6 +821,40 @@ function corregirPreciosPromos($databaseURL, $accessToken, $items) {
     return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'noDisponibles' => array_values(array_unique($noDisponibles))];
 }
 
+// ── Límites del personalizador de Patata Al Gusto (id 15) / Bomba (id 16)
+// — antes SOLO se comprobaban en el navegador (updateCustProgress,
+// antifraude.js: Al Gusto hasta 1 salsa + 6 ingredientes, Bomba hasta 9
+// entre salsas e ingredientes juntos). El precio de estos dos productos es
+// fijo pase lo que pase (corregirPreciosCatalogo los exceptúa a propósito,
+// ver el comentario ahí — no vale la pena duplicar en PHP el cálculo de
+// queso/gratinado), así que esto NO es un hueco de precio: es que,
+// saltándose la web, alguien podía forjar un pedido con más ingredientes o
+// salsas de los permitidos pagando el mismo precio fijo. saucesCount/
+// ingredientsCount los manda el navegador (ver custItems en
+// carrito-checkout.js) — no hay nada sensato que "corregir" en un pedido
+// así (no hay forma de saber a mano qué ingredientes de más quitar), así
+// que se rechaza el pedido entero, igual que un producto agotado.
+function dpf_limitesPersonalizadorExcedidos($items) {
+    $limites = [
+        15 => ['maxSauces' => 1, 'maxIngredients' => 6, 'maxTotal' => null],
+        16 => ['maxSauces' => null, 'maxIngredients' => null, 'maxTotal' => 9],
+    ];
+    $excedidos = [];
+    foreach ($items as $it) {
+        if (!isset($it['menuId']) || !isset($limites[$it['menuId']])) continue;
+        $lim = $limites[$it['menuId']];
+        $sauces = isset($it['saucesCount']) && is_numeric($it['saucesCount']) ? (int)$it['saucesCount'] : 0;
+        $ings = isset($it['ingredientsCount']) && is_numeric($it['ingredientsCount']) ? (int)$it['ingredientsCount'] : 0;
+        $nombre = $it['name'] ?? ('producto ' . $it['menuId']);
+        if ($lim['maxTotal'] !== null) {
+            if (($sauces + $ings) > $lim['maxTotal']) $excedidos[] = $nombre;
+        } else {
+            if ($sauces > $lim['maxSauces'] || $ings > $lim['maxIngredients']) $excedidos[] = $nombre;
+        }
+    }
+    return array_values(array_unique($excedidos));
+}
+
 // ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
 // pedido) ── Antes esto solo se comprobaba en el navegador (isOutsideHours,
 // isTodayOpen, getOrdersOpen en admin-config.js) para decidir si mostrar el
@@ -1472,6 +1506,28 @@ try {
 
     // ── Cancelar/anular un pedido (modificar o cancelar del propio cliente,
     // y también el botón "✕" del panel admin) ──
+    //
+    // NOTA (hallazgo de auditoría, Alto, revisado con la dueña y ACEPTADO
+    // por ahora a propósito): el contador "puedes modificar/cancelar
+    // durante X min" del navegador (_startModifyTimer, antifraude.js) es
+    // puramente cosmético — solo oculta los botones al llegar a 0, nunca
+    // comprueba de verdad la antigüedad del pedido antes de ejecutar la
+    // acción, y este endpoint tampoco la comprueba. En teoría un pedido se
+    // podría cancelar/modificar mucho más tarde de lo anunciado, aunque
+    // cocina ya lo tenga a medio preparar.
+    //
+    // No se cierra aquí porque este MISMO 'action':'cancelarPedido' lo usa
+    // tanto el autoservicio del cliente (modificarPedido()/cancelarPedido()
+    // en antifraude.js) COMO el botón "✕" del panel de admin
+    // (cancelarPedidoAdmin(), admin-antispam-stats.js) — y el servidor no
+    // tiene ninguna forma de distinguir una petición de la otra (este
+    // endpoint no comprueba ninguna sesión/token de admin, solo IP + que
+    // el teléfono coincida con el del ticket). Poner un límite de tiempo
+    // aquí bloquearía también a la propia dueña cancelando un pedido
+    // antiguo desde el panel. Cerrarlo bien de verdad exige añadir
+    // autenticación real de admin a este endpoint — se deja pendiente
+    // para otra ronda, no metido en este lote.
+    //
     // Mismo motivo que reservarSlot/reservarNumeroPedido arriba: orderStatus/
     // y stats/ exigen el UID exacto del admin en las reglas de seguridad, así
     // que cuando el propio cliente (auth anónima) cancelaba o modificaba su
@@ -1719,6 +1775,12 @@ try {
     if (!empty($corrPromos['noDisponibles'])) {
         fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — promoción ya no disponible: ' . implode(', ', $corrPromos['noDisponibles']));
         echo json_encode(['success' => false, 'error' => 'Una de las promociones de tu pedido (' . implode(', ', $corrPromos['noDisponibles']) . ') ya no está disponible. Recarga la página e inténtalo de nuevo.']);
+        exit;
+    }
+    $limitesExcedidos = dpf_limitesPersonalizadorExcedidos($items);
+    if (!empty($limitesExcedidos)) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — más ingredientes/salsas de los permitidos: ' . implode(', ', $limitesExcedidos));
+        echo json_encode(['success' => false, 'error' => 'Uno de tus productos personalizados (' . implode(', ', $limitesExcedidos) . ') tiene más ingredientes o salsas de los permitidos. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
     $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta, $phoneClean);

@@ -7,7 +7,7 @@
 // igual que loadDayStats/resetSlots/confirmClearDay/resetDayStats/
 // cancelarPedidoAdmin (panel de estadísticas del día) y
 // toggleForceSlots/updateForceSlotsBtn (ajuste de "forzar turnos").
-async function showSuccess(orderNum, slotTime) {
+async function showSuccess(orderNum, slotTime, discountCode) {
   // Pedido confirmado con éxito: si el drawer móvil seguía abierto, ya
   // podemos cerrarlo (antes se cerraba nada más pulsar "Confirmar", lo
   // que rompía el resaltado de campos con error en submitOrderFromDrawer).
@@ -29,6 +29,21 @@ async function showSuccess(orderNum, slotTime) {
   window.currentOrderNum = orderNum;
   window.currentOrderSlot = slotTime || null;
   window.currentOrderName = document.getElementById('customer-name') ? document.getElementById('customer-name').value.trim() : '';
+  // El botón "💬 Compartir por WhatsApp" (index.php) llama a
+  // shareOrderWhatsApp(currentOrderNum,...,currentOrderItems,currentOrderTotal)
+  // — currentOrderItems/currentOrderTotal nunca se llegaron a exponer aquí
+  // (solo los otros tres), así que ese botón lanzaba un ReferenceError sin
+  // llegar a abrir WhatsApp. shareOrderWhatsApp espera cada item con
+  // {qty,name,price}, así que se mapea desde _lastTicketData.items (que
+  // trae {name,qty,subtotal,...}) — y se dejan fuera los gastos de gestión
+  // y las líneas de descuento (isFee / subtotal negativo), que no son
+  // "productos" y solo añadirían ruido a un mensaje pensado para
+  // compartir con un amigo lo que se ha pedido.
+  window.currentOrderItems = (_lastTicketData && Array.isArray(_lastTicketData.items))
+    ? _lastTicketData.items.filter(function (it) { return !it.isFee && it.subtotal > 0; })
+      .map(function (it) { return { qty: it.qty, name: it.name, price: it.subtotal }; })
+    : [];
+  window.currentOrderTotal = _lastTicketData ? _lastTicketData.total : 0;
   const orderTotal = _lastTicketData ? _lastTicketData.total : 0;
   const name = document.getElementById("customer-name").value.trim();
   const phone = document.getElementById("customer-phone").value.replace(/[\s\-().+]/g, '').trim();
@@ -49,6 +64,14 @@ async function showSuccess(orderNum, slotTime) {
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
     promosCart: JSON.parse(JSON.stringify(promosCart)),
+    // El código de descuento aplicado a ESTE pedido — antes no se guardaba
+    // aquí, y para cuando se llega a este punto _activeDiscount ya se ha
+    // puesto a null (ver el comentario junto a esa línea en
+    // _finalizarPedido, carrito-checkout.js). Sin esto, modificarPedido()
+    // no tenía forma de volver a aplicarlo: el cliente podía acabar
+    // confirmando el pedido "modificado" pagando de más, sin descuento y
+    // sin ningún aviso de que se había perdido.
+    discountCode: discountCode || null,
     ts: Date.now()
   };
 
@@ -211,6 +234,16 @@ function getModifyWindowMs() {
     return MODIFY_WINDOW_DEFAULT_MS;
   }
 }
+// NOTA (hallazgo de auditoría, Alto, revisado con la dueña y ACEPTADO por
+// ahora a propósito): este contador solo esconde los botones al llegar a
+// 0 — ni aquí ni en el servidor (guardar-pedido.php, action
+// 'cancelarPedido') se comprueba de verdad la antigüedad del pedido antes
+// de ejecutar modificar/cancelar. No se cierra porque el servidor no tiene
+// forma de distinguir esta acción del propio botón "✕" del panel de
+// admin (misma action, sin sesión de admin que comprobar) — un límite de
+// tiempo ahí bloquearía también a la dueña cancelando un pedido antiguo
+// desde el panel. Ver el comentario largo junto a 'cancelarPedido' en
+// guardar-pedido.php para el detalle completo.
 function _startModifyTimer() {
   if (window._modifyTimerInterval) clearInterval(window._modifyTimerInterval);
   const zone = document.getElementById('order-modify-zone');
@@ -293,6 +326,20 @@ async function modificarPedido() {
   document.getElementById("customer-name").value = data.name || '';
   document.getElementById("customer-phone").value = data.phone || '';
   document.getElementById("customer-notes").value = data.notes || '';
+
+  // Volver a aplicar el código de descuento que tenía este pedido — para
+  // cuando se llega aquí, _finalizarPedido() ya lo había limpiado del todo
+  // (ver el comentario junto a discountCode en el snapshot, showSuccess()),
+  // así que sin esto el total se recalculaba SIN el descuento y el cliente
+  // podía acabar confirmando de nuevo pagando más de lo que había aceptado,
+  // sin ningún aviso. Se reaplica con dcAplicar() (no a mano) para que
+  // vuelva a comprobarse contra el servidor — si el código ya caducó o
+  // se agotó justo en este rato, se avisa igual que la primera vez, en
+  // vez de dar por hecho que sigue siendo válido.
+  if (data.discountCode) {
+    document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(el => { el.value = data.discountCode; });
+    if (typeof dcAplicar === 'function') await dcAplicar(data.discountCode);
+  }
 
   // Volver al formulario
   document.querySelector('.order-panel').style.display = "block";
