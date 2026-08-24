@@ -1540,20 +1540,24 @@ function formatItemLines(item, width) {
   const nombre = foldAccents(item.name || '').toUpperCase();
   const precio = fmtEur((item.displaySubtotal !== undefined ? item.displaySubtotal : item.subtotal) || 0);
   const prefix = item.qty + 'x ';
-  const lines = twoCol(prefix + nombre, precio, width).map(text => ({ text, underlineLen: 0 }));
+  const lines = twoCol(prefix + nombre, precio, width).map(text => ({ text, underlineStart: 0, underlineLen: 0 }));
+  const exPrefix = '  - ';
   (item.extras || []).forEach(ex => {
-    const label = '  - ' + foldAccents(ex.name).toUpperCase();
+    const exNombre = foldAccents(ex.name).toUpperCase();
+    const label = exPrefix + exNombre;
     if (ex.price) {
       const extraLines = twoCol(label, '+' + fmtEur(ex.price), width);
-      // Solo se subraya la etiqueta en sí (la primera línea, hasta donde
-      // llega label) — nunca los espacios de relleno ni el precio, aunque
-      // vayan pegados en el mismo string por la alineación a dos columnas.
+      // Solo se subraya el nombre del producto en sí — ni el "  - " de
+      // delante, ni los espacios de relleno, ni el precio, aunque vayan
+      // pegados en el mismo string por la alineación a dos columnas.
       extraLines.forEach((text, i) => {
-        lines.push({ text, underlineLen: (ex.underline && i === 0) ? Math.min(label.length, text.length) : 0 });
+        const underlineLen = (ex.underline && i === 0) ? Math.max(0, Math.min(exNombre.length, text.length - exPrefix.length)) : 0;
+        lines.push({ text, underlineStart: exPrefix.length, underlineLen });
       });
     } else {
       const text = label.substring(0, width);
-      lines.push({ text, underlineLen: ex.underline ? text.length : 0 });
+      const underlineLen = ex.underline ? Math.max(0, Math.min(exNombre.length, text.length - exPrefix.length)) : 0;
+      lines.push({ text, underlineStart: exPrefix.length, underlineLen });
     }
   });
   return lines;
@@ -1577,7 +1581,7 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(order.time), align: 'center' });
   B.push({ text: TICKET_DIVIDER, align: 'center' });
   order.items.forEach(it => {
-    formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineLen: line.underlineLen }));
+    formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineStart: line.underlineStart, underlineLen: line.underlineLen }));
   });
   B.push({ text: TICKET_DIVIDER, align: 'left' });
   B.push({ text: fmtEur(order.total || 0), align: 'center', big: true });
@@ -1612,10 +1616,11 @@ function buildTicketPreviewHTML(order) {
     }
     let style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
     if (b.paidStatus) style += ';color:' + (b.paidStatus === 'yes' ? '#2e8b57' : '#c0392b');
-    // El subrayado cubre solo la etiqueta del extra (b.underlineLen
-    // caracteres), nunca los espacios de relleno ni el precio a la derecha.
+    // El subrayado cubre solo el nombre del extra (underlineStart..+len)
+    // — ni el "  - " de delante, ni los espacios de relleno, ni el precio.
+    const uEnd = b.underlineStart + b.underlineLen;
     const content = b.underlineLen
-      ? '<span style="text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:1px">' + escapeHtml(b.text.slice(0, b.underlineLen)) + '</span>' + escapeHtml(b.text.slice(b.underlineLen))
+      ? escapeHtml(b.text.slice(0, b.underlineStart)) + '<span style="text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:1px">' + escapeHtml(b.text.slice(b.underlineStart, uEnd)) + '</span>' + escapeHtml(b.text.slice(uEnd))
       : (escapeHtml(b.text) || '&nbsp;');
     html += '<div style="' + style + '">' + content + '</div>';
   });
@@ -1693,10 +1698,13 @@ function buildEscPosBytes(order) {
       const idx = blk.text.indexOf(': ') + 2;
       b.bold(true); b.text(blk.text.slice(0, idx)); b.bold(false); b.text(blk.text.slice(idx));
     } else if (blk.underlineLen) {
-      // Solo se subraya la etiqueta (los primeros underlineLen caracteres)
-      // — nunca los espacios de relleno ni el precio que va detrás.
-      b.underline(true); b.text(blk.text.slice(0, blk.underlineLen)); b.underline(false);
-      b.text(blk.text.slice(blk.underlineLen));
+      // Solo se subraya el nombre del extra (underlineStart..+underlineLen)
+      // — ni el "  - " de delante, ni los espacios de relleno, ni el
+      // precio que va detrás.
+      const uEnd = blk.underlineStart + blk.underlineLen;
+      b.text(blk.text.slice(0, blk.underlineStart));
+      b.underline(true); b.text(blk.text.slice(blk.underlineStart, uEnd)); b.underline(false);
+      b.text(blk.text.slice(uEnd));
     } else {
       b.text(blk.text);
     }
