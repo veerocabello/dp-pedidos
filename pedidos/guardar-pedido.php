@@ -306,6 +306,61 @@ function fbGetConEtag($databaseURL, $path, $accessToken) {
     return ['data' => $data, 'etag' => $etag];
 }
 
+// ── Lee VARIOS nodos independientes EN PARALELO con curl_multi ──
+// Solo vale para lecturas que no dependen unas de otras (nada de "leer A
+// para decidir si hace falta leer B") — las escrituras condicionales
+// (fbPutSiCoincide con reintento tras ETag) siguen siendo secuenciales a
+// propósito, porque su lógica de reintento sí necesita leer justo antes de
+// escribir cada vez. Este helper es para el patrón contrario: varias
+// comprobaciones de solo-lectura al principio del guardado (antifraude,
+// horario...) que antes se hacían una detrás de otra — cada una con
+// cortocircuito si la anterior ya bastaba para bloquear el pedido, un
+// ahorro real en el caso bloqueado, pero un coste real en el caso normal
+// (la mayoría de peticiones en horario de apertura), que es el que más
+// importa en hora punta. Agrupar aquí cambia "N viajes de red uno detrás
+// de otro" por "N viajes de red a la vez, se tarda lo que tarde el más
+// lento" — quien llama sigue evaluando los resultados en el MISMO orden
+// de prioridad de siempre, así que el primer motivo de bloqueo que se
+// muestra al cliente no cambia, aunque ahora ya no hace falta parar de
+// leer en cuanto se encuentra: sale gratis con la petición ya en marcha.
+function fbGetMultipleConEtag($databaseURL, $paths, $accessToken) {
+    $mh = curl_multi_init();
+    $handles = [];
+    $etags = [];
+    foreach ($paths as $path) {
+        $ch = curl_init($databaseURL . '/' . $path . '.json');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use ($path, &$etags) {
+            if (stripos($header, 'ETag:') === 0) $etags[$path] = trim(substr($header, 5));
+            return strlen($header);
+        });
+        curl_multi_add_handle($mh, $ch);
+        $handles[$path] = $ch;
+    }
+    $running = null;
+    do {
+        $status = curl_multi_exec($mh, $running);
+    } while ($status === CURLM_CALL_MULTI_PERFORM);
+    while ($running && $status === CURLM_OK) {
+        if (curl_multi_select($mh) === -1) usleep(1000);
+        do {
+            $status = curl_multi_exec($mh, $running);
+        } while ($status === CURLM_CALL_MULTI_PERFORM);
+    }
+    $result = [];
+    foreach ($handles as $path => $ch) {
+        $response = curl_multi_getcontent($ch);
+        $result[$path] = ['data' => json_decode($response, true), 'etag' => $etags[$path] ?? null];
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+    curl_multi_close($mh);
+    return $result;
+}
+
 function fbPutSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -498,24 +553,30 @@ function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $et
 // por teléfono sin más límite que el genérico de 20 pedidos/IP/10min.
 // Devuelve null si puede pedir, o un mensaje de error si no.
 function comprobarAntifraudeTelefono($databaseURL, $accessToken, $phoneClean, $todayKey) {
-    $blResp = fbGetJsonStringConEtag($databaseURL, 'config/blacklist', $accessToken);
-    $blacklist = is_array($blResp['data']) ? $blResp['data'] : [];
+    // Las 3 lecturas de abajo (lista negra, config de antispam, registro de
+    // este teléfono hoy) no dependen unas de otras — antes se leían una
+    // detrás de otra, con cortocircuito si la lista negra ya bastaba para
+    // bloquear. En paralelo con fbGetMultipleConEtag() se tarda lo mismo
+    // que la más lenta de las tres, no la suma de las tres.
+    $phoneLogPath = 'phoneLog/' . $todayKey . '/' . $phoneClean;
+    $leido = fbGetMultipleConEtag($databaseURL, [
+        'config/blacklist',
+        'config/antiSpamCfg',
+        $phoneLogPath,
+    ], $accessToken);
+
+    $blacklistRaw = $leido['config/blacklist']['data'];
+    $blacklist = is_string($blacklistRaw) ? (json_decode($blacklistRaw, true) ?: []) : [];
     if (in_array($phoneClean, $blacklist, true)) {
         return 'No es posible realizar pedidos desde este número de teléfono.';
     }
 
-    $cfgResp = fbGetJsonStringConEtag($databaseURL, 'config/antiSpamCfg', $accessToken);
-    $cfg = is_array($cfgResp['data']) ? $cfgResp['data'] : [];
+    $cfgRaw = $leido['config/antiSpamCfg']['data'];
+    $cfg = is_string($cfgRaw) ? (json_decode($cfgRaw, true) ?: []) : [];
     $cooldownMin = is_numeric($cfg['cooldown'] ?? null) ? (float)$cfg['cooldown'] : 45;
     $dailyLimit = is_numeric($cfg['dailyLimit'] ?? null) ? (int)$cfg['dailyLimit'] : 3;
 
-    $logCh = curl_init($databaseURL . '/phoneLog/' . $todayKey . '/' . $phoneClean . '.json');
-    curl_setopt($logCh, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($logCh, CURLOPT_CONNECTTIMEOUT, 3);
-    curl_setopt($logCh, CURLOPT_TIMEOUT, 8);
-    curl_setopt($logCh, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
-    $log = json_decode(curl_exec($logCh), true);
-    curl_close($logCh);
+    $log = $leido[$phoneLogPath]['data'];
     if (!is_array($log)) return null;
 
     $count = is_numeric($log['count'] ?? null) ? (int)$log['count'] : 0;
@@ -961,12 +1022,27 @@ function dpf_limitesPersonalizadorExcedidos($items) {
 // tratamiento de sesión continua manOpen→tarClose con posible cruce de
 // medianoche) para no rechazar pedidos que la propia web sí deja hacer.
 function comprobarTiendaAbierta($databaseURL, $accessToken) {
-    $vac = fbGetConEtag($databaseURL, 'config/vacacionesActivo', $accessToken);
-    if ($vac['data'] === true) {
+    // Las 4 comprobaciones de abajo son independientes entre sí (ninguna
+    // necesita el resultado de otra para saber QUÉ leer) — antes se leían
+    // una detrás de otra, con cortocircuito en cuanto la primera ya bastaba
+    // para bloquear el pedido. Eso ahorraba round-trips en el caso
+    // bloqueado, pero costaba 4 viajes de red seguidos en el caso normal
+    // (tienda abierta, sin pausas), que es el que más pasa y el que más
+    // importa en hora punta. Leerlas todas en paralelo con
+    // fbGetMultipleConEtag() y evaluar los resultados en el MISMO orden de
+    // prioridad de siempre no cambia qué motivo de bloqueo ve el cliente
+    // primero — solo cambia cuánto se tarda en tener los datos para decidir.
+    $leido = fbGetMultipleConEtag($databaseURL, [
+        'config/vacacionesActivo',
+        'config/ordersOpen',
+        'config/pausaExpresHasta',
+        'config/horario',
+    ], $accessToken);
+
+    if ($leido['config/vacacionesActivo']['data'] === true) {
         return 'Estamos de vacaciones ahora mismo. No se aceptan pedidos.';
     }
-    $ordersOpen = fbGetConEtag($databaseURL, 'config/ordersOpen', $accessToken);
-    if ($ordersOpen['data'] === false) {
+    if ($leido['config/ordersOpen']['data'] === false) {
         return 'No estamos aceptando pedidos en este momento.';
     }
     // Pausa exprés (botón manual con cuenta atrás, admin-shell.html) — es
@@ -976,12 +1052,11 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
     // el formulario, pero eso no evita que alguien llame a este script
     // directamente saltándose la web — igual que el resto de comprobaciones
     // de esta función, esta es la que de verdad no se puede evitar.
-    $pausaExpres = fbGetConEtag($databaseURL, 'config/pausaExpresHasta', $accessToken);
-    if (is_numeric($pausaExpres['data']) && (float)$pausaExpres['data'] > (microtime(true) * 1000)) {
+    $pausaExpresVal = $leido['config/pausaExpresHasta']['data'];
+    if (is_numeric($pausaExpresVal) && (float)$pausaExpresVal > (microtime(true) * 1000)) {
         return 'Pedidos pausados temporalmente. Inténtalo de nuevo en unos minutos.';
     }
-    $horResp = fbGetConEtag($databaseURL, 'config/horario', $accessToken);
-    $h = is_array($horResp['data']) ? $horResp['data'] : null;
+    $h = is_array($leido['config/horario']['data']) ? $leido['config/horario']['data'] : null;
     if (!$h) return null; // sin horario configurado: mismo criterio que el navegador, asumir abierto
 
     $now = time();
