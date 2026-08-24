@@ -48,8 +48,32 @@ function removeSlotTurno(idx) {
   renderSlotTurnosList(turnos);
 }
 function updateSlotTurno(idx, field, value) {
+  const localTurnos = getSlotTurnos();
+  const original = localTurnos[idx];
+  if (original) {
+    const next = Object.assign({}, original, { [field]: value });
+    // Un turno con inicio y fin iguales queda vacío (0 min) sin avisar — no
+    // es el cruce de medianoche normal (end <= start), que sí es válido y
+    // ya está contemplado donde se aplican los turnos (carrito-checkout.js).
+    if ((field === 'start' || field === 'end') && next.start === next.end) {
+      alert('La hora de inicio y la de fin de un turno no pueden ser iguales.');
+      renderSlotTurnosList(localTurnos); // revertir el <input> visualmente
+      return;
+    }
+  }
   _mutateSlotTurnos(function (t) {
-    if (t[idx]) t[idx][field] = value;
+    // Si la lista que ve esta llamada (tras un posible reintento de la
+    // transacción, con la más reciente de otro dispositivo) ya no tiene
+    // este turno en la misma posición porque alguien añadió/quitó/reordenó
+    // turnos justo antes, se busca por su contenido exacto capturado al
+    // pulsar, en vez de fiarse ciegamente del índice — evita modificar en
+    // silencio un turno distinto al que el admin tenía delante.
+    let target = idx;
+    if (original && !(t[idx] && t[idx].start === original.start && t[idx].end === original.end && t[idx].interval === original.interval)) {
+      const found = t.findIndex(x => x.start === original.start && x.end === original.end && x.interval === original.interval);
+      if (found >= 0) target = found;
+    }
+    if (t[target]) t[target][field] = value;
   });
 }
 function saveSlotConfig() {
@@ -103,18 +127,52 @@ function loadCatBlockUI() {
     return "<button onclick=\"toggleCatBlock('".concat(cat, "')\"\n      style=\"padding:8px 14px;border-radius:99px;border:1.5px solid ").concat(isBlocked ? '#c0392b' : '#F5E6C8', ";\n      background:").concat(isBlocked ? '#fef0f0' : '#FFFFFF', ";color:").concat(isBlocked ? '#c0392b' : '#2A1506', ";\n      font-size:13px;font-weight:").concat(isBlocked ? '700' : '500', ";cursor:pointer;font-family:'DM Sans',sans-serif\">\n      ").concat(isBlocked ? '🚫' : '✅', " ").concat(cat, "\n    </button>");
   }).join('');
 }
-function toggleCatBlock(cat) {
+async function toggleCatBlock(cat) {
   const blocked = getBlockedCats();
   const idx = blocked.indexOf(cat);
-  if (idx >= 0) blocked.splice(idx, 1);else blocked.push(cat);
+  const willBlock = idx < 0;
+  if (willBlock) blocked.push(cat); else blocked.splice(idx, 1);
   saveBlockedCats(blocked);
-  // Hide/show all items in that category
-  MENU.forEach(item => {
-    if (item.cat === cat) item.hidden = blocked.includes(cat);
-  });
+
+  // Antes esto igualaba item.hidden al estado de la categoría para TODOS
+  // sus productos en los dos sentidos — al desbloquear, eso revivía en
+  // Firebase productos que el admin había ocultado a mano dentro de esa
+  // categoría (ej. "Patatas Trufadas" fuera de temporada): el siguiente
+  // guardado de cualquier otro producto detectaba ese hidden:false como
+  // un cambio legítimo y lo publicaba. Ahora se recuerda (sincronizado
+  // entre dispositivos con la misma transacción atómica que ya usa este
+  // archivo para turnos/promos) qué productos de la categoría ya estaban
+  // ocultos ANTES de bloquearla, para devolverles su estado real al
+  // desbloquear en vez de mostrarlos a todos sin más.
+  if (willBlock) {
+    const yaOcultosIds = MENU.filter(item => item.cat === cat && item.hidden).map(item => item.id);
+    if (window.fb_transactJsonString) {
+      window.fb_transactJsonString('config/catBlockPrevHidden', current => {
+        const mapa = (current && typeof current === 'object') ? current : {};
+        mapa[cat] = yaOcultosIds;
+        return mapa;
+      }).catch(e => console.warn('[catBlock] no se pudo guardar el estado previo', e));
+    }
+    MENU.forEach(item => { if (item.cat === cat) item.hidden = true; });
+  } else {
+    let prevHiddenIds = [];
+    if (window.fb_transactJsonString) {
+      try {
+        await window.fb_transactJsonString('config/catBlockPrevHidden', current => {
+          const mapa = (current && typeof current === 'object') ? current : {};
+          prevHiddenIds = Array.isArray(mapa[cat]) ? mapa[cat] : [];
+          delete mapa[cat];
+          return mapa;
+        });
+      } catch (e) { console.warn('[catBlock] no se pudo leer el estado previo', e); }
+    }
+    const prevHiddenSet = new Set(prevHiddenIds);
+    MENU.forEach(item => { if (item.cat === cat) item.hidden = prevHiddenSet.has(item.id); });
+  }
+
   loadCatBlockUI();
   renderMenu();
-  logActivity((blocked.includes(cat) ? '🚫' : '✅') + ' Categoría ' + (blocked.includes(cat) ? 'bloqueada' : 'desbloqueada') + ': ' + cat);
+  logActivity((willBlock ? '🚫' : '✅') + ' Categoría ' + (willBlock ? 'bloqueada' : 'desbloqueada') + ': ' + cat);
 }
 
 // ══════════════════════════════════════════
@@ -296,27 +354,44 @@ async function dcCrear() {
   if (!pct || pct < 1 || pct > 100) { alert('Introduce un % válido (1-100)'); return; }
   if (!maxUses || maxUses < 1) { alert('Introduce un número de usos'); return; }
   if (dias !== null && (isNaN(dias) || dias < 1)) { alert('Los días de caducidad deben ser 1 o más (o déjalo en blanco)'); return; }
-  if (!window.fb_saveDiscount) { alert('Firebase no disponible'); return; }
-  // fb_saveDiscount sobrescribe el código entero si ya existía — sin este
-  // aviso, crear (o crear por error) un código que ya existe reseteaba en
-  // silencio su contador de usos a 0, y de paso comparte espacio de
-  // nombres con los códigos RAS-/RUL- que genera la ruleta/rasca: chocar
-  // con uno de esos invalidaría el premio real de un cliente.
+  if (!window.fb_transactNative) { alert('Firebase no disponible'); return; }
+  // Aviso previo, no atómico — solo UX para que el admin vea de un vistazo
+  // que el código ya existe y pueda cancelar sin más. La protección real
+  // pasa por la transacción de abajo, así que da igual si esto queda
+  // desfasado entre el aviso y el guardado.
   if (window.fb_loadDiscounts) {
     const existentes = await window.fb_loadDiscounts().catch(() => ({}));
     if (existentes && existentes[code]) {
       const yaExiste = existentes[code];
-      const esPremio = !!yaExiste.origen;
-      if (!confirm(esPremio
-        ? 'Ese código ya existe como premio de la Ruleta/Rasca de un cliente — crearlo ahora invalidaría su premio real. ¿Seguro que quieres continuar?'
-        : 'Ya existe un código "' + code + '" (' + (yaExiste.uses || 0) + '/' + yaExiste.maxUses + ' usos). Crearlo de nuevo lo sobrescribe y resetea el contador de usos a 0. ¿Continuar?')) {
+      if (yaExiste.origen) {
+        alert('Ese código ya existe como premio de la Ruleta/Rasca de un cliente — no se puede reutilizar.');
+        return;
+      }
+      if (!confirm('Ya existe un código "' + code + '" (' + (yaExiste.uses || 0) + '/' + yaExiste.maxUses + ' usos). Crearlo de nuevo lo sobrescribe y resetea el contador de usos a 0. ¿Continuar?')) {
         return;
       }
     }
   }
   const datos = { pct, maxUses, uses: 0, createdAt: Date.now() };
   if (dias !== null) datos.expiraEn = Date.now() + dias * 24 * 60 * 60 * 1000;
-  await window.fb_saveDiscount(code, datos);
+  // Comprobación real y escritura en UNA sola transacción atómica de
+  // Firebase sobre discounts/<code> — antes se leía por separado con
+  // fb_loadDiscounts y se escribía después con un jset() plano (fb_saveDiscount),
+  // sin nada que impidiera que dos admins creando casi a la vez el mismo
+  // código, o un código que justo se generó como premio de la Ruleta/Rasca
+  // de un cliente, se pisaran: ninguna de las dos escrituras veía la otra.
+  // El mutator de abajo corre dentro de la transacción (Firebase lo
+  // reintenta con el valor más reciente del servidor si hace falta) y
+  // nunca sobrescribe un premio real de cliente, pase lo que pase con el
+  // aviso de arriba.
+  const result = await window.fb_transactNative('discounts/' + code, function (current) {
+    if (current && current.origen) return; // aborta la transacción: es un premio real, nunca se pisa
+    return datos;
+  });
+  if (!result) {
+    alert('No se pudo crear: justo se ha generado ese código como premio de un cliente. Prueba con otro código.');
+    return;
+  }
   document.getElementById('dc-code').value = '';
   document.getElementById('dc-pct').value = '';
   document.getElementById('dc-uses').value = '';

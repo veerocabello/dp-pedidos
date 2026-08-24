@@ -1076,7 +1076,10 @@ function bimbaGuardarTicketConfig() {
   if (fee2EnabledEl && fee2AmountEl && fee2LabelEl) {
     saveFee2Config(
       fee2EnabledEl.checked,
-      parseFloat(fee2AmountEl.value) || 0.50,
+      // Math.max(0, ...) porque un negativo es "truthy" en JS y se colaba
+      // sin el aviso pensado solo para NaN/0 — un importe negativo aquí se
+      // resta directo del total de cada pedido (carta.js/carrito-checkout.js).
+      Math.max(0, parseFloat(fee2AmountEl.value) || 0.50),
       fee2LabelEl.value.trim() || 'Otro gasto fijo'
     );
   }
