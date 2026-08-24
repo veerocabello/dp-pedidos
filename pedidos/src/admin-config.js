@@ -47,35 +47,16 @@ function marcarPatatasAlergenosQuitables() {
     : 'Ya estaba todo así — ninguna patata ha cambiado.';
   if (typeof showAlert === 'function') showAlert(msg, 'Alérgenos de las patatas');
 }
-// ── Botón "🔓 Marcar alérgenos quitables" de la cabecera de Boniato ──
-// Mismo botón que el de Patatas de arriba, pero para la categoría Boniato:
-// marca item.ingredientesQuitables=true en todos los boniatos EXCEPTO el
-// G.O.A.T. (queso de cabra — el nombre y el sabor del producto dependen de
-// ese queso concreto, no es un topping añadido que se pueda quitar sin más
-// como en el resto).
-function marcarBoniatosAlergenosQuitables() {
-  const EXCEPCIONES = ['g.o.a.t', 'goat'];
-  let cambiados = 0;
-  const excluidas = [];
-  MENU.forEach(item => {
-    if (item.cat !== 'Boniato') return;
-    const nombreLower = item.name.toLowerCase();
-    const esExcepcion = EXCEPCIONES.some(ex => nombreLower.indexOf(ex) !== -1);
-    if (esExcepcion) excluidas.push(item.name);
-    const nuevoValor = !esExcepcion;
-    if (!!item.ingredientesQuitables !== nuevoValor) {
-      item.ingredientesQuitables = nuevoValor;
-      cambiados++;
-    }
-  });
-  saveMenu();
-  renderMenu();
-  renderAdminProducts();
-  const msg = cambiados
-    ? 'Actualizado — ' + cambiados + ' boniato(s) cambiados.' + (excluidas.length ? ' Sin marcar (no se pueden quitar sus alérgenos): ' + excluidas.join(', ') + '.' : '')
-    : 'Ya estaba todo así — ningún boniato ha cambiado.';
-  if (typeof showAlert === 'function') showAlert(msg, 'Alérgenos de los boniatos');
-}
+// NOTA: se consideró un botón masivo "🔓 Marcar alérgenos quitables" para
+// Boniato igual que el de Patatas de arriba, pero se descartó — a
+// diferencia de las patatas (donde la mayoría SÍ admite quitar el queso),
+// en Boniato el queso no se puede quitar en NINGÚN producto: Lotus y Bacon
+// lo llevan mezclado igual que Carbonara/Boloñesa, Pistacchio tiene una
+// segunda fuente de lácteos aparte del queso (la crema de pistacho, que
+// también lleva leche) así que "sin queso" seguiría sin ser cierto, y
+// G.O.A.T. lleva el queso de cabra en el propio nombre. Las notas de cada
+// alérgeno se escriben a mano por producto desde el panel de edición en
+// vez de con un botón de "aplicar a toda la categoría".
 // Antes esto sobreescribía TODO config/menu con la copia local completa
 // (fb_saveMenu = un set() sin más, y encima sin comprobar si la escritura
 // llegaba a cuajar). Si dos pestañas de admin editaban productos distintos
@@ -141,17 +122,17 @@ function renderAdminProducts() {
   let html = '';
   cats.forEach(cat => {
     const catEmoji = emojiMapAdmin[cat] || '';
-    // Botón masivo en "Patatas" y "Boniato" — ver marcarPatatasAlergenosQuitables
-    // y marcarBoniatosAlergenosQuitables: en vez de tener que marcar el
-    // interruptor "se pueden quitar" producto por producto, este botón lo
-    // activa de golpe para toda la categoría, con su propia excepción (regla
-    // que dio la dueña: Carbonara/Boloñesa llevan el alérgeno mezclado en la
-    // salsa, G.O.A.T. lleva el queso de cabra en el propio nombre — en los
-    // tres casos no se puede quitar sin más).
+    // Botón masivo solo en "Patatas" — ver marcarPatatasAlergenosQuitables:
+    // en vez de tener que marcar el interruptor "se pueden quitar" patata
+    // por patata, este botón lo activa de golpe para toda la categoría
+    // excepto la Carbonara y la Boloñesa (regla que dio la dueña: en esas
+    // dos el alérgeno viene ya mezclado en la salsa, no se puede sacar).
+    // NO hay botón equivalente en "Boniato": ahí ningún producto tiene el
+    // queso realmente quitable (ver nota junto a marcarPatatasAlergenosQuitables
+    // más arriba), así que un botón "de golpe" ahí solo invitaría a marcar
+    // algo mal — las notas de Boniato se escriben a mano, producto a producto.
     const catBulkBtn = (cat === 'Patatas')
       ? '<button onclick="marcarPatatasAlergenosQuitables()" style="background:var(--gold);color:#3D1F0D;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔓 Marcar alérgenos quitables</button>'
-      : (cat === 'Boniato')
-      ? '<button onclick="marcarBoniatosAlergenosQuitables()" style="background:var(--gold);color:#3D1F0D;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🔓 Marcar alérgenos quitables</button>'
       : '';
     html += "<p style=\"display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:Anton,sans-serif;font-size:19px;font-weight:400;color:#FFF8EE;background:#3D1F0D;text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px;padding:8px 14px;border-radius:8px\"><span>".concat(catEmoji ? catEmoji + ' ' : '', cat, "</span>").concat(catBulkBtn, "</p>");
     let lastTartaSub = null;
