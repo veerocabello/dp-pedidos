@@ -433,19 +433,23 @@ function getExtrasItemDetails(e) {
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
 // ticket puede alinear el precio de cada extra a la derecha, igual que
 // en un ticket real impreso (ej. "  - QUESO           +1.00 EUR").
+// Todas las líneas de aquí representan una desviación de la receta base de
+// un producto estándar (quitar/cambiar un ingrediente, o añadir algo de
+// más), así que TODAS se marcan `underline: true` para que salgan
+// subrayadas en el ticket — igual que en la web de pedidos.
 function getExtrasItemTicketExtras(e) {
   const out = [];
-  (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q }));
-  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to }));
+  (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q, underline: true }));
+  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to, underline: true }));
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : EXTRAS_SALSA_PRECIO }));
-  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7) }));
-  if (e.queso) out.push({ name: 'Queso', price: 1 });
-  if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5 });
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : EXTRAS_SALSA_PRECIO, underline: true }));
+  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7), underline: true }));
+  if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
+  if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
   return out;
 }
 function cartHasAnyItem() {
@@ -1446,11 +1450,11 @@ function buildOrderObject(preview) {
     // luego los ingredientes, y el queso/gratinado siempre al final.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO })),
+      ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO, underline: true })),
       ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
     ];
-    if (c.extraQueso) extras.push({ name: 'Queso', price: 1 });
-    if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5 });
+    if (c.extraQueso) extras.push({ name: 'Queso', price: 1, underline: true });
+    if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5, underline: true });
     // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
     // extra van cada uno en su línea con su propio precio.
@@ -1531,11 +1535,11 @@ function formatItemLines(item, width) {
   const nombre = foldAccents(item.name || '').toUpperCase();
   const precio = fmtEur((item.displaySubtotal !== undefined ? item.displaySubtotal : item.subtotal) || 0);
   const prefix = item.qty + 'x ';
-  const lines = twoCol(prefix + nombre, precio, width);
+  const lines = twoCol(prefix + nombre, precio, width).map(text => ({ text, underline: false }));
   (item.extras || []).forEach(ex => {
     const label = '  - ' + foldAccents(ex.name).toUpperCase();
-    if (ex.price) lines.push(...twoCol(label, '+' + fmtEur(ex.price), width));
-    else lines.push(label.substring(0, width));
+    const extraLines = ex.price ? twoCol(label, '+' + fmtEur(ex.price), width) : [label.substring(0, width)];
+    extraLines.forEach(text => lines.push({ text, underline: !!ex.underline }));
   });
   return lines;
 }
@@ -1558,7 +1562,7 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(order.time), align: 'center' });
   B.push({ text: TICKET_DIVIDER, align: 'center' });
   order.items.forEach(it => {
-    formatItemLines(it, width).forEach(text => B.push({ text, align: 'left' }));
+    formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underline: line.underline }));
   });
   B.push({ text: TICKET_DIVIDER, align: 'left' });
   B.push({ text: fmtEur(order.total || 0), align: 'center', big: true });
@@ -1593,6 +1597,7 @@ function buildTicketPreviewHTML(order) {
     }
     let style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
     if (b.paidStatus) style += ';color:' + (b.paidStatus === 'yes' ? '#2e8b57' : '#c0392b');
+    if (b.underline) style += ';text-decoration:underline';
     html += '<div style="' + style + '">' + (escapeHtml(b.text) || '&nbsp;') + '</div>';
   });
   return html;
@@ -1643,6 +1648,7 @@ class EscPosBuilder {
   big() { return this.raw([0x1B, 0x21, 0x30]); }
   normal() { return this.raw([0x1B, 0x21, 0x00]); }
   bold(on) { return this.raw([0x1B, 0x45, on ? 1 : 0]); }
+  underline(on) { return this.raw([0x1B, 0x2D, on ? 1 : 0]); }
   text(str) { const s = String(str); for (let i = 0; i < s.length; i++) this.bytes.push(s.charCodeAt(i) & 0xFF); return this; }
   newline() { return this.raw([0x0A]); }
   logo() {
@@ -1664,12 +1670,14 @@ function buildEscPosBytes(order) {
     if (blk.logo) { b.logo(); return; }
     blk.align === 'center' ? b.center() : b.left();
     blk.big ? b.big() : b.normal();
+    if (blk.underline) b.underline(true);
     if (blk.notesLabel) {
       const idx = blk.text.indexOf(': ') + 2;
       b.bold(true); b.text(blk.text.slice(0, idx)); b.bold(false); b.text(blk.text.slice(idx));
     } else {
       b.text(blk.text);
     }
+    if (blk.underline) b.underline(false);
     b.newline();
   });
   b.normal(); b.left();
