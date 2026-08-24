@@ -169,6 +169,25 @@ function fbGetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
     curl_close($ch);
     return json_decode($response, true);
 }
+// Borra un nodo con la cuenta de servicio — para action=removerDispositivoConfianza
+// más abajo, que necesita poder borrar config/trustedDevices/<deviceId> SIN que
+// el navegador que llama tenga ya una sesión de admin real (ver el comentario
+// junto a esa acción: el auto-borrado de un dispositivo por caducidad/rechazo
+// pasa precisamente ANTES de tener sesión, así que exigir sesión de admin para
+// esta escritura la dejaba fallando en silencio casi siempre).
+function fbEliminarNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales) {
+    $accessToken = obtenerTokenAcceso($rutaCredenciales);
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $httpCode === 200;
+}
 
 // ── LÍMITE DE INTENTOS: máximo 5 intentos por IP cada 10 minutos ──
 // Compartido entre el PIN y los tokens de URL — todos son intentos de
@@ -305,6 +324,48 @@ if ($action === 'checkTrustedDevice') {
     }
     $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
     if ($tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_acierto($fp);
+    } else {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+}
+
+// ── Auto-borrado de "dispositivo de confianza" propio (caducado, o
+// rechazado por checkTrustedDevice de arriba porque el admin lo expulsó
+// desde otro sitio) — setTrustedDevice(false) en admin-accesos.js borraba
+// esto escribiendo DIRECTO en Firebase, lo que exige una sesión de admin
+// autenticada de verdad en ESE instante. Pero los dos sitios que llaman a
+// setTrustedDevice(false) para auto-limpiarse (token caducado localmente,
+// o rechazo del servidor) ocurren precisamente ANTES de haber iniciado
+// sesión — es la comprobación que decide si hace falta pedir la
+// contraseña — así que casi nunca había sesión activa, y esa escritura
+// fallaba en silencio casi siempre: el registro se quedaba huérfano en
+// Firebase para siempre. Aquí se borra con la cuenta de servicio en vez
+// de depender de una sesión, con la MISMA prueba de propiedad que ya usa
+// checkTrustedDevice (el hash del token) — así nadie puede borrar el
+// registro de otro dispositivo solo adivinando su deviceId.
+if ($action === 'removerDispositivoConfianza') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    if ($tokenHashReal === '') {
+        // Ya no había nada que borrar (se borró antes, o nunca existió) —
+        // no es un fallo del que se deba culpar a quien llama.
+        dpf_bimba_acierto($fp);
+    } elseif (hash_equals($tokenHashReal, hash('sha256', $token))) {
+        fbEliminarNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
         dpf_bimba_acierto($fp);
     } else {
         dpf_bimba_fallo($fp, $log, $now);

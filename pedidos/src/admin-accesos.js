@@ -211,13 +211,33 @@ async function setTrustedDevice(val, name) {
     localStorage.setItem(TRUSTED_TOKEN_KEY, token);
     localStorage.setItem(TRUSTED_EXPIRY_KEY, String(expiry));
   } else {
-    // Si hay sesión real, limpiar también el registro en Firebase — igual
-    // que arriba, si no hay sesión (p.ej. venimos de una comprobación
-    // fallida sin login) esta escritura fallará en silencio y no pasa nada,
-    // el registro se queda pero el token local ya no sirve para nada.
+    // Si hay sesión real, limpiar también el registro en Firebase
+    // directamente (más rápido, sin ir al servidor). Si NO hay sesión —el
+    // caso más habitual con diferencia: isTrustedDevice() llama aquí
+    // precisamente para decidir si hace falta pedir la contraseña, es
+    // decir, ANTES de haber iniciado sesión— esa escritura fallaba en
+    // silencio y el registro se quedaba huérfano en Firebase para
+    // siempre (el token local ya no serviría de nada, pero si alguna vez
+    // reaparece en localStorage — restaurado de una copia vieja, por
+    // ejemplo— isTrustedDevice() lo seguiría validando contra ese
+    // registro nunca borrado). Ahora, sin sesión, se pide el borrado a
+    // bimba-verify.php con la cuenta de servicio — usa el mismo token
+    // como prueba de propiedad que ya exige checkTrustedDevice, así que
+    // nadie puede borrar el registro de otro dispositivo solo adivinando
+    // su deviceId.
     try {
       const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
-      if (user && user.uid) await firebase.database().ref('config/trustedDevices/' + getDeviceId()).remove();
+      const deviceId = getDeviceId();
+      const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+      if (user && user.uid) {
+        await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+      } else if (token) {
+        await fetch('bimba-verify.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'removerDispositivoConfianza', deviceId, token })
+        }).catch(() => {});
+      }
     } catch (e) {}
     localStorage.removeItem(TRUSTED_KEY);
     localStorage.removeItem(TRUSTED_NAME_KEY);

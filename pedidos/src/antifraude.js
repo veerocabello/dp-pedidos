@@ -501,8 +501,20 @@ async function cancelarPedido() {
 // en cocina/estadísticas mientras el cliente creía que estaba anulado, o
 // —peor— se creaba un pedido nuevo con el viejo todavía activo, y cocina
 // terminaba preparando dos.
+// Fecha de "hoy" en Europe/Madrid, no en UTC — new Date().toISOString()
+// devuelve la fecha UTC pase lo que pase (da igual la zona horaria
+// configurada en el dispositivo del cliente): entre las 00:00 y la
+// 01:00-02:00 hora de Madrid (según horario de verano/invierno),
+// toISOString() todavía da el día ANTERIOR. El servidor (guardar-pedido.php)
+// fija explícitamente Europe/Madrid para todo lo que usa esta misma clave de
+// fecha (slots/, stats/, tickets/, usedOrderNums/) — sin esto, cancelar un
+// pedido hecho justo pasada la medianoche podía apuntar a la clave de fecha
+// equivocada.
+function _todayKeyMadrid() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
 async function _borrarPedidoDeFirebase(orderNum, phone) {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = _todayKeyMadrid();
 
   // 0. Si este pedido tenía un ticket esperando en la cola de impresión
   // pendiente (porque falló al imprimir mientras la impresora estaba
