@@ -629,6 +629,27 @@ let _activeDiscount = null; // { code, pct }
 async function dcAplicar(code) {
   if (!code) { _activeDiscount = null; renderCart(); return; }
   code = code.trim().toUpperCase();
+  // Hay dos casillas de código distintas (esta, de descuento — siempre
+  // visible — y la de "pedido desde el local", del cartel QR del
+  // mostrador, escondida detrás de un enlace pequeño "¿Estás pidiendo
+  // desde el local?"). Si lo que se ha escrito AQUÍ coincide con el
+  // código real de hoy del local, es que se ha escrito en la casilla
+  // equivocada por error — antes esto simplemente devolvía "código no
+  // válido" sin explicar por qué, así que el gasto de gestión nunca se
+  // quitaba aunque el código fuera correcto. Se aplica igual en el sitio
+  // correcto en vez de dejarlo en un callejón sin salida.
+  const localReal = _localFeeCodeObj();
+  if (localReal.code && code === localReal.code && localReal.fecha === _todayKeyLocal()) {
+    document.querySelectorAll('#local-fee-code-input, #drawer-local-fee-code-input').forEach(el => { el.value = code; });
+    document.querySelectorAll('#local-fee-code-box, #drawer-local-fee-code-box').forEach(el => { el.style.display = 'flex'; });
+    comprobarCodigoLocal();
+    document.querySelectorAll('#discount-input, #drawer-discount-input').forEach(el => { el.value = ''; });
+    document.querySelectorAll('#discount-feedback, #drawer-discount-feedback').forEach(el => {
+      el.style.color = '#27855a';
+      el.textContent = '📍 Ese código es de pedido en el local, no un cupón — aplicado igualmente (gastos de gestión y SMS anulados)';
+    });
+    return;
+  }
   let data;
   try {
     // A diferencia de guardar el pedido, el SMS o pedir turno (que ya usan
@@ -1817,11 +1838,16 @@ function _modoLocalActivo() {
 // propio panel deja cambiarlo cuando se quiera para que deje de valer.
 function comprobarCodigoLocal() {
   const input = document.getElementById('local-fee-code-input');
-  const feedback = document.getElementById('local-fee-code-feedback');
   const code = ((input && input.value) || '').trim().toUpperCase();
   const real = _localFeeCodeObj();
   _codigoLocalValidado = !!code && !!real.code && code === real.code && real.fecha === _todayKeyLocal();
-  if (feedback) {
+  // El cajón móvil tiene su propia casilla (drawer-local-fee-code-input,
+  // ver carrito-checkout.js) que copia el valor a esta de escritorio y
+  // llama aquí para validar — pero antes solo se actualizaba el aviso de
+  // escritorio (local-fee-code-feedback), así que en el cajón móvil (donde
+  // de verdad se suele escribir el código, en el mostrador) nunca se veía
+  // el "✅ Código válido" ni el aviso de error.
+  document.querySelectorAll('#local-fee-code-feedback, #drawer-local-fee-code-feedback').forEach(feedback => {
     if (!code) {
       feedback.textContent = '';
     } else if (_codigoLocalValidado) {
@@ -1831,7 +1857,7 @@ function comprobarCodigoLocal() {
       feedback.textContent = '❌ Código incorrecto o caducado (el código cambia cada día)';
       feedback.style.color = 'var(--error)';
     }
-  }
+  });
   renderCart();
 }
 // Si la visita llega con ?local=CODIGO en la URL (el QR impreso desde el
