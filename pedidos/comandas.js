@@ -305,6 +305,10 @@ function changeCustQty(key, delta) {
 function changeExtrasQty(key, delta) {
   const c = extrasCart[key];
   if (!c) return;
+  if (delta > 0) {
+    const item = MENU.find(m => m.id == c.menuId);
+    if (item && isItemAgotado(item)) { toast('🚫 ' + item.name + ' está agotado'); return; }
+  }
   c.qty += delta;
   if (c.qty <= 0) { delete extrasCart[key]; clearLineDiscount(key); }
   renderCart();
@@ -1438,7 +1442,7 @@ function buildOrderObject(preview) {
     const item = MENU.find(m => m.id == id);
     if (!item) return;
     items.push(applyLineDiscountToTicketItem(
-      { name: item.name, qty, subtotal: item.price * qty, extras: [], _rank: categoryRank(item.cat) },
+      { name: item.name, qty, subtotal: item.price * qty, extras: [], _rank: categoryRank(item.cat), _menuId: item.id },
       simpleLineKey(item.id)));
   });
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
@@ -1459,7 +1463,7 @@ function buildOrderObject(preview) {
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
     // extra van cada uno en su línea con su propio precio.
     items.push(applyLineDiscountToTicketItem(
-      { name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat) },
+      { name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat), _menuId: item.id },
       c.key));
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
@@ -1470,6 +1474,7 @@ function buildOrderObject(preview) {
       displaySubtotal: getExtrasItemBaseSubtotal(c) * c.qty,
       extras: getExtrasItemTicketExtras(c),
       _rank: categoryRank(baseItem ? baseItem.cat : ''),
+      _menuId: c.menuId,
     }, c.key));
   });
   items.sort((a, b) => a._rank - b._rank);
@@ -2357,7 +2362,18 @@ async function sendToPrinter(bytes) {
 
 if (navigator.usb) {
   navigator.usb.addEventListener('disconnect', (e) => {
-    if (printerDevice && e.device === printerDevice) { printerDevice = null; printerEndpoint = null; updatePrinterStatusUI(); }
+    // Sin este aviso, si la impresora se desconecta a media jornada (se
+    // suelta el cable, se apaga sola...) lo único que cambiaba era el
+    // textito "🖨️ Impresora conectada" de la cabecera — fácil de no ver
+    // entre comanda y comanda, y la siguiente impresión fallaría sin
+    // avisar hasta que ya fuera tarde (cliente esperando el ticket).
+    if (printerDevice && e.device === printerDevice) {
+      printerDevice = null;
+      printerEndpoint = null;
+      updatePrinterStatusUI();
+      toast('⚠️ Se ha desconectado la impresora', 5000);
+      playDisconnectAlert();
+    }
   });
 }
 
@@ -2382,6 +2398,17 @@ function playTone(freq, duration, delay, volume) {
   const t = ctx.currentTime + delay;
   osc.start(t);
   osc.stop(t + duration);
+}
+// Tres pitidos graves al desconectarse la impresora — distinto del pitido
+// de imprimir, para que no se confunda con un ticket que sí ha salido.
+function playDisconnectAlert() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    playTone(200, 0.18, 0, 0.22);
+    playTone(200, 0.18, 0.25, 0.22);
+    playTone(200, 0.18, 0.5, 0.22);
+  } catch (e) { /* sin sonido, no pasa nada */ }
 }
 function playPrintSound(ok) {
   try {
@@ -2795,13 +2822,37 @@ function toggleCartaNuevo(id) {
    contador; el boniato solo se diferencia en normal vs G.O.A.T. (el
    único que lleva un ingrediente distinto, queso de cabra).
    Cada entrada guarda { inicial, usado }: "inicial" se pone a mano al
-   empezar el turno (unidades de hoy) y "usado" se va marcando a mano
-   según se gastan — no está enganchado a lo que se vende, así vale
-   igual si algo se hace fuera de una comanda normal. Mientras "inicial"
-   sea 0 (no se ha puesto), el producto no tiene límite y nunca sale
-   agotado. En cuanto usado llega a inicial, el producto pasa a AGOTADO:
-   no se puede marcar más uso, y en la carta no se puede añadir al
-   pedido. Se reinicia solo cada día (clave con fecha). ── */
+   empezar el turno (unidades de hoy). El consumo real se cuenta SOLO:
+   sumando lo que ya se ha vendido hoy (unidadesVendidasHoyPorMenuId, a
+   partir del historial de comandas ya impresas) más lo que hay ahora
+   mismo en la comanda en curso sin imprimir todavía
+   (unidadesEnCarritoPorMenuId) — así no hay que marcar nada a mano,
+   se mueve solo según se van tomando comandas de verdad. "usado" queda
+   como ajuste manual aparte (mermas, regalos fuera de una comanda...),
+   que se suma encima de ese conteo automático. Mientras "inicial" sea 0
+   (no se ha puesto), el producto no tiene límite y nunca sale agotado.
+   En cuanto el total llega a inicial, el producto pasa a AGOTADO: no se
+   puede añadir más al pedido. Se reinicia solo cada día (clave con
+   fecha). ── */
+// Unidades de un producto (por id de MENU) ya vendidas hoy de verdad, según
+// el historial de comandas ya impresas — cuenta también las de un pedido
+// ya borrado del historial (p.ej. tras "Modificar") como NO vendidas, ya
+// que en ese momento ha vuelto a la comanda en curso (ver
+// unidadesEnCarritoPorMenuId), evitando contar dos veces.
+function unidadesVendidasHoyPorMenuId(id) {
+  let sum = 0;
+  getHistorial(todayISO()).forEach(order => {
+    (order.items || []).forEach(it => { if (it._menuId === id) sum += it.qty; });
+  });
+  return sum;
+}
+// Unidades de ese producto en la comanda EN CURSO (todavía sin imprimir) —
+// se suman también, para no poder marcar de golpe más paninis de los que
+// quedan dentro de un mismo pedido grande.
+function unidadesEnCarritoPorMenuId(id, esPanini) {
+  if (esPanini) return cart[id] || 0;
+  return Object.values(extrasCart).reduce((s, c) => s + (c.menuId === id && c.qty > 0 ? c.qty : 0), 0);
+}
 function getPaniniCountsKey() { return 'dpf_comandas_panini_counts_' + todayISO(); }
 function loadPaniniCounts() {
   let raw;
@@ -2815,10 +2866,14 @@ function loadPaniniCounts() {
 }
 function savePaniniCounts(counts) { localStorage.setItem(getPaniniCountsKey(), JSON.stringify(counts)); }
 function getPaniniEntry(id) { return loadPaniniCounts()[id] || { inicial: 0, usado: 0 }; }
+function paniniUsadoTotal(id) {
+  const e = getPaniniEntry(id);
+  return e.usado + unidadesVendidasHoyPorMenuId(id) + unidadesEnCarritoPorMenuId(id, true);
+}
 function paniniRestante(id) {
   const e = getPaniniEntry(id);
   if (!e.inicial) return null; // sin límite puesto hoy
-  return Math.max(0, e.inicial - e.usado);
+  return Math.max(0, e.inicial - paniniUsadoTotal(id));
 }
 function setPaniniInicial(id, valor) {
   const counts = loadPaniniCounts();
@@ -2833,14 +2888,14 @@ function changePaniniItemCount(id, delta) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
   const item = MENU.find(m => m.id == id);
-  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+  if (delta > 0 && entry.inicial > 0 && paniniUsadoTotal(id) >= entry.inicial) {
     toast('🚫 ' + (item ? item.name : 'Producto') + ' agotado — no quedan más');
     return;
   }
   entry.usado = Math.max(0, entry.usado + delta);
   counts[id] = entry;
   savePaniniCounts(counts);
-  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+  if (delta > 0 && entry.inicial > 0 && paniniUsadoTotal(id) >= entry.inicial) {
     toast('⚠️ ' + (item ? item.name : 'Producto') + ': ya no quedan');
   }
   renderStockModal();
@@ -2866,10 +2921,22 @@ function loadBoniatoCounts() {
   return { normal: norm(raw.normal), goat: norm(raw.goat) };
 }
 function saveBoniatoCounts(counts) { localStorage.setItem(getBoniatoCountsKey(), JSON.stringify(counts)); }
+// El "normal" agrupa varios platos de boniato distintos (todo BONIATO_IDS
+// salvo el G.O.A.T., que va aparte) bajo un mismo cupo de stock.
+function boniatoIdsForTipo(tipo) {
+  return tipo === 'goat' ? [BONIATO_GOAT_ID] : [...BONIATO_IDS].filter(id => id !== BONIATO_GOAT_ID);
+}
+function boniatoUsadoTotal(tipo) {
+  const e = loadBoniatoCounts()[tipo];
+  const ids = boniatoIdsForTipo(tipo);
+  const vendido = ids.reduce((s, id) => s + unidadesVendidasHoyPorMenuId(id), 0);
+  const enCarrito = ids.reduce((s, id) => s + unidadesEnCarritoPorMenuId(id, false), 0);
+  return e.usado + vendido + enCarrito;
+}
 function boniatoRestante(tipo) {
   const e = loadBoniatoCounts()[tipo];
   if (!e.inicial) return null;
-  return Math.max(0, e.inicial - e.usado);
+  return Math.max(0, e.inicial - boniatoUsadoTotal(tipo));
 }
 function setBoniatoInicial(tipo, valor) {
   const counts = loadBoniatoCounts();
@@ -2882,13 +2949,13 @@ function changeBoniatoCount(tipo, delta) {
   const counts = loadBoniatoCounts();
   const entry = counts[tipo];
   const label = BONIATO_STOCK_TIPOS[tipo];
-  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+  if (delta > 0 && entry.inicial > 0 && boniatoUsadoTotal(tipo) >= entry.inicial) {
     toast('🚫 ' + label + ' agotado — no quedan más');
     return;
   }
   entry.usado = Math.max(0, entry.usado + delta);
   saveBoniatoCounts(counts);
-  if (delta > 0 && entry.inicial > 0 && entry.usado >= entry.inicial) {
+  if (delta > 0 && entry.inicial > 0 && boniatoUsadoTotal(tipo) >= entry.inicial) {
     toast('⚠️ ' + label + ': ya no quedan');
   }
   renderStockModal();
@@ -2917,8 +2984,9 @@ function isItemAgotado(item) {
   return r !== null && r <= 0;
 }
 
-function stockCounterRow(label, entry, onInicial, onMinus, onPlus, onReset) {
-  const restante = entry.inicial ? Math.max(0, entry.inicial - entry.usado) : null;
+function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, onReset) {
+  const usadoTotal = entry.usado + vendidoAuto;
+  const restante = entry.inicial ? Math.max(0, entry.inicial - usadoTotal) : null;
   const restanteHtml = restante === null
     ? `<span class="stock-restante sin-limite">Sin límite</span>`
     : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restante}</span>`;
@@ -2932,10 +3000,11 @@ function stockCounterRow(label, entry, onInicial, onMinus, onPlus, onReset) {
         <input type="number" min="0" class="stock-inicial-input" value="${entry.inicial || ''}" placeholder="0" onchange="${onInicial}this.value)">
       </label>
       <div class="stock-row-controls">
+        <span class="stock-auto-count" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${vendidoAuto}</span>
         <button class="stock-btn" onclick="${onMinus}">−</button>
-        <span class="stock-value">${entry.usado}</span>
+        <span class="stock-value" title="Ajuste manual (mermas, regalos fuera de una comanda...)">${entry.usado}</span>
         <button class="stock-btn" onclick="${onPlus}">+</button>
-        <button class="stock-reset" title="Reiniciar uso" onclick="${onReset}">↺</button>
+        <button class="stock-reset" title="Reiniciar ajuste manual" onclick="${onReset}">↺</button>
       </div>
     </div>
   </div>`;
@@ -2944,15 +3013,20 @@ function renderStockModal() {
   const paninis = MENU.filter(m => m.cat === 'Paninis');
   document.getElementById('stock-paninis-rows').innerHTML = paninis.map(item => stockCounterRow(
     item.name, getPaniniEntry(item.id),
+    unidadesVendidasHoyPorMenuId(item.id) + unidadesEnCarritoPorMenuId(item.id, true),
     `setPaniniInicial(${item.id},`,
     `changePaniniItemCount(${item.id},-1)`, `changePaniniItemCount(${item.id},1)`, `resetPaniniItemCount(${item.id})`
   )).join('');
   const boniato = loadBoniatoCounts();
-  document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => stockCounterRow(
-    label, boniato[tipo],
-    `setBoniatoInicial('${tipo}',`,
-    `changeBoniatoCount('${tipo}',-1)`, `changeBoniatoCount('${tipo}',1)`, `resetBoniatoCount('${tipo}')`
-  )).join('');
+  document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => {
+    const ids = boniatoIdsForTipo(tipo);
+    const vendidoAuto = ids.reduce((s, id) => s + unidadesVendidasHoyPorMenuId(id) + unidadesEnCarritoPorMenuId(id, false), 0);
+    return stockCounterRow(
+      label, boniato[tipo], vendidoAuto,
+      `setBoniatoInicial('${tipo}',`,
+      `changeBoniatoCount('${tipo}',-1)`, `changeBoniatoCount('${tipo}',1)`, `resetBoniatoCount('${tipo}')`
+    );
+  }).join('');
 }
 function openStockModal() {
   renderStockModal();
