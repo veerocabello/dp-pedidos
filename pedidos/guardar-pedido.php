@@ -1482,6 +1482,53 @@ try {
         exit;
     }
 
+    // ── Recuperar los datos de un ticket ya guardado (para "🔧 Reintentar
+    // impresión" en la pestaña Alertas) ── reintentarImpresionTicket() antes
+    // solo miraba stats/ en localStorage FILTRADO AL DÍA DE HOY EN ESE MISMO
+    // DISPOSITIVO — si la alerta se veía desde otra tablet distinta a la que
+    // recibió el pedido (varias tablets es un escenario real), o al día
+    // siguiente, siempre fallaba con "pedido no encontrado" aunque el
+    // ticket ya estuviera guardado en Firebase. Esta acción lee
+    // tickets/<fecha>/<num> con la cuenta de servicio — mismo límite
+    // estricto y mismo motivo que reintentarStats justo arriba (no fabrica
+    // ni cambia nada, solo relee, pero si/no encuentra el ticket deja
+    // adivinar qué números de pedido existieron un día dado).
+    if (($payload['action'] ?? '') === 'obtenerTicket') {
+        if (!dpf_check_limit($tmp_dir . '/dpf_obtenerticket_ip_' . md5($ip) . '.json', 5, $window)) {
+            http_response_code(429);
+            echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+            exit;
+        }
+        $oOrderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
+        $oFecha = isset($payload['fecha']) ? (string)$payload['fecha'] : '';
+        if (!preg_match('/^T\d{3,5}$/', $oOrderNum) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $oFecha)) {
+            echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $oTicketKey = normOrderKey($oOrderNum);
+        $oTicketLeido = fbGetConEtag($databaseURL, 'tickets/' . $oFecha . '/' . $oTicketKey, $accessToken);
+        $oTicket = is_array($oTicketLeido['data']) ? $oTicketLeido['data'] : null;
+        if (!$oTicket) {
+            echo json_encode(['success' => false, 'error' => 'No se encontró el ticket original.']);
+            exit;
+        }
+        echo json_encode([
+            'success' => true,
+            'ticket'  => [
+                'orderNum' => $oTicket['orderNum'] ?? $oOrderNum,
+                'name'     => $oTicket['name'] ?? '',
+                'phone'    => $oTicket['phone'] ?? '',
+                'notes'    => $oTicket['notes'] ?? '',
+                'total'    => is_numeric($oTicket['total'] ?? null) ? (float)$oTicket['total'] : 0,
+                'items'    => is_array($oTicket['items'] ?? null) ? $oTicket['items'] : [],
+                'time'     => $oTicket['time'] ?? '',
+                'slotTime' => $oTicket['slotTime'] ?? null,
+            ],
+        ]);
+        exit;
+    }
+
     // ── Reservar un turno (contador atómico slots/<fecha>/<turno>) ──
     // Sustituye la escritura directa que antes hacía el navegador contra
     // Firebase (incrementSlot() → fb_incrementSlot en carrito-checkout.js).

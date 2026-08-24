@@ -235,17 +235,43 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
     let stats;
     try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) { stats = {}; }
     const order = (stats && stats.date === fecha && Array.isArray(stats.orders)) ? stats.orders.find(o => o.num === orderNum) : null;
-    if (!order) throw new Error('No se encontró el pedido (¿es de otro día? solo se guarda el de hoy)');
-    const ticketData = {
-      orderNum: order.num,
-      name: order.name,
-      phone: order.phone || '',
-      notes: order.notes || '',
-      slotTime: order.slot || null,
-      items: order.items || [],
-      total: order.total,
-      time: order.time
-    };
+    // Camino rápido: si el pedido está en el caché local de hoy (el caso más
+    // común, mismo dispositivo/día), se usa sin ir al servidor. Si no —
+    // otra tablet distinta a la que recibió el pedido, o al día siguiente—
+    // se pide a guardar-pedido.php (acción 'obtenerTicket'), que sí lee
+    // directamente el ticket real de Firebase en vez de depender de lo que
+    // haya en localStorage de ESTE dispositivo.
+    let ticketData;
+    if (order) {
+      ticketData = {
+        orderNum: order.num,
+        name: order.name,
+        phone: order.phone || '',
+        notes: order.notes || '',
+        slotTime: order.slot || null,
+        items: order.items || [],
+        total: order.total,
+        time: order.time
+      };
+    } else {
+      const res = await fetch('guardar-pedido.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'obtenerTicket', orderNum, fecha })
+      });
+      const data = await res.json();
+      if (!data.success || !data.ticket) throw new Error(data.error || 'No se encontró el pedido');
+      ticketData = {
+        orderNum: data.ticket.orderNum,
+        name: data.ticket.name,
+        phone: data.ticket.phone || '',
+        notes: data.ticket.notes || '',
+        slotTime: data.ticket.slotTime || null,
+        items: data.ticket.items || [],
+        total: data.ticket.total,
+        time: data.ticket.time
+      };
+    }
     // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
     // reintento manual podía intercalarse con un pedido nuevo
     // auto-imprimiéndose justo en ese instante (ver el porqué en
@@ -594,7 +620,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat((o.total || 0).toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -610,7 +636,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat((o.total || 0).toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'
@@ -672,9 +698,14 @@ function buildTicketHTML(data) {
   const nameSafe = escapeHtml(name || '');
   const notesSafe = escapeHtml(notes || '');
   const phoneSafe = escapeHtml(phone || '');
+  // slotTime también viene del pedido (falsificable con un POST directo a
+  // guardar-pedido.php, igual que name/phone/notes de arriba) — se quedó
+  // sin escapar aquí por descuido: banner-pdf.js sí escapa este mismo
+  // campo (escapeHtml(slot)) en su propia exportación.
+  const slotTimeSafe = escapeHtml(slotTime || '');
 
   const headerRow = slotTime
-    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
+    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTimeSafe + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
     : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + nameSafe.toUpperCase() + '</div>';
 
   return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n      " + (tc.nif ? '<div style="font-size:10px;color:#555">NIF ' + tc.nif + '</div>' : '') + "\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phoneSafe ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phoneSafe + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " €</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notesSafe ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notesSafe, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");

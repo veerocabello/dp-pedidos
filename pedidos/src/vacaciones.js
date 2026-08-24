@@ -23,8 +23,14 @@ function loadVacacionesStatus() {
   }).catch(() => { btn.textContent = '⚠️ Error'; });
 }
 function toggleVacacionesModeAdmin() {
-  const btn = document.getElementById('vacaciones-toggle-btn');
   const nuevoEstado = !window._vacacionesActivo;
+  // Activar vacaciones bloquea el 100% de los pedidos entrantes al
+  // instante — a diferencia de otras acciones destructivas del mismo
+  // panel (borrar el registro de actividad, cerrar todas las sesiones),
+  // esto no pedía confirmación antes: un click sin querer no tenía ningún
+  // aviso previo, solo un mensaje informativo después de que ya estaba hecho.
+  if (nuevoEstado && !confirm('¿Activar el modo vacaciones? Se bloquean TODOS los pedidos entrantes al instante.')) return;
+  const btn = document.getElementById('vacaciones-toggle-btn');
   if (btn) btn.textContent = 'Cargando…';
   window.toggleVacacionesMode(nuevoEstado).then(() => {
     _renderVacacionesBtn(nuevoEstado);
@@ -40,13 +46,18 @@ function toggleVacacionesModeAdmin() {
       if (typeof showAlert === 'function') {
         showAlert('Se bloquean todos los pedidos aunque "Pedidos"/"Abierto" sigan marcados como activos en el panel — no hace falta tocarlos aparte.', '🌴 Vacaciones activadas');
       }
-    } else if (typeof getOrdersOpen === 'function' && !getOrdersOpen()) {
-      // Si "Pedidos" ya estaba pausado por otro motivo antes de entrar en
-      // vacaciones (pausa manual o auto-pausa), eso no se restaura solo al
-      // desactivar vacaciones — sin este aviso, el negocio podía parecer
-      // reabierto sin estarlo de verdad.
-      if (typeof showAlert === 'function') {
-        showAlert('"Pedidos" seguía marcado como PAUSADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
+    } else {
+      // Si "Pedidos" y/o "Abierto" ya estaban pausados por otro motivo
+      // antes de entrar en vacaciones (pausa manual o auto-pausa), eso no
+      // se restaura solo al desactivar vacaciones — antes solo se
+      // revisaba "Pedidos"; si el que se había pausado era "Abierto", el
+      // admin no recibía ningún aviso de que seguía apagado.
+      const pedidosPausados = typeof getOrdersOpen === 'function' && !getOrdersOpen();
+      const abiertoApagado = typeof OPEN_KEY !== 'undefined' && localStorage.getItem(OPEN_KEY) === 'false';
+      if ((pedidosPausados || abiertoApagado) && typeof showAlert === 'function') {
+        const cuales = [pedidosPausados ? '"Pedidos"' : null, abiertoApagado ? '"Abierto"' : null].filter(Boolean).join(' y ');
+        const verbo = pedidosPausados && abiertoApagado ? 'seguían' : 'seguía';
+        showAlert(cuales + ' ' + verbo + ' marcado como PAUSADO/CERRADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
       }
     }
   }).catch(() => { if (btn) btn.textContent = '⚠️ Error'; });

@@ -23,8 +23,14 @@ function loadVacacionesStatus() {
   }).catch(() => { btn.textContent = '⚠️ Error'; });
 }
 function toggleVacacionesModeAdmin() {
-  const btn = document.getElementById('vacaciones-toggle-btn');
   const nuevoEstado = !window._vacacionesActivo;
+  // Activar vacaciones bloquea el 100% de los pedidos entrantes al
+  // instante — a diferencia de otras acciones destructivas del mismo
+  // panel (borrar el registro de actividad, cerrar todas las sesiones),
+  // esto no pedía confirmación antes: un click sin querer no tenía ningún
+  // aviso previo, solo un mensaje informativo después de que ya estaba hecho.
+  if (nuevoEstado && !confirm('¿Activar el modo vacaciones? Se bloquean TODOS los pedidos entrantes al instante.')) return;
+  const btn = document.getElementById('vacaciones-toggle-btn');
   if (btn) btn.textContent = 'Cargando…';
   window.toggleVacacionesMode(nuevoEstado).then(() => {
     _renderVacacionesBtn(nuevoEstado);
@@ -40,13 +46,18 @@ function toggleVacacionesModeAdmin() {
       if (typeof showAlert === 'function') {
         showAlert('Se bloquean todos los pedidos aunque "Pedidos"/"Abierto" sigan marcados como activos en el panel — no hace falta tocarlos aparte.', '🌴 Vacaciones activadas');
       }
-    } else if (typeof getOrdersOpen === 'function' && !getOrdersOpen()) {
-      // Si "Pedidos" ya estaba pausado por otro motivo antes de entrar en
-      // vacaciones (pausa manual o auto-pausa), eso no se restaura solo al
-      // desactivar vacaciones — sin este aviso, el negocio podía parecer
-      // reabierto sin estarlo de verdad.
-      if (typeof showAlert === 'function') {
-        showAlert('"Pedidos" seguía marcado como PAUSADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
+    } else {
+      // Si "Pedidos" y/o "Abierto" ya estaban pausados por otro motivo
+      // antes de entrar en vacaciones (pausa manual o auto-pausa), eso no
+      // se restaura solo al desactivar vacaciones — antes solo se
+      // revisaba "Pedidos"; si el que se había pausado era "Abierto", el
+      // admin no recibía ningún aviso de que seguía apagado.
+      const pedidosPausados = typeof getOrdersOpen === 'function' && !getOrdersOpen();
+      const abiertoApagado = typeof OPEN_KEY !== 'undefined' && localStorage.getItem(OPEN_KEY) === 'false';
+      if ((pedidosPausados || abiertoApagado) && typeof showAlert === 'function') {
+        const cuales = [pedidosPausados ? '"Pedidos"' : null, abiertoApagado ? '"Abierto"' : null].filter(Boolean).join(' y ');
+        const verbo = pedidosPausados && abiertoApagado ? 'seguían' : 'seguía';
+        showAlert(cuales + ' ' + verbo + ' marcado como PAUSADO/CERRADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
       }
     }
   }).catch(() => { if (btn) btn.textContent = '⚠️ Error'; });
@@ -4754,17 +4765,43 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
     let stats;
     try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) { stats = {}; }
     const order = (stats && stats.date === fecha && Array.isArray(stats.orders)) ? stats.orders.find(o => o.num === orderNum) : null;
-    if (!order) throw new Error('No se encontró el pedido (¿es de otro día? solo se guarda el de hoy)');
-    const ticketData = {
-      orderNum: order.num,
-      name: order.name,
-      phone: order.phone || '',
-      notes: order.notes || '',
-      slotTime: order.slot || null,
-      items: order.items || [],
-      total: order.total,
-      time: order.time
-    };
+    // Camino rápido: si el pedido está en el caché local de hoy (el caso más
+    // común, mismo dispositivo/día), se usa sin ir al servidor. Si no —
+    // otra tablet distinta a la que recibió el pedido, o al día siguiente—
+    // se pide a guardar-pedido.php (acción 'obtenerTicket'), que sí lee
+    // directamente el ticket real de Firebase en vez de depender de lo que
+    // haya en localStorage de ESTE dispositivo.
+    let ticketData;
+    if (order) {
+      ticketData = {
+        orderNum: order.num,
+        name: order.name,
+        phone: order.phone || '',
+        notes: order.notes || '',
+        slotTime: order.slot || null,
+        items: order.items || [],
+        total: order.total,
+        time: order.time
+      };
+    } else {
+      const res = await fetch('guardar-pedido.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'obtenerTicket', orderNum, fecha })
+      });
+      const data = await res.json();
+      if (!data.success || !data.ticket) throw new Error(data.error || 'No se encontró el pedido');
+      ticketData = {
+        orderNum: data.ticket.orderNum,
+        name: data.ticket.name,
+        phone: data.ticket.phone || '',
+        notes: data.ticket.notes || '',
+        slotTime: data.ticket.slotTime || null,
+        items: data.ticket.items || [],
+        total: data.ticket.total,
+        time: data.ticket.time
+      };
+    }
     // Pasa por _ptEnFila() igual que cualquier otro ticket — si no, este
     // reintento manual podía intercalarse con un pedido nuevo
     // auto-imprimiéndose justo en ese instante (ver el porqué en
@@ -5113,7 +5150,7 @@ function exportHistorialCSV() {
   let rows = ['Fecha,Num Pedido,Cliente,Hora,Turno,Total (€)'];
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+      rows.push("".concat(day.date, ",").concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat((o.total || 0).toFixed(2)));
     });
   });
   const blob = new Blob([rows.join('\n')], {
@@ -5129,7 +5166,7 @@ function exportHistorialCSV() {
 function downloadCSV(stats, filename) {
   let rows = ['Num Pedido,Cliente,Hora,Turno,Total (€)'];
   stats.orders.forEach(o => {
-    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat(o.total.toFixed(2)));
+    rows.push("".concat(o.num, ",\"").concat(_csvEscape(o.name), "\",").concat(o.time, ",").concat(o.slot || '', ",").concat((o.total || 0).toFixed(2)));
   });
   const blob = new Blob([rows.join('\n')], {
     type: 'text/csv;charset=utf-8;'
@@ -5191,9 +5228,14 @@ function buildTicketHTML(data) {
   const nameSafe = escapeHtml(name || '');
   const notesSafe = escapeHtml(notes || '');
   const phoneSafe = escapeHtml(phone || '');
+  // slotTime también viene del pedido (falsificable con un POST directo a
+  // guardar-pedido.php, igual que name/phone/notes de arriba) — se quedó
+  // sin escapar aquí por descuido: banner-pdf.js sí escapa este mismo
+  // campo (escapeHtml(slot)) en su propia exportación.
+  const slotTimeSafe = escapeHtml(slotTime || '');
 
   const headerRow = slotTime
-    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTime + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
+    ? '<div style="display:flex;align-items:stretch;margin:4px 0"><div style="flex:1;padding-right:10px;text-align:center"><div style="font-size:9px;color:#555;letter-spacing:1px;text-transform:uppercase">Hora recogida</div><div style="font-size:22px;font-weight:bold">' + slotTimeSafe + 'h</div></div><div style="width:1px;background:#000;margin:2px 0"></div><div style="flex:1;padding-left:10px;display:flex;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:1px">' + nameSafe.toUpperCase().replace(' ', '<br>') + '</div></div></div>'
     : '<div style="font-size:22px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;padding:4px 0">' + nameSafe.toUpperCase() + '</div>';
 
   return "\n    <div style=\"text-align:center;margin-bottom:6px\">\n      <div style=\"font-size:15px;font-weight:bold;letter-spacing:1px\">" + tc.nombre + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.direccion + "</div>\n      <div style=\"font-size:10px;color:#555\">" + tc.telefono + "</div>\n      " + (tc.nif ? '<div style="font-size:10px;color:#555">NIF ' + tc.nif + '</div>' : '') + "\n    </div>\n    <div style=\"border-top:2px solid #000;margin:6px 0\"></div>\n    " + headerRow + "\n    " + (phoneSafe ? '<div style="font-size:11px;color:#555;text-align:center;margin-bottom:2px">Tlfno. ' + phoneSafe + '</div>' : '') + "\n    <div style=\"border-top:1.5px solid #000;margin:6px 0 4px\"></div>\n    <div style=\"font-size:18px;font-weight:bold;text-align:center;letter-spacing:3px\">PEDIDO ".concat(orderNum, "</div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-bottom:4px\">").concat(time, "</div>\n    <div style=\"border-top:1.5px solid #000;margin:4px 0 6px\"></div>\n    <div style=\"font-size:11px\">").concat(itemsHTML, "</div>\n    <div style=\"border-top:1px dashed #000;margin:6px 0\"></div>\n    <div style=\"display:flex;justify-content:space-between;font-size:13px;font-weight:bold\">\n      <span>TOTAL</span><span>").concat(total.toFixed(2), " €</span>\n    </div>\n    <div style=\"font-size:10px;text-align:center;color:#555;margin-top:2px\">").concat(tc.textoPago, "</div>\n    ").concat(notesSafe ? "<div style=\"border-top:1px dashed #000;margin:6px 0\"></div><div style=\"font-size:10px\"><b>NOTAS:</b> ".concat(notesSafe, "</div>") : '', "\n    <div style=\"border-top:1px dashed #000;margin:8px 0\"></div>\n    <div style=\"text-align:center;font-size:10px;color:#555\">").concat(tc.despedida, "</div>\n    <div style=\"margin-bottom:16px\"></div>\n  ");
@@ -7759,7 +7801,11 @@ async function toggleBannerDia() {
   const data = getBannerDia();
   data.active = !data.active;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(() => {});
+  // Antes el .catch() se quedaba vacío — si esta escritura fallaba, este
+  // dispositivo seguía mostrando el banner como guardado/activo, pero
+  // ningún otro dispositivo ni el sitio de cara al cliente (que lee de
+  // Firebase) lo recibía nunca, sin ningún aviso visible.
+  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _updateBannerToggleBtn(data.active);
   _applyBannerDia(data);
 }
@@ -7773,7 +7819,7 @@ async function saveBannerDia() {
   data.sub = sub;
   data.tipo = tipo;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(() => {});
+  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _applyBannerDia(data);
   showToast('banner-toast');
 }
@@ -7881,7 +7927,13 @@ function _buildClientesMap() {
   const map = {}; // phone → { phone, names, count, total, lastDate, lastOrder, orders[] }
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      const phone = (o.phone || '').replace(/[\s\-().+]/g, '') || '—';
+      // Mismo criterio de normalización que la comprobación de lista negra
+      // más abajo (solo dígitos) — antes este agrupado quitaba solo
+      // espacios/guiones/paréntesis/puntos/+, así que un teléfono con algún
+      // otro carácter fuera de ese conjunto podía terminar en una clave
+      // distinta aquí que en la lista negra, partiendo en silencio a un
+      // mismo cliente real en varias filas.
+      const phone = (o.phone || '').replace(/\D/g, '') || '—';
       const name = o.name || '—';
       if (!map[phone]) map[phone] = {
         phone,
@@ -10324,7 +10376,13 @@ async function renderRuletaAdmin() {
   _renderPremiosAdmin('ruleta-admin-lista', _ruletaAdminPremios);
   document.getElementById('ruleta-admin-stats').textContent = (_ruletaAdminPremios.length) + ' premio' + (_ruletaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_ruletaAdminPremios.length === 1 ? '' : 's');
   if (window.fb_loadRuletaGiros) {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // Fecha de Madrid, no la UTC del navegador del admin — cerca de la
+    // medianoche podían no coincidir (mismo tipo de bug ya corregido en
+    // otros sitios de esta web), mostrando "0 jugadas hoy" con giros
+    // reales ya guardados, o al revés. Solo afecta a lo que se MUESTRA
+    // aquí — el tope real de juegos por cliente lo sigue aplicando
+    // juegos.php en el servidor.
+    const todayKey = _todayKeyMadrid();
     window.fb_loadRuletaGiros(todayKey).then(giros => {
       _pintarResumenHoy('ruleta-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
     }).catch(() => {});
@@ -10343,15 +10401,35 @@ async function ruletaAdminGuardar() {
   const activa = document.getElementById('ruleta-admin-activa').checked;
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _ruletaTopeActual();
-  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
-  logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
-  showToast('ruleta-config-toast');
+  try {
+    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
+    logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+    showToast('ruleta-config-toast');
+  } catch (e) {
+    // Antes esto no tenía try/catch y los errores globales de JS están
+    // desactivados a propósito en esta web, así que un fallo de guardado
+    // no mostraba ningún aviso — el admin no se enteraba de que Firebase
+    // seguía con la configuración vieja.
+    _avisarSiFalloGuardado(e, 'configuración de la ruleta');
+  }
 }
 async function ruletaAdminToggleActiva(checked) {
   _actualizarTrack('ruleta-admin-toggle-track', checked);
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
-  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
-  logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
+  try {
+    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
+    logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
+  } catch (e) {
+    // Deshacer lo que ya se había pintado ANTES de saber si el guardado
+    // iba a funcionar (el <input> ya había cambiado de estado por sí
+    // solo, y _actualizarTrack pintó el color nuevo) — si no, el admin
+    // podía estar mirando "Ruleta activada" en verde mientras Firebase
+    // seguía con la configuración vieja, sin ningún aviso.
+    const checkbox = document.getElementById('ruleta-admin-activa');
+    if (checkbox) checkbox.checked = !checked;
+    _actualizarTrack('ruleta-admin-toggle-track', !checked);
+    _avisarSiFalloGuardado(e, 'estado de la ruleta');
+  }
 }
 
 async function renderRascaAdmin() {
@@ -10363,7 +10441,8 @@ async function renderRascaAdmin() {
   _renderPremiosAdmin('rasca-admin-lista', _rascaAdminPremios);
   document.getElementById('rasca-admin-stats').textContent = (_rascaAdminPremios.length) + ' premio' + (_rascaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_rascaAdminPremios.length === 1 ? '' : 's');
   if (window.fb_loadRascaGiros) {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // Ver el comentario equivalente en renderRuletaAdmin() más arriba.
+    const todayKey = _todayKeyMadrid();
     window.fb_loadRascaGiros(todayKey).then(giros => {
       _pintarResumenHoy('rasca-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
     }).catch(() => {});
@@ -10382,15 +10461,28 @@ async function rascaAdminGuardar() {
   const activa = document.getElementById('rasca-admin-activa').checked;
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _rascaTopeActual();
-  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
-  logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
-  showToast('rasca-config-toast');
+  try {
+    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
+    logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+    showToast('rasca-config-toast');
+  } catch (e) {
+    // Ver el comentario equivalente en ruletaAdminGuardar() más arriba.
+    _avisarSiFalloGuardado(e, 'configuración del rasca');
+  }
 }
 async function rascaAdminToggleActiva(checked) {
   _actualizarTrack('rasca-admin-toggle-track', checked);
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
-  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
-  logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
+  try {
+    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
+    logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
+  } catch (e) {
+    // Ver el comentario equivalente en ruletaAdminToggleActiva() más arriba.
+    const checkbox = document.getElementById('rasca-admin-activa');
+    if (checkbox) checkbox.checked = !checked;
+    _actualizarTrack('rasca-admin-toggle-track', !checked);
+    _avisarSiFalloGuardado(e, 'estado del rasca');
+  }
 }
 
 function _actualizarTrack(id, activo) {
@@ -10438,10 +10530,21 @@ function _buscadorItemMatches(item, q) {
   return (item.meta || []).some(m => _buscadorNorm(m.valor).includes(nq));
 }
 
-function _buscadorScrollFlash(id, delay) {
+// El panel que se acaba de abrir se rellena de forma asíncrona (lectura a
+// Firebase) — con una red lenta, el elemento buscado podía no existir
+// todavía cuando pasaba el "delay" fijo de antes, y esto se quedaba
+// callado sin más (el panel se abría igual, pero la fila buscada nunca se
+// resaltaba ni se desplazaba a la vista). Ahora, si al primer intento no
+// está, se reintenta cada 150ms hasta 3s en total antes de rendirse — de
+// sobra para una lectura normal a Firebase, incluso en una red lenta.
+function _buscadorScrollFlash(id, delay, _intentos) {
   setTimeout(() => {
     const el = document.getElementById(id);
-    if (!el) return;
+    if (!el) {
+      const intentosHechos = (_intentos || 0) + 1;
+      if (intentosHechos * 150 < 3000) _buscadorScrollFlash(id, 150, intentosHechos);
+      return;
+    }
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.add('buscador-flash');
     setTimeout(() => el.classList.remove('buscador-flash'), 1500);

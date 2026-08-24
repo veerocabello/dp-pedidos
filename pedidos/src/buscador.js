@@ -30,10 +30,21 @@ function _buscadorItemMatches(item, q) {
   return (item.meta || []).some(m => _buscadorNorm(m.valor).includes(nq));
 }
 
-function _buscadorScrollFlash(id, delay) {
+// El panel que se acaba de abrir se rellena de forma asíncrona (lectura a
+// Firebase) — con una red lenta, el elemento buscado podía no existir
+// todavía cuando pasaba el "delay" fijo de antes, y esto se quedaba
+// callado sin más (el panel se abría igual, pero la fila buscada nunca se
+// resaltaba ni se desplazaba a la vista). Ahora, si al primer intento no
+// está, se reintenta cada 150ms hasta 3s en total antes de rendirse — de
+// sobra para una lectura normal a Firebase, incluso en una red lenta.
+function _buscadorScrollFlash(id, delay, _intentos) {
   setTimeout(() => {
     const el = document.getElementById(id);
-    if (!el) return;
+    if (!el) {
+      const intentosHechos = (_intentos || 0) + 1;
+      if (intentosHechos * 150 < 3000) _buscadorScrollFlash(id, 150, intentosHechos);
+      return;
+    }
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.add('buscador-flash');
     setTimeout(() => el.classList.remove('buscador-flash'), 1500);

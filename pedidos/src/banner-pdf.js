@@ -7,7 +7,11 @@ async function toggleBannerDia() {
   const data = getBannerDia();
   data.active = !data.active;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(() => {});
+  // Antes el .catch() se quedaba vacío — si esta escritura fallaba, este
+  // dispositivo seguía mostrando el banner como guardado/activo, pero
+  // ningún otro dispositivo ni el sitio de cara al cliente (que lee de
+  // Firebase) lo recibía nunca, sin ningún aviso visible.
+  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _updateBannerToggleBtn(data.active);
   _applyBannerDia(data);
 }
@@ -21,7 +25,7 @@ async function saveBannerDia() {
   data.sub = sub;
   data.tipo = tipo;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(() => {});
+  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _applyBannerDia(data);
   showToast('banner-toast');
 }
@@ -129,7 +133,13 @@ function _buildClientesMap() {
   const map = {}; // phone → { phone, names, count, total, lastDate, lastOrder, orders[] }
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      const phone = (o.phone || '').replace(/[\s\-().+]/g, '') || '—';
+      // Mismo criterio de normalización que la comprobación de lista negra
+      // más abajo (solo dígitos) — antes este agrupado quitaba solo
+      // espacios/guiones/paréntesis/puntos/+, así que un teléfono con algún
+      // otro carácter fuera de ese conjunto podía terminar en una clave
+      // distinta aquí que en la lista negra, partiendo en silencio a un
+      // mismo cliente real en varias filas.
+      const phone = (o.phone || '').replace(/\D/g, '') || '—';
       const name = o.name || '—';
       if (!map[phone]) map[phone] = {
         phone,

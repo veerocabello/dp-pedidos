@@ -83,7 +83,13 @@ async function renderRuletaAdmin() {
   _renderPremiosAdmin('ruleta-admin-lista', _ruletaAdminPremios);
   document.getElementById('ruleta-admin-stats').textContent = (_ruletaAdminPremios.length) + ' premio' + (_ruletaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_ruletaAdminPremios.length === 1 ? '' : 's');
   if (window.fb_loadRuletaGiros) {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // Fecha de Madrid, no la UTC del navegador del admin — cerca de la
+    // medianoche podían no coincidir (mismo tipo de bug ya corregido en
+    // otros sitios de esta web), mostrando "0 jugadas hoy" con giros
+    // reales ya guardados, o al revés. Solo afecta a lo que se MUESTRA
+    // aquí — el tope real de juegos por cliente lo sigue aplicando
+    // juegos.php en el servidor.
+    const todayKey = _todayKeyMadrid();
     window.fb_loadRuletaGiros(todayKey).then(giros => {
       _pintarResumenHoy('ruleta-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
     }).catch(() => {});
@@ -102,15 +108,35 @@ async function ruletaAdminGuardar() {
   const activa = document.getElementById('ruleta-admin-activa').checked;
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _ruletaTopeActual();
-  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
-  logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
-  showToast('ruleta-config-toast');
+  try {
+    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
+    logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+    showToast('ruleta-config-toast');
+  } catch (e) {
+    // Antes esto no tenía try/catch y los errores globales de JS están
+    // desactivados a propósito en esta web, así que un fallo de guardado
+    // no mostraba ningún aviso — el admin no se enteraba de que Firebase
+    // seguía con la configuración vieja.
+    _avisarSiFalloGuardado(e, 'configuración de la ruleta');
+  }
 }
 async function ruletaAdminToggleActiva(checked) {
   _actualizarTrack('ruleta-admin-toggle-track', checked);
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
-  if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
-  logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
+  try {
+    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
+    logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
+  } catch (e) {
+    // Deshacer lo que ya se había pintado ANTES de saber si el guardado
+    // iba a funcionar (el <input> ya había cambiado de estado por sí
+    // solo, y _actualizarTrack pintó el color nuevo) — si no, el admin
+    // podía estar mirando "Ruleta activada" en verde mientras Firebase
+    // seguía con la configuración vieja, sin ningún aviso.
+    const checkbox = document.getElementById('ruleta-admin-activa');
+    if (checkbox) checkbox.checked = !checked;
+    _actualizarTrack('ruleta-admin-toggle-track', !checked);
+    _avisarSiFalloGuardado(e, 'estado de la ruleta');
+  }
 }
 
 async function renderRascaAdmin() {
@@ -122,7 +148,8 @@ async function renderRascaAdmin() {
   _renderPremiosAdmin('rasca-admin-lista', _rascaAdminPremios);
   document.getElementById('rasca-admin-stats').textContent = (_rascaAdminPremios.length) + ' premio' + (_rascaAdminPremios.length === 1 ? '' : 's') + ' configurado' + (_rascaAdminPremios.length === 1 ? '' : 's');
   if (window.fb_loadRascaGiros) {
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // Ver el comentario equivalente en renderRuletaAdmin() más arriba.
+    const todayKey = _todayKeyMadrid();
     window.fb_loadRascaGiros(todayKey).then(giros => {
       _pintarResumenHoy('rasca-admin-hoy', _resumenGirosHoy(giros), (cfg && cfg.topeDiario) || 0);
     }).catch(() => {});
@@ -141,15 +168,28 @@ async function rascaAdminGuardar() {
   const activa = document.getElementById('rasca-admin-activa').checked;
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _rascaTopeActual();
-  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
-  logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
-  showToast('rasca-config-toast');
+  try {
+    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
+    logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
+    showToast('rasca-config-toast');
+  } catch (e) {
+    // Ver el comentario equivalente en ruletaAdminGuardar() más arriba.
+    _avisarSiFalloGuardado(e, 'configuración del rasca');
+  }
 }
 async function rascaAdminToggleActiva(checked) {
   _actualizarTrack('rasca-admin-toggle-track', checked);
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
-  if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
-  logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
+  try {
+    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
+    logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
+  } catch (e) {
+    // Ver el comentario equivalente en ruletaAdminToggleActiva() más arriba.
+    const checkbox = document.getElementById('rasca-admin-activa');
+    if (checkbox) checkbox.checked = !checked;
+    _actualizarTrack('rasca-admin-toggle-track', !checked);
+    _avisarSiFalloGuardado(e, 'estado del rasca');
+  }
 }
 
 function _actualizarTrack(id, activo) {
