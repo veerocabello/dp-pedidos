@@ -4512,8 +4512,15 @@ function dietaryTagsHtml(item) {
     const t = DIETARY_TAGS.find(d => d.id === tid);
     if (!t) return '';
     const nota = notas[tid] || '';
+    // El aviso siempre dice primero que el producto SÍ lo contiene (nadie
+    // debería tener que deducirlo por lo que falte en el mensaje) y, si
+    // además es de los que se pueden pedir sin él, lo añade a continuación
+    // — antes eran dos frases que se excluían entre sí y un cliente con
+    // alergia solo veía "puedes pedirlo sin queso" sin que quedara dicho
+    // en ningún sitio (visible en móvil, sin hover) que el producto SÍ
+    // lleva lácteos si no lo pide así.
     const mensaje = nota
-      || (item.ingredientesQuitables ? ('Puedes pedir este producto sin ' + (t.removableAs || t.label.toLowerCase()) + ' si lo prefieres.') : ('Este producto contiene ' + t.label.toLowerCase() + '.'));
+      || ('Este producto contiene ' + t.label.toLowerCase() + '.' + (item.ingredientesQuitables ? (' Puedes pedirlo sin ' + (t.removableAs || t.label.toLowerCase()) + ' si lo prefieres.') : ''));
     const onclick = "if(typeof showAlert==='function')showAlert('" + _jsAttrEscape(mensaje) + "','" + _jsAttrEscape(t.label) + "')";
     if (t.img) return '<img class="allergen-icon-img" src="' + t.img + '" alt="" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onclick="' + onclick + '" onerror="_alergenoImgFallback(this,\'' + t.id + '\')">';
     return '<span class="allergen-icon" style="background:' + t.color + '" title="' + _alergenoTitulo(t, nota).replace(/"/g, '&quot;') + '" onclick="' + onclick + '">' + t.emoji + '</span>';
