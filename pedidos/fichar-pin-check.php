@@ -171,7 +171,21 @@ function obtenerTokenAcceso($rutaCredenciales) {
     // simultáneos, eso es justo lo que puede tumbar la web si entra mucha
     // gente a la vez.
     $rutaCache = dirname($rutaCredenciales) . '/firebase-token-cache.json';
-    $cache = @json_decode(@file_get_contents($rutaCache), true);
+    // Lectura con bloqueo compartido — antes era un file_get_contents()
+    // suelto: si otra petición estaba a mitad de escribir el caché justo
+    // en ese instante (dos procesos casi a la vez, típico en una ráfaga de
+    // pedidos), esto podía leer el JSON a medio escribir y fallar a
+    // decodificarlo (se trata igual que "caché caducado", así que no
+    // rompe nada, pero desperdicia la optimización justo cuando más
+    // falta hace).
+    $cache = null;
+    $fpCache = @fopen($rutaCache, 'r');
+    if ($fpCache !== false) {
+        if (flock($fpCache, LOCK_SH)) {
+            $cache = @json_decode(stream_get_contents($fpCache), true);
+        }
+        fclose($fpCache);
+    }
     // Margen de 5 minutos antes de la caducidad real, para no arriesgarse a
     // usar un token que caduque a mitad de la petición.
     if (is_array($cache) && isset($cache['token'], $cache['exp']) && (int)$cache['exp'] > (time() + 300)) {
@@ -215,13 +229,25 @@ function obtenerTokenAcceso($rutaCredenciales) {
         throw new Exception('No se pudo obtener el token de acceso: ' . $response);
     }
 
-    // Guardar en cache para las próximas peticiones — best-effort: si falla
-    // escribir el archivo no pasa nada grave, simplemente se pedirá un
-    // token nuevo también la próxima vez.
-    @file_put_contents($rutaCache, json_encode([
-        'token' => $data['access_token'],
-        'exp'   => $now + (int)($data['expires_in'] ?? 3600),
-    ]));
+    // Guardar en cache para las próximas peticiones, con bloqueo exclusivo
+    // — antes era un file_put_contents() suelto sin flock(): dos procesos
+    // escribiendo casi a la vez (varios pedidos pidiendo token nuevo en el
+    // mismo instante bajo una ráfaga) podían entrelazar sus escrituras y
+    // dejar el archivo con JSON corrupto a medias. Sigue siendo
+    // best-effort: si falla escribir el archivo no pasa nada grave,
+    // simplemente se pedirá un token nuevo también la próxima vez.
+    $fpCache = @fopen($rutaCache, 'c');
+    if ($fpCache !== false) {
+        if (flock($fpCache, LOCK_EX)) {
+            ftruncate($fpCache, 0);
+            fwrite($fpCache, json_encode([
+                'token' => $data['access_token'],
+                'exp'   => $now + (int)($data['expires_in'] ?? 3600),
+            ]));
+            flock($fpCache, LOCK_UN);
+        }
+        fclose($fpCache);
+    }
 
     return $data['access_token'];
 }

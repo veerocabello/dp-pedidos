@@ -24,7 +24,8 @@ $max_phone_pre = 3; // antes de leer el teléfono limpiamos la IP
 // Límite aparte, más generoso, que SÍ se gasta pase lo que pase con Twilio
 // (a diferencia de $max_ip/$max_phone_pre, que solo se gastan si Twilio
 // confirma el envío — a propósito, para no penalizar a un cliente real por
-// una caída puntual de Twilio, ver dpf_consume_limit). Sin este freno
+// una caída puntual de Twilio — se reserva igual que los demás, solo que
+// nunca se libera). Sin este freno
 // aparte, una caída SOSTENIDA de Twilio deja $max_ip sin gastarse nunca, y
 // la misma IP puede repetir peticiones sin ningún límite justo cuando más
 // falta hace uno.
@@ -58,30 +59,29 @@ function dpf_gc_rate_limit_files() {
 }
 dpf_gc_rate_limit_files();
 
-// Solo consulta, sin gastar ningún intento — para rechazar rápido a quien ya
-// esté al límite sin tener que llamar a Twilio.
-function dpf_peek_limit($file, $max, $window) {
-    $raw = @file_get_contents($file);
-    $log = $raw ? (json_decode($raw, true) ?: []) : [];
-    $now = time();
-    $log = array_filter($log, function ($ts) use ($now, $window) {
-        return ($now - $ts) < $window;
-    });
-    return count($log) >= $max;
-}
-
-// Gasta un intento — se llama SOLO cuando Twilio ha confirmado que el SMS se
-// ha enviado de verdad. Antes se gastaba el intento ANTES de llamar a
-// Twilio, así que si Twilio fallaba (caída puntual, timeout...) un cliente
-// real podía agotar sus intentos sin que le hubiera llegado ni un SMS, y
-// quedarse bloqueado sin poder pedir el código otra vez hasta pasada la
-// ventana de 10 minutos.
-function dpf_consume_limit($file, $window) {
+// Comprobar y RESERVAR el hueco en una única operación atómica (bajo un
+// mismo flock) — antes esto era "consultar" (dpf_peek_limit, sin tocar el
+// archivo) y "gastar" (dpf_consume_limit, con flock) en dos pasos
+// separados, con la llamada a Twilio entera (hasta 8s) en medio. Varias
+// peticiones casi simultáneas del mismo teléfono/IP (familia en el mismo
+// wifi reintentando, o un script) podían pasar TODAS la comprobación antes
+// de que ninguna quedara registrada, superando el límite real durante esa
+// ventana. Ahora la reserva ocurre ANTES de llamar a Twilio, dentro del
+// mismo candado que la comprobación — y como sigue sin querer penalizar a
+// un cliente real por un fallo de Twilio, si el envío falla se libera la
+// reserva justa que se acaba de hacer (dpf_liberar_intento) para $ip_file/
+// $phone_file. $ip_file_raw (el freno de emergencia, que se gasta SIEMPRE,
+// éxito o fallo) simplemente nunca se libera — se reserva aquí igual que
+// los otros dos, para que también quede cerrada la misma ventana de
+// carrera, pero su reserva ya ES su consumo definitivo.
+// Devuelve la marca de tiempo reservada (para poder liberarla después) o
+// false si ya se había alcanzado el límite.
+function dpf_reservar_intento($file, $max, $window) {
     $fp = fopen($file, 'c+');
-    if ($fp === false) return;
+    if ($fp === false) return time(); // sin poder abrir el archivo, no bloquea (fail-open, igual que antes)
     if (!flock($fp, LOCK_EX)) {
         fclose($fp);
-        return;
+        return time();
     }
     $now = time();
     $size = filesize($file) ?: 0;
@@ -90,6 +90,11 @@ function dpf_consume_limit($file, $window) {
     $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
         return ($now - $ts) < $window;
     }));
+    if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return false;
+    }
     $log[] = $now;
     ftruncate($fp, 0);
     rewind($fp);
@@ -97,15 +102,42 @@ function dpf_consume_limit($file, $window) {
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
+    return $now;
 }
 
-// Comprobar límite por IP (sin gastarlo todavía)
-if (dpf_peek_limit($ip_file, $max_ip, $window)) {
+// Libera una reserva concreta (por su marca de tiempo) — se llama cuando
+// Twilio no confirma el envío, para que un fallo suyo no le cueste a un
+// cliente real uno de sus intentos de $ip_file/$phone_file.
+function dpf_liberar_intento($file, $marca) {
+    if ($marca === false || $marca === null) return;
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return;
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return;
+    }
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
+    $idx = array_search($marca, $log, true);
+    if ($idx !== false) unset($log[$idx]);
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode(array_values($log)));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+
+$marcaIp = dpf_reservar_intento($ip_file, $max_ip, $window);
+if ($marcaIp === false) {
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
 }
-if (dpf_peek_limit($ip_file_raw, $max_ip_raw, $window)) {
+$marcaIpRaw = dpf_reservar_intento($ip_file_raw, $max_ip_raw, $window);
+if ($marcaIpRaw === false) {
+    dpf_liberar_intento($ip_file, $marcaIp);
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
@@ -138,9 +170,11 @@ if (!preg_match('/^\+34[6789][0-9]{8}$/', $phone)) {
     exit();
 }
 
-// Comprobar límite por teléfono (sin gastarlo todavía)
+// Comprobar y reservar el límite por teléfono
 $phone_file = $tmp_dir . '/dpf_sms_phone_' . md5($phone) . '.json';
-if (dpf_peek_limit($phone_file, $max_phone_pre, $window)) {
+$marcaPhone = dpf_reservar_intento($phone_file, $max_phone_pre, $window);
+if ($marcaPhone === false) {
+    dpf_liberar_intento($ip_file, $marcaIp);
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos para este número. Espera unos minutos.']);
     exit();
@@ -167,20 +201,19 @@ curl_close($ch);
 
 $result = json_decode($response, true);
 
-// Este límite se gasta SIEMPRE, éxito o fallo — es el freno de emergencia
-// contra una caída sostenida de Twilio (ver el comentario junto a
-// $max_ip_raw más arriba); el resto de límites de abajo, que solo se
-// gastan con éxito real, no cambian.
-dpf_consume_limit($ip_file_raw, $window);
-
+// $ip_file_raw ya quedó gastado en la reserva de arriba (el freno de
+// emergencia se gasta SIEMPRE, éxito o fallo — ver el comentario junto a
+// $max_ip_raw más arriba); aquí ya no hace falta tocarlo.
 if ($http_code === 201 && isset($result['status']) && $result['status'] === 'pending') {
-    // Solo se gastan los intentos de las dos ventanas (IP y teléfono) ahora
-    // que Twilio ha confirmado el envío — así un fallo de Twilio nunca
-    // consume el intento de un cliente real.
-    dpf_consume_limit($ip_file, $window);
-    dpf_consume_limit($phone_file, $window);
+    // $ip_file y $phone_file ya quedaron reservados/gastados arriba —
+    // Twilio ha confirmado el envío, así que no hay nada que liberar.
     echo json_encode(['success' => true]);
 } else {
+    // Twilio no ha confirmado el envío — liberar las reservas de $ip_file y
+    // $phone_file para que este fallo no le cueste a un cliente real
+    // ninguno de sus intentos.
+    dpf_liberar_intento($ip_file, $marcaIp);
+    dpf_liberar_intento($phone_file, $marcaPhone);
     $log_line = '[' . date('Y-m-d H:i:s') . "] [send-code] Twilio ERROR — phone=$phone http_code=$http_code response=$response" . PHP_EOL;
     error_log($log_line, 3, __DIR__ . '/twilio-errores.log');
     echo json_encode(['error' => 'No se pudo enviar el código. Inténtalo de nuevo.']);

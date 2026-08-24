@@ -47,6 +47,19 @@
 // archivo a la vez sin tener que tocar cada sitio suelto.
 date_default_timezone_set('Europe/Madrid');
 
+// Un guardado normal encadena ~15-20 llamadas cURL secuenciales a Firebase
+// (antifraude, horario, precios, duplicados, ticket, stats, ventas,
+// teléfono, espera estimada...) — no hay curl_multi ni ninguna forma de
+// agruparlas en este archivo (cambio más grande, aparcado para otra
+// ronda), así que cada una es su propio viaje de red de principio a fin.
+// Con timeout real ya puesto en cada llamada (CURLOPT_TIMEOUT=8s), el
+// peor caso teórico si TODAS tardaran el máximo se acerca al límite por
+// defecto de PHP en muchos hostings compartidos (30s) — set_time_limit()
+// explícito aquí evita depender de lo que el hosting tenga configurado
+// por defecto (podría ser más bajo) y da un techo predecible en vez de
+// que el proceso se corte a mitad de escritura de forma menos controlada.
+set_time_limit(45);
+
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -190,7 +203,21 @@ function obtenerTokenAcceso($rutaCredenciales) {
     // simultáneos, eso es justo lo que puede tumbar la web si entra mucha
     // gente a la vez.
     $rutaCache = dirname($rutaCredenciales) . '/firebase-token-cache.json';
-    $cache = @json_decode(@file_get_contents($rutaCache), true);
+    // Lectura con bloqueo compartido — antes era un file_get_contents()
+    // suelto: si otra petición estaba a mitad de escribir el caché justo
+    // en ese instante (dos procesos casi a la vez, típico en una ráfaga de
+    // pedidos), esto podía leer el JSON a medio escribir y fallar a
+    // decodificarlo (se trata igual que "caché caducado", así que no
+    // rompe nada, pero desperdicia la optimización justo cuando más
+    // falta hace).
+    $cache = null;
+    $fpCache = @fopen($rutaCache, 'r');
+    if ($fpCache !== false) {
+        if (flock($fpCache, LOCK_SH)) {
+            $cache = @json_decode(stream_get_contents($fpCache), true);
+        }
+        fclose($fpCache);
+    }
     // Margen de 5 minutos antes de la caducidad real, para no arriesgarse a
     // usar un token que caduque a mitad de la petición.
     if (is_array($cache) && isset($cache['token'], $cache['exp']) && (int)$cache['exp'] > (time() + 300)) {
@@ -217,6 +244,8 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
     $ch = curl_init('https://oauth2.googleapis.com/token');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
         'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -229,22 +258,43 @@ function obtenerTokenAcceso($rutaCredenciales) {
         throw new Exception('No se pudo obtener el token de acceso: ' . $response);
     }
 
-    // Guardar en cache para las próximas peticiones — best-effort: si falla
-    // escribir el archivo no pasa nada grave, simplemente se pedirá un
-    // token nuevo también la próxima vez.
-    @file_put_contents($rutaCache, json_encode([
-        'token' => $data['access_token'],
-        'exp'   => $now + (int)($data['expires_in'] ?? 3600),
-    ]));
+    // Guardar en cache para las próximas peticiones, con bloqueo exclusivo
+    // — antes era un file_put_contents() suelto sin flock(): dos procesos
+    // escribiendo casi a la vez (varios pedidos pidiendo token nuevo en el
+    // mismo instante bajo una ráfaga) podían entrelazar sus escrituras y
+    // dejar el archivo con JSON corrupto a medias. Sigue siendo
+    // best-effort: si falla escribir el archivo no pasa nada grave,
+    // simplemente se pedirá un token nuevo también la próxima vez.
+    $fpCache = @fopen($rutaCache, 'c');
+    if ($fpCache !== false) {
+        if (flock($fpCache, LOCK_EX)) {
+            ftruncate($fpCache, 0);
+            fwrite($fpCache, json_encode([
+                'token' => $data['access_token'],
+                'exp'   => $now + (int)($data['expires_in'] ?? 3600),
+            ]));
+            flock($fpCache, LOCK_UN);
+        }
+        fclose($fpCache);
+    }
 
     return $data['access_token'];
 }
 
 // ── Lectura/escritura CONDICIONAL de un nodo JSON cualquiera (con ETag) ──
+// CURLOPT_CONNECTTIMEOUT/TIMEOUT (mismo valor que el resto de endpoints del
+// proyecto, ej. send-code.php) — antes ninguna llamada de este archivo tenía
+// límite de tiempo, así que si Firebase respondía más lento bajo contención
+// real (varios pedidos casi a la vez compitiendo por el mismo nodo, ver
+// guardarPedidoEnStats), el proceso PHP se quedaba colgado esperando
+// indefinidamente en vez de fallar rápido y liberar el hueco — justo lo que
+// más agrava una saturación del hosting compartido en hora punta.
 function fbGetConEtag($databaseURL, $path, $accessToken) {
     $etag = null;
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
     curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
         if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
@@ -259,6 +309,8 @@ function fbGetConEtag($databaseURL, $path, $accessToken) {
 function fbPutSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
     $ch = curl_init($databaseURL . '/' . $path . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
     if ($etag) $headers[] = 'If-Match: ' . $etag;
@@ -395,7 +447,14 @@ function dpf_backup_pedido_local($ticketData) {
 // "Reintentar guardado" de la pestaña Alertas del panel. Idempotente por
 // número de pedido — reintentar un pedido que ya está en stats no lo duplica.
 function guardarPedidoEnStats($databaseURL, $accessToken, $fecha, $newOrder, $total) {
-    for ($intento = 0; $intento < 8; $intento++) {
+    // 14 intentos en vez de 8 — este nodo es el más disputado de todos (lo
+    // toca CADA pedido del día), y un pedido que se cae de aquí queda
+    // cobrado y confirmado para el cliente pero invisible en "Pedidos en
+    // vivo" hasta que alguien note el aviso de recuperación manual. Vale
+    // más intentar más veces (con timeout real ya puesto en fbGetConEtag/
+    // fbPutSiCoincide, así que esto ya no puede colgarse indefinidamente)
+    // que depender solo de esa red de seguridad.
+    for ($intento = 0; $intento < 14; $intento++) {
         $leido = fbGetConEtag($databaseURL, 'stats/' . $fecha, $accessToken);
         $stats = is_array($leido['data']) ? $leido['data'] : null;
         if (!$stats || ($stats['date'] ?? null) !== $fecha) {
@@ -452,6 +511,8 @@ function comprobarAntifraudeTelefono($databaseURL, $accessToken, $phoneClean, $t
 
     $logCh = curl_init($databaseURL . '/phoneLog/' . $todayKey . '/' . $phoneClean . '.json');
     curl_setopt($logCh, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($logCh, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($logCh, CURLOPT_TIMEOUT, 8);
     curl_setopt($logCh, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
     $log = json_decode(curl_exec($logCh), true);
     curl_close($logCh);
@@ -527,8 +588,17 @@ function liberarSlot($databaseURL, $accessToken, $fecha, $slotTime) {
 // servidor, o un pedido con un precio que no cuadra, aparezcan donde el
 // admin ya mira cada día en vez de perderse en el log de errores de PHP,
 // que nadie revisa.
-function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = []) {
-    for ($intento = 0; $intento < 5; $intento++) {
+// $maxIntentos por defecto (5) vale para los avisos informativos normales.
+// Los avisos de seguridad de última línea (pedido guardado pero no
+// reflejado en stats/, turno posiblemente sobrevendido) se llaman con un
+// $maxIntentos más alto — precisamente porque son la RED DE SEGURIDAD que
+// avisa cuando otra escritura ya falló por contención bajo una ráfaga de
+// pedidos, así que es justo cuando config/activityLog (compartido por
+// todos los avisos del día) también está más disputado. Sin esto, la red
+// de seguridad podía fallar en el mismo momento que fallaba lo que se
+// suponía que debía avisar.
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [], $maxIntentos = 5) {
+    for ($intento = 0; $intento < $maxIntentos; $intento++) {
         $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
         $log = $leido['data'] ?: [];
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
@@ -589,6 +659,12 @@ function _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $delta
         if (fbPutSiCoincide($databaseURL, $path, $accessToken, $actual, $leido['etag'])) return;
         usleep(rand(20000, 80000));
     }
+    // Sigue siendo puramente informativo (no afecta al pedido ni se avisa al
+    // admin) — pero antes, si los 8 intentos fallaban bajo una ráfaga, la
+    // venta se perdía de "Estrellas y perdedores" sin dejar ningún rastro
+    // en ningún sitio para detectarlo después. Un error_log al menos deja
+    // constancia en el servidor de qué producto/fecha se perdió.
+    error_log('[guardar-pedido] No se pudo actualizar ventasProductos/' . $fecha . ' tras varios intentos — deltas perdidos: ' . json_encode($deltas));
 }
 function registrarVentasProductos($databaseURL, $accessToken, $fecha, $items) {
     $idPorNombre = _idsDeProductosPorNombre($databaseURL, $accessToken);
@@ -2025,7 +2101,7 @@ try {
                 usleep(rand(20000, 80000));
             }
             if ($countSlotTrasIncrementar !== null && $countSlotTrasIncrementar > obtenerSlotMax($databaseURL, $accessToken)) {
-                fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Turno ' . $slotTime . ' posiblemente sobrevendido — el pedido ' . $orderNum . ' se contó tarde en slots/ (la reserva original falló por red/timeout) y ya superaba el aforo');
+                fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Turno ' . $slotTime . ' posiblemente sobrevendido — el pedido ' . $orderNum . ' se contó tarde en slots/ (la reserva original falló por red/timeout) y ya superaba el aforo', [], 15);
             }
         }
     }
@@ -2061,7 +2137,7 @@ try {
             'tipo'     => 'pedido_no_guardado',
             'orderNum' => $orderNum,
             'fecha'    => $todayKey,
-        ]);
+        ], 15);
     }
 
     // (El uso del código de descuento, si lo hubo, ya se reservó de forma
