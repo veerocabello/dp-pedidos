@@ -3630,8 +3630,20 @@ function initFirebaseListeners() {
         const diff = newCount - _fbLastCount;
         _fbLastCount = newCount;
         _lastKnownOrderCount = newCount;
-        _unseenOrders += diff;
-        if (typeof updateTabTitle === 'function') updateTabTitle(_unseenOrders);
+        // _unseenOrders vive en pedidos-vivo-cocina.js, que solo carga en el
+        // bundle de admin — en la web pública (bundle core, cualquier
+        // cliente pidiendo) esa variable no existe. Antes esto la
+        // referenciaba sin comprobar nada, así que CUALQUIER pedido nuevo
+        // lanzaba un ReferenceError sin capturar dentro del propio listener
+        // de Firebase, en el navegador de todos los clientes conectados a
+        // la vez — no rompe el checkout directamente (todo lo de después de
+        // esta línea es cosa de admin), pero sí llena la consola de errores
+        // reales en cada pedido y puede hacer que el SDK de Firebase deje
+        // de fiarse de este listener en algunos casos.
+        if (typeof _unseenOrders !== 'undefined') {
+          _unseenOrders += diff;
+          if (typeof updateTabTitle === 'function') updateTabTitle(_unseenOrders);
+        }
         console.log('[DPF] NEW ORDER via Firebase! diff=' + diff + ' adminLoggedIn=' + _adminLoggedIn);
         // Si el panel está abierto pero _adminLoggedIn no se puso, forzarlo.
         // Antes solo se comprobaba si #admin-panel estaba visible — si el
