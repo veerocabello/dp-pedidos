@@ -1615,7 +1615,7 @@ function buildTicketPreviewHTML(order) {
     // El subrayado cubre solo la etiqueta del extra (b.underlineLen
     // caracteres), nunca los espacios de relleno ni el precio a la derecha.
     const content = b.underlineLen
-      ? '<span style="text-decoration:underline">' + escapeHtml(b.text.slice(0, b.underlineLen)) + '</span>' + escapeHtml(b.text.slice(b.underlineLen))
+      ? '<span style="text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:1px">' + escapeHtml(b.text.slice(0, b.underlineLen)) + '</span>' + escapeHtml(b.text.slice(b.underlineLen))
       : (escapeHtml(b.text) || '&nbsp;');
     html += '<div style="' + style + '">' + content + '</div>';
   });
@@ -1667,7 +1667,7 @@ class EscPosBuilder {
   big() { return this.raw([0x1B, 0x21, 0x30]); }
   normal() { return this.raw([0x1B, 0x21, 0x00]); }
   bold(on) { return this.raw([0x1B, 0x45, on ? 1 : 0]); }
-  underline(on) { return this.raw([0x1B, 0x2D, on ? 1 : 0]); }
+  underline(on) { return this.raw([0x1B, 0x2D, on ? 2 : 0]); }
   text(str) { const s = String(str); for (let i = 0; i < s.length; i++) this.bytes.push(s.charCodeAt(i) & 0xFF); return this; }
   newline() { return this.raw([0x0A]); }
   logo() {
