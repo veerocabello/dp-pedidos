@@ -1535,11 +1535,21 @@ function formatItemLines(item, width) {
   const nombre = foldAccents(item.name || '').toUpperCase();
   const precio = fmtEur((item.displaySubtotal !== undefined ? item.displaySubtotal : item.subtotal) || 0);
   const prefix = item.qty + 'x ';
-  const lines = twoCol(prefix + nombre, precio, width).map(text => ({ text, underline: false }));
+  const lines = twoCol(prefix + nombre, precio, width).map(text => ({ text, underlineLen: 0 }));
   (item.extras || []).forEach(ex => {
     const label = '  - ' + foldAccents(ex.name).toUpperCase();
-    const extraLines = ex.price ? twoCol(label, '+' + fmtEur(ex.price), width) : [label.substring(0, width)];
-    extraLines.forEach(text => lines.push({ text, underline: !!ex.underline }));
+    if (ex.price) {
+      const extraLines = twoCol(label, '+' + fmtEur(ex.price), width);
+      // Solo se subraya la etiqueta en sí (la primera línea, hasta donde
+      // llega label) — nunca los espacios de relleno ni el precio, aunque
+      // vayan pegados en el mismo string por la alineación a dos columnas.
+      extraLines.forEach((text, i) => {
+        lines.push({ text, underlineLen: (ex.underline && i === 0) ? Math.min(label.length, text.length) : 0 });
+      });
+    } else {
+      const text = label.substring(0, width);
+      lines.push({ text, underlineLen: ex.underline ? text.length : 0 });
+    }
   });
   return lines;
 }
@@ -1562,7 +1572,7 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(order.time), align: 'center' });
   B.push({ text: TICKET_DIVIDER, align: 'center' });
   order.items.forEach(it => {
-    formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underline: line.underline }));
+    formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineLen: line.underlineLen }));
   });
   B.push({ text: TICKET_DIVIDER, align: 'left' });
   B.push({ text: fmtEur(order.total || 0), align: 'center', big: true });
@@ -1597,8 +1607,12 @@ function buildTicketPreviewHTML(order) {
     }
     let style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
     if (b.paidStatus) style += ';color:' + (b.paidStatus === 'yes' ? '#2e8b57' : '#c0392b');
-    if (b.underline) style += ';text-decoration:underline';
-    html += '<div style="' + style + '">' + (escapeHtml(b.text) || '&nbsp;') + '</div>';
+    // El subrayado cubre solo la etiqueta del extra (b.underlineLen
+    // caracteres), nunca los espacios de relleno ni el precio a la derecha.
+    const content = b.underlineLen
+      ? '<span style="text-decoration:underline">' + escapeHtml(b.text.slice(0, b.underlineLen)) + '</span>' + escapeHtml(b.text.slice(b.underlineLen))
+      : (escapeHtml(b.text) || '&nbsp;');
+    html += '<div style="' + style + '">' + content + '</div>';
   });
   return html;
 }
@@ -1670,14 +1684,17 @@ function buildEscPosBytes(order) {
     if (blk.logo) { b.logo(); return; }
     blk.align === 'center' ? b.center() : b.left();
     blk.big ? b.big() : b.normal();
-    if (blk.underline) b.underline(true);
     if (blk.notesLabel) {
       const idx = blk.text.indexOf(': ') + 2;
       b.bold(true); b.text(blk.text.slice(0, idx)); b.bold(false); b.text(blk.text.slice(idx));
+    } else if (blk.underlineLen) {
+      // Solo se subraya la etiqueta (los primeros underlineLen caracteres)
+      // — nunca los espacios de relleno ni el precio que va detrás.
+      b.underline(true); b.text(blk.text.slice(0, blk.underlineLen)); b.underline(false);
+      b.text(blk.text.slice(blk.underlineLen));
     } else {
       b.text(blk.text);
     }
-    if (blk.underline) b.underline(false);
     b.newline();
   });
   b.normal(); b.left();
