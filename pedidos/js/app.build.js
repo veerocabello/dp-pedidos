@@ -7095,7 +7095,27 @@ async function _finalizarPedido() {
           }
           if (typeof _actualizarTiempoEstimadoTrasGuardar === 'function') _actualizarTiempoEstimadoTrasGuardar(data);
         }
-        else { console.error('❌ Error guardando pedido:', data.error); logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido')); _avisarClienteFalloGuardado(orderNum, data.error || 'No se pudo registrar el pedido'); }
+        else {
+          console.error('❌ Error guardando pedido:', data.error);
+          logActivity('⚠️ Pedido ' + orderNum + ' NO se guardó — ' + (data.error || 'error desconocido'));
+          const _motivoRechazo = data.error || 'No se pudo registrar el pedido';
+          _avisarClienteFalloGuardado(orderNum, _motivoRechazo);
+          // _avisarClienteFalloGuardado de arriba solo actualiza el aviso EN
+          // LÍNEA de la pantalla de éxito — y esa pantalla se muestra al
+          // instante sin esperar esta respuesta, así que es fácil que el
+          // cliente ya haya guardado el móvil pensando que había terminado.
+          // Si ya no sigue viendo esa pantalla (el caso más probable en un
+          // rechazo real durante una hora punta — código de descuento
+          // agotado justo entonces, tienda autopausada por saturación...),
+          // un modal sí avisa igual, pase lo que pase — mismo mecanismo que
+          // ya usa la recuperación de un pedido a medias en
+          // _recuperarPedidoEnCurso().
+          const _successVisibleTrasRespuesta = document.getElementById('success-screen')?.style.display === 'block'
+            && document.getElementById('order-num-display')?.textContent === String(orderNum);
+          if (!_successVisibleTrasRespuesta) {
+            showAlert('Tu pedido ' + orderNum + ' NO se ha podido registrar: ' + _motivoRechazo + '. Por favor, vuelve a hacer el pedido desde el principio.', 'Pedido no confirmado');
+          }
+        }
       })
       .catch((e) => {
         // No se borra el marcador aquí: no hubo respuesta del servidor (fallo
