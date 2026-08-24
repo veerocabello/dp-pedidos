@@ -126,6 +126,22 @@ function _empEstadoActual(emp, fichajes, today) {
   }
   return { estado: estado, entrada: ultimo };
 }
+// Empleados que necesitan un aviso: los que nunca ficharon hoy (estado
+// 'nada') y los que se olvidaron de fichar la salida (estado 'olvido' —
+// incluye una entrada abierta de un día anterior). El badge 🔔, "Avisar a
+// todos" y la alerta de tablet recalculaban antes "quién falta por
+// fichar" con un filtro simple (¿tiene entrada hoy?) que no veía el
+// estado 'olvido' — sí usado ya en la lista individual
+// (bimbaRenderFichajeLista) con su propio botón de WhatsApp — así que un
+// empleado que fichó entrada pero lleva horas sin fichar la salida
+// esperada no contaba en el badge, no recibía el aviso masivo ni
+// aparecía en la alerta de tablet.
+function _empSinFichar(empleados, fichajes, today) {
+  return empleados.filter(function (e) {
+    var r = _empEstadoActual(e, fichajes, today);
+    return r.estado === 'nada' || r.estado === 'olvido';
+  });
+}
 
 function bimbaIrAFichajes() {
   document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
@@ -157,10 +173,7 @@ function bimbaActualizarContadorAlertas() {
   var today = new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
+  var sinFichar = _empSinFichar(empleados, fichajes, today);
   var n = sinFichar.length;
   var desc = document.getElementById('bimba-alertas-desc');
   if (desc) desc.textContent = n > 0 ? n + ' sin fichar todavía' : 'Todo el equipo ha fichado';
@@ -227,10 +240,7 @@ function bimbaAvisarTodos() {
   var today = new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
+  var sinFichar = _empSinFichar(empleados, fichajes, today);
   if (!sinFichar.length) { showToast('bimba-fichaje-toast', '✅ Todos han fichado'); return; }
   bimbaAlertarTablet();
   showToast('bimba-fichaje-toast', '🔔 Alerta enviada — ' + sinFichar.length + ' sin fichar');
@@ -319,16 +329,17 @@ function _mostrarAlertaTablet(data) {
   var today = new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
+  var sinFichar = _empSinFichar(empleados, fichajes, today);
 
   var listaHtml = sinFichar.length
     ? sinFichar.map(function(e) {
+        var r = _empEstadoActual(e, fichajes, today);
+        var icon = r.estado === 'olvido' ? '⚠️' : '❌';
+        var label = r.estado === 'olvido' ? 'Se olvidó fichar salida' : 'No ha fichado';
         return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff1f2;border-radius:10px;border:1.5px solid #fecdd3">' +
-          '<span style="font-size:16px">❌</span>' +
-          '<span style="font-size:14px;font-weight:600;color:#991b1b">' + e.nombre + '</span></div>';
+          '<span style="font-size:16px">' + icon + '</span>' +
+          '<div><div style="font-size:14px;font-weight:600;color:#991b1b">' + e.nombre + '</div>' +
+          '<div style="font-size:11px;color:#991b1b;opacity:0.75">' + label + '</div></div></div>';
       }).join('')
     : '<div style="font-size:13px;color:#8A6A4E">Sin datos de empleados en este dispositivo</div>';
 
@@ -340,7 +351,7 @@ function _mostrarAlertaTablet(data) {
     '<div style="background:#fff;border-radius:16px;padding:2rem 2.5rem;text-align:center;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3)">' +
     '<div style="width:56px;height:56px;background:#fff1f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:28px">🔔</div>' +
     '<div style="font-size:20px;font-weight:700;color:#3D1F0D;margin-bottom:8px">Alerta de fichaje</div>' +
-    '<div style="font-size:14px;color:#8A6A4E;margin-bottom:1.5rem">Hay empleados que no han fichado todavía</div>' +
+    '<div style="font-size:14px;color:#8A6A4E;margin-bottom:1.5rem">Hay empleados pendientes de fichar</div>' +
     '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:1.5rem">' + listaHtml + '</div>' +
     '<button onclick="var o=document.getElementById(&quot;tablet-alert-overlay&quot;);if(o)o.remove()" style="width:100%;padding:12px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Entendido</button>' +
     '</div>';

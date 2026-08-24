@@ -302,32 +302,23 @@ function empRenderRegistroMeses() {
         id: eid
       };
       const suyos = fichMes.filter(f => f.empId === eid);
-      // Calcular horas y días — solo cuentan días con entrada Y salida completas
+      // Calcular horas y días — solo cuentan días con entrada Y salida completas.
+      // Antes esto cogía última salida menos primera entrada, así que un
+      // turno partido (ej. 10:00-14:00 y 17:00-21:00) contaba también la
+      // pausa de en medio como horas trabajadas. _empCalcularHorasDia (más
+      // abajo en este archivo) empareja cada entrada con su siguiente
+      // salida real y ya es el cálculo correcto que usa "Ver historial".
       const porDia = {};
       suyos.forEach(f => {
-        if (!porDia[f.fecha]) porDia[f.fecha] = {
-          e: [],
-          s: []
-        };
-        if (f.tipo === 'entrada') porDia[f.fecha].e.push(f.hora);else porDia[f.fecha].s.push(f.hora);
+        if (!porDia[f.fecha]) porDia[f.fecha] = [];
+        porDia[f.fecha].push(f);
       });
       let totalMin = 0;
       let dias = 0;
-      Object.values(porDia).forEach(_ref => {
-        let e = _ref.e,
-          s = _ref.s;
-        if (e.length && s.length) {
-          const _e$0$split$map = e[0].split(':').map(Number),
-            _e$0$split$map2 = _slicedToArray(_e$0$split$map, 2),
-            eh = _e$0$split$map2[0],
-            em = _e$0$split$map2[1],
-            _s$split$map = s[s.length - 1].split(':').map(Number),
-            _s$split$map2 = _slicedToArray(_s$split$map, 2),
-            sh = _s$split$map2[0],
-            sm = _s$split$map2[1];
-          let d = sh * 60 + sm - (eh * 60 + em);
-          if (d < 0) d += 24 * 60;
-          totalMin += d;
+      Object.values(porDia).forEach(fichsDelDia => {
+        const r = _empCalcularHorasDia(fichsDelDia);
+        if (r.totalMin > 0) {
+          totalMin += r.totalMin;
           dias++;
         }
       });
@@ -446,17 +437,29 @@ function empRenderTrabajandoAhora() {
   const fichajes = fichajesLoad();
   const emps = empLoadAll();
   const hoy = new Date().toISOString().slice(0, 10);
-  const dentro = emps.filter(e => {
-    const s = fichajes.filter(f => f.empId === e.id && f.fecha === hoy).sort((a, b) => a.hora.localeCompare(b.hora));
-    return s.length > 0 && s[s.length - 1].tipo === 'entrada';
+  // Antes solo miraba fichajes de HOY: una entrada sin cerrar de un d\u00EDa
+  // anterior (turno olvidado, m\u00F3vil sin bater\u00EDa...) dejaba de detectarse
+  // en cuanto pasaba la medianoche, y este panel dec\u00EDa "Nadie trabajando
+  // ahora mismo" en vez de se\u00F1alar el problema \u2014 mirar el \u00FAltimo fichaje
+  // de TODO el historial del empleado (no solo hoy) es lo mismo que ya
+  // hace el panel de fichajes bimba (empleados-fichajes.js, _empEstadoActual)
+  // para este mismo caso.
+  const dentro = [];
+  emps.forEach(e => {
+    const suyos = fichajes.filter(f => f.empId === e.id)
+      .sort((a, b) => (a.fecha + (a.horaReal || a.hora)).localeCompare(b.fecha + (b.horaReal || b.hora)));
+    const ultimo = suyos.length ? suyos[suyos.length - 1] : null;
+    if (ultimo && ultimo.tipo === 'entrada') dentro.push({ e, entrada: ultimo, deOtroDia: ultimo.fecha !== hoy });
   });
   if (!dentro.length) {
     el.textContent = 'Nadie trabajando ahora mismo';
     return;
   }
-  el.innerHTML = dentro.map(e => {
-    const ult = fichajes.filter(f => f.empId === e.id && f.fecha === hoy && f.tipo === 'entrada').sort((a, b) => b.hora.localeCompare(a.hora))[0];
-    return "<div style=\"display:flex;align-items:center;gap:8px;padding:4px 0\"><span style=\"color:#27855a;font-size:16px\">\u25CF</span><span style=\"font-size:13px;font-weight:600;color:var(--brown)\">".concat(e.nombre.split(' ')[0], "</span><span style=\"font-size:12px;color:var(--muted)\">desde las ").concat(ult.hora, "</span></div>");
+  el.innerHTML = dentro.map(_ref4 => {
+    const e = _ref4.e, entrada = _ref4.entrada, deOtroDia = _ref4.deOtroDia;
+    const dotColor = deOtroDia ? '#c0392b' : '#27855a';
+    const txt = deOtroDia ? ('\u26A0\uFE0F entrada ' + entrada.fecha + ' ' + entrada.hora + ' sin fichar salida') : ('desde las ' + entrada.hora);
+    return "<div style=\"display:flex;align-items:center;gap:8px;padding:4px 0\"><span style=\"color:".concat(dotColor, ";font-size:16px\">\u25CF</span><span style=\"font-size:13px;font-weight:600;color:var(--brown)\">").concat(e.nombre.split(' ')[0], "</span><span style=\"font-size:12px;color:var(--muted)\">").concat(txt, "</span></div>");
   }).join('');
 }
 function empRenderSelectHistorial() {
@@ -710,9 +713,11 @@ async function empGenerarDocumento() {
     if (!porDia[d]) porDia[d] = {
       e: [],
       s: [],
-      firma: null
+      firma: null,
+      fichs: []
     };
     if (f.tipo === 'entrada') porDia[d].e.push(f.hora);else porDia[d].s.push(f.hora);
+    porDia[d].fichs.push(f);
     if (f.firma) porDia[d].firma = f.firma;
   });
   let totalMin = 0,
@@ -725,36 +730,29 @@ async function empGenerarDocumento() {
       tarOut = '',
       horas = '';
     if (dd) {
+      // Para las celdas de entrada/salida: la más temprana de cada mitad
+      // como "entrada" y la más tardía como "salida" — antes, si había dos
+      // fichajes en la misma mitad del día (fichaje duplicado: móvil que
+      // reenvía, corrección añadida sin borrar la anterior), el forEach se
+      // quedaba con el último que tocara iterar, sin ningún criterio.
       dd.e.forEach(h => {
         const hh = parseInt(h);
-        if (hh < 15) manIn = h;else tarIn = h;
+        if (hh < 15) { if (!manIn || h < manIn) manIn = h; } else { if (!tarIn || h < tarIn) tarIn = h; }
       });
       dd.s.forEach(h => {
         const hh = parseInt(h);
-        if (hh < 15 && hh > 6) manOut = h;else tarOut = h;
+        if (hh < 15 && hh > 6) { if (!manOut || h > manOut) manOut = h; } else { if (!tarOut || h > tarOut) tarOut = h; }
       });
-      let min = 0;
-      [[manIn, manOut], [tarIn, tarOut]].forEach(_ref2 => {
-        let _ref3 = _slicedToArray(_ref2, 2),
-          ei = _ref3[0],
-          si = _ref3[1];
-        if (ei && si) {
-          const _ei$split$map = ei.split(':').map(Number),
-            _ei$split$map2 = _slicedToArray(_ei$split$map, 2),
-            eh = _ei$split$map2[0],
-            em = _ei$split$map2[1],
-            _si$split$map = si.split(':').map(Number),
-            _si$split$map2 = _slicedToArray(_si$split$map, 2),
-            sh = _si$split$map2[0],
-            sm = _si$split$map2[1];
-          let diff = sh * 60 + sm - (eh * 60 + em);
-          if (diff < 0) diff += 24 * 60;
-          min += diff;
-        }
-      });
-      if (min > 0) {
-        totalMin += min;
-        horas = Math.floor(min / 60) + (min % 60 > 0 ? '.' + min % 60 : '');
+      // Horas totales del día: emparejar cada entrada con su siguiente
+      // salida en orden cronológico real (_empCalcularHorasDia, la misma
+      // función ya usada en "Ver historial" y en "Registro por mes") en vez
+      // de restar solo la hora vista en cada mitad del día — así un
+      // fichaje duplicado ya no hace desaparecer horas reales trabajadas
+      // de este documento oficial con firma.
+      const r = _empCalcularHorasDia(dd.fichs);
+      if (r.totalMin > 0) {
+        totalMin += r.totalMin;
+        horas = Math.floor(r.totalMin / 60) + (r.totalMin % 60 > 0 ? '.' + r.totalMin % 60 : '');
       }
     }
     const firmaCelda = dd && dd.firma

@@ -80,9 +80,19 @@ async function sumarSelloFidelizacionRapido(telefono) {
       let vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
       sellos += 1;
       if (sellos >= FIDELIZACION_META_ADMIN) {
-        sellos = 0;
-        premiosPendientes += 1;
-        vecesCompletado += 1;
+        // Mismo tope que aplica el registro de sello normal del servidor
+        // (fidelizacion.php, FIDELIZACION_MAX_PREMIOS_PENDIENTES) — este
+        // botón rápido del admin no lo comprobaba, así que usarlo varias
+        // veces seguidas en un cliente que ya tenía 3 premios pendientes
+        // (p. ej. para ponerlo al día) podía subir a 4, 5... rompiendo la
+        // regla que el propio sistema impone al flujo normal.
+        if (premiosPendientes < FIDELIZACION_TOPE_PREMIOS_PENDIENTES) {
+          sellos = 0;
+          premiosPendientes += 1;
+          vecesCompletado += 1;
+        } else {
+          sellos = FIDELIZACION_META_ADMIN - 1;
+        }
       }
       c.sellos = sellos;
       c.premiosPendientes = premiosPendientes;

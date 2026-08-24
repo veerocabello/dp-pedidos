@@ -790,6 +790,17 @@ function pp2StockBadge(itemId, nombre, stockLastLines, minimos) {
   }
   const lineVal = exacta !== null ? exacta : (parciales.length === 1 ? parciales[0].lineVal : null);
   if (lineVal === null) return null;
+  // Ingredientes de limpieza (checklist, no por cantidad): el equipo los
+  // marca como "✅ … : HAY" / "❌ … : NO HAY" (stock-empleados.js). El
+  // regex de cantidad de abajo solo reconoce dígitos al principio del
+  // valor — "NO HAY" no empieza por dígito, así que qty se quedaba "sin
+  // dato" y el badge nunca se marcaba como bajo: un "Lejía → NO HAY" real
+  // se mostraba en verde con el texto literal "En tienda: NO HAY", justo
+  // lo contrario de lo que debía comunicar.
+  const upperVal = lineVal.toUpperCase();
+  if (upperVal === 'NO HAY' || upperVal === 'HAY') {
+    return { qty: upperVal, unit: '', bajo: upperVal === 'NO HAY', min: null };
+  }
   const m = lineVal.match(/^(\d+)\s*(.*)/);
   const qty = m ? parseInt(m[1]) : null;
   const unit = m ? m[2] || '' : lineVal;

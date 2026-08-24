@@ -861,6 +861,17 @@ function pp2StockBadge(itemId, nombre, stockLastLines, minimos) {
   }
   const lineVal = exacta !== null ? exacta : (parciales.length === 1 ? parciales[0].lineVal : null);
   if (lineVal === null) return null;
+  // Ingredientes de limpieza (checklist, no por cantidad): el equipo los
+  // marca como "✅ … : HAY" / "❌ … : NO HAY" (stock-empleados.js). El
+  // regex de cantidad de abajo solo reconoce dígitos al principio del
+  // valor — "NO HAY" no empieza por dígito, así que qty se quedaba "sin
+  // dato" y el badge nunca se marcaba como bajo: un "Lejía → NO HAY" real
+  // se mostraba en verde con el texto literal "En tienda: NO HAY", justo
+  // lo contrario de lo que debía comunicar.
+  const upperVal = lineVal.toUpperCase();
+  if (upperVal === 'NO HAY' || upperVal === 'HAY') {
+    return { qty: upperVal, unit: '', bajo: upperVal === 'NO HAY', min: null };
+  }
   const m = lineVal.match(/^(\d+)\s*(.*)/);
   const qty = m ? parseInt(m[1]) : null;
   const unit = m ? m[2] || '' : lineVal;
@@ -8601,9 +8612,19 @@ async function sumarSelloFidelizacionRapido(telefono) {
       let vecesCompletado = typeof c.vecesCompletado === 'number' ? c.vecesCompletado : 0;
       sellos += 1;
       if (sellos >= FIDELIZACION_META_ADMIN) {
-        sellos = 0;
-        premiosPendientes += 1;
-        vecesCompletado += 1;
+        // Mismo tope que aplica el registro de sello normal del servidor
+        // (fidelizacion.php, FIDELIZACION_MAX_PREMIOS_PENDIENTES) — este
+        // botón rápido del admin no lo comprobaba, así que usarlo varias
+        // veces seguidas en un cliente que ya tenía 3 premios pendientes
+        // (p. ej. para ponerlo al día) podía subir a 4, 5... rompiendo la
+        // regla que el propio sistema impone al flujo normal.
+        if (premiosPendientes < FIDELIZACION_TOPE_PREMIOS_PENDIENTES) {
+          sellos = 0;
+          premiosPendientes += 1;
+          vecesCompletado += 1;
+        } else {
+          sellos = FIDELIZACION_META_ADMIN - 1;
+        }
       }
       c.sellos = sellos;
       c.premiosPendientes = premiosPendientes;
@@ -9668,7 +9689,11 @@ function stockQty(i, delta) {
   if (!ing) return;
   const current = _stockSelections[ing];
   if (current === undefined) {
-    if (delta > 0) { _stockSelections[ing] = 0; }
+    // Antes ponía 0 en el primer toque de "+" — visualmente cambiaba de
+    // "–" a "0", pero al no ser >0 quedaba fuera del listado de reposición
+    // y de WhatsApp (que filtran >0), así que hacía falta pulsar dos veces.
+    // stockSetBote (abajo) ya hacía bien esto: primer toque = 1.
+    if (delta > 0) { _stockSelections[ing] = delta; }
     renderStockItems();
     return;
   }
@@ -10786,6 +10811,22 @@ function _empEstadoActual(emp, fichajes, today) {
   }
   return { estado: estado, entrada: ultimo };
 }
+// Empleados que necesitan un aviso: los que nunca ficharon hoy (estado
+// 'nada') y los que se olvidaron de fichar la salida (estado 'olvido' —
+// incluye una entrada abierta de un día anterior). El badge 🔔, "Avisar a
+// todos" y la alerta de tablet recalculaban antes "quién falta por
+// fichar" con un filtro simple (¿tiene entrada hoy?) que no veía el
+// estado 'olvido' — sí usado ya en la lista individual
+// (bimbaRenderFichajeLista) con su propio botón de WhatsApp — así que un
+// empleado que fichó entrada pero lleva horas sin fichar la salida
+// esperada no contaba en el badge, no recibía el aviso masivo ni
+// aparecía en la alerta de tablet.
+function _empSinFichar(empleados, fichajes, today) {
+  return empleados.filter(function (e) {
+    var r = _empEstadoActual(e, fichajes, today);
+    return r.estado === 'nada' || r.estado === 'olvido';
+  });
+}
 
 function bimbaIrAFichajes() {
   document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
@@ -10817,10 +10858,7 @@ function bimbaActualizarContadorAlertas() {
   var today = new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
+  var sinFichar = _empSinFichar(empleados, fichajes, today);
   var n = sinFichar.length;
   var desc = document.getElementById('bimba-alertas-desc');
   if (desc) desc.textContent = n > 0 ? n + ' sin fichar todavía' : 'Todo el equipo ha fichado';
@@ -10887,10 +10925,7 @@ function bimbaAvisarTodos() {
   var today = new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
+  var sinFichar = _empSinFichar(empleados, fichajes, today);
   if (!sinFichar.length) { showToast('bimba-fichaje-toast', '✅ Todos han fichado'); return; }
   bimbaAlertarTablet();
   showToast('bimba-fichaje-toast', '🔔 Alerta enviada — ' + sinFichar.length + ' sin fichar');
@@ -10979,16 +11014,17 @@ function _mostrarAlertaTablet(data) {
   var today = new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
+  var sinFichar = _empSinFichar(empleados, fichajes, today);
 
   var listaHtml = sinFichar.length
     ? sinFichar.map(function(e) {
+        var r = _empEstadoActual(e, fichajes, today);
+        var icon = r.estado === 'olvido' ? '⚠️' : '❌';
+        var label = r.estado === 'olvido' ? 'Se olvidó fichar salida' : 'No ha fichado';
         return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff1f2;border-radius:10px;border:1.5px solid #fecdd3">' +
-          '<span style="font-size:16px">❌</span>' +
-          '<span style="font-size:14px;font-weight:600;color:#991b1b">' + e.nombre + '</span></div>';
+          '<span style="font-size:16px">' + icon + '</span>' +
+          '<div><div style="font-size:14px;font-weight:600;color:#991b1b">' + e.nombre + '</div>' +
+          '<div style="font-size:11px;color:#991b1b;opacity:0.75">' + label + '</div></div></div>';
       }).join('')
     : '<div style="font-size:13px;color:#8A6A4E">Sin datos de empleados en este dispositivo</div>';
 
@@ -11000,7 +11036,7 @@ function _mostrarAlertaTablet(data) {
     '<div style="background:#fff;border-radius:16px;padding:2rem 2.5rem;text-align:center;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3)">' +
     '<div style="width:56px;height:56px;background:#fff1f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:28px">🔔</div>' +
     '<div style="font-size:20px;font-weight:700;color:#3D1F0D;margin-bottom:8px">Alerta de fichaje</div>' +
-    '<div style="font-size:14px;color:#8A6A4E;margin-bottom:1.5rem">Hay empleados que no han fichado todavía</div>' +
+    '<div style="font-size:14px;color:#8A6A4E;margin-bottom:1.5rem">Hay empleados pendientes de fichar</div>' +
     '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:1.5rem">' + listaHtml + '</div>' +
     '<button onclick="var o=document.getElementById(&quot;tablet-alert-overlay&quot;);if(o)o.remove()" style="width:100%;padding:12px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Entendido</button>' +
     '</div>';

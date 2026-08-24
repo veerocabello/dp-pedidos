@@ -519,7 +519,11 @@ function stockQty(i, delta) {
   if (!ing) return;
   const current = _stockSelections[ing];
   if (current === undefined) {
-    if (delta > 0) { _stockSelections[ing] = 0; }
+    // Antes ponía 0 en el primer toque de "+" — visualmente cambiaba de
+    // "–" a "0", pero al no ser >0 quedaba fuera del listado de reposición
+    // y de WhatsApp (que filtran >0), así que hacía falta pulsar dos veces.
+    // stockSetBote (abajo) ya hacía bien esto: primer toque = 1.
+    if (delta > 0) { _stockSelections[ing] = delta; }
     renderStockItems();
     return;
   }
