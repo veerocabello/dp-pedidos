@@ -21,4 +21,11 @@ contextBridge.exposeInMainWorld('comandasDesktop', {
   setUpdatePath: (value) => ipcRenderer.invoke('update:setPath', value),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: (installerPath) => ipcRenderer.invoke('update:install', installerPath),
+  // Selector de impresora USB cuando hay varios dispositivos conectados —
+  // se muestra dentro de la propia página (grande, táctil) en vez de un
+  // diálogo nativo del sistema. onUsbDevicePicker recibe la lista de
+  // nombres cuando main.js necesita preguntar; chooseUsbDevice(index)
+  // devuelve la elección (-1 = cancelar).
+  onUsbDevicePicker: (cb) => ipcRenderer.on('usb-device-picker:show', (event, names) => cb(names)),
+  chooseUsbDevice: (index) => ipcRenderer.send('usb-device-picker:choose', index),
 });

@@ -440,6 +440,18 @@
   </div>
 </div>
 
+<!-- ── ELEGIR IMPRESORA (app de escritorio, varios dispositivos USB) ── -->
+<div id="usb-picker-modal" class="modal-overlay">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">🔌 Elegir impresora</div>
+    <div class="modal-subtitle">Hay varios dispositivos USB conectados. ¿Cuál es la impresora?</div>
+    <div id="usb-picker-list" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
+    <div class="settings-actions" style="margin-top:14px">
+      <button class="btn-secondary" style="width:100%" onclick="chooseUsbDevicePicker(-1)">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── TICKET (vista/impresión) ── -->
 <div id="ticket-print"><div class="ticket-doc" id="ticket-html-content"></div></div>
 

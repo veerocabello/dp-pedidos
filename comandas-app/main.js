@@ -6,8 +6,8 @@
 // La única pieza que cambia de verdad respecto a abrirla en Chrome es la
 // impresora USB (WebUSB): un navegador normal muestra un selector nativo
 // cuando la web pide un dispositivo (navigator.usb.requestDevice), pero
-// Electron no tiene ese selector — hay que dárselo aquí, a mano, con
-// dialog.showMessageBoxSync() listando los dispositivos USB conectados.
+// Electron no tiene ese selector — hay que dárselo aquí, a mano, con un
+// modal propio dentro de la página (ver setupUsbDevicePicker más abajo).
 const { app, BrowserWindow, Menu, dialog, session, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -116,6 +116,13 @@ if (!gotLock) {
   }
 
   // ── Selector de impresora USB (sustituye al diálogo nativo de Chrome) ──
+  // Antes usaba dialog.showMessageBoxSync(), un diálogo NATIVO y SÍNCRONO:
+  // bloqueaba el proceso principal entero mientras esperaba (la app parecía
+  // "colgada"), con botones diminutos y difíciles de tocar en la pantalla
+  // táctil del mostrador. Ahora se le pregunta a la propia página (modal
+  // grande, igual de estilo que el resto de la app) vía IPC, sin bloquear
+  // nada mientras se espera el toque.
+  let pendingUsbPickerResolve = null;
   function setupUsbDevicePicker() {
     const ses = session.defaultSession;
 
@@ -125,19 +132,20 @@ if (!gotLock) {
       if (list.length === 0) { callback(); return; }
       if (list.length === 1) { callback(list[0].deviceId); return; }
       // Varios dispositivos USB conectados (ej. impresora + lector de
-      // códigos): se pregunta cuál es la impresora con un diálogo nativo
-      // sencillo, en vez de coger uno a ciegas.
+      // códigos, ratón inalámbrico...) — se pregunta cuál es la impresora
+      // dentro de la propia app en vez de coger uno a ciegas.
+      if (!mainWindow) { callback(); return; }
       const nombres = list.map(d => d.deviceName || (d.vendorId + ':' + d.productId));
-      const resultado = dialog.showMessageBoxSync({
-        type: 'question',
-        title: 'Elegir impresora',
-        message: 'Hay varios dispositivos USB conectados. ¿Cuál es la impresora?',
-        buttons: [...nombres, 'Cancelar'],
-        cancelId: nombres.length,
-        noLink: true,
-      });
-      if (resultado >= 0 && resultado < list.length) callback(list[resultado].deviceId);
-      else callback();
+      pendingUsbPickerResolve = (index) => {
+        pendingUsbPickerResolve = null;
+        if (index >= 0 && index < list.length) callback(list[index].deviceId);
+        else callback();
+      };
+      mainWindow.webContents.send('usb-device-picker:show', nombres);
+    });
+
+    ipcMain.on('usb-device-picker:choose', (event, index) => {
+      if (pendingUsbPickerResolve) pendingUsbPickerResolve(index);
     });
 
     // Una vez elegido un dispositivo (arriba o en la propia página con

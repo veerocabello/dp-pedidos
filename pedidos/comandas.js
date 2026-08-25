@@ -3029,6 +3029,22 @@ function closeStockModal() { document.getElementById('stock-modal').classList.re
 /* ══════════════════════════════════════════════════════════════
    INIT
    ══════════════════════════════════════════════════════════════ */
+/* ── Elegir impresora USB (solo app de escritorio, cuando hay varios
+   dispositivos conectados) — modal grande y táctil dentro de la propia
+   página, en vez del diálogo nativo del sistema que main.js usaba antes
+   (bloqueaba la app entera mientras esperaba, con botones diminutos). ── */
+function showUsbDevicePickerModal(nombres) {
+  const list = document.getElementById('usb-picker-list');
+  list.innerHTML = nombres.map((nombre, i) =>
+    `<button class="btn-secondary" style="width:100%;padding:16px;font-size:15px" onclick="chooseUsbDevicePicker(${i})">${escapeHtml(nombre)}</button>`
+  ).join('');
+  document.getElementById('usb-picker-modal').classList.add('open');
+}
+function chooseUsbDevicePicker(index) {
+  document.getElementById('usb-picker-modal').classList.remove('open');
+  if (isDesktopApp()) window.comandasDesktop.chooseUsbDevice(index);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   applyFontChoice(loadFontChoice());
   initTabs();
@@ -3038,4 +3054,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderCart();
   trySilentReconnect();
   purgarHistorialAntiguoSiToca();
+  if (isDesktopApp() && window.comandasDesktop.onUsbDevicePicker) {
+    window.comandasDesktop.onUsbDevicePicker(showUsbDevicePickerModal);
+  }
 });
