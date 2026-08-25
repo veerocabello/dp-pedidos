@@ -2478,22 +2478,6 @@ async function handlePrintOrder() {
   }
   if (getTicketConfig().autoImprimir !== false) clearOrder(true);
   toast(printedViaUsb ? '✅ Comanda ' + order.num + ' impresa' : '🖨️ Comanda ' + order.num + ' — abriendo diálogo de impresión…');
-  openCopyConfirm(order);
-}
-
-/* ── ¿Imprimir copia? — aparece justo después de imprimir la comanda ── */
-let copyConfirmOrder = null;
-function openCopyConfirm(order) {
-  copyConfirmOrder = order;
-  document.getElementById('copy-confirm-sub').textContent = 'Comanda ' + order.num;
-  document.getElementById('copy-confirm-modal').classList.add('open');
-}
-function closeCopyConfirm() { document.getElementById('copy-confirm-modal').classList.remove('open'); copyConfirmOrder = null; }
-async function printCopyConfirmed() {
-  if (!copyConfirmOrder) return;
-  await printOrder(copyConfirmOrder);
-  toast('🖨️ Copia de la comanda ' + copyConfirmOrder.num + ' impresa');
-  closeCopyConfirm();
 }
 
 /* ══════════════════════════════════════════════════════════════
