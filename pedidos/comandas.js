@@ -2469,8 +2469,15 @@ async function printOrder(order) {
   // fallida y cae al diálogo de impresión normal en vez de quedarse así.
   if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printSilent) {
     try {
+      // El @page CSS (size: Xmm auto) no basta por sí solo en todos los
+      // equipos — confirmado en la tienda: eligiendo la impresora a mano en
+      // el diálogo sí sale el ticket, pero en modo silencioso Electron dice
+      // "éxito" y no llega papel. Se manda el tamaño de página EXPLÍCITO (en
+      // micras: 1mm = 1000) en vez de confiar en que lo lea del CSS.
+      const widthMicrons = (cfg.anchoPapel == 58 ? 58 : 80) * 1000;
+      const heightMicrons = 297000; // largo generoso (como A4); las impresoras de rollo cortan al terminar el contenido
       const res = await _conTimeout(
-        window.comandasDesktop.printSilent(cfg.printerDeviceName || undefined),
+        window.comandasDesktop.printSilent(cfg.printerDeviceName || undefined, widthMicrons, heightMicrons),
         12000,
         'timeout en impresión silenciosa — el driver no respondió a tiempo'
       );

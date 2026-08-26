@@ -31,5 +31,5 @@ contextBridge.exposeInMainWorld('comandasDesktop', {
   // Impresión silenciosa (sin diálogo) al driver de Windows ya instalado —
   // ver comandas-app/main.js para por qué esto no pasa por WebUSB.
   listPrinters: () => ipcRenderer.invoke('print:list'),
-  printSilent: (deviceName) => ipcRenderer.invoke('print:silent', deviceName),
+  printSilent: (deviceName, widthMicrons, heightMicrons) => ipcRenderer.invoke('print:silent', { deviceName, widthMicrons, heightMicrons }),
 });

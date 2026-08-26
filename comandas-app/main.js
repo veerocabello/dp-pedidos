@@ -248,13 +248,18 @@ if (!gotLock) {
       try { return await mainWindow.webContents.getPrintersAsync(); }
       catch (e) { return []; }
     });
-    ipcMain.handle('print:silent', (event, deviceName) => {
+    // El @page CSS (size: 80mm auto) no basta por sí solo para la impresión
+    // SILENCIOSA de Electron en todos los equipos — confirmado en la tienda:
+    // eligiendo la impresora a mano en el diálogo sí sale el ticket, pero la
+    // misma impresora en modo silencioso no imprime nada (Electron dice
+    // "éxito" pero no llega papel). Se le pasa el tamaño de página EXPLÍCITO
+    // (en micras) en vez de confiar en que Electron lea el CSS por su cuenta.
+    ipcMain.handle('print:silent', (event, { deviceName, widthMicrons, heightMicrons } = {}) => {
       if (!mainWindow) return { success: false, reason: 'no hay ventana' };
+      const options = { silent: true, printBackground: true, deviceName: deviceName || undefined, margins: { marginType: 'none' } };
+      if (widthMicrons && heightMicrons) options.pageSize = { width: widthMicrons, height: heightMicrons };
       return new Promise((resolve) => {
-        mainWindow.webContents.print(
-          { silent: true, printBackground: true, deviceName: deviceName || undefined, margins: { marginType: 'none' } },
-          (success, reason) => resolve({ success, reason })
-        );
+        mainWindow.webContents.print(options, (success, reason) => resolve({ success, reason }));
       });
     });
 
