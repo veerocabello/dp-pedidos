@@ -80,21 +80,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 12px 22px;
+  padding: 9px 18px;
   background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%);
   color: var(--cream);
-  flex-wrap: wrap;
+  /* Sin flex-wrap: la cabecera nunca crece hacia abajo aunque la ventana
+     sea estrecha (pantallas táctiles pequeñas de mostrador) — si los
+     botones no caben, .topbar-actions se desplaza en horizontal en vez de
+     apilarse en varias filas y ocupar media pantalla. */
+  flex-wrap: nowrap;
+  min-height: 0;
   box-shadow: 0 4px 18px rgba(0,0,0,.22);
   border-bottom: 1px solid rgba(244,196,48,.25);
 }
 .topbar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
 }
 .topbar-logo {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--cream);
   box-shadow: 0 0 0 2px rgba(244,196,48,.55), var(--shadow-sm);
@@ -103,27 +109,41 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .topbar-title {
   font-family: var(--font-head);
   font-weight: 700;
-  font-size: 20px;
+  font-size: 17px;
   letter-spacing: .2px;
   line-height: 1.15;
 }
 .topbar-sub {
   display: block;
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
   color: rgba(255,248,238,.62);
   letter-spacing: .2px;
 }
-.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.topbar-actions::-webkit-scrollbar { display: none; }
+.topbar-actions > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 
 .printer-status {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11.5px;
   font-weight: 600;
-  padding: 7px 14px 7px 11px;
+  padding: 6px 12px 6px 10px;
   border-radius: 20px;
   background: rgba(255,248,238,.08);
   border: 1px solid rgba(255,248,238,.14);
@@ -148,9 +168,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   background: rgba(255,248,238,.08);
   border: 1px solid rgba(255,248,238,.18);
   color: var(--cream);
-  padding: 9px 15px;
+  padding: 8px 12px;
   border-radius: var(--radius-xs);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   transition: background .15s, transform .1s, box-shadow .15s;
