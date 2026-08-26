@@ -380,7 +380,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 9px;
   align-content: start;
 }
