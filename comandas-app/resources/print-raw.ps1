@@ -9,7 +9,17 @@ param(
   [Parameter(Mandatory=$true)][string]$FilePath
 )
 
-Add-Type -TypeDefinition @"
+# Compilar el código C# con Add-Type -TypeDefinition tarda uno o varios
+# segundos CADA VEZ (arranca el compilador de .NET) — eso es lo que hacía
+# lenta cada comanda. Se compila una única vez a un .dll guardado en
+# AppData y, si ya existe, las siguientes veces solo se CARGA (mucho más
+# rápido que compilar de nuevo).
+$dllDir = Join-Path $env:LOCALAPPDATA "ComandasDulcePatata"
+$dllPath = Join-Path $dllDir "RawPrinterHelper.dll"
+
+if (-not (Test-Path $dllPath)) {
+  New-Item -ItemType Directory -Force -Path $dllDir | Out-Null
+  Add-Type -OutputType Library -OutputAssembly $dllPath -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
@@ -60,6 +70,9 @@ public class RawPrinterHelper {
     }
 }
 "@
+}
+
+Add-Type -Path $dllPath
 
 $bytes = [System.IO.File]::ReadAllBytes($FilePath)
 $ok = [RawPrinterHelper]::SendBytesToPrinter($PrinterName, $bytes)
