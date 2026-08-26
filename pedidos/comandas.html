@@ -71,13 +71,35 @@
           <button class="cash-quick-btn" onclick="addCashAmount(10)">+10€</button>
           <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
           <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
-          <input id="cash-received" type="tel" inputmode="decimal" placeholder="Paga con" oninput="updateChange()">
+          <input id="cash-received" type="tel" inputmode="decimal" placeholder="Paga con" oninput="keypadBuffer='';updateKeypadDisplay();updateChange()">
         </div>
         <div class="cash-calc-row">
           <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.05)">+0,05€</button>
           <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.10)">+0,10€</button>
           <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.20)">+0,20€</button>
           <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.50)">+0,50€</button>
+        </div>
+        <!-- Teclado numérico táctil (igual que el "Pagos" de uniCenta) — en
+             una pantalla táctil de mostrador no hay teclado físico para
+             escribir un importe exacto en "Paga con"; con esto se escribe
+             tocando, y "=" lo suma a lo ya entregado. -->
+        <div class="cash-keypad">
+          <div class="cash-keypad-display" id="cash-keypad-display">0</div>
+          <div class="cash-keypad-grid">
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('7')">7</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('8')">8</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('9')">9</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('4')">4</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('5')">5</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('6')">6</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('1')">1</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('2')">2</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('3')">3</button>
+            <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="keypadClear()">CE</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit('0')">0</button>
+            <button type="button" class="cash-keypad-btn" onclick="keypadDigit(',')">,</button>
+          </div>
+          <button type="button" class="cash-keypad-equals" onclick="keypadEquals()">= Sumar a "Paga con"</button>
         </div>
         <div class="cash-change-row" id="cash-change-row" style="display:none">
           <span id="cash-change-label">Cambio a devolver</span><span id="cash-change-amount">0,00 €</span>

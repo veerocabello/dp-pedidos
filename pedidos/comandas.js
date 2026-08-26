@@ -802,8 +802,37 @@ function addCashAmount(v) {
   el.value = (parseCashNum(el.value) + v).toFixed(2);
   updateChange();
 }
+
+// Teclado numérico táctil para "Paga con" (igual que el de "Pagos" de
+// uniCenta) — en el mostrador no hay teclado físico, así que escribir un
+// importe exacto necesitaba el teclado táctil de Windows. Se escribe aquí
+// dentro y, al pulsar "=", se SUMA a lo que ya hubiera en "Paga con" (igual
+// que los botones +5€/+10€/etc., por si se van metiendo billetes sueltos).
+let keypadBuffer = '';
+function keypadDigit(d) {
+  if (d === ',' && keypadBuffer.includes(',')) return;
+  if (keypadBuffer.replace(',', '').length >= 6) return; // hasta 999999, de sobra
+  keypadBuffer += d;
+  updateKeypadDisplay();
+}
+function keypadClear() {
+  keypadBuffer = '';
+  updateKeypadDisplay();
+}
+function updateKeypadDisplay() {
+  const el = document.getElementById('cash-keypad-display');
+  if (el) el.textContent = keypadBuffer || '0';
+}
+function keypadEquals() {
+  const val = parseCashNum(keypadBuffer);
+  if (val > 0) addCashAmount(val);
+  keypadBuffer = '';
+  updateKeypadDisplay();
+}
 function clearCashReceived() {
   document.getElementById('cash-received').value = '';
+  keypadBuffer = '';
+  updateKeypadDisplay();
   cashTotalEdited = false;
   syncCashTotal(currentOrderTotal());
 }
@@ -849,6 +878,8 @@ function clearOrder(silent) {
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('cash-received').value = '';
+  keypadBuffer = '';
+  updateKeypadDisplay();
   cashTotalEdited = false;
   setOrderPaid(false);
   setPaymentMethod('efectivo');

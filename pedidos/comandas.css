@@ -807,6 +807,57 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   color: var(--text);
   text-align: right;
 }
+.cash-keypad { margin-top: 6px; }
+.cash-keypad-display {
+  background: var(--white);
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  padding: 6px 10px;
+  margin-bottom: 5px;
+  text-align: right;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--brown);
+}
+.cash-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.cash-keypad-btn {
+  background: var(--white);
+  border: 1.5px solid var(--warm);
+  border-radius: var(--radius-xs);
+  padding: 10px 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--brown);
+  cursor: pointer;
+  transition: all .1s;
+}
+.cash-keypad-btn:hover { background: var(--amber-light); border-color: var(--amber); }
+.cash-keypad-btn:active { transform: scale(.94); }
+.cash-keypad-ce { color: var(--error); border-color: rgba(192,57,43,.35); }
+.cash-keypad-ce:hover { background: var(--error); color: #fff; border-color: var(--error); }
+.cash-keypad-equals {
+  width: 100%;
+  margin-top: 5px;
+  background: var(--brown);
+  color: var(--cream);
+  border: none;
+  border-radius: var(--radius-xs);
+  padding: 10px 0;
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.cash-keypad-equals:hover { background: var(--amber-dark); }
+.cash-keypad-equals:active { transform: scale(.97); }
+
 .cash-change-row {
   display: flex;
   align-items: center;
