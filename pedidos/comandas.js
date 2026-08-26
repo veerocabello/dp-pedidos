@@ -2469,6 +2469,17 @@ async function printOrder(order) {
   // fallida y cae al diálogo de impresión normal en vez de quedarse así.
   if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printSilent) {
     try {
+      // renderTicketPreview() de arriba cambia el HTML del ticket en el
+      // momento, pero eso no garantiza que Chromium ya haya pintado ese
+      // contenido nuevo en pantalla — webContents.print() (llamado desde el
+      // proceso principal) puede capturar un fotograma todavía en blanco o
+      // con el ticket anterior si se dispara demasiado pronto. Confirmado en
+      // la tienda: el papel se corta (el tamaño de página llega bien) pero
+      // sale en blanco. Se espera a que el navegador termine de pintar
+      // (doble rAF, la forma estándar de esperar un pintado completo) antes
+      // de pedirle a Electron que imprima.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
       // El @page CSS (size: Xmm auto) no basta por sí solo en todos los
       // equipos — confirmado en la tienda: eligiendo la impresora a mano en
       // el diálogo sí sale el ticket, pero en modo silencioso Electron dice
