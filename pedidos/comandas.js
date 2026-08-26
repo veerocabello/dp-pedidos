@@ -209,7 +209,17 @@ function addBolsaDirect() {
 // el detalle sigue disponible al personalizar (Al Gusto/Bomba/extras).
 function renderItemRow(item) {
   const qty = cart[item.id] || 0;
-  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id) || BONIATO_IDS.has(item.id);
+  // Al Gusto/Bomba/Cheddar y los boniatos (con stock limitado, que solo se
+  // cuenta desde extrasCart — ver unidadesEnCarritoPorMenuId) SIEMPRE
+  // necesitan pasar por el modal. Las patatas normales (1-14) tienen
+  // "quitar ingredientes"/queso/gratinado como algo OPCIONAL: antes tocar
+  // la casilla abría igualmente el modal aunque no se fuera a cambiar
+  // nada, obligando a bajar hasta el botón de añadir para el caso más
+  // habitual (sin personalizar). Ahora tocar la casilla añade la patata
+  // tal cual (como cualquier otro producto simple) y un botoncito ✏️
+  // aparte abre el modal solo si de verdad se quiere personalizar.
+  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || BONIATO_IDS.has(item.id);
+  const customizable = ALL_EXTRAS_IDS.has(item.id);
   const agotado = isItemAgotado(item);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
   const tileAction = isSpecial ? `onAddClick(${item.id})` : `changeQty(${item.id},1)`;
@@ -221,6 +231,7 @@ function renderItemRow(item) {
     <div class="item-name">${escapeHtml(item.name)}</div>
     <div class="item-price">${fmt(item.price)} €</div>
     ${qty > 0 && !isSpecial ? `<button class="item-minus-btn" onclick="changeQty(${item.id},-1)">−</button>` : ''}
+    ${customizable && !agotado ? `<button class="item-customize-btn" onclick="onAddClick(${item.id})" title="Personalizar (quitar ingredientes, queso, gratinado)">✏️</button>` : ''}
     ${agotado ? `<div class="item-agotado-overlay">Agotado</div>` : ''}
   </div>`;
 }
