@@ -201,29 +201,27 @@ function addBolsaDirect() {
   toast('🛍️ Bolsa añadida (+0,10 €)');
 }
 
+// Carta en cuadrícula: toda la casilla es el botón de añadir (un toque =
+// +1, igual que el antiguo "+ Añadir"), salvo que el toque caiga sobre el
+// − de quitar una unidad o la casilla esté agotada. La descripción larga
+// (ingredientes) y el aviso de "no se pueden quitar ingredientes" no caben
+// en una casilla cuadrada — se reducen a un icono ⚠️ con title (tooltip);
+// el detalle sigue disponible al personalizar (Al Gusto/Bomba/extras).
 function renderItemRow(item) {
   const qty = cart[item.id] || 0;
   const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || ALL_EXTRAS_IDS.has(item.id) || BONIATO_IDS.has(item.id);
-  const nameHtml = escapeHtml(item.name) + (item.nuevo ? '<span class="item-badge-new">Nuevo</span>' : '');
   const agotado = isItemAgotado(item);
-  const control = agotado
-    ? `<div class="item-agotado-badge">AGOTADO</div>`
-    : isSpecial
-      ? `<button class="add-btn" id="addbtn-${item.id}" onclick="onAddClick(${item.id})">+ Añadir</button>`
-      : (qty > 0
-        ? `<div class="qty-stepper"><button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button><span class="qty-value">${qty}</span><button class="qty-btn" onclick="changeQty(${item.id},1)">+</button></div>`
-        : `<button class="add-btn" onclick="changeQty(${item.id},1)">+ Añadir</button>`);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
-  return `<div class="item-row ${agotado ? 'agotado' : ''}" id="card-${item.id}">
-    <div class="item-info">
-      <div class="item-name">${nameHtml}</div>
-      ${item.desc ? `<div class="item-desc">${escapeHtml(item.desc)}</div>` : ''}
-      ${showBlockedWarn ? `<div class="item-warn">⚠️ NO se pueden quitar ingredientes</div>` : ''}
-    </div>
-    <div class="item-controls">
-      <div class="item-price">${fmt(item.price)} €</div>
-      ${control}
-    </div>
+  const tileAction = isSpecial ? `onAddClick(${item.id})` : `changeQty(${item.id},1)`;
+  const tileOnclick = agotado ? '' : ` onclick="if(!event.target.closest('button')){${tileAction}}"`;
+  return `<div class="item-row ${agotado ? 'agotado' : ''}" id="card-${item.id}"${tileOnclick}>
+    ${item.nuevo && !qty ? `<span class="item-badge-new">Nuevo</span>` : ''}
+    ${showBlockedWarn ? `<span class="item-warn-icon" title="No se pueden quitar ingredientes">⚠️</span>` : ''}
+    ${qty > 0 && !isSpecial ? `<span class="item-qty-badge">${qty}</span>` : ''}
+    <div class="item-name">${escapeHtml(item.name)}</div>
+    <div class="item-price">${fmt(item.price)} €</div>
+    ${qty > 0 && !isSpecial ? `<button class="item-minus-btn" onclick="changeQty(${item.id},-1)">−</button>` : ''}
+    ${agotado ? `<div class="item-agotado-overlay">Agotado</div>` : ''}
   </div>`;
 }
 
@@ -262,12 +260,6 @@ function animateAdd(id) {
     card.classList.remove('flashing');
     void card.offsetWidth;
     card.classList.add('flashing');
-  }
-  const btn = document.querySelector(`#card-${id} .add-btn`);
-  if (btn) {
-    btn.classList.remove('popping');
-    void btn.offsetWidth;
-    btn.classList.add('popping');
   }
 }
 
