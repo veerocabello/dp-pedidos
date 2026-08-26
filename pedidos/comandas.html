@@ -201,9 +201,16 @@
     </label>
     <div class="form-group">
       <label>Modo de impresión (propio de esta herramienta offline)</label>
-      <select id="set-modo-impresion">
-        <option value="auto">Directa a la impresora (recomendado) — si falla, usa el diálogo</option>
+      <select id="set-modo-impresion" onchange="updatePrinterNameVisibility()">
+        <option value="auto">Directa a la impresora — si falla, imprime igualmente sin diálogo (app de escritorio) o abre el diálogo</option>
+        <option value="silent" id="set-modo-impresion-silent-opt">Silenciosa: imprime sola, sin ningún diálogo (recomendado)</option>
         <option value="dialog">Siempre usar el diálogo de impresión de Windows/Chrome</option>
+      </select>
+    </div>
+    <div class="form-group" id="set-printer-name-group" style="display:none">
+      <label>Impresora a usar en modo silencioso</label>
+      <select id="set-printer-name">
+        <option value="">La predeterminada de Windows</option>
       </select>
     </div>
 
@@ -252,7 +259,7 @@
     </div>
 
     <div class="settings-help">
-      <b>¿Cómo funciona?</b> "Directa a la impresora" manda el ticket por USB sin abrir ningún diálogo (necesita Chrome o Edge, y pulsar "Conectar impresora directa" una vez). Si tu impresora ya está instalada como impresora de Windows, es posible que el navegador no pueda tomar el control directo — en ese caso esta página abrirá automáticamente el diálogo de impresión normal, donde puedes elegir tu impresora ya instalada. La primera vez que imprimas así, configura el tamaño de papel (58/80&nbsp;mm) y "sin márgenes" en el diálogo; Chrome lo recordará las siguientes veces.
+      <b>¿Cómo funciona?</b> "Directa a la impresora" manda el ticket por USB sin abrir ningún diálogo (necesita Chrome o Edge, y pulsar "Conectar impresora directa" una vez) — la mayoría de impresoras no lo permiten (Chrome lo bloquea por seguridad), así que casi siempre acaba usando la alternativa. "Silenciosa" (solo en la app de escritorio) manda el ticket directo a tu impresora ya instalada en Windows, sin ningún diálogo ni paso previo — es la opción recomendada si usas la app de escritorio. "Siempre usar el diálogo" abre el diálogo de impresión normal de Windows/Chrome cada vez, para elegir la impresora a mano; la primera vez configura ahí el tamaño de papel (58/80&nbsp;mm) y "sin márgenes".
     </div>
   </div>
 </div>

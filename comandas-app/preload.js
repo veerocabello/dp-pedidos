@@ -28,4 +28,8 @@ contextBridge.exposeInMainWorld('comandasDesktop', {
   // devuelve la elección (-1 = cancelar).
   onUsbDevicePicker: (cb) => ipcRenderer.on('usb-device-picker:show', (event, names) => cb(names)),
   chooseUsbDevice: (index) => ipcRenderer.send('usb-device-picker:choose', index),
+  // Impresión silenciosa (sin diálogo) al driver de Windows ya instalado —
+  // ver comandas-app/main.js para por qué esto no pasa por WebUSB.
+  listPrinters: () => ipcRenderer.invoke('print:list'),
+  printSilent: (deviceName) => ipcRenderer.invoke('print:silent', deviceName),
 });

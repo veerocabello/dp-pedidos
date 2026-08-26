@@ -1410,6 +1410,7 @@ const TICKET_CONFIG_DEFAULTS = {
   copias: 1,
   autoImprimir: true,
   modoImpresion: 'auto',
+  printerDeviceName: '', // app de escritorio: qué impresora de Windows usar en impresión silenciosa ('' = la predeterminada)
   copiaAutoCadaDias: 1, // días entre copias automáticas; 0 = desactivada — ver "Copia automática" más abajo
 };
 function getTicketConfig() {
@@ -2430,23 +2431,41 @@ function playPrintSound(ok) {
 async function printOrder(order) {
   renderTicketPreview(order);
   const cfg = getTicketConfig();
-  let printedViaUsb = false;
-  let usbFailed = false;
-  if (cfg.modoImpresion !== 'dialog') {
+  let printedOk = false; // el ticket ya salió (o se mandó) sin tener que tocar nada más
+  let anyFailure = false;
+
+  if (cfg.modoImpresion === 'auto') {
     try {
       const bytes = buildEscPosBytes(order);
       const copies = Math.max(1, parseInt(cfg.copias, 10) || 1);
       for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
-      printedViaUsb = true;
+      printedOk = true;
     } catch (e) {
-      console.warn('[comandas] impresión directa falló, usando diálogo:', e);
-      usbFailed = true;
+      console.warn('[comandas] impresión directa por USB falló:', e);
+      anyFailure = true;
     }
   }
-  if (!printedViaUsb) window.print();
+
+  // Impresión silenciosa (app de escritorio): manda el ticket directo al
+  // driver de Windows ya instalado, sin abrir ningún diálogo. A diferencia
+  // de la impresión directa por USB de arriba, esto no es WebUSB — así que
+  // funciona igual con impresoras de clase "protegida" que Chrome nunca
+  // deja controlar por USB (la mayoría de impresoras normales).
+  if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printSilent) {
+    try {
+      const res = await window.comandasDesktop.printSilent(cfg.printerDeviceName || undefined);
+      if (res && res.success) printedOk = true;
+      else anyFailure = true;
+    } catch (e) {
+      console.warn('[comandas] impresión silenciosa falló, usando diálogo:', e);
+      anyFailure = true;
+    }
+  }
+
+  if (!printedOk) window.print();
   updatePrinterStatusUI();
-  playPrintSound(!usbFailed);
-  return printedViaUsb;
+  playPrintSound(printedOk || !anyFailure);
+  return printedOk;
 }
 
 async function handlePrintOrder() {
@@ -2533,8 +2552,28 @@ function openSettings() {
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
   document.getElementById('set-copia-auto-cada').value = String(cfg.copiaAutoCadaDias != null ? cfg.copiaAutoCadaDias : 1);
+  // "Silenciosa" solo existe en la app de escritorio (necesita imprimir
+  // directo al driver de Windows vía Electron) — en un navegador normal no
+  // se puede, así que ni se ofrece como opción.
+  document.getElementById('set-modo-impresion-silent-opt').disabled = !isDesktopApp();
+  updatePrinterNameVisibility();
   initDesktopSettingsSection();
   document.getElementById('settings-modal').classList.add('open');
+}
+function updatePrinterNameVisibility() {
+  const modo = document.getElementById('set-modo-impresion').value;
+  document.getElementById('set-printer-name-group').style.display = (modo === 'silent' && isDesktopApp()) ? '' : 'none';
+}
+async function loadPrinterNameOptions() {
+  if (!isDesktopApp() || !window.comandasDesktop.listPrinters) return;
+  const cfg = getTicketConfig();
+  try {
+    const printers = await window.comandasDesktop.listPrinters();
+    const sel = document.getElementById('set-printer-name');
+    sel.innerHTML = '<option value="">La predeterminada de Windows</option>' +
+      printers.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.displayName || p.name)}</option>`).join('');
+    sel.value = cfg.printerDeviceName || '';
+  } catch (e) { /* se queda solo con "la predeterminada" */ }
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
 
@@ -2564,6 +2603,7 @@ async function initDesktopSettingsSection() {
   document.getElementById('set-kiosk').checked = !!kiosk;
   document.getElementById('set-update-path').value = updatePath || '';
   document.getElementById('set-backup-folder').value = backupFolder || '';
+  loadPrinterNameOptions();
 }
 async function chooseBackupFolder() {
   if (!isDesktopApp()) return;
@@ -2629,6 +2669,7 @@ function saveSettingsForm() {
     copias: Math.max(1, parseInt(document.getElementById('set-copias').value, 10) || 1),
     autoImprimir: document.getElementById('set-auto-imprimir').checked,
     modoImpresion: document.getElementById('set-modo-impresion').value,
+    printerDeviceName: document.getElementById('set-printer-name') ? document.getElementById('set-printer-name').value : '',
     copiaAutoCadaDias: parseInt(document.getElementById('set-copia-auto-cada').value, 10) || 0,
   };
   saveTicketConfig(cfg);

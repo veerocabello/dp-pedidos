@@ -238,6 +238,26 @@ if (!gotLock) {
       return { ok: true, actual, disponible: info.version, hayNueva, instaladorPath, notas: info.notas || '' };
     });
 
+    // Impresión silenciosa (sin diálogo) usando el driver de Windows ya
+    // instalado para la impresora — esto NO pasa por WebUSB, así que no
+    // choca con el bloqueo de Chrome a dispositivos USB de clase
+    // "protegida" (impresoras, HID, etc.), que es un límite fijo del
+    // navegador y no depende de si el driver está bien instalado o no.
+    ipcMain.handle('print:list', async () => {
+      if (!mainWindow) return [];
+      try { return await mainWindow.webContents.getPrintersAsync(); }
+      catch (e) { return []; }
+    });
+    ipcMain.handle('print:silent', (event, deviceName) => {
+      if (!mainWindow) return { success: false, reason: 'no hay ventana' };
+      return new Promise((resolve) => {
+        mainWindow.webContents.print(
+          { silent: true, printBackground: true, deviceName: deviceName || undefined, margins: { marginType: 'none' } },
+          (success, reason) => resolve({ success, reason })
+        );
+      });
+    });
+
     ipcMain.handle('update:install', (event, instaladorPath) => {
       if (!instaladorPath || !fs.existsSync(instaladorPath)) return { ok: false, error: 'No se encuentra el instalador.' };
       // Se abre el instalador con la app de Windows asociada (el propio
