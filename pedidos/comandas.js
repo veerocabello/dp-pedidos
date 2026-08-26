@@ -2444,6 +2444,7 @@ async function printOrder(order) {
   const cfg = getTicketConfig();
   let printedOk = false; // el ticket ya salió (o se mandó) sin tener que tocar nada más
   let anyFailure = false;
+  let failReason = ''; // motivo del fallo silencioso, para poder verlo sin abrir la consola
 
   if (cfg.modoImpresion === 'auto') {
     try {
@@ -2474,17 +2475,18 @@ async function printOrder(order) {
         'timeout en impresión silenciosa — el driver no respondió a tiempo'
       );
       if (res && res.success) printedOk = true;
-      else anyFailure = true;
+      else { anyFailure = true; failReason = (res && res.reason) || 'motivo desconocido'; }
     } catch (e) {
       console.warn('[comandas] impresión silenciosa falló, usando diálogo:', e);
       anyFailure = true;
+      failReason = e.message || 'motivo desconocido';
     }
   }
 
   if (!printedOk) window.print();
   updatePrinterStatusUI();
   playPrintSound(printedOk || !anyFailure);
-  return printedOk;
+  return { printedOk, failReason };
 }
 
 async function handlePrintOrder() {
@@ -2508,14 +2510,25 @@ async function handlePrintOrder() {
   // desde ahí, en vez de perderse por completo si hay que recargar la
   // página para desatascarse.
   saveToHistorial(order);
-  let printedViaUsb = false;
+  let printedOk = false, failReason = '';
   try {
-    printedViaUsb = await printOrder(order);
+    ({ printedOk, failReason } = await printOrder(order));
   } finally {
     btn.disabled = false;
   }
   if (getTicketConfig().autoImprimir !== false) clearOrder(true);
-  toast(printedViaUsb ? '✅ Comanda ' + order.num + ' impresa' : '🖨️ Comanda ' + order.num + ' — abriendo diálogo de impresión…');
+  if (printedOk) {
+    toast('✅ Comanda ' + order.num + ' impresa');
+  } else {
+    // Se muestra el motivo exacto del fallo (viene de Electron) para poder
+    // diagnosticar sin acceso a la consola del programa — solo pasa cuando
+    // el modo NO es "diálogo" (ahí ir al diálogo es lo esperado, no un fallo).
+    toast(
+      (failReason ? '⚠️ Impresión silenciosa falló: ' + failReason + '. ' : '') +
+      '🖨️ Comanda ' + order.num + ' — abriendo diálogo de impresión…',
+      failReason ? 8000 : undefined
+    );
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
