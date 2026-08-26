@@ -1558,7 +1558,11 @@ function buildOrderObject(preview) {
    buildTicketBlocks() alimenta tanto la vista previa / diálogo de
    impresión como los bytes ESC/POS de la impresora térmica, así lo que
    se ve en pantalla es exactamente lo que sale impreso. ── */
-const TICKET_DIVIDER = '-'.repeat(48);
+// OJO: el separador tiene que medir EXACTAMENTE el ancho configurado
+// (getPaperWidthChars()) — antes eran 48 guiones fijos, así que en 58mm (o
+// en cualquier ajuste fino que no diera justo 48) la propia impresora
+// partía la línea sola, dejando un trozo de guiones suelto en la línea de
+// abajo (justo lo que se veía en un ticket real de la tienda).
 // "€" nunca debe aparecer en un texto ya troceado/alineado: al convertirlo
 // a "EUR" (3 caracteres) después de calcular el ancho, la línea se pasaba
 // del ancho real de la impresora y esta partía "EUR" por la mitad al
@@ -1621,22 +1625,23 @@ function formatItemLines(item, width) {
 function buildTicketBlocks(order) {
   const cfg = getTicketConfig();
   const width = getPaperWidthChars();
+  const divider = '-'.repeat(width);
   const B = [];
   B.push({ logo: true });
   B.push({ text: foldAccents(cfg.nombre), align: 'center', big: true });
   B.push({ text: foldAccents(cfg.direccion), align: 'center' });
   B.push({ text: foldAccents(cfg.telefono), align: 'center' });
   B.push({ text: 'NIF: ' + foldAccents(cfg.nif), align: 'center' });
-  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents((order.name || '').toUpperCase()), align: 'center', big: true });
-  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents('PEDIDO ' + order.num), align: 'center', big: true });
   B.push({ text: foldAccents(order.time), align: 'center' });
-  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: divider, align: 'center' });
   order.items.forEach(it => {
     formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineStart: line.underlineStart, underlineLen: line.underlineLen }));
   });
-  B.push({ text: TICKET_DIVIDER, align: 'left' });
+  B.push({ text: divider, align: 'left' });
   B.push({ text: fmtEur(order.total || 0), align: 'center', big: true });
   B.push({ text: order.paid ? 'PAGADO' : 'NO PAGADO', align: 'center', big: true, paidStatus: order.paid ? 'yes' : 'no' });
   if (order.paid) {
@@ -1644,10 +1649,10 @@ function buildTicketBlocks(order) {
   }
   B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
   if (order.notes) {
-    B.push({ text: TICKET_DIVIDER, align: 'left' });
+    B.push({ text: divider, align: 'left' });
     B.push({ text: 'NOTAS: ' + foldAccents(order.notes), align: 'left', notesLabel: true });
   }
-  B.push({ text: TICKET_DIVIDER, align: 'center' });
+  B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents(cfg.despedida), align: 'center' });
   B.push({ text: 'IVA incluido 10%', align: 'center' });
   return B;
