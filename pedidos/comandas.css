@@ -78,25 +78,38 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
   padding: 9px 18px;
   background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%);
   color: var(--cream);
   /* Sin flex-wrap: la cabecera nunca crece hacia abajo aunque la ventana
      sea estrecha (pantallas táctiles pequeñas de mostrador) — si los
-     botones no caben, .topbar-actions se desplaza en horizontal en vez de
-     apilarse en varias filas y ocupar media pantalla. */
+     botones no caben, toda la barra se desplaza en horizontal (el dedo
+     puede arrastrar desde cualquier punto de la cabecera, no solo desde
+     los botones) en vez de apilarse en varias filas y ocupar media
+     pantalla. */
   flex-wrap: nowrap;
   min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   box-shadow: 0 4px 18px rgba(0,0,0,.22);
   border-bottom: 1px solid rgba(244,196,48,.25);
 }
+.topbar::-webkit-scrollbar { display: none; }
 .topbar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  /* Fondo opaco: al desplazar la cabecera, el resto del contenido pasa
+     por detrás de esta zona fija y no debe transparentarse sobre ella. */
+  background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%);
+  padding-right: 10px;
 }
 .topbar-logo {
   width: 30px;
@@ -126,12 +139,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   align-items: center;
   gap: 6px;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  margin-left: auto;
 }
-.topbar-actions::-webkit-scrollbar { display: none; }
 .topbar-actions > * {
   flex-shrink: 0;
   white-space: nowrap;
