@@ -11,6 +11,8 @@
 const { app, BrowserWindow, Menu, dialog, session, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const { execFile } = require('child_process');
 
 /* ── Ajustes propios de la app de escritorio (arranque automático, modo
    kiosco, carpeta de actualizaciones) — separados de los ajustes del
@@ -261,6 +263,51 @@ if (!gotLock) {
       return new Promise((resolve) => {
         mainWindow.webContents.print(options, (success, reason) => resolve({ success, reason }));
       });
+    });
+
+    // Impresión RAW (bytes ESC/POS directos a la cola de Windows) — la vía
+    // "print:silent" de arriba (renderizar la página e imprimirla) resultó
+    // poco fiable en la tienda con esta impresora: Electron decía éxito pero
+    // el ticket salía en blanco (solo se oía el corte de papel), pase lo que
+    // pase con el tamaño de página o el tiempo de pintado. Esta vía evita
+    // por completo el renderizado de página: manda los mismos bytes ESC/POS
+    // que ya funcionan por USB directamente al spooler de Windows como
+    // trabajo "RAW" (sin interpretación), vía un pequeño script de
+    // PowerShell que llama a la API WritePrinter de Windows — la técnica
+    // estándar para imprimir tickets desde programas de TPV en Windows.
+    ipcMain.handle('print:raw', async (event, { deviceName, bytesBase64 } = {}) => {
+      try {
+        let printerName = deviceName;
+        if (!printerName) {
+          const printers = await mainWindow.webContents.getPrintersAsync();
+          const def = printers.find(p => p.isDefault) || printers[0];
+          if (!def) return { success: false, reason: 'No hay ninguna impresora configurada en Windows' };
+          printerName = def.name;
+        }
+        const scriptPath = app.isPackaged
+          ? path.join(process.resourcesPath, 'print-raw.ps1')
+          : path.join(__dirname, 'resources', 'print-raw.ps1');
+        if (!fs.existsSync(scriptPath)) return { success: false, reason: 'No se encuentra print-raw.ps1' };
+
+        const tmpFile = path.join(os.tmpdir(), 'comanda-' + Date.now() + '.bin');
+        fs.writeFileSync(tmpFile, Buffer.from(bytesBase64, 'base64'));
+
+        const result = await new Promise((resolve) => {
+          execFile(
+            'powershell.exe',
+            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-PrinterName', printerName, '-FilePath', tmpFile],
+            { timeout: 10000 },
+            (error, stdout, stderr) => {
+              if (error) resolve({ success: false, reason: (stderr || error.message || '').trim().slice(0, 300) });
+              else resolve({ success: stdout.trim() === 'OK', reason: stdout.trim() || stderr.trim() });
+            }
+          );
+        });
+        try { fs.unlinkSync(tmpFile); } catch (e) { /* no crítico */ }
+        return result;
+      } catch (e) {
+        return { success: false, reason: e.message };
+      }
     });
 
     ipcMain.handle('update:install', (event, instaladorPath) => {

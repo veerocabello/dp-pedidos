@@ -23,6 +23,9 @@
       "preload.js",
       "comandas/**/*"
     ],
+    "extraResources": [
+      "resources/**/*"
+    ],
     "win": {
       "target": [
         {

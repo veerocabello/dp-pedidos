@@ -1698,6 +1698,18 @@ class EscPosBuilder {
   cut() { return this.raw([0x1D, 0x56, 0x42, 0x00]); }
   toBytes() { return new Uint8Array(this.bytes); }
 }
+// Uint8Array -> base64, para poder mandar los bytes ESC/POS a través de IPC
+// (la impresión RAW de la app de escritorio) como un string normal. En
+// trozos, para no reventar el límite de argumentos de String.fromCharCode
+// con tickets largos.
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
 function buildEscPosBytes(order) {
   const blocks = buildTicketBlocks(order);
   const b = new EscPosBuilder();
@@ -2458,37 +2470,20 @@ async function printOrder(order) {
     }
   }
 
-  // Impresión silenciosa (app de escritorio): manda el ticket directo al
-  // driver de Windows ya instalado, sin abrir ningún diálogo. A diferencia
-  // de la impresión directa por USB de arriba, esto no es WebUSB — así que
-  // funciona igual con impresoras de clase "protegida" que Chrome nunca
-  // deja controlar por USB (la mayoría de impresoras normales).
-  // Con timeout: si el driver de Windows se queda colgado esperando datos
-  // (nunca llama al callback de Electron), sin esto la comanda se queda
-  // parada sin ticket y sin avisar — con el timeout, a los 12s se da por
-  // fallida y cae al diálogo de impresión normal en vez de quedarse así.
-  if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printSilent) {
+  // Impresión silenciosa (app de escritorio): manda los mismos bytes
+  // ESC/POS que la impresión directa por USB de arriba, pero a través de la
+  // cola de Windows en vez de WebUSB (ver comandas-app/main.js, print:raw).
+  // Se probó primero renderizando la página con webContents.print() (tamaño
+  // de página explícito, esperar al pintado...) pero en la tienda seguía
+  // saliendo en blanco pase lo que pase — mandar los bytes RAW tal cual,
+  // sin que Windows/Electron tengan que "dibujar" ninguna página, es la
+  // técnica estándar de los programas de TPV y no depende de nada de eso.
+  if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printRaw) {
     try {
-      // renderTicketPreview() de arriba cambia el HTML del ticket en el
-      // momento, pero eso no garantiza que Chromium ya haya pintado ese
-      // contenido nuevo en pantalla — webContents.print() (llamado desde el
-      // proceso principal) puede capturar un fotograma todavía en blanco o
-      // con el ticket anterior si se dispara demasiado pronto. Confirmado en
-      // la tienda: el papel se corta (el tamaño de página llega bien) pero
-      // sale en blanco. Se espera a que el navegador termine de pintar
-      // (doble rAF, la forma estándar de esperar un pintado completo) antes
-      // de pedirle a Electron que imprima.
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-      // El @page CSS (size: Xmm auto) no basta por sí solo en todos los
-      // equipos — confirmado en la tienda: eligiendo la impresora a mano en
-      // el diálogo sí sale el ticket, pero en modo silencioso Electron dice
-      // "éxito" y no llega papel. Se manda el tamaño de página EXPLÍCITO (en
-      // micras: 1mm = 1000) en vez de confiar en que lo lea del CSS.
-      const widthMicrons = (cfg.anchoPapel == 58 ? 58 : 80) * 1000;
-      const heightMicrons = 297000; // largo generoso (como A4); las impresoras de rollo cortan al terminar el contenido
+      const bytes = buildEscPosBytes(order);
+      const bytesBase64 = bytesToBase64(bytes);
       const res = await _conTimeout(
-        window.comandasDesktop.printSilent(cfg.printerDeviceName || undefined, widthMicrons, heightMicrons),
+        window.comandasDesktop.printRaw(bytesBase64, cfg.printerDeviceName || undefined),
         12000,
         'timeout en impresión silenciosa — el driver no respondió a tiempo'
       );

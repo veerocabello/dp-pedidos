@@ -32,4 +32,8 @@ contextBridge.exposeInMainWorld('comandasDesktop', {
   // ver comandas-app/main.js para por qué esto no pasa por WebUSB.
   listPrinters: () => ipcRenderer.invoke('print:list'),
   printSilent: (deviceName, widthMicrons, heightMicrons) => ipcRenderer.invoke('print:silent', { deviceName, widthMicrons, heightMicrons }),
+  // Impresión RAW: manda los mismos bytes ESC/POS que la vía USB directa,
+  // pero a través de la cola de Windows (ver comandas-app/main.js) en vez de
+  // WebUSB o del renderizado de página de Electron.
+  printRaw: (bytesBase64, deviceName) => ipcRenderer.invoke('print:raw', { bytesBase64, deviceName }),
 });
