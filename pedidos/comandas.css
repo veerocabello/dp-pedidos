@@ -63,6 +63,9 @@ body {
     radial-gradient(900px 480px at 100% 0%, rgba(244,196,48,.10), transparent 55%),
     var(--warm);
   min-height: 100vh;
+  /* Hueco para la cabecera fija (position: fixed, fuera del flujo normal),
+     así el contenido no arranca tapado debajo de ella. */
+  padding-top: 52px;
 }
 
 button { font-family: inherit; }
@@ -73,8 +76,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* ── Topbar ── */
 .topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 50;
   display: flex;
   align-items: center;
@@ -206,7 +211,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* ── Categorías (barra lateral izquierda) ── */
 .tabs-sidebar {
   position: sticky;
-  top: 78px;
+  top: 62px;
   z-index: 40;
   width: 196px;
   flex-shrink: 0;
@@ -545,7 +550,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* ── Cart panel ── */
 .cart-panel {
   position: sticky;
-  top: 65px;
+  top: 62px;
   background: var(--cream);
   border-radius: var(--radius-lg);
   border: 1px solid rgba(61,31,13,.08);
