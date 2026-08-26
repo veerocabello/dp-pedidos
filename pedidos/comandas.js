@@ -1423,6 +1423,25 @@ function saveTicketConfig(cfg) { localStorage.setItem(TICKET_CONFIG_KEY, JSON.st
 
 function getPaperWidthChars() { return getTicketConfig().anchoPapel == 58 ? 32 : 48; }
 
+// El tamaño de página de impresión (@page) no estaba fijado por CSS — en
+// el diálogo de impresión, Chrome recuerda el 58/80mm que elijas a mano la
+// primera vez, pero la impresión SILENCIOSA (sin diálogo, ver printOrder)
+// no pasa por ahí: sin este @page explícito, usa el tamaño por defecto del
+// driver de Windows, que puede no ser el del rollo de la impresora y hacer
+// que el trabajo llegue mal dimensionado (la impresora "hace clic" pero no
+// saca nada). Se aplica al cargar la página y cada vez que se cambia el
+// ancho de papel en Ajustes.
+function applyPrintPageSize() {
+  let styleEl = document.getElementById('dynamic-page-size');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'dynamic-page-size';
+    document.head.appendChild(styleEl);
+  }
+  const widthMm = getTicketConfig().anchoPapel == 58 ? 58 : 80;
+  styleEl.textContent = `@media print { @page { size: ${widthMm}mm auto; } }`;
+}
+
 // Aplica el descuento de línea (si lo hay) de esa key al item ya
 // construido: reduce su subtotal (y displaySubtotal, si lo tiene, para que
 // el precio impreso sea coherente) y añade una línea de texto sin importe
@@ -2451,9 +2470,17 @@ async function printOrder(order) {
   // de la impresión directa por USB de arriba, esto no es WebUSB — así que
   // funciona igual con impresoras de clase "protegida" que Chrome nunca
   // deja controlar por USB (la mayoría de impresoras normales).
+  // Con timeout: si el driver de Windows se queda colgado esperando datos
+  // (nunca llama al callback de Electron), sin esto la comanda se queda
+  // parada sin ticket y sin avisar — con el timeout, a los 12s se da por
+  // fallida y cae al diálogo de impresión normal en vez de quedarse así.
   if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printSilent) {
     try {
-      const res = await window.comandasDesktop.printSilent(cfg.printerDeviceName || undefined);
+      const res = await _conTimeout(
+        window.comandasDesktop.printSilent(cfg.printerDeviceName || undefined),
+        12000,
+        'timeout en impresión silenciosa — el driver no respondió a tiempo'
+      );
       if (res && res.success) printedOk = true;
       else anyFailure = true;
     } catch (e) {
@@ -2673,6 +2700,7 @@ function saveSettingsForm() {
     copiaAutoCadaDias: parseInt(document.getElementById('set-copia-auto-cada').value, 10) || 0,
   };
   saveTicketConfig(cfg);
+  applyPrintPageSize();
   closeSettings();
   toast('✅ Ajustes guardados');
 }
@@ -3088,6 +3116,7 @@ function chooseUsbDevicePicker(index) {
 
 document.addEventListener('DOMContentLoaded', () => {
   applyFontChoice(loadFontChoice());
+  applyPrintPageSize();
   initTabs();
   renderMenu();
   initCartSwipeToDelete();

@@ -1203,5 +1203,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
     top: 0; left: 0;
     width: 100%;
   }
-  @page { margin: 4mm; }
+  @page { margin: 2mm; }
 }
