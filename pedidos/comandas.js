@@ -1399,6 +1399,12 @@ const TICKET_CONFIG_DEFAULTS = {
   despedida: '¡Gracias por tu pedido! 🥔',
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
+  // Ajuste fino (+/-) sobre las columnas de texto del ticket — cada
+  // impresora/fuente cabe un pelín distinto en el mismo ancho de papel.
+  // +4 de partida porque en la tienda, con 58mm/32 columnas "de libro", el
+  // precio se quedaba corto del borde derecho (huelgo visible después del
+  // importe) — se puede seguir afinando desde Ajustes sin reinstalar nada.
+  columnasAjuste: 4,
   copias: 1,
   autoImprimir: true,
   modoImpresion: 'auto',
@@ -1413,7 +1419,11 @@ function getTicketConfig() {
 }
 function saveTicketConfig(cfg) { localStorage.setItem(TICKET_CONFIG_KEY, JSON.stringify(cfg)); }
 
-function getPaperWidthChars() { return getTicketConfig().anchoPapel == 58 ? 32 : 48; }
+function getPaperWidthChars() {
+  const cfg = getTicketConfig();
+  const base = cfg.anchoPapel == 58 ? 32 : 48;
+  return Math.max(20, base + (parseInt(cfg.columnasAjuste, 10) || 0));
+}
 
 // El tamaño de página de impresión (@page) no estaba fijado por CSS — en
 // el diálogo de impresión, Chrome recuerda el 58/80mm que elijas a mano la
@@ -2593,6 +2603,7 @@ function openSettings() {
   document.getElementById('set-despedida').value = cfg.despedida;
   document.getElementById('set-texto-pago').value = cfg.textoPago;
   document.getElementById('set-ancho-papel').value = String(cfg.anchoPapel);
+  document.getElementById('set-columnas-ajuste').value = String(cfg.columnasAjuste || 0);
   document.getElementById('set-copias').value = String(cfg.copias);
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
@@ -2711,6 +2722,7 @@ function saveSettingsForm() {
     despedida: document.getElementById('set-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
     textoPago: document.getElementById('set-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('set-ancho-papel').value, 10),
+    columnasAjuste: parseInt(document.getElementById('set-columnas-ajuste').value, 10) || 0,
     copias: Math.max(1, parseInt(document.getElementById('set-copias').value, 10) || 1),
     autoImprimir: document.getElementById('set-auto-imprimir').checked,
     modoImpresion: document.getElementById('set-modo-impresion').value,
