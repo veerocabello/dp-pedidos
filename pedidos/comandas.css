@@ -851,8 +851,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   border: none;
   border-radius: var(--radius-xs);
   padding: 10px 0;
+  font-family: var(--font-head);
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 20px;
   cursor: pointer;
   transition: background .15s, transform .1s;
 }
