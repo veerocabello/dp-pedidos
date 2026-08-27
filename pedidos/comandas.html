@@ -42,9 +42,15 @@
         <button class="btn-text" onclick="clearOrder()">Vaciar</button>
       </div>
     </div>
-    <div class="form-group">
-      <label for="order-name">Nombre para avisar (opcional)</label>
-      <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana" readonly onclick="openNameKeyboard()" oninput="if(window.saveCartDraft)saveCartDraft()">
+    <div class="form-row-half">
+      <div class="form-group">
+        <label for="order-name">Nombre para avisar (opcional)</label>
+        <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana" readonly onclick="openNameKeyboard()" oninput="if(window.saveCartDraft)saveCartDraft()">
+      </div>
+      <div class="form-group">
+        <label for="pickup-time">Hora de recogida (opcional)</label>
+        <input id="pickup-time" type="text" placeholder="--:--" readonly onclick="openPickupTimeKeypad()" oninput="if(window.saveCartDraft)saveCartDraft()">
+      </div>
     </div>
     <div id="cart-body" class="cart-body"></div>
     <div class="cart-total-row" id="cart-total-row" style="display:none">
@@ -571,6 +577,32 @@
         <button type="button" class="namekb-key-space" onclick="nameKbSpace()">ESPACIO</button>
         <button type="button" class="namekb-key-done" onclick="nameKbConfirm()">✓ Listo</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TECLADO NUMÉRICO para "Hora de recogida" (--:--) ── -->
+<div id="pickup-modal" class="modal-overlay" onclick="if(event.target===this)closePickupTimeKeypad()">
+  <div class="modal-box" style="max-width:280px">
+    <button class="modal-close" onclick="closePickupTimeKeypad()">&#x2715;</button>
+    <div class="modal-title">🕐 Hora de recogida</div>
+    <div class="cash-keypad">
+      <div class="cash-keypad-display" id="pickup-display" style="text-align:center;font-size:24px">--:--</div>
+      <div class="cash-keypad-grid">
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('7')">7</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('8')">8</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('9')">9</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('4')">4</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('5')">5</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('6')">6</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('1')">1</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('2')">2</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('3')">3</button>
+        <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="pickupClear()">CE</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('0')">0</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupBackspace()">⌫</button>
+      </div>
+      <button type="button" class="cash-keypad-equals" onclick="pickupConfirm()">✓ Listo</button>
     </div>
   </div>
 </div>

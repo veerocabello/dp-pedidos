@@ -559,6 +559,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .btn-text:hover { background: rgba(192,57,43,.1); }
 
+.form-row-half { display: flex; gap: 10px; }
+.form-row-half .form-group { flex: 1; min-width: 0; }
+#pickup-time { text-align: center; font-variant-numeric: tabular-nums; }
 .form-group { margin-bottom: 11px; }
 .form-group label {
   display: block;

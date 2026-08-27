@@ -597,6 +597,40 @@ function nameKbUpdateDisplay() {
 }
 function nameKbConfirm() { closeNameKeyboard(); }
 
+// Teclado numérico para "Hora de recogida" — se escribe como en un reloj
+// digital: los dígitos van entrando por la derecha (HHMM) y el hueco sin
+// rellenar se ve como "--:--".
+let pickupBuffer = '';
+function formatPickupBuffer(buf) {
+  const padded = buf.padStart(4, '0');
+  return padded.slice(0, 2) + ':' + padded.slice(2, 4);
+}
+function openPickupTimeKeypad() {
+  pickupBuffer = (document.getElementById('pickup-time').value || '').replace(/[^0-9]/g, '');
+  updatePickupDisplay();
+  document.getElementById('pickup-modal').classList.add('open');
+}
+function closePickupTimeKeypad() { document.getElementById('pickup-modal').classList.remove('open'); }
+function pickupDigit(d) { pickupBuffer = (pickupBuffer + d).slice(-4); updatePickupDisplay(); }
+function pickupBackspace() { pickupBuffer = pickupBuffer.slice(0, -1); updatePickupDisplay(); }
+function pickupClear() { pickupBuffer = ''; updatePickupDisplay(); }
+function updatePickupDisplay() {
+  document.getElementById('pickup-display').textContent = pickupBuffer ? formatPickupBuffer(pickupBuffer) : '--:--';
+}
+function pickupConfirm() {
+  const input = document.getElementById('pickup-time');
+  if (!pickupBuffer) {
+    input.value = '';
+  } else {
+    const formatted = formatPickupBuffer(pickupBuffer);
+    const hh = Math.min(23, parseInt(formatted.slice(0, 2), 10));
+    const mm = Math.min(59, parseInt(formatted.slice(3, 5), 10));
+    input.value = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+  }
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  closePickupTimeKeypad();
+}
+
 function openDiscountModal(lineKey) {
   discountTargetKey = lineKey || null;
   const current = getActiveDiscount();
@@ -859,6 +893,7 @@ function saveCartDraft() {
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
       lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: (document.getElementById('order-name') || {}).value || '',
+      pickupTime: (document.getElementById('pickup-time') || {}).value || '',
       paid: orderPaid,
       paymentMethod,
     };
@@ -879,6 +914,8 @@ function restoreCartDraftIfAny() {
   lineDiscounts = draft.lineDiscounts || {};
   const nameEl = document.getElementById('order-name');
   if (nameEl) nameEl.value = draft.name || '';
+  const pickupEl = document.getElementById('pickup-time');
+  if (pickupEl) pickupEl.value = draft.pickupTime || '';
   setOrderPaid(!!draft.paid);
   setPaymentMethod(draft.paymentMethod || 'efectivo');
   renderMenu();
@@ -987,12 +1024,14 @@ function clearOrder(silent) {
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
       lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: document.getElementById('order-name').value,
+      pickupTime: document.getElementById('pickup-time').value,
       paid: orderPaid,
       paymentMethod,
     };
   }
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
+  document.getElementById('pickup-time').value = '';
   document.getElementById('cash-received').value = '';
   keypadBuffer = '';
   updateKeypadDisplay();
@@ -1020,6 +1059,7 @@ function undoClearOrder() {
   orderDiscount = clearedOrderSnapshot.orderDiscount;
   lineDiscounts = clearedOrderSnapshot.lineDiscounts || {};
   document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
+  document.getElementById('pickup-time').value = clearedOrderSnapshot.pickupTime || '';
   setOrderPaid(!!clearedOrderSnapshot.paid);
   setPaymentMethod(clearedOrderSnapshot.paymentMethod || 'efectivo');
   clearedOrderSnapshot = null;
@@ -1697,6 +1737,7 @@ function buildOrderObject(preview) {
     num: preview ? peekNextOrderNum() : getNextOrderNum(),
     time: new Date().toLocaleString('es-ES'),
     name: document.getElementById('order-name').value.trim(),
+    pickupTime: document.getElementById('pickup-time').value.trim(),
     notes: '',
     paid: orderPaid,
     paymentMethod: orderPaid ? paymentMethod : null,
@@ -1792,6 +1833,7 @@ function buildTicketBlocks(order) {
   B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents('PEDIDO ' + order.num), align: 'center', big: true });
   B.push({ text: foldAccents(order.time), align: 'center' });
+  if (order.pickupTime) B.push({ text: foldAccents('RECOGIDA: ' + order.pickupTime), align: 'center', big: true });
   B.push({ text: divider, align: 'center' });
   order.items.forEach(it => {
     formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineStart: line.underlineStart, underlineLen: line.underlineLen }));
@@ -2147,6 +2189,7 @@ function modifyHistorialOrder(index) {
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
+  document.getElementById('pickup-time').value = order.pickupTime || '';
   setOrderPaid(!!order.paid);
   setPaymentMethod(order.paymentMethod || 'efectivo');
   list.splice(index, 1);
