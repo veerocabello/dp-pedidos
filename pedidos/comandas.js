@@ -216,7 +216,10 @@ function renderItemRow(item) {
   // ingredientes, queso, gratinado...) se edita después desde el carrito
   // tocando el nombre — un botoncito ✏️ aparte en la casilla quedaba
   // demasiado cargado visualmente.
-  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID;
+  // Boniato Bacon (y cualquier otro con "Salsa a elegir") tampoco puede
+  // añadirse directo: sin pasar por el modal se quedaría sin salsa elegida.
+  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID
+    || parseBaseComponents(item).some(isElegirSalsaComp);
   const agotado = isItemAgotado(item);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
   const tileAction = isSpecial ? `onAddClick(${item.id})` : `changeQty(${item.id},1)`;
@@ -508,6 +511,43 @@ function getLineDiscountContextLabel(key) {
   return null;
 }
 
+// Teclado numérico táctil genérico para campos tipo "Valor" (ej. importe
+// del descuento) — igual que el de Cobrar, pero escribe directo en el
+// input de destino en vez de sumar a un total.
+let numpadTargetId = null;
+let numpadBuffer = '';
+function openNumpad(inputId, title) {
+  numpadTargetId = inputId;
+  const el = document.getElementById(inputId);
+  numpadBuffer = el && el.value ? String(el.value).replace('.', ',') : '';
+  document.getElementById('numpad-title').textContent = title || 'Valor';
+  updateNumpadDisplay();
+  document.getElementById('numpad-modal').classList.add('open');
+}
+function closeNumpad() {
+  document.getElementById('numpad-modal').classList.remove('open');
+  numpadTargetId = null;
+}
+function numpadDigit(d) {
+  if (d === ',' && numpadBuffer.includes(',')) return;
+  if (numpadBuffer.replace(',', '').length >= 6) return;
+  numpadBuffer += d;
+  updateNumpadDisplay();
+}
+function numpadClear() { numpadBuffer = ''; updateNumpadDisplay(); }
+function updateNumpadDisplay() {
+  const el = document.getElementById('numpad-display');
+  if (el) el.textContent = numpadBuffer || '0';
+}
+function numpadConfirm() {
+  if (numpadTargetId) {
+    const el = document.getElementById(numpadTargetId);
+    el.value = numpadBuffer;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  closeNumpad();
+}
+
 function openDiscountModal(lineKey) {
   discountTargetKey = lineKey || null;
   const current = getActiveDiscount();
@@ -531,7 +571,7 @@ function applyPresetDiscount() {
 }
 function applyDiscount() {
   const type = document.getElementById('discount-type').value;
-  const value = parseFloat(document.getElementById('discount-value').value);
+  const value = parseCashNum(document.getElementById('discount-value').value);
   const label = document.getElementById('discount-label').value.trim();
   const errEl = document.getElementById('discount-error');
   if (!value || value <= 0) {

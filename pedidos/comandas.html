@@ -473,7 +473,7 @@
     </div>
     <div class="form-group">
       <label id="discount-value-label">Valor</label>
-      <input id="discount-value" type="number" min="0" step="0.01" placeholder="Ej. 10">
+      <input id="discount-value" type="text" inputmode="none" readonly placeholder="Ej. 10" onclick="openNumpad('discount-value')">
     </div>
     <div class="form-group">
       <label>Motivo (aparece en el ticket, opcional)</label>
@@ -483,6 +483,34 @@
     <div class="modal-footer">
       <button class="btn-secondary" id="discount-remove-btn" onclick="removeDiscount()" style="display:none">🗑️ Quitar descuento</button>
       <button class="modal-confirm-btn" onclick="applyDiscount()">→ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TECLADO NUMÉRICO TÁCTIL genérico (para campos tipo "Valor" que en
+     un móvil/tablet abrirían el teclado nativo del sistema en vez de
+     este propio, más rápido de usar con el dedo) ── -->
+<div id="numpad-modal" class="modal-overlay" onclick="if(event.target===this)closeNumpad()">
+  <div class="modal-box" style="max-width:280px">
+    <button class="modal-close" onclick="closeNumpad()">&#x2715;</button>
+    <div class="modal-title" id="numpad-title">Valor</div>
+    <div class="cash-keypad">
+      <div class="cash-keypad-display" id="numpad-display">0</div>
+      <div class="cash-keypad-grid">
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('7')">7</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('8')">8</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('9')">9</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('4')">4</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('5')">5</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('6')">6</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('1')">1</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('2')">2</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('3')">3</button>
+        <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="numpadClear()">CE</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('0')">0</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit(',')">,</button>
+      </div>
+      <button type="button" class="cash-keypad-equals" onclick="numpadConfirm()">✓ Listo</button>
     </div>
   </div>
 </div>
