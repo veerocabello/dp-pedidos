@@ -548,6 +548,55 @@ function numpadConfirm() {
   closeNumpad();
 }
 
+// Teclado alfabético táctil para "Nombre para avisar" — el mostrador no
+// tiene teclado físico, así que este campo también necesitaba su propio
+// teclado en pantalla (igual que el numérico de arriba, pero de letras).
+let nameKbBuffer = '';
+let nameKbShiftOn = true;
+const NAMEKB_ACCENTS = new Set(['á', 'é', 'í', 'ó', 'ú', 'ñ']);
+function openNameKeyboard() {
+  nameKbBuffer = document.getElementById('order-name').value || '';
+  nameKbShiftOn = nameKbBuffer.length === 0;
+  nameKbRenderCase();
+  nameKbUpdateDisplay();
+  document.getElementById('namekb-overlay').classList.add('open');
+  document.getElementById('order-name').classList.add('kb-active');
+}
+function closeNameKeyboard() {
+  document.getElementById('namekb-overlay').classList.remove('open');
+  document.getElementById('order-name').classList.remove('kb-active');
+}
+function nameKbLetter(l) {
+  if (nameKbBuffer.length >= 40) return;
+  nameKbBuffer += nameKbShiftOn ? l.toUpperCase() : l;
+  if (nameKbShiftOn && !NAMEKB_ACCENTS.has(l)) { nameKbShiftOn = false; nameKbRenderCase(); }
+  nameKbUpdateDisplay();
+}
+function nameKbShift() { nameKbShiftOn = !nameKbShiftOn; nameKbRenderCase(); }
+function nameKbBackspace() { nameKbBuffer = nameKbBuffer.slice(0, -1); nameKbUpdateDisplay(); }
+function nameKbSpace() {
+  if (nameKbBuffer.length >= 40) return;
+  nameKbBuffer += ' ';
+  nameKbUpdateDisplay();
+}
+function nameKbRenderCase() {
+  const shiftBtn = document.getElementById('namekb-shift-btn');
+  if (shiftBtn) shiftBtn.classList.toggle('on', nameKbShiftOn);
+  document.querySelectorAll('.namekb-letter-key').forEach(btn => {
+    const l = btn.dataset.letter;
+    btn.textContent = nameKbShiftOn ? l.toUpperCase() : l;
+  });
+}
+function nameKbUpdateDisplay() {
+  const el = document.getElementById('namekb-display');
+  el.textContent = nameKbBuffer || 'Ej. Ana';
+  el.classList.toggle('placeholder', !nameKbBuffer);
+  const input = document.getElementById('order-name');
+  input.value = nameKbBuffer;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function nameKbConfirm() { closeNameKeyboard(); }
+
 function openDiscountModal(lineKey) {
   discountTargetKey = lineKey || null;
   const current = getActiveDiscount();

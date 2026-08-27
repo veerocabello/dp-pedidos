@@ -44,7 +44,7 @@
     </div>
     <div class="form-group">
       <label for="order-name">Nombre para avisar (opcional)</label>
-      <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana" oninput="if(window.saveCartDraft)saveCartDraft()">
+      <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana" readonly onclick="openNameKeyboard()" oninput="if(window.saveCartDraft)saveCartDraft()">
     </div>
     <div id="cart-body" class="cart-body"></div>
     <div class="cart-total-row" id="cart-total-row" style="display:none">
@@ -511,6 +511,66 @@
         <button type="button" class="cash-keypad-btn" onclick="numpadDigit(',')">,</button>
       </div>
       <button type="button" class="cash-keypad-equals" onclick="numpadConfirm()">✓ Listo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TECLADO ALFABÉTICO TÁCTIL para "Nombre para avisar" (mostrador sin
+     teclado físico) — se desliza desde abajo, como el teclado de un móvil ── -->
+<div class="namekb-overlay" id="namekb-overlay" onclick="if(event.target===this)closeNameKeyboard()">
+  <div class="namekb-panel">
+    <div class="namekb-display-row">
+      <span class="icon">✎</span>
+      <span class="namekb-display placeholder" id="namekb-display">Ej. Ana</span>
+      <button class="namekb-close" onclick="closeNameKeyboard()">&#x2715;</button>
+    </div>
+    <div class="namekb-rows">
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="á" onclick="nameKbLetter('á')">á</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="é" onclick="nameKbLetter('é')">é</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="í" onclick="nameKbLetter('í')">í</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="ó" onclick="nameKbLetter('ó')">ó</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="ú" onclick="nameKbLetter('ú')">ú</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="ñ" onclick="nameKbLetter('ñ')">ñ</button>
+      </div>
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="q" onclick="nameKbLetter('q')">q</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="w" onclick="nameKbLetter('w')">w</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="e" onclick="nameKbLetter('e')">e</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="r" onclick="nameKbLetter('r')">r</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="t" onclick="nameKbLetter('t')">t</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="y" onclick="nameKbLetter('y')">y</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="u" onclick="nameKbLetter('u')">u</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="i" onclick="nameKbLetter('i')">i</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="o" onclick="nameKbLetter('o')">o</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="p" onclick="nameKbLetter('p')">p</button>
+      </div>
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="a" onclick="nameKbLetter('a')">a</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="s" onclick="nameKbLetter('s')">s</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="d" onclick="nameKbLetter('d')">d</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="f" onclick="nameKbLetter('f')">f</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="g" onclick="nameKbLetter('g')">g</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="h" onclick="nameKbLetter('h')">h</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="j" onclick="nameKbLetter('j')">j</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="k" onclick="nameKbLetter('k')">k</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="l" onclick="nameKbLetter('l')">l</button>
+      </div>
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-key-shift" id="namekb-shift-btn" onclick="nameKbShift()">⇧</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="z" onclick="nameKbLetter('z')">z</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="x" onclick="nameKbLetter('x')">x</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="c" onclick="nameKbLetter('c')">c</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="v" onclick="nameKbLetter('v')">v</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="b" onclick="nameKbLetter('b')">b</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="n" onclick="nameKbLetter('n')">n</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="m" onclick="nameKbLetter('m')">m</button>
+        <button type="button" class="namekb-key namekb-key-back" onclick="nameKbBackspace()">⌫</button>
+      </div>
+      <div class="namekb-bottom-row">
+        <button type="button" class="namekb-key-space" onclick="nameKbSpace()">ESPACIO</button>
+        <button type="button" class="namekb-key-done" onclick="nameKbConfirm()">✓ Listo</button>
+      </div>
     </div>
   </div>
 </div>
