@@ -1238,6 +1238,10 @@ function esComponenteSalsa(comp) {
   const c = comp.trim().toLowerCase();
   return c.includes('salsa') || SALSA_EXTRA_NAMES.has(c);
 }
+// "Salsa a elegir" (ej. Boniato Bacon) no es un ingrediente que se pueda
+// quitar como los demás — es un hueco que hay que rellenar sí o sí con
+// una salsa concreta antes de añadir el producto al pedido.
+function isElegirSalsaComp(comp) { return comp.trim().toLowerCase() === 'salsa a elegir'; }
 function renderExtrasBody(item) {
   const isBoniato = BONIATO_IDS.has(item.id);
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
@@ -1246,13 +1250,33 @@ function renderExtrasBody(item) {
   const salsaComponents = baseComponents.filter(esComponenteSalsa);
   const ingComponents = baseComponents.filter(c => !esComponenteSalsa(c));
   let html = '';
+  const salsaAElegir = baseComponents.find(isElegirSalsaComp);
+  if (salsaAElegir) {
+    const elegida = extrasCambios.find(c => c.from === salsaAElegir);
+    if (elegida) {
+      html += `<div class="section-label" style="margin-top:0">Salsa elegida</div>
+        <div class="swap-list"><div class="swap-chip"><span>${escapeHtml(elegida.to)}</span><button onclick="removeExtraCambio(${extrasCambios.indexOf(elegida)})" title="Cambiar de salsa">✕</button></div></div>`;
+    } else {
+      html += `<div class="section-label" style="margin-top:0">Elige la salsa</div>
+        <div class="swap-card">
+          <select id="cambio-salsa-from" class="swap-select" style="display:none">
+            <option value="${escapeHtml(salsaAElegir)}" selected>${escapeHtml(salsaAElegir)}</option>
+          </select>
+          <select id="cambio-salsa-to" class="swap-select" style="width:100%">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          <button class="swap-add-btn" onclick="addExtraCambio('salsa')">✓ Elegir salsa</button>
+        </div>`;
+    }
+  }
   if (canQuitar) {
-    html += `<div class="section-label" style="margin-top:0">Quitar ingredientes</div><div class="chip-grid">`;
-    baseComponents.forEach(comp => {
-      const on = !!extrasQuitados[comp];
-      html += `<button class="chip ${on ? 'quitado' : ''}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${on ? '🚫 ' : ''}${escapeHtml(comp)}</button>`;
-    });
-    html += `</div>`;
+    const quitarComponents = baseComponents.filter(c => !isElegirSalsaComp(c));
+    if (quitarComponents.length) {
+      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes</div><div class="chip-grid">`;
+      quitarComponents.forEach(comp => {
+        const on = !!extrasQuitados[comp];
+        html += `<button class="chip ${on ? 'quitado' : ''}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${on ? '🚫 ' : ''}${escapeHtml(comp)}</button>`;
+      });
+      html += `</div>`;
+    }
     if (!isBoniato) {
       if (ingComponents.length) {
         html += `<div class="section-label">Cambiar un ingrediente</div>`;
@@ -1400,6 +1424,11 @@ function confirmExtras() {
   const id = extrasCurrentId;
   const item = MENU.find(m => m.id == id);
   if (!item) return;
+  const salsaAElegir = parseBaseComponents(item).find(isElegirSalsaComp);
+  if (salsaAElegir && !extrasCambios.some(c => c.from === salsaAElegir)) {
+    toast('🚫 Elige una salsa antes de añadir ' + item.name);
+    return;
+  }
   const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing).sort();
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
   const quitadosList = Object.entries(extrasQuitados).filter(([, on]) => on).map(([q]) => q).sort();
