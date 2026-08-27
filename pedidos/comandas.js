@@ -823,7 +823,10 @@ function closeCobrarModal() {
 }
 function addCashAmount(v) {
   const el = document.getElementById('cash-received');
-  el.value = (parseCashNum(el.value) + v).toFixed(2);
+  const pending = parseCashNum(keypadBuffer);
+  el.value = (parseCashNum(el.value) + pending + v).toFixed(2);
+  keypadBuffer = '';
+  updateKeypadDisplay();
   updateChange();
 }
 
@@ -849,9 +852,9 @@ function updateKeypadDisplay() {
 }
 function keypadEquals() {
   const val = parseCashNum(keypadBuffer);
-  if (val > 0) addCashAmount(val);
   keypadBuffer = '';
   updateKeypadDisplay();
+  if (val > 0) addCashAmount(val);
 }
 function clearCashReceived() {
   document.getElementById('cash-received').value = '';
