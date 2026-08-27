@@ -512,20 +512,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .item-minus-btn:hover { background: var(--amber); color: #fff; }
 .item-minus-btn:active { transform: scale(.9); }
 
-.item-customize-btn {
-  position: absolute; bottom: 5px; right: 5px;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  border: none;
-  background: var(--warm);
-  font-size: 11px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s, transform .1s;
-}
-.item-customize-btn:hover { background: var(--amber-light); }
-.item-customize-btn:active { transform: scale(.9); }
-
 /* ── Cart panel ── */
 .cart-panel {
   position: sticky;
@@ -654,6 +640,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   touch-action: pan-y;
 }
 .cart-line-name { flex: 1; min-width: 100px; font-weight: 700; color: var(--text); }
+.cart-line-name-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted rgba(61,31,13,.35);
+  text-underline-offset: 2px;
+}
+.cart-line-name-btn:hover { color: var(--amber-dark); }
 .cart-line-discount { border-color: var(--amber-dark); background: var(--amber-light); }
 .cart-line-discount .cart-line-price { color: var(--amber-dark); }
 .cart-line-extra { width: 100%; font-size: 11px; color: var(--muted); line-height: 1.5; }

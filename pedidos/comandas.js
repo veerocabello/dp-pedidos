@@ -209,17 +209,14 @@ function addBolsaDirect() {
 // el detalle sigue disponible al personalizar (Al Gusto/Bomba/extras).
 function renderItemRow(item) {
   const qty = cart[item.id] || 0;
-  // Al Gusto/Bomba/Cheddar y los boniatos (con stock limitado, que solo se
-  // cuenta desde extrasCart — ver unidadesEnCarritoPorMenuId) SIEMPRE
-  // necesitan pasar por el modal. Las patatas normales (1-14) tienen
-  // "quitar ingredientes"/queso/gratinado como algo OPCIONAL: antes tocar
-  // la casilla abría igualmente el modal aunque no se fuera a cambiar
-  // nada, obligando a bajar hasta el botón de añadir para el caso más
-  // habitual (sin personalizar). Ahora tocar la casilla añade la patata
-  // tal cual (como cualquier otro producto simple) y un botoncito ✏️
-  // aparte abre el modal solo si de verdad se quiere personalizar.
-  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID || BONIATO_IDS.has(item.id);
-  const customizable = ALL_EXTRAS_IDS.has(item.id);
+  // Solo Al Gusto/Bomba/Cheddar necesitan pasar sí o sí por el modal (no
+  // tienen un estado "base" sensato sin elegir nada). Todo lo demás
+  // (patatas 1-14 y boniatos) se añade tal cual al tocar la casilla, igual
+  // que cualquier otro producto simple; para personalizar (quitar
+  // ingredientes, queso, gratinado...) se edita después desde el carrito
+  // tocando el nombre — un botoncito ✏️ aparte en la casilla quedaba
+  // demasiado cargado visualmente.
+  const isSpecial = item.id === 15 || item.id === 16 || item.id === CHEDDAR_ID;
   const agotado = isItemAgotado(item);
   const showBlockedWarn = isQuitarBlocked(item.id) && parseBaseComponents(item).length > 0;
   const tileAction = isSpecial ? `onAddClick(${item.id})` : `changeQty(${item.id},1)`;
@@ -231,7 +228,6 @@ function renderItemRow(item) {
     <div class="item-name">${escapeHtml(item.name)}</div>
     <div class="item-price">${fmt(item.price)} €</div>
     ${qty > 0 && !isSpecial ? `<button class="item-minus-btn" onclick="changeQty(${item.id},-1)">−</button>` : ''}
-    ${customizable && !agotado ? `<button class="item-customize-btn" onclick="onAddClick(${item.id})" title="Personalizar (quitar ingredientes, queso, gratinado)">✏️</button>` : ''}
     ${agotado ? `<div class="item-agotado-overlay">Agotado</div>` : ''}
   </div>`;
 }
@@ -326,6 +322,17 @@ function editExtrasItem(key) {
   if (!c) return;
   if (c.menuId === CHEDDAR_ID) openCheddarModal(key);
   else openExtrasModal(c.menuId, key);
+}
+// Una patata/boniato del carrito SIMPLE (añadido tal cual, tocando la
+// casilla) no tiene ninguna personalización todavía que "editar" — al
+// tocar su nombre se abre el modal de personalizar en modo "añadir"
+// (como si se tocara desde la carta) y, solo si de verdad se confirma
+// algo, se retira una unidad del carrito simple para no duplicarla (ver
+// confirmExtras). Si se cierra sin confirmar, no cambia nada.
+let convertingSimpleId = null;
+function editSimpleItem(id) {
+  convertingSimpleId = id;
+  onAddClick(id);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -662,8 +669,12 @@ function renderCart() {
     const discAmt = computeDiscountAmount(raw, lineDiscounts[key]);
     const subtotal = raw - discAmt;
     total += subtotal;
+    const simpleCanEdit = ALL_EXTRAS_IDS.has(item.id) || BONIATO_IDS.has(item.id);
+    const simpleNameHtml = simpleCanEdit
+      ? `<button type="button" class="cart-line-name cart-line-name-btn" onclick="editSimpleItem(${item.id})" title="Personalizar (quitar ingredientes, queso, gratinado...)">${escapeHtml(item.name)}</button>`
+      : `<span class="cart-line-name">${escapeHtml(item.name)}</span>`;
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('simple', item.id, `<div class="cart-line">
-      <span class="cart-line-name">${escapeHtml(item.name)}</span>
+      ${simpleNameHtml}
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeQty(${item.id},-1)">−</button>
         <span>${qty}</span>
@@ -686,14 +697,13 @@ function renderCart() {
     total += subtotal;
     const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
-      <span class="cart-line-name">${escapeHtml(item.name)}</span>
+      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(item.name)}</button>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
         <span>${c.qty}</span>
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',1)">+</button>
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
-      <button class="cart-edit" onclick="editCustItem('${c.key}')" title="Editar">✏️</button>
       <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeCustItem('${c.key}')" title="Quitar">🗑️</button>
       <div class="cart-line-extra">${escapeHtml(details)}</div>
@@ -710,14 +720,13 @@ function renderCart() {
     const details = getExtrasItemDetails(c).join(' · ');
     const baseItem = MENU.find(m => m.id == c.menuId);
     rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: wrapSwipe('extras', c.key, `<div class="cart-line">
-      <span class="cart-line-name">${escapeHtml(getExtrasItemLabel(c))}</span>
+      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editExtrasItem('${c.key}')" title="Editar">${escapeHtml(getExtrasItemLabel(c))}</button>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',-1)">−</button>
         <span>${c.qty}</span>
         <button class="qty-btn-sm" onclick="changeExtrasQty('${c.key}',1)">+</button>
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
-      <button class="cart-edit" onclick="editExtrasItem('${c.key}')" title="Editar">✏️</button>
       <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
@@ -1227,7 +1236,11 @@ function openExtrasModal(id, editKey) {
   updateExtrasTotalPrice();
   document.getElementById('extras-modal').classList.add('open');
 }
-function closeExtrasModal() { document.getElementById('extras-modal').classList.remove('open'); extrasCurrentId = null; extrasEditKey = null; }
+function closeExtrasModal() {
+  document.getElementById('extras-modal').classList.remove('open');
+  extrasCurrentId = null; extrasEditKey = null;
+  convertingSimpleId = null; // cerrar sin confirmar no debe tocar el carrito simple
+}
 
 // La salsa de cada patata es siempre el primer ingrediente de la
 // descripción (p.ej. "Salsa philadelphia, york, huevo..."), pero no
@@ -1447,6 +1460,12 @@ function confirmExtras() {
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
   else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, cambios: cambiosList, pickOrder, basePrice: item.price, key };
+  // Se estaba personalizando una unidad que ya estaba en el carrito simple
+  // (tocando su nombre) — se retira de ahí, ya está aquí personalizada.
+  if (convertingSimpleId === id) {
+    if (cart[id] > 1) cart[id] -= 1; else delete cart[id];
+    convertingSimpleId = null;
+  }
   const wasEdit = !!extrasEditKey;
   closeExtrasModal();
   renderCart();
@@ -3022,7 +3041,10 @@ function unidadesVendidasHoyPorMenuId(id) {
 // quedan dentro de un mismo pedido grande.
 function unidadesEnCarritoPorMenuId(id, esPanini) {
   if (esPanini) return cart[id] || 0;
-  return Object.values(extrasCart).reduce((s, c) => s + (c.menuId === id && c.qty > 0 ? c.qty : 0), 0);
+  // Un boniato ahora puede estar en el carrito simple (tocando la casilla,
+  // tal cual) o en extrasCart (personalizado desde el carrito) — hay que
+  // sumar los dos sitios para que el stock no se quede corto.
+  return (cart[id] || 0) + Object.values(extrasCart).reduce((s, c) => s + (c.menuId === id && c.qty > 0 ? c.qty : 0), 0);
 }
 function getPaniniCountsKey() { return 'dpf_comandas_panini_counts_' + todayISO(); }
 function loadPaniniCounts() {
