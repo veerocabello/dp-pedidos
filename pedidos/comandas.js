@@ -597,13 +597,13 @@ function nameKbUpdateDisplay() {
 }
 function nameKbConfirm() { closeNameKeyboard(); }
 
-// Teclado numérico para "Hora de recogida" — se escribe como en un reloj
-// digital: los dígitos van entrando por la derecha (HHMM) y el hueco sin
-// rellenar se ve como "--:--".
+// Teclado numérico para "Hora de recogida" — se escribe de izquierda a
+// derecha, primero la hora y luego los minutos (como rellenar dos huecos),
+// y lo que falta por escribir se ve como "--:--".
 let pickupBuffer = '';
 function formatPickupBuffer(buf) {
-  const padded = buf.padStart(4, '0');
-  return padded.slice(0, 2) + ':' + padded.slice(2, 4);
+  const chars = (buf + '----').slice(0, 4).split('');
+  return chars[0] + chars[1] + ':' + chars[2] + chars[3];
 }
 function openPickupTimeKeypad() {
   pickupBuffer = (document.getElementById('pickup-time').value || '').replace(/[^0-9]/g, '');
@@ -611,7 +611,11 @@ function openPickupTimeKeypad() {
   document.getElementById('pickup-modal').classList.add('open');
 }
 function closePickupTimeKeypad() { document.getElementById('pickup-modal').classList.remove('open'); }
-function pickupDigit(d) { pickupBuffer = (pickupBuffer + d).slice(-4); updatePickupDisplay(); }
+function pickupDigit(d) {
+  if (pickupBuffer.length >= 4) return;
+  pickupBuffer += d;
+  updatePickupDisplay();
+}
 function pickupBackspace() { pickupBuffer = pickupBuffer.slice(0, -1); updatePickupDisplay(); }
 function pickupClear() { pickupBuffer = ''; updatePickupDisplay(); }
 function updatePickupDisplay() {
@@ -622,9 +626,8 @@ function pickupConfirm() {
   if (!pickupBuffer) {
     input.value = '';
   } else {
-    const formatted = formatPickupBuffer(pickupBuffer);
-    const hh = Math.min(23, parseInt(formatted.slice(0, 2), 10));
-    const mm = Math.min(59, parseInt(formatted.slice(3, 5), 10));
+    const hh = Math.min(23, parseInt(pickupBuffer.slice(0, 2).padEnd(2, '0'), 10));
+    const mm = Math.min(59, parseInt(pickupBuffer.slice(2, 4).padEnd(2, '0'), 10));
     input.value = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
   }
   input.dispatchEvent(new Event('input', { bubbles: true }));
