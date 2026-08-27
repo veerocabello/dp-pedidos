@@ -643,13 +643,13 @@ function renderCart() {
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
-    document.getElementById('paid-toggle-row').style.display = 'none';
+    document.getElementById('btn-cobrar').style.display = 'none';
     document.getElementById('print-btn').disabled = true;
     syncCashTotal(0);
     clearCartDraft();
     return;
   }
-  document.getElementById('paid-toggle-row').style.display = 'flex';
+  document.getElementById('btn-cobrar').style.display = 'block';
 
   let total = 0;
   const rows = []; // { rank, html } — se ordenan por categoría antes de pintar
@@ -742,6 +742,7 @@ function renderCart() {
   totalRowEl.style.display = 'flex';
   const orderTotal = total - discountAmount;
   document.getElementById('cart-total').textContent = fmt(orderTotal) + ' €';
+  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
   document.getElementById('print-btn').disabled = false;
   syncCashTotal(orderTotal);
   saveCartDraft();
@@ -800,13 +801,16 @@ function syncCashTotal(orderTotal) {
   if (!cashTotalEdited) document.getElementById('cash-total').value = orderTotal > 0 ? orderTotal.toFixed(2) : '';
   updateChange();
 }
-// Al abrir el desplegable "Cobrar", refresca siempre el total con el de
-// la comanda actual (por si se había escrito un importe suelto antes).
-function onCashCalcToggle() {
-  if (document.getElementById('cash-calc').open) {
-    cashTotalEdited = false;
-    syncCashTotal(currentOrderTotal());
-  }
+// El "Cobrar" ya no vive encajado en la barra lateral (se quedaba corto
+// de alto y no se podía bajar más para ver el teclado) — ahora es un
+// modal a pantalla completa, con la misma calculadora de uniCenta.
+function openCobrarModal() {
+  cashTotalEdited = false;
+  syncCashTotal(currentOrderTotal());
+  document.getElementById('cobrar-modal').classList.add('open');
+}
+function closeCobrarModal() {
+  document.getElementById('cobrar-modal').classList.remove('open');
 }
 function addCashAmount(v) {
   const el = document.getElementById('cash-received');
@@ -3013,38 +3017,24 @@ function paniniRestante(id) {
   if (!e.inicial) return null; // sin límite puesto hoy
   return Math.max(0, e.inicial - paniniUsadoTotal(id));
 }
+// El − / + de aquí abajo ajustan directamente "unidades hoy" (antes eran
+// para un contador de mermas/regalos aparte que no se usaba, con las
+// flechitas nativas del <input type=number> para poner "unidades hoy" —
+// diminutas e imposibles de tocar bien en la pantalla táctil).
+function changePaniniInicial(id, delta) {
+  const counts = loadPaniniCounts();
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  entry.inicial = Math.max(0, entry.inicial + delta);
+  counts[id] = entry;
+  savePaniniCounts(counts);
+  renderStockModal();
+  renderMenu();
+}
 function setPaniniInicial(id, valor) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
   entry.inicial = Math.max(0, parseInt(valor, 10) || 0);
   counts[id] = entry;
-  savePaniniCounts(counts);
-  renderStockModal();
-  renderMenu();
-}
-function changePaniniItemCount(id, delta) {
-  const counts = loadPaniniCounts();
-  const entry = counts[id] || { inicial: 0, usado: 0 };
-  const item = MENU.find(m => m.id == id);
-  if (delta > 0 && entry.inicial > 0 && paniniUsadoTotal(id) >= entry.inicial) {
-    toast('🚫 ' + (item ? item.name : 'Producto') + ' agotado — no quedan más');
-    return;
-  }
-  entry.usado = Math.max(0, entry.usado + delta);
-  counts[id] = entry;
-  savePaniniCounts(counts);
-  if (delta > 0 && entry.inicial > 0 && paniniUsadoTotal(id) >= entry.inicial) {
-    toast('⚠️ ' + (item ? item.name : 'Producto') + ': ya no quedan');
-  }
-  renderStockModal();
-  renderMenu();
-}
-function resetPaniniItemCount(id) {
-  const entry = getPaniniEntry(id);
-  if (!entry.usado) return;
-  if (!confirm('¿Reiniciar el contador de uso a 0? (las unidades de hoy no cambian)')) return;
-  const counts = loadPaniniCounts();
-  counts[id].usado = 0;
   savePaniniCounts(counts);
   renderStockModal();
   renderMenu();
@@ -3076,34 +3066,17 @@ function boniatoRestante(tipo) {
   if (!e.inicial) return null;
   return Math.max(0, e.inicial - boniatoUsadoTotal(tipo));
 }
+function changeBoniatoInicial(tipo, delta) {
+  const counts = loadBoniatoCounts();
+  const entry = counts[tipo];
+  entry.inicial = Math.max(0, entry.inicial + delta);
+  saveBoniatoCounts(counts);
+  renderStockModal();
+  renderMenu();
+}
 function setBoniatoInicial(tipo, valor) {
   const counts = loadBoniatoCounts();
   counts[tipo].inicial = Math.max(0, parseInt(valor, 10) || 0);
-  saveBoniatoCounts(counts);
-  renderStockModal();
-  renderMenu();
-}
-function changeBoniatoCount(tipo, delta) {
-  const counts = loadBoniatoCounts();
-  const entry = counts[tipo];
-  const label = BONIATO_STOCK_TIPOS[tipo];
-  if (delta > 0 && entry.inicial > 0 && boniatoUsadoTotal(tipo) >= entry.inicial) {
-    toast('🚫 ' + label + ' agotado — no quedan más');
-    return;
-  }
-  entry.usado = Math.max(0, entry.usado + delta);
-  saveBoniatoCounts(counts);
-  if (delta > 0 && entry.inicial > 0 && boniatoUsadoTotal(tipo) >= entry.inicial) {
-    toast('⚠️ ' + label + ': ya no quedan');
-  }
-  renderStockModal();
-  renderMenu();
-}
-function resetBoniatoCount(tipo) {
-  const counts = loadBoniatoCounts();
-  if (!counts[tipo].usado) return;
-  if (!confirm('¿Reiniciar el contador de uso a 0? (las unidades de hoy no cambian)')) return;
-  counts[tipo].usado = 0;
   saveBoniatoCounts(counts);
   renderStockModal();
   renderMenu();
@@ -3122,9 +3095,14 @@ function isItemAgotado(item) {
   return r !== null && r <= 0;
 }
 
-function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, onReset) {
-  const usadoTotal = entry.usado + vendidoAuto;
-  const restante = entry.inicial ? Math.max(0, entry.inicial - usadoTotal) : null;
+// Antes: un <input type=number> con flechitas nativas diminutas para
+// "unidades hoy", y aparte un − / 🛒 N / + / ↺ para un ajuste manual de
+// mermas que no se usaba. Confirmado en la tienda que las flechitas no se
+// pueden tocar bien en la pantalla táctil del mostrador — ahora el − / +
+// (grandes, táctiles) ajustan "unidades hoy" directamente; el número
+// sigue siendo editable a mano si hace falta poner uno exacto de golpe.
+function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus) {
+  const restante = entry.inicial ? Math.max(0, entry.inicial - (entry.usado + vendidoAuto)) : null;
   const restanteHtml = restante === null
     ? `<span class="stock-restante sin-limite">Sin límite</span>`
     : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restante}</span>`;
@@ -3134,16 +3112,15 @@ function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, 
       ${restanteHtml}
     </div>
     <div class="stock-row-body">
-      <label class="stock-inicial">Unidades hoy
-        <input type="number" min="0" class="stock-inicial-input" value="${entry.inicial || ''}" placeholder="0" onchange="${onInicial}this.value)">
-      </label>
-      <div class="stock-row-controls">
-        <span class="stock-auto-count" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${vendidoAuto}</span>
+      <div class="stock-inicial-row">
         <button class="stock-btn" onclick="${onMinus}">−</button>
-        <span class="stock-value" title="Ajuste manual (mermas, regalos fuera de una comanda...)">${entry.usado}</span>
+        <div class="stock-inicial-box">
+          <input type="tel" inputmode="numeric" class="stock-inicial-input" value="${entry.inicial || 0}" onchange="${onInicial}this.value)">
+          <label>Unidades hoy</label>
+        </div>
         <button class="stock-btn" onclick="${onPlus}">+</button>
-        <button class="stock-reset" title="Reiniciar ajuste manual" onclick="${onReset}">↺</button>
       </div>
+      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${vendidoAuto} vendidas hoy</div>` : ''}
     </div>
   </div>`;
 }
@@ -3153,7 +3130,7 @@ function renderStockModal() {
     item.name, getPaniniEntry(item.id),
     unidadesVendidasHoyPorMenuId(item.id) + unidadesEnCarritoPorMenuId(item.id, true),
     `setPaniniInicial(${item.id},`,
-    `changePaniniItemCount(${item.id},-1)`, `changePaniniItemCount(${item.id},1)`, `resetPaniniItemCount(${item.id})`
+    `changePaniniInicial(${item.id},-1)`, `changePaniniInicial(${item.id},1)`
   )).join('');
   const boniato = loadBoniatoCounts();
   document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => {
@@ -3162,7 +3139,7 @@ function renderStockModal() {
     return stockCounterRow(
       label, boniato[tipo], vendidoAuto,
       `setBoniatoInicial('${tipo}',`,
-      `changeBoniatoCount('${tipo}',-1)`, `changeBoniatoCount('${tipo}',1)`, `resetBoniatoCount('${tipo}')`
+      `changeBoniatoInicial('${tipo}',-1)`, `changeBoniatoInicial('${tipo}',1)`
     );
   }).join('');
 }

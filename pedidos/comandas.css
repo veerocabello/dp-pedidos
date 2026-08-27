@@ -283,43 +283,55 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .stock-restante.sin-limite { color: var(--muted); font-weight: 600; }
 .stock-row-body {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
 }
-.stock-inicial {
+/* − / + grandes y táctiles para "unidades hoy" — antes eran las flechitas
+   nativas de un <input type=number>, ilocalizables a dedo en la pantalla
+   táctil del mostrador. */
+.stock-inicial-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
+  justify-content: center;
+  gap: 12px;
+}
+.stock-inicial-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 64px;
+}
+.stock-inicial-box label {
+  font-size: 10px;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .03em;
+  letter-spacing: .04em;
 }
 .stock-inicial-input {
-  width: 52px;
+  width: 64px;
   padding: 4px 6px;
   border: 1.5px solid var(--warm);
   border-radius: 6px;
-  font-size: 13px;
-  font-family: var(--font-body);
+  font-family: var(--font-head);
+  font-size: 18px;
+  font-weight: 700;
   text-align: center;
-  color: var(--text);
+  color: var(--amber-dark);
   background: var(--cream);
+  font-variant-numeric: tabular-nums;
 }
 .stock-inicial-input:focus { border-color: var(--amber); outline: none; }
-.stock-row-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .stock-btn {
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
   background: var(--warm);
   color: var(--brown);
   font-weight: 800;
-  font-size: 15px;
+  font-size: 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -329,36 +341,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .stock-btn:hover { background: var(--amber); color: #fff; }
 .stock-btn:active { transform: scale(.92); }
-.stock-value {
-  font-family: var(--font-head);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--amber-dark);
-  min-width: 20px;
+.stock-auto-note {
   text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.stock-reset {
-  background: none;
-  border: none;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-  padding: 2px 4px;
-  flex-shrink: 0;
-  opacity: .7;
-}
-.stock-reset:hover { color: var(--error); opacity: 1; }
-.stock-auto-count {
-  font-family: var(--font-head);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--muted);
-  background: var(--cream);
-  border-radius: 999px;
-  padding: 3px 8px;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 900px) {
   .menu-area { flex-direction: column; }
@@ -887,6 +874,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .cash-change-row span:last-child { font-variant-numeric: tabular-nums; }
 .cash-change-row.short span:last-child { color: var(--error); }
 .cash-change-row.ok span:last-child { color: var(--success); }
+
+.btn-cobrar {
+  width: 100%;
+  padding: 15px;
+  margin-top: 10px;
+  background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%);
+  color: var(--cream);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: .3px;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: transform .1s, box-shadow .15s, filter .15s;
+}
+.btn-cobrar:hover { filter: brightness(1.15); box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+.btn-cobrar:active { transform: translateY(0) scale(.99); }
 
 .btn-print {
   width: 100%;
