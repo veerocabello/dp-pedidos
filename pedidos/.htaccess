@@ -8,6 +8,33 @@
     AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain image/svg+xml
 </IfModule>
 
+# ── Caché del navegador — CSS/JS/imágenes llevan ?v=timestamp como cache-busting,
+#    así que es seguro cachearlos mucho tiempo: cuando cambian, cambia la URL. ──
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType text/javascript "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType application/manifest+json "access plus 1 week"
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|png|jpe?g|webp|svg|woff2?|ttf)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    <!-- sw.js NUNCA se cachea: el navegador debe poder detectar actualizaciones del service worker -->
+    <FilesMatch "^sw\.js$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>
+
 # ── Cabeceras de seguridad HTTP ──
 <IfModule mod_headers.c>
     Header set X-Frame-Options "SAMEORIGIN"
@@ -38,43 +65,10 @@ RewriteRule ^webhook-incidencia\.php$ - [L]
 RewriteRule ^bimba-verify\.php$ - [L]
 RewriteRule ^fichar-pin-check\.php$ - [L]
 
-# ── Excepción TEMPORAL (solo mientras dura el Basic Auth): fichar-standalone.html
-#    es una página propia, solo con la pantalla de fichar (sin carta ni
-#    carrito detrás), accesible SIN contraseña mientras la web está cerrada,
-#    para que los empleados puedan fichar con su enlace (?fichar=TOKEN) sin
-#    conocer la contraseña de la web. Los archivos que esa página necesita
-#    (JS del fichaje, fichar-pin-check.php) se abren también SOLO cuando el
-#    navegador los pide con ese mismo enlace como "Referer".
-#    admin-shell.html NUNCA se salta, tiene su propia regla aparte.
-#
-#    IMPORTANTE — el día de la reapertura, quitar SOLO este bloque de
-#    SetEnvIf/RequireAny (deja de hacer nada útil sin Basic Auth de por
-#    medio) — pero fichar-standalone.html, js/fichar.js y
-#    fichar-pin-check.php se QUEDAN para siempre: no son un parche del
-#    Basic Auth, resuelven un problema de fondo (que el móvil de un
-#    empleado no tenga que leer la lista completa de compañeros para
-#    comprobar su propio PIN) que existe da igual si la web tiene
-#    contraseña o no.
-<IfModule mod_setenvif.c>
-    SetEnvIf Referer "fichar=" allow_fichar
-</IfModule>
-
-# admin-shell.html: siempre con contraseña, sin excepción de fichar
+# admin-shell.html: siempre con contraseña propia (esto NO es del Basic Auth de obras, se queda para siempre)
 <FilesMatch "^admin-shell\.html$">
     AuthType Basic
     AuthName "Zona privada"
     AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
     Require valid-user
-</FilesMatch>
-
-# ── Zona privada — se aplica a TODO excepto a la lista de archivos públicos ──
-# (cerrado temporalmente por obras — quitar este bloque el día de la reapertura, ver .htaccess preparado sin Basic Auth)
-<FilesMatch "^(?!(send-code\.php|verify-code\.php|webhook-incidencia\.php|bimba-verify\.php|fichar-pin-check\.php|manifest\.json|sw\.js|fichar-standalone\.html|admin-shell\.html)$).*$">
-    AuthType Basic
-    AuthName "Zona privada"
-    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
-    <RequireAny>
-        Require valid-user
-        Require env allow_fichar
-    </RequireAny>
 </FilesMatch>
