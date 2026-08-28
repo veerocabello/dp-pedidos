@@ -299,14 +299,6 @@ function stockOverlayDrop(e) {
   saveStockData(data);
   renderStockItems();
 }
-function openStockInline() {
-  // Guardar sección activa para restaurarla al cerrar
-  const activeSection = document.querySelector('.admin-section.active');
-  window._stockPrevSection = activeSection ? activeSection.id.replace('admin-', '') : 'productos';
-  window._stockFromAdmin = true;
-  window._adminWasLoggedIn = _adminLoggedIn;
-  openStockOverlay();
-}
 function openStockConfigSecret() {
   // Open stock config (bimba secret)
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
@@ -378,11 +370,9 @@ function closeStockOverlay() {
     } catch (e) {}
     window._stockUnsubscribe = null;
   }
-  if (window._stockFromAdmin) {
-    window._stockFromAdmin = false;
-    _adminLoggedIn = window._adminWasLoggedIn || true;
-    // Simplemente reabrir el panel admin desde cero
-    openAdmin();
+  if (window._stockFromBimba) {
+    window._stockFromBimba = false;
+    if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
   }
 }
 

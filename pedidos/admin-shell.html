@@ -146,7 +146,7 @@
         <button class="admin-tab" data-section="pedidos" onclick="showAdminSection('pedidos', this)"><span class="admin-tab-icon">🔴</span><span>En vivo</span></button>
         <button class="admin-tab" data-section="stats" onclick="showAdminSection('stats', this)"><span class="admin-tab-icon">📊</span><span>Hoy</span></button>
         <button class="admin-tab" data-section="historial" onclick="showAdminSection('historial', this)"><span class="admin-tab-icon">👤</span><span>Clientes</span></button>
-        <button class="admin-tab" onclick="showAdminSection('stock-admin', this); openStockInline()"><span class="admin-tab-icon">📦</span><span>Stock</span></button>
+        <!-- Stock movido al panel bimba (⚙️ con contraseña) — ver "Pedidos y stock" ahí -->
         <button class="admin-tab" data-section="fidelizacion" onclick="showAdminSection('fidelizacion', this); renderFidelizacionList()"><span class="admin-tab-icon">🎁</span><span>Fidelización</span></button>
         <button class="admin-tab" data-section="alertas" onclick="showAdminSection('alertas', this)"><span class="admin-tab-icon">🔔</span><span>Alertas</span><span class="admin-tab-badge" id="alertas-tab-badge" style="display:none">0</span></button>
         <!-- Empleados movido a ⚙️ con contraseña bimba -->
@@ -983,6 +983,11 @@
             <div class="row-text"><div class="row-title">Ingredientes de stock</div><div class="row-desc">Define lo que pueden reponer los empleados</div></div>
             <span class="row-chevron">›</span>
           </div>
+          <div class="row" onclick="bimbaIrAStock()">
+            <span class="row-icon">📋</span>
+            <div class="row-text"><div class="row-title">Hacer inventario</div><div class="row-desc">Marcar existencias — antes en la pestaña "Stock"</div></div>
+            <span class="row-chevron">›</span>
+          </div>
         </div>
 
         <div class="sec-head">Marketing</div>
@@ -1200,11 +1205,6 @@
             <span class="row-chevron">›</span>
           </div>
         </div>
-      </div>
-
-
-      <div class="admin-section" id="admin-stock-admin">
-        <!-- Stock se abre en overlay, esta sección es solo placeholder -->
       </div>
 
 

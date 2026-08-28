@@ -1953,6 +1953,17 @@ function bimbaVolverAlPanel() {
   setTimeout(function(){ if(typeof dcCargar==='function') dcCargar(); }, 100);
 }
 
+// Inventario de stock (marcar existencias) — antes vivía en la pestaña
+// "Stock" del panel admin normal, ahora solo se abre desde aquí (panel
+// bimba), a petición de la dueña: es una tarea operativa del día a día,
+// no una sección de configuración del negocio.
+function bimbaIrAStock() {
+  document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  window._stockFromBimba = true;
+  if (typeof openStockOverlay === 'function') openStockOverlay();
+}
+
 // ── PROMOS BIMBA ──
 function bimbaRenderPromos() {
   var el = document.getElementById('bimba-promos-lista');

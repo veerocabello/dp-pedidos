@@ -9555,14 +9555,6 @@ function stockOverlayDrop(e) {
   saveStockData(data);
   renderStockItems();
 }
-function openStockInline() {
-  // Guardar sección activa para restaurarla al cerrar
-  const activeSection = document.querySelector('.admin-section.active');
-  window._stockPrevSection = activeSection ? activeSection.id.replace('admin-', '') : 'productos';
-  window._stockFromAdmin = true;
-  window._adminWasLoggedIn = _adminLoggedIn;
-  openStockOverlay();
-}
 function openStockConfigSecret() {
   // Open stock config (bimba secret)
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
@@ -9634,11 +9626,9 @@ function closeStockOverlay() {
     } catch (e) {}
     window._stockUnsubscribe = null;
   }
-  if (window._stockFromAdmin) {
-    window._stockFromAdmin = false;
-    _adminLoggedIn = window._adminWasLoggedIn || true;
-    // Simplemente reabrir el panel admin desde cero
-    openAdmin();
+  if (window._stockFromBimba) {
+    window._stockFromBimba = false;
+    if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
   }
 }
 
@@ -10582,7 +10572,6 @@ function _buscadorSeccionesAdmin() {
     { icon: '🔴', badge: 'section', tipo: 'Sección', nombre: 'En vivo', ruta: 'Panel admin · pedidos', meta: [], go: () => showAdminSection('pedidos', tab('pedidos')) },
     { icon: '📊', badge: 'section', tipo: 'Sección', nombre: 'Hoy', ruta: 'Panel admin · estadísticas', meta: [], go: () => showAdminSection('stats', tab('stats')) },
     { icon: '📅', badge: 'section', tipo: 'Sección', nombre: 'Historial', ruta: 'Panel admin', meta: [], go: () => showAdminSection('historial', tab('historial')) },
-    { icon: '📦', badge: 'section', tipo: 'Sección', nombre: 'Stock', ruta: 'Panel admin', meta: [], go: () => { document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active')); if (typeof openStockInline === 'function') openStockInline(); } },
     { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Fidelización', ruta: 'Panel admin', meta: [], go: () => { showAdminSection('fidelizacion', tab('fidelizacion')); if (typeof renderFidelizacionList === 'function') renderFidelizacionList(); } },
     { icon: '🔔', badge: 'section', tipo: 'Sección', nombre: 'Alertas', ruta: 'Panel admin', meta: [], go: () => showAdminSection('alertas', tab('alertas')) },
     { icon: '🛡️', badge: 'section', tipo: 'Sección', nombre: 'Configuración de pedidos', ruta: 'Panel admin · ⚙️ Ajustes', meta: [], go: () => showAdminSection('pedidos-config', null) },
@@ -10599,6 +10588,7 @@ function _buscadorSeccionesBimba() {
     { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Códigos de descuento', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('dc-panel', 'mkt-row-codigos') },
     { icon: '🎡', badge: 'section', tipo: 'Sección', nombre: 'Ruleta de premios', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('ruleta-admin-panel', 'mkt-row-ruleta') },
     { icon: '🎫', badge: 'section', tipo: 'Sección', nombre: 'Rasca y gana', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('rasca-admin-panel', 'mkt-row-rasca') },
+    { icon: '📋', badge: 'section', tipo: 'Sección', nombre: 'Hacer inventario', ruta: 'bimba · Pedidos y stock', meta: [], go: () => { if (typeof bimbaIrAStock === 'function') bimbaIrAStock(); } },
     {
       icon: '👥', badge: 'section', tipo: 'Sección', nombre: 'Lista de empleados', ruta: 'bimba · Empleados', meta: [],
       go: () => { if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados(); setTimeout(() => _buscadorAbrirBimbaAcordeon('bimba-emp-body', 'emp-row-lista'), 100); }
