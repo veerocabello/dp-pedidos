@@ -1,0 +1,97 @@
+# ══════════════════════════════════════════════════════════════════════════
+#  .htaccess LISTO PARA EL DÍA DE LA REAPERTURA
+#  ────────────────────────────────────────────────────────────────────────
+#  Cómo usarlo ese día:
+#    1. cp pedidos/.htaccess pedidos/.htaccess.obras.bak   (por si acaso)
+#    2. cp pedidos/.htaccess.reapertura pedidos/.htaccess
+#    3. Comprobar que la web carga sin pedir contraseña y que fichar-*,
+#       admin-shell.html (con su propia contraseña) y los pedidos siguen ok
+#    4. Borrar pedidos/.htaccess.reapertura y pedidos/.htaccess.obras.bak
+#
+#  Qué cambia respecto al .htaccess actual (el "cerrado por obras"):
+#    - Se quita el bloque "Zona privada" que pedía contraseña a TODA la web.
+#    - Se quita el SetEnvIf/RequireAny de "allow_fichar", que solo existía
+#      para que fichar-standalone.html funcionara sin contraseña mientras
+#      duraba el Basic Auth general.
+#    - admin-shell.html SIGUE con su propia contraseña (Basic Auth aparte),
+#      eso no es temporal, se queda para siempre.
+#    - fichar-standalone.html, js/fichar.js y fichar-pin-check.php se
+#      quedan como están: no son un parche del Basic Auth, resuelven un
+#      problema real (que el móvil de un empleado no tenga que leer la
+#      lista completa de compañeros para comprobar su propio PIN).
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Las credenciales de Twilio ya NO viven aquí.
+#    Ahora están en /domains/dulcepatatafood.es/twilio-secrets.php
+#    (fuera de public_html, no accesible por web).
+#    Ver twilio-config.php.
+
+# ── Compresión (gzip/deflate) — reduce mucho el peso de JS/CSS/HTML al viajar ──
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain image/svg+xml
+</IfModule>
+
+# ── Caché del navegador — CSS/JS/imágenes llevan ?v=timestamp como cache-busting,
+#    así que es seguro cachearlos mucho tiempo: cuando cambian, cambia la URL. ──
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType text/javascript "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType application/manifest+json "access plus 1 week"
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|png|jpe?g|webp|svg|woff2?|ttf)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    <!-- sw.js NUNCA se cachea: el navegador debe poder detectar actualizaciones del service worker -->
+    <FilesMatch "^sw\.js$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>
+
+# ── Cabeceras de seguridad HTTP ──
+<IfModule mod_headers.c>
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+
+    # CSP activo (ya verificado en modo Report-Only sin romper nada)
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+
+    # CSP DE PRUEBA (Report-Only, no bloquea nada) — igual que la de arriba pero SIN 'unsafe-eval'
+    # Objetivo: comprobar unos días si salta algún aviso de violación en la consola del navegador.
+    # Si no salta nada, se puede quitar 'unsafe-eval' de la cabecera activa de arriba.
+    Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+</IfModule>
+
+# ── Bloquear acceso directo a archivos PHP sensibles ──
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log)$">
+    Require all denied
+</FilesMatch>
+
+# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
+RewriteEngine On
+RewriteRule ^send-code\.php$ - [L]
+RewriteRule ^verify-code\.php$ - [L]
+RewriteRule ^webhook-incidencia\.php$ - [L]
+RewriteRule ^bimba-verify\.php$ - [L]
+RewriteRule ^fichar-pin-check\.php$ - [L]
+
+# admin-shell.html: siempre con contraseña propia (esto NO es del Basic Auth de obras, se queda para siempre)
+<FilesMatch "^admin-shell\.html$">
+    AuthType Basic
+    AuthName "Zona privada"
+    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
+    Require valid-user
+</FilesMatch>
