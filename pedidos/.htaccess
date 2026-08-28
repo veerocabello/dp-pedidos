@@ -89,6 +89,11 @@ RewriteRule ^webhook-incidencia\.php$ - [L]
 RewriteRule ^bimba-verify\.php$ - [L]
 RewriteRule ^fichar-pin-check\.php$ - [L]
 RewriteRule ^csp-report\.php$ - [L]
+# estado-servidor.php: para que el monitor externo (UptimeRobot, etc.) pueda
+# comprobarlo sin toparse con la contraseña de "cerrado por obras" — no
+# expone nada sensible, solo si Firebase/Twilio responden (ver el propio
+# archivo, con su límite de intentos aparte).
+RewriteRule ^estado-servidor\.php$ - [L]
 
 # ── Excepción TEMPORAL (solo mientras dura el Basic Auth): fichar-standalone.html
 #    es una página propia, solo con la pantalla de fichar (sin carta ni
