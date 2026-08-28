@@ -1207,7 +1207,7 @@ function renderCustChips() {
     const label = extra ? n + ' +' + fmt(EXTRAS_SALSA_PRECIO) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
-  iEl.innerHTML = sortIngredientsQuesoLast(CUST_INGREDIENTS).map(n => {
+  iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
     const sel = custSelIngredients.includes(n);
     const disabled = !sel && ((cfg.maxIngredients !== null && custSelIngredients.length >= cfg.maxIngredients) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal));
     return `<button class="chip ${sel ? 'selected' : ''} ${disabled ? 'disabled' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${n}</button>`;
