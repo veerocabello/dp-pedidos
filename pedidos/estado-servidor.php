@@ -169,6 +169,25 @@ try {
     $resultado['twilio'] = ['ok' => false, 'detalle' => $e->getMessage()];
 }
 
+// ── Backup diario de Firebase: informativo, a propósito NO afecta al "ok"
+// general (no queremos que un backup atrasado dispare una alerta de
+// "caída" en el monitor externo) — pero si pasan más de 30 horas sin uno
+// nuevo, se ve aquí para quien mire este endpoint a mano. Ver
+// backup-firebase.php (pensado para un cron diario). ──
+$marcaBackup = __DIR__ . '/../../firebase-backups/ultimo-ok.txt';
+if (file_exists($marcaBackup)) {
+    $ultimoOk = (int) trim(file_get_contents($marcaBackup));
+    $horasDesde = round((time() - $ultimoOk) / 3600, 1);
+    $resultado['backupFirebase'] = [
+        'ok' => $horasDesde < 30,
+        'detalle' => $horasDesde < 30
+            ? 'Último backup hace ' . $horasDesde . ' horas'
+            : 'Sin backup nuevo desde hace ' . $horasDesde . ' horas — revisar el cron',
+    ];
+} else {
+    $resultado['backupFirebase'] = ['ok' => false, 'detalle' => 'Todavía no se ha hecho ningún backup'];
+}
+
 if (!$resultado['ok']) {
     http_response_code(503);
 }
