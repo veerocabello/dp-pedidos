@@ -129,8 +129,11 @@ RewriteRule ^estado-servidor\.php$ - [L]
     SetEnvIf Referer "^https://pedidos\.dulcepatatafood\.es/fichar-standalone\.html\?fichar=[A-Za-z0-9_-]{16,}$" allow_fichar
 </IfModule>
 
-# admin-shell.html: siempre con contraseña, sin excepción de fichar
-<FilesMatch "^admin-shell\.html$">
+# admin-shell.html y comandas.html: siempre con contraseña, sin excepción de
+# fichar — comandas.html es la herramienta de mostrador (cobra, hace caja,
+# imprime), tan sensible como el propio panel de administración, así que
+# lleva la misma protección aunque técnicamente sea un archivo aparte.
+<FilesMatch "^(admin-shell|comandas)\.html$">
     AuthType Basic
     AuthName "Zona privada"
     AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd

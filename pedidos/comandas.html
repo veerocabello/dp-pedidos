@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Comandas · Dulce Patata Food (sin conexión)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
+<link rel="stylesheet" href="comandas.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-brand">
+    <img src="img/logo.png" alt="" class="topbar-logo">
+    <div>
+      <div class="topbar-title">Comandas</div>
+      <span class="topbar-sub">Dulce Patata Food · funciona sin internet</span>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span id="printer-status" class="printer-status">comprobando impresora…</span>
+    <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
+    <button class="btn-ghost" onclick="openCaja()">🧮 Hacer caja</button>
+    <button class="btn-ghost" onclick="openResumen()">📈 Resumen</button>
+    <button class="btn-ghost" onclick="openCartaAdmin()">🍽️ Carta</button>
+    <button class="btn-ghost" onclick="openSettings()">⚙️ Ajustes</button>
+  </div>
+</header>
+
+<div class="layout">
+  <main class="menu-area">
+    <nav id="tabs" class="tabs-sidebar"></nav>
+    <div id="menu-grid" class="menu-list"></div>
+  </main>
+
+  <aside class="cart-panel">
+    <div class="cart-header">
+      <h2>Comanda</h2>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
+        <button class="btn-text" onclick="clearOrder()">Vaciar</button>
+      </div>
+    </div>
+    <div class="form-row-half">
+      <div class="form-group">
+        <label for="order-name">Nombre para avisar (opcional)</label>
+        <input id="order-name" type="text" maxlength="40" placeholder="Ej. Ana" readonly onclick="openNameKeyboard()" oninput="if(window.saveCartDraft)saveCartDraft()">
+      </div>
+      <div class="form-group">
+        <label for="pickup-time">Hora de recogida (opcional)</label>
+        <input id="pickup-time" type="text" placeholder="--:--" readonly onclick="openPickupTimeKeypad()" oninput="if(window.saveCartDraft)saveCartDraft()">
+      </div>
+    </div>
+    <div id="cart-body" class="cart-body"></div>
+    <div class="cart-total-row" id="cart-total-row" style="display:none">
+      <span>Total</span><span id="cart-total">0,00 €</span>
+    </div>
+    <button type="button" class="btn-cobrar" id="btn-cobrar" style="display:none" onclick="openCobrarModal()">💰 COBRAR</button>
+    <button class="btn-secondary" style="width:100%;margin-top:10px" onclick="previewTicket()">👁️ Ver ticket completo</button>
+    <button class="btn-print" id="print-btn" onclick="handlePrintOrder()">🖨️ Imprimir comanda</button>
+  </aside>
+</div>
+
+<!-- ── COBRAR MODAL — pagado/no pagado + calculadora de cobro, en un
+     modal a pantalla completa (no dentro de la barra lateral, que se
+     quedaba corta y no dejaba ver el teclado por mucho que se
+     deslizara). ── -->
+<div id="cobrar-modal" class="modal-overlay" onclick="if(event.target===this)closeCobrarModal()">
+  <div class="modal-box" style="max-width:420px">
+    <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
+    <div class="modal-title">💰 Cobrar</div>
+    <div class="cash-calc-row cash-calc-total-row" style="margin-bottom:10px">
+      <label style="flex:1">Total del pedido</label><b id="cobrar-modal-total">0,00 €</b>
+    </div>
+    <div class="paid-toggle-row" id="paid-toggle-row">
+      <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
+      <button type="button" class="paid-toggle-btn paid-toggle-yes" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ PAGADO</button>
+    </div>
+    <div class="payment-method-row" id="payment-method-row" style="display:none">
+      <button type="button" class="payment-method-btn active" id="pay-method-cash" onclick="setPaymentMethod('efectivo')">💵 Efectivo</button>
+      <button type="button" class="payment-method-btn" id="pay-method-card" onclick="setPaymentMethod('tarjeta')">💳 Tarjeta</button>
+    </div>
+    <div class="cash-calc-body">
+      <div class="cash-calc-row cash-calc-total-row">
+        <label for="cash-total">Total a cobrar</label>
+        <input id="cash-total" type="tel" inputmode="decimal" placeholder="0,00" oninput="cashTotalEdited=true;updateChange()">
+        <button class="cash-clear-btn" onclick="clearCashReceived()">✕ Limpiar</button>
+      </div>
+      <div class="cash-calc-row">
+        <button class="cash-quick-btn" onclick="addCashAmount(5)">+5€</button>
+        <button class="cash-quick-btn" onclick="addCashAmount(10)">+10€</button>
+        <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
+        <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
+        <input id="cash-received" type="tel" inputmode="decimal" placeholder="Paga con" oninput="keypadBuffer='';updateKeypadDisplay();updateChange()">
+      </div>
+      <div class="cash-calc-row">
+        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.05)">+0,05€</button>
+        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.10)">+0,10€</button>
+        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.20)">+0,20€</button>
+        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.50)">+0,50€</button>
+      </div>
+      <!-- Teclado numérico táctil (igual que el "Pagos" de uniCenta) — en
+           una pantalla táctil de mostrador no hay teclado físico para
+           escribir un importe exacto en "Paga con"; con esto se escribe
+           tocando, y "=" lo suma a lo ya entregado. -->
+      <div class="cash-keypad">
+        <div class="cash-keypad-display" id="cash-keypad-display">0</div>
+        <div class="cash-keypad-grid">
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('1')">1</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('2')">2</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('3')">3</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('4')">4</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('5')">5</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('6')">6</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('7')">7</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('8')">8</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('9')">9</button>
+          <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="keypadClear()">CE</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('0')">0</button>
+          <button type="button" class="cash-keypad-btn" onclick="keypadDigit(',')">,</button>
+        </div>
+        <button type="button" class="cash-keypad-equals" onclick="keypadEquals()">=</button>
+      </div>
+      <div class="cash-change-row" id="cash-change-row" style="display:none">
+        <span id="cash-change-label">Cambio a devolver</span><span id="cash-change-amount">0,00 €</span>
+      </div>
+    </div>
+    <button class="btn-secondary" style="width:100%;margin-top:14px" onclick="closeCobrarModal()">Listo</button>
+  </div>
+</div>
+
+<!-- ── CUSTOMIZER MODAL (Al Gusto / Bomba) ── -->
+<div id="customizer-modal" class="modal-overlay" onclick="if(event.target===this)closeCustomizer()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeCustomizer()">&#x2715;</button>
+    <div class="modal-title" id="cust-title">Patata Al Gusto</div>
+    <div class="modal-subtitle" id="cust-subtitle">Hasta 1 salsa y hasta 6 ingredientes a elegir</div>
+    <div class="section-label" style="margin-top:0">Salsas <span id="cust-sauce-badge">0/1</span></div>
+    <div class="chip-grid" id="cust-sauces"></div>
+    <div class="section-label">Ingredientes <span id="cust-ing-badge">0/6</span></div>
+    <div class="chip-grid" id="cust-ingredients"></div>
+    <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px">
+      <div class="section-label" style="margin-top:0">Extras opcionales</div>
+      <label class="option-row" id="cust-queso-label" onclick="toggleCustExtra('queso')">
+        <div><div class="option-title">🧀 Queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
+        <div class="option-check" id="cust-extra-check-queso"></div>
+      </label>
+      <label class="option-row" id="cust-gratinado-label" onclick="toggleCustExtra('gratinado')">
+        <div><div class="option-title">🔥 Gratinado</div><div class="option-sub">+0,50 €</div></div>
+        <div class="option-check" id="cust-extra-check-gratinado"></div>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-price" id="cust-price">6,90 €</div>
+      <button class="modal-confirm-btn" id="cust-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
+    </div>
+    <div class="modal-error" id="cust-error"></div>
+  </div>
+</div>
+
+<!-- ── CHEDDAR-BACON MODAL ── -->
+<div id="cheddar-modal" class="modal-overlay" onclick="if(event.target===this)closeCheddarModal()">
+  <div class="modal-box" style="max-width:400px">
+    <button class="modal-close" onclick="closeCheddarModal()">&#x2715;</button>
+    <div class="modal-title">Patata Cheddar-Bacon 🆕</div>
+    <div class="modal-subtitle">Salsa queso cheddar · caramelo de bacon · queso mozzarella gratinado</div>
+    <div class="section-label" style="margin-top:0">🍖 Elige la carne *</div>
+    <label class="option-row" id="cheddar-opt-picada" onclick="selectCheddarCarne('picada')">
+      <div class="option-title">Carne Picada</div>
+      <div class="option-check" id="cheddar-check-picada"></div>
+    </label>
+    <label class="option-row" id="cheddar-opt-kebab" onclick="selectCheddarCarne('kebab')">
+      <div class="option-title">Carne Kebab</div>
+      <div class="option-check" id="cheddar-check-kebab"></div>
+    </label>
+    <div class="modal-error" id="cheddar-error">⚠️ Elige la carne para continuar</div>
+    <div class="section-label">Salsas extra</div>
+    <div class="ing-grid" id="cheddar-salsas-list"></div>
+    <div class="modal-footer">
+      <div class="modal-price" id="cheddar-price">8,50 €</div>
+      <button class="modal-confirm-btn" id="cheddar-confirm-btn" onclick="confirmCheddar()">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── EXTRAS MODAL (patatas 1-14: queso/gratinado + ingredientes extra) ── -->
+<div id="extras-modal" class="modal-overlay" onclick="if(event.target===this)closeExtrasModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeExtrasModal()">&#x2715;</button>
+    <div class="modal-title" id="extras-title">Patata Simple</div>
+    <div class="modal-subtitle" id="extras-base-price">Base: 3,00 €</div>
+    <div id="extras-options"></div>
+    <div class="modal-footer">
+      <div>
+        <div class="modal-price" id="extras-total-price">3,00 €</div>
+        <div id="extras-price-note" style="font-size:11.5px;font-weight:700;color:var(--amber-dark)"></div>
+      </div>
+      <button class="modal-confirm-btn" id="extras-confirm-btn" onclick="confirmExtras()">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SETTINGS MODAL ── -->
+<div id="settings-modal" class="modal-overlay" onclick="if(event.target===this)closeSettings()">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="closeSettings()">&#x2715;</button>
+    <div class="modal-title">⚙️ Ajustes</div>
+    <div class="modal-subtitle">Datos del ticket e impresora. Se guardan en este ordenador.</div>
+
+    <div class="section-label" style="margin-top:0">Tipografía de la app</div>
+    <div class="font-options-grid" id="font-options"></div>
+
+    <div class="section-label">Datos del negocio (aparecen en el ticket)</div>
+    <div class="form-group"><label>Nombre</label><input id="set-nombre" type="text"></div>
+    <div class="form-group"><label>Dirección</label><input id="set-direccion" type="text"></div>
+    <div class="form-group"><label>Teléfono</label><input id="set-telefono" type="text"></div>
+    <div class="form-group"><label>NIF</label><input id="set-nif" type="text"></div>
+    <div class="form-group"><label>Despedida</label><input id="set-despedida" type="text"></div>
+    <div class="form-group"><label>Texto de pago</label><input id="set-texto-pago" type="text"></div>
+
+    <div class="section-label">Papel e impresión</div>
+    <div class="settings-grid">
+      <div class="form-group">
+        <label>Ancho de papel</label>
+        <select id="set-ancho-papel">
+          <option value="58">58 mm (32 columnas)</option>
+          <option value="80">80 mm (48 columnas)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Copias por comanda</label>
+        <select id="set-copias">
+          <option value="1">1 copia</option>
+          <option value="2">2 copias</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Ajuste fino de ancho (columnas)</label>
+      <input id="set-columnas-ajuste" type="number" step="1" style="max-width:120px">
+      <div class="option-sub" style="margin-top:4px">Cada impresora cabe un pelín distinto en el mismo papel. Si el precio se corta y pasa a la siguiente línea, baja este número (ej. -2); si el precio no llega al borde derecho, súbelo (ej. +2). Prueba de 1 en 1 e imprime para comprobar.</div>
+    </div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">Imprimir automáticamente al confirmar</div><div class="option-sub">Si lo desactivas, la comanda no se vacía sola tras imprimir (para revisar o sacar copias antes de empezar la siguiente)</div></div>
+      <input type="checkbox" id="set-auto-imprimir" style="width:20px;height:20px;flex-shrink:0" checked>
+    </label>
+    <div class="form-group">
+      <label>Modo de impresión (propio de esta herramienta offline)</label>
+      <select id="set-modo-impresion" onchange="updatePrinterNameVisibility()">
+        <option value="auto">Directa a la impresora — si falla, imprime igualmente sin diálogo (app de escritorio) o abre el diálogo</option>
+        <option value="silent" id="set-modo-impresion-silent-opt">Silenciosa: imprime sola, sin ningún diálogo (recomendado)</option>
+        <option value="dialog">Siempre usar el diálogo de impresión de Windows/Chrome</option>
+      </select>
+    </div>
+    <div class="form-group" id="set-printer-name-group" style="display:none">
+      <label>Impresora a usar en modo silencioso</label>
+      <select id="set-printer-name">
+        <option value="">La predeterminada de Windows</option>
+      </select>
+    </div>
+
+    <div class="section-label">Copia de seguridad</div>
+    <div class="form-group">
+      <label>Descargar copia automática…</label>
+      <select id="set-copia-auto-cada">
+        <option value="0">Desactivada (solo copia manual)</option>
+        <option value="1">Cada día (recomendado)</option>
+        <option value="3">Cada 3 días</option>
+        <option value="7">Cada 7 días</option>
+      </select>
+    </div>
+
+    <div id="settings-desktop-section" style="display:none">
+      <div class="section-label">App de escritorio <span id="set-app-version" style="font-weight:400;color:var(--muted);font-size:11px"></span></div>
+      <div class="form-group">
+        <label>Carpeta de copias de seguridad (organizada por año/mes/semana)</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="set-backup-folder" type="text" readonly placeholder="Sin configurar" style="flex:1;background:var(--warm)">
+          <button class="btn-secondary" style="flex:0 0 auto;padding:9px 14px" onclick="chooseBackupFolder()">📁 Elegir…</button>
+        </div>
+        <div class="option-sub" style="margin-top:4px">Con esto configurado, al pulsar "📥 Descargar copia" en Hacer Caja también se guarda sola una copia ahí, organizada en carpetas.</div>
+      </div>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Abrir automáticamente al encender este ordenador</div><div class="option-sub">Así no hay que buscarla ni abrirla a mano cada mañana</div></div>
+        <input type="checkbox" id="set-auto-launch" style="width:20px;height:20px;flex-shrink:0" onchange="toggleAutoLaunch(this.checked)">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Modo kiosco (pantalla completa fija)</div><div class="option-sub">Bloquea cerrar la app sin querer (Alt+F4). Para salir: Esc (pide confirmación)</div></div>
+        <input type="checkbox" id="set-kiosk" style="width:20px;height:20px;flex-shrink:0" onchange="toggleKiosk(this.checked)">
+      </label>
+      <div class="form-group">
+        <label>Carpeta de actualizaciones (ruta de red o USB, opcional)</label>
+        <input id="set-update-path" type="text" placeholder="Ej. \\SERVIDOR\comandas-updates" oninput="saveUpdatePathDebounced()">
+      </div>
+      <div class="settings-actions">
+        <button class="btn-secondary" onclick="checkForAppUpdate()">🔎 Buscar actualización ahora</button>
+      </div>
+      <div id="update-check-result" class="settings-help" style="display:none"></div>
+    </div>
+
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
+      <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
+    </div>
+
+    <div class="settings-help">
+      <b>¿Cómo funciona?</b> "Directa a la impresora" manda el ticket por USB sin abrir ningún diálogo (necesita Chrome o Edge, y pulsar "Conectar impresora directa" una vez) — la mayoría de impresoras no lo permiten (Chrome lo bloquea por seguridad), así que casi siempre acaba usando la alternativa. "Silenciosa" (solo en la app de escritorio) manda el ticket directo a tu impresora ya instalada en Windows, sin ningún diálogo ni paso previo — es la opción recomendada si usas la app de escritorio. "Siempre usar el diálogo" abre el diálogo de impresión normal de Windows/Chrome cada vez, para elegir la impresora a mano; la primera vez configura ahí el tamaño de papel (58/80&nbsp;mm) y "sin márgenes".
+    </div>
+  </div>
+</div>
+
+<!-- ── GESTIONAR CARTA MODAL ── -->
+<div id="carta-modal" class="modal-overlay" onclick="if(event.target===this)closeCartaAdmin()">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="closeCartaAdmin()">&#x2715;</button>
+    <div class="modal-title">🍽️ Gestionar carta</div>
+    <div class="modal-subtitle">Añade o quita productos sencillos (bebidas, tartas, cookies…) y marca o quita la etiqueta NUEVO. Se guarda en este ordenador.</div>
+
+    <div class="section-label" style="margin-top:0">Añadir producto</div>
+    <div class="form-group"><label>Nombre</label><input id="carta-new-name" type="text" placeholder="Ej. Batido de fresa"></div>
+    <div class="settings-grid">
+      <div class="form-group">
+        <label>Categoría</label>
+        <select id="carta-new-cat"></select>
+      </div>
+      <div class="form-group"><label>Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
+    </div>
+    <div class="form-group"><label>Descripción (opcional)</label><input id="carta-new-desc" type="text" placeholder="Ej. 500 ml"></div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">🆕 Marcar como NUEVO</div></div>
+      <input type="checkbox" id="carta-new-nuevo" style="width:20px;height:20px;flex-shrink:0">
+    </label>
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="addCartaProduct()">+ Añadir a la carta</button>
+    </div>
+
+    <div class="section-label">Productos actuales</div>
+    <div id="carta-admin-list"></div>
+
+    <div class="settings-help">
+      Los productos que añadas aquí se añaden directos a la comanda con un solo precio (sin personalización de ingredientes, como las bebidas). Usa ⬆️/⬇️ para moverlos, 👁️ para ocultarlos temporalmente si se agota algo (sin borrarlo), ✏️ para editar nombre/descripción y si se pueden quitar ingredientes, y 🗑️ para quitarlos de la carta del todo — esto último no tiene deshacer, así que revisa antes de confirmar.
+    </div>
+  </div>
+</div>
+
+<!-- ── EDITAR PRODUCTO (desde Gestionar carta) ── -->
+<div id="carta-edit-modal" class="modal-overlay" onclick="if(event.target===this)closeCartaEdit()">
+  <div class="modal-box" style="max-width:420px">
+    <button class="modal-close" onclick="closeCartaEdit()">&#x2715;</button>
+    <div class="modal-title">✏️ Editar producto</div>
+    <div class="form-group"><label>Nombre</label><input id="carta-edit-name" type="text"></div>
+    <div class="form-group"><label>Precio (€)</label><input id="carta-edit-price" type="number" min="0" step="0.01"></div>
+    <div class="form-group"><label>Descripción</label><input id="carta-edit-desc" type="text"></div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">Permitir quitar/cambiar ingredientes</div><div class="option-sub">Desactívalo si la mezcla no se puede alterar (como la 4 Quesos)</div></div>
+      <input type="checkbox" id="carta-edit-quitar" style="width:20px;height:20px;flex-shrink:0">
+    </label>
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="saveCartaEdit()">💾 Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── HISTORIAL MODAL ── -->
+<div id="historial-modal" class="modal-overlay" onclick="if(event.target===this)closeHistorial()">
+  <div class="modal-box" style="max-width:480px">
+    <button class="modal-close" onclick="closeHistorial()">&#x2715;</button>
+    <div class="modal-title">🧾 Pedidos de <span id="historial-modal-fecha">hoy</span></div>
+    <div class="modal-subtitle">Reimprime o revisa cualquier comanda si se atasca el papel. También puedes consultar días anteriores.</div>
+    <div class="settings-grid">
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="historial-fecha" onchange="setHistorialFecha(this.value)">
+      </div>
+      <div class="form-group">
+        <label>Buscar</label>
+        <input type="text" id="historial-search" placeholder="Nombre o nº de pedido…" oninput="setHistorialBusqueda(this.value)">
+      </div>
+    </div>
+    <div id="historial-list"></div>
+  </div>
+</div>
+
+<!-- ── HACER CAJA MODAL ── -->
+<div id="caja-modal" class="modal-overlay" onclick="if(event.target===this)closeCaja()">
+  <div class="modal-box" style="max-width:460px">
+    <button class="modal-close" onclick="closeCaja()">&#x2715;</button>
+    <div class="modal-title">🧮 Hacer caja</div>
+    <div class="modal-subtitle" id="caja-fecha-label">Resumen de hoy</div>
+    <div class="form-group">
+      <label>Fecha</label>
+      <input type="date" id="caja-fecha-input" onchange="setCajaFecha(this.value)">
+    </div>
+    <div class="form-group">
+      <label>Fondo de caja inicial (con el que abriste ese día)</label>
+      <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
+    </div>
+    <div id="caja-summary" class="summary-box"></div>
+    <div class="settings-actions">
+      <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia</button>
+      <button class="btn-secondary" onclick="exportarVentasHoyCSV()">📊 Exportar a Excel (CSV)</button>
+      <button class="btn-secondary" id="btn-copia-organizada" style="display:none" onclick="guardarCopiaOrganizadaManual()">📁 Guardar copia organizada</button>
+      <button class="btn-secondary" onclick="document.getElementById('importar-copia-file').click()">📤 Importar copia</button>
+      <input type="file" id="importar-copia-file" accept="application/json,.json" style="display:none" onchange="importarCopiaJSON(event)">
+    </div>
+    <div class="settings-help">
+      <b>Importar copia:</b> recupera un archivo descargado antes con "📥 Descargar copia" (por ejemplo, si se ha perdido este ordenador o se ha cambiado a otro). Solo afecta al día indicado dentro del archivo — sustituye lo que hubiera guardado ese día por lo del archivo, así que revisa la fecha antes de confirmar.
+    </div>
+    <div class="settings-help">
+      "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo ese día. Cuenta el cajón físico y compáralo con esa cifra para cuadrar caja. Lo cobrado con tarjeta no debe estar en el cajón.
+    </div>
+  </div>
+</div>
+
+<!-- ── RESUMEN POR FECHAS MODAL (semanal/mensual) ── -->
+<div id="resumen-modal" class="modal-overlay" onclick="if(event.target===this)closeResumen()">
+  <div class="modal-box" style="max-width:480px">
+    <button class="modal-close" onclick="closeResumen()">&#x2715;</button>
+    <div class="modal-title">📈 Resumen por fechas</div>
+    <div class="modal-subtitle">Suma los totales de caja de varios días — útil para ver cómo va la semana o el mes.</div>
+    <div class="settings-grid">
+      <div class="form-group"><label>Desde</label><input type="date" id="resumen-desde" onchange="setResumenRango()"></div>
+      <div class="form-group"><label>Hasta</label><input type="date" id="resumen-hasta" onchange="setResumenRango()"></div>
+    </div>
+    <div style="display:flex;gap:14px;margin-bottom:14px">
+      <button class="btn-text" onclick="resumenPreset(7)">Últimos 7 días</button>
+      <button class="btn-text" onclick="resumenPreset(30)">Últimos 30 días</button>
+      <button class="btn-text" onclick="resumenPresetMesActual()">Este mes</button>
+    </div>
+    <div id="resumen-body" class="summary-box"></div>
+  </div>
+</div>
+
+<!-- ── STOCK LIMITADO (paninis y boniato) ── -->
+<div id="stock-modal" class="modal-overlay" onclick="if(event.target===this)closeStockModal()">
+  <div class="modal-box" style="max-width:720px">
+    <button class="modal-close" onclick="closeStockModal()">&#x2715;</button>
+    <div class="modal-title">📦 Stock</div>
+    <div class="modal-subtitle">Ve marcando cada uno según se gasta. Se reinicia solo cada día.</div>
+
+    <div class="stock-columns">
+      <div class="stock-col">
+        <div class="section-label stock-section-label" style="margin-top:0">🍕 Paninis</div>
+        <div id="stock-paninis-rows"></div>
+      </div>
+      <div class="stock-col">
+        <div class="section-label stock-section-label" style="margin-top:0">🍠 Boniato</div>
+        <div id="stock-boniato-rows"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── VER TICKET (sin imprimir) ── -->
+<div id="ticket-view-modal" class="modal-overlay" onclick="if(event.target===this)closeTicketView()">
+  <div class="modal-box" style="max-width:440px">
+    <button class="modal-close" onclick="closeTicketView()">&#x2715;</button>
+    <div class="modal-title">👁️ Ticket</div>
+    <div class="ticket-view-wrap">
+      <div class="ticket-doc" id="ticket-view-content"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DESCUENTO / OFERTA ── -->
+<div id="discount-modal" class="modal-overlay" onclick="if(event.target===this)closeDiscountModal()">
+  <div class="modal-box" style="max-width:400px">
+    <button class="modal-close" onclick="closeDiscountModal()">&#x2715;</button>
+    <div class="modal-title">🏷️ Descuento / oferta</div>
+    <div class="modal-subtitle" id="discount-modal-subtitle">Se aplica al total de esta comanda.</div>
+    <button type="button" class="btn-secondary" style="width:100%;margin-bottom:12px" onclick="applyPresetDiscount()">🎓 ESTUDIANTE/JUBILADO 10%</button>
+    <div class="form-group">
+      <label>Tipo</label>
+      <select id="discount-type">
+        <option value="percent">Porcentaje (%)</option>
+        <option value="fixed">Importe fijo (€)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label id="discount-value-label">Valor</label>
+      <input id="discount-value" type="text" inputmode="none" readonly placeholder="Ej. 10" onclick="openNumpad('discount-value')">
+    </div>
+    <div class="form-group">
+      <label>Motivo (aparece en el ticket, opcional)</label>
+      <input id="discount-label" type="text" maxlength="40" placeholder="Ej. Promo verano, empleado…">
+    </div>
+    <div class="modal-error" id="discount-error"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="discount-remove-btn" onclick="removeDiscount()" style="display:none">🗑️ Quitar descuento</button>
+      <button class="modal-confirm-btn" onclick="applyDiscount()">→ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TECLADO NUMÉRICO TÁCTIL genérico (para campos tipo "Valor" que en
+     un móvil/tablet abrirían el teclado nativo del sistema en vez de
+     este propio, más rápido de usar con el dedo) ── -->
+<div id="numpad-modal" class="modal-overlay" onclick="if(event.target===this)closeNumpad()">
+  <div class="modal-box" style="max-width:280px">
+    <button class="modal-close" onclick="closeNumpad()">&#x2715;</button>
+    <div class="modal-title" id="numpad-title">Valor</div>
+    <div class="cash-keypad">
+      <div class="cash-keypad-display" id="numpad-display">0</div>
+      <div class="cash-keypad-grid">
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('1')">1</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('2')">2</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('3')">3</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('4')">4</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('5')">5</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('6')">6</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('7')">7</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('8')">8</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('9')">9</button>
+        <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="numpadClear()">CE</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit('0')">0</button>
+        <button type="button" class="cash-keypad-btn" onclick="numpadDigit(',')">,</button>
+      </div>
+      <button type="button" class="cash-keypad-equals" onclick="numpadConfirm()">✓ Listo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TECLADO ALFABÉTICO TÁCTIL para "Nombre para avisar" (mostrador sin
+     teclado físico) — se desliza desde abajo, como el teclado de un móvil ── -->
+<div class="namekb-overlay" id="namekb-overlay" onclick="if(event.target===this)closeNameKeyboard()">
+  <div class="namekb-panel">
+    <div class="namekb-display-row">
+      <span class="icon">✎</span>
+      <span class="namekb-display placeholder" id="namekb-display">Ej. Ana</span>
+      <button class="namekb-close" onclick="closeNameKeyboard()">&#x2715;</button>
+    </div>
+    <div class="namekb-rows">
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="á" onclick="nameKbLetter('á')">á</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="é" onclick="nameKbLetter('é')">é</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="í" onclick="nameKbLetter('í')">í</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="ó" onclick="nameKbLetter('ó')">ó</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="ú" onclick="nameKbLetter('ú')">ú</button>
+        <button type="button" class="namekb-key namekb-key-accent namekb-letter-key" data-letter="ñ" onclick="nameKbLetter('ñ')">ñ</button>
+      </div>
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="q" onclick="nameKbLetter('q')">q</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="w" onclick="nameKbLetter('w')">w</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="e" onclick="nameKbLetter('e')">e</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="r" onclick="nameKbLetter('r')">r</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="t" onclick="nameKbLetter('t')">t</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="y" onclick="nameKbLetter('y')">y</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="u" onclick="nameKbLetter('u')">u</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="i" onclick="nameKbLetter('i')">i</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="o" onclick="nameKbLetter('o')">o</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="p" onclick="nameKbLetter('p')">p</button>
+      </div>
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="a" onclick="nameKbLetter('a')">a</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="s" onclick="nameKbLetter('s')">s</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="d" onclick="nameKbLetter('d')">d</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="f" onclick="nameKbLetter('f')">f</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="g" onclick="nameKbLetter('g')">g</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="h" onclick="nameKbLetter('h')">h</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="j" onclick="nameKbLetter('j')">j</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="k" onclick="nameKbLetter('k')">k</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="l" onclick="nameKbLetter('l')">l</button>
+      </div>
+      <div class="namekb-row">
+        <button type="button" class="namekb-key namekb-key-shift" id="namekb-shift-btn" onclick="nameKbShift()">⇧</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="z" onclick="nameKbLetter('z')">z</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="x" onclick="nameKbLetter('x')">x</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="c" onclick="nameKbLetter('c')">c</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="v" onclick="nameKbLetter('v')">v</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="b" onclick="nameKbLetter('b')">b</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="n" onclick="nameKbLetter('n')">n</button>
+        <button type="button" class="namekb-key namekb-letter-key" data-letter="m" onclick="nameKbLetter('m')">m</button>
+        <button type="button" class="namekb-key namekb-key-back" onclick="nameKbBackspace()">⌫</button>
+      </div>
+      <div class="namekb-bottom-row">
+        <button type="button" class="namekb-key-space" onclick="nameKbSpace()">ESPACIO</button>
+        <button type="button" class="namekb-key-done" onclick="nameKbConfirm()">✓ Listo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TECLADO NUMÉRICO para "Hora de recogida" (--:--) ── -->
+<div id="pickup-modal" class="modal-overlay" onclick="if(event.target===this)closePickupTimeKeypad()">
+  <div class="modal-box" style="max-width:280px">
+    <button class="modal-close" onclick="closePickupTimeKeypad()">&#x2715;</button>
+    <div class="modal-title">🕐 Hora de recogida</div>
+    <div class="cash-keypad">
+      <div class="cash-keypad-display" id="pickup-display" style="text-align:center;font-size:24px">--:--</div>
+      <div class="cash-keypad-grid">
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('1')">1</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('2')">2</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('3')">3</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('4')">4</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('5')">5</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('6')">6</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('7')">7</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('8')">8</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('9')">9</button>
+        <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="pickupClear()">CE</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupDigit('0')">0</button>
+        <button type="button" class="cash-keypad-btn" onclick="pickupBackspace()">⌫</button>
+      </div>
+      <button type="button" class="cash-keypad-equals" onclick="pickupConfirm()">✓ Listo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ELEGIR IMPRESORA (app de escritorio, varios dispositivos USB) ── -->
+<div id="usb-picker-modal" class="modal-overlay">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">🔌 Elegir impresora</div>
+    <div class="modal-subtitle">Hay varios dispositivos USB conectados. ¿Cuál es la impresora?</div>
+    <div id="usb-picker-list" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
+    <div class="settings-actions" style="margin-top:14px">
+      <button class="btn-secondary" style="width:100%" onclick="chooseUsbDevicePicker(-1)">Cancelar</button>
+    </div>
+    <div class="settings-help" style="margin-top:12px">
+      ¿Solo ves números raros (como "1133:50484") y ninguno se llama como tu impresora? Es porque tu impresora ya tiene un driver de Windows instalado, y ese driver no deja que esta página la controle directamente. Pulsa <b>Cancelar</b> y en <b>⚙️ Ajustes → Modo de impresión</b> elige "Siempre usar el diálogo de impresión de Windows/Chrome": así imprimirá usando el driver que ya tienes, sin este paso.
+    </div>
+  </div>
+</div>
+
+<!-- ── TICKET (vista/impresión) ── -->
+<div id="ticket-print"><div class="ticket-doc" id="ticket-html-content"></div></div>
+
+<div id="toast" class="toast"></div>
+<div id="undo-clear-bar" class="toast undo-bar">
+  <span>🗑️ Comanda vaciada</span>
+  <button onclick="undoClearOrder()">↩️ Deshacer</button>
+</div>
+
+<script src="comandas.js"></script>
+</body>
+</html>

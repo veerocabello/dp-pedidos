@@ -66,6 +66,7 @@ function _buscadorSeccionesAdmin() {
     { icon: '🍽️', badge: 'section', tipo: 'Sección', nombre: 'Carta', ruta: 'Panel admin', meta: [], go: () => showAdminSection('productos', tab('productos')) },
     { icon: '🏪', badge: 'section', tipo: 'Sección', nombre: 'Local', ruta: 'Panel admin', meta: [], go: () => showAdminSection('local', tab('local')) },
     { icon: '🔴', badge: 'section', tipo: 'Sección', nombre: 'En vivo', ruta: 'Panel admin · pedidos', meta: [], go: () => showAdminSection('pedidos', tab('pedidos')) },
+    { icon: '🧾', badge: 'section', tipo: 'Sección', nombre: 'Comandas', ruta: 'Panel admin · mostrador (pestaña nueva)', meta: [], go: () => window.open('comandas.html', '_blank') },
     { icon: '📊', badge: 'section', tipo: 'Sección', nombre: 'Hoy', ruta: 'Panel admin · estadísticas', meta: [], go: () => showAdminSection('stats', tab('stats')) },
     { icon: '📅', badge: 'section', tipo: 'Sección', nombre: 'Historial', ruta: 'Panel admin', meta: [], go: () => showAdminSection('historial', tab('historial')) },
     { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Fidelización', ruta: 'Panel admin', meta: [], go: () => { showAdminSection('fidelizacion', tab('fidelizacion')); if (typeof renderFidelizacionList === 'function') renderFidelizacionList(); } },

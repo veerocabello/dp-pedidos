@@ -144,6 +144,8 @@
         <button class="admin-tab active" data-section="productos" onclick="showAdminSection('productos', this)"><span class="admin-tab-icon">🍽️</span><span>Carta</span></button>
         <button class="admin-tab" data-section="local" onclick="showAdminSection('local', this)"><span class="admin-tab-icon">🏪</span><span>Local</span></button>
         <button class="admin-tab" data-section="pedidos" onclick="showAdminSection('pedidos', this)"><span class="admin-tab-icon">🔴</span><span>En vivo</span></button>
+        <!-- Comandas: herramienta aparte, offline (comandas.html), no un .admin-section — se abre en pestaña nueva -->
+        <button class="admin-tab" onclick="window.open('comandas.html', '_blank')"><span class="admin-tab-icon">🧾</span><span>Comandas</span></button>
         <button class="admin-tab" data-section="stats" onclick="showAdminSection('stats', this)"><span class="admin-tab-icon">📊</span><span>Hoy</span></button>
         <button class="admin-tab" data-section="historial" onclick="showAdminSection('historial', this)"><span class="admin-tab-icon">👤</span><span>Clientes</span></button>
         <!-- Stock movido al panel bimba (⚙️ con contraseña) — ver "Pedidos y stock" ahí -->
