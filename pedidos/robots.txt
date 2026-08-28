@@ -2,7 +2,6 @@ User-agent: *
 Allow: /
 Allow: /sitemap.php
 Disallow: /admin-shell.html
-Disallow: /fichar-publico.html
 Disallow: /fichar-standalone.html
 Disallow: /*.php$
 Disallow: /backup-pedidos/
