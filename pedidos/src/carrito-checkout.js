@@ -188,7 +188,16 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   if (_focoPrevioId) {
     const _nuevoFoco = document.getElementById(_focoPrevioId);
     if (_nuevoFoco) {
-      _nuevoFoco.focus();
+      // {preventScroll:true} — sin esto, el navegador del móvil hace scroll
+      // para "asegurarse" de que el campo se vea cada vez que se le devuelve
+      // el foco tras uno de estos repintados de fondo (el carrito se
+      // reconstruye cada minuto, o cuando llega una actualización de
+      // Firebase), aunque el campo ya estuviera visible — eso es justo el
+      // salto de pantalla que notaba un cliente escribiendo su teléfono
+      // justo cuando coincidía uno de esos repintados (hallazgo real,
+      // reportado en producción — antes solo pasaba "a veces" porque
+      // depende de que el repintado coincida con el momento de escribir).
+      try { _nuevoFoco.focus({ preventScroll: true }); } catch (e) { _nuevoFoco.focus(); }
       if (_focoPrevioSelStart !== null && typeof _nuevoFoco.setSelectionRange === 'function') {
         try { _nuevoFoco.setSelectionRange(_focoPrevioSelStart, _focoPrevioSelEnd); } catch (e) {}
       }
