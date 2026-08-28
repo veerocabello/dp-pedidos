@@ -734,20 +734,20 @@ function renderSlotPicker() {
   const slotsData = getSlotsData();
   const slotMax = getSlotMax();
   let html = '';
-  // Calcular plazas extra absorbidas: SOLO del slot inmediatamente anterior
-  const extraPlazas = {};
-  slots.forEach((slot, i) => {
-    if (i === 0) return;
-    const prevSlot = slots[i - 1];
-    const prevCount = slotsData.slots[prevSlot] || 0;
-    const prevPast = slotIsPast(prevSlot);
-    const currPast = slotIsPast(slot);
-    // Solo transferir si: el anterior ya pasó Y el actual aún no ha pasado
-    if (prevPast && !currPast) {
-      const sobrantes = Math.max(0, slotMax - prevCount);
-      if (sobrantes > 0) extraPlazas[slot] = sobrantes;
-    }
-  });
+  // ── Aforo extra absorbido del turno anterior: ELIMINADO ──
+  // Antes esto calculaba un "effectiveMax = slotMax + extra" y lo mostraba
+  // como "N libres (+extra)", dejando al cliente reservar dentro de ese
+  // extra — pero guardar-pedido.php (la reserva real, atómica, en el
+  // servidor) NUNCA tuvo esta lógica: solo comprueba el aforo base normal
+  // ($slotMax, sin ningún extra). Cualquier reserva dentro de esa franja
+  // "extra" que la pantalla prometía como libre el servidor la rechazaba
+  // siempre con "turno lleno" — no era una condición de carrera puntual,
+  // pasaba el 100% de las veces que alguien tocaba esa franja, y por eso
+  // parecía aleatorio (dependía de si el hueco elegido caía dentro del
+  // aforo base o del extra prometido). Hallazgo real, reportado en
+  // producción. Se quita el extra del todo en vez de replicarlo en el
+  // servidor: así lo que se ve en pantalla siempre coincide con lo que
+  // el servidor acepta de verdad.
   // Aviso de saturación moderada activo: empuja la selección hacia turnos
   // más tarde (en vez de amontonar todo en el más próximo) tratando como
   // "saturados" los que caen dentro de los próximos X minutos — pero solo
@@ -767,10 +767,8 @@ function renderSlotPicker() {
   }
   slots.forEach(slot => {
     const count = slotsData.slots[slot] || 0;
-    const extra = extraPlazas[slot] || 0;
-    const effectiveMax = slotMax + extra;
-    const full = count >= effectiveMax;
-    const almostFull = !full && count === effectiveMax - 1;
+    const full = count >= slotMax;
+    const almostFull = !full && count === slotMax - 1;
     const past = slotIsPast(slot);
     const nowMs = new Date();
     const nowMinsSlot = nowMs.getHours() * 60 + nowMs.getMinutes();
@@ -781,10 +779,10 @@ function renderSlotPicker() {
     const slotTotalMins = slotH * 60 + slotM;
     const saturado = !full && !past && _saturacionSlotsActiva && (slotTotalMins - nowMinsSlot) < _avisoCfg.minutosSalto;
     const disabled = full || past || saturado;
-    const pct = Math.min(100, Math.round(count / effectiveMax * 100));
+    const pct = Math.min(100, Math.round(count / slotMax * 100));
     const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
-    const libres = effectiveMax - count;
-    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '') + (extra > 0 ? ' (+' + extra + ')' : '');
+    const libres = slotMax - count;
+    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '');
     const isLateSlot = !disabled && slotTotalMins - nowMinsSlot <= 5;
     const btnBg = disabled ? 'background:#f5f5f5;border-color:#ccc;' : isLateSlot ? 'background:#fffbe6;border-color:#f0c040;' : full ? 'background:#fff0f0;border-color:#e74c3c;' : pct >= 75 ? 'background:rgba(244,196,48,0.08);border-color:#3D1F0D;' : 'background:#FFF8EE;border-color:#E8D5B0;';
     html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : saturado ? 'Hay bastante ambiente ahora mismo, elige un turno más tarde' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
