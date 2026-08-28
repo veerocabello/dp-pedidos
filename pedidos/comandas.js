@@ -1390,13 +1390,19 @@ function esComponenteSalsa(comp) {
 // quitar como los demás — es un hueco que hay que rellenar sí o sí con
 // una salsa concreta antes de añadir el producto al pedido.
 function isElegirSalsaComp(comp) { return comp.trim().toLowerCase() === 'salsa a elegir'; }
+// 4 Quesos lleva los quesos ya mezclados (no se pueden quitar ni cambiar),
+// pero la salsa base sí es un ingrediente suelto que se puede cambiar.
+const SALSA_CAMBIABLE_AUNQUE_BLOQUEADO_IDS = new Set([8]);
 function renderExtrasBody(item) {
   const isBoniato = BONIATO_IDS.has(item.id);
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
   const baseComponents = parseBaseComponents(item);
-  const canQuitar = !isQuitarBlocked(item.id) && baseComponents.length > 0;
+  const ingredientesBloqueados = isQuitarBlocked(item.id);
+  const canQuitar = !ingredientesBloqueados && baseComponents.length > 0;
   const salsaComponents = baseComponents.filter(esComponenteSalsa);
   const ingComponents = baseComponents.filter(c => !esComponenteSalsa(c));
+  const canCambiarSalsaBloqueado = ingredientesBloqueados && !isBoniato
+    && salsaComponents.length > 0 && SALSA_CAMBIABLE_AUNQUE_BLOQUEADO_IDS.has(item.id);
   let html = '';
   const salsaAElegir = baseComponents.find(isElegirSalsaComp);
   if (salsaAElegir) {
@@ -1454,7 +1460,23 @@ function renderExtrasBody(item) {
         ).join('') + `</div>`;
       }
     }
-  } else if (isQuitarBlocked(item.id)) {
+  } else if (canCambiarSalsaBloqueado) {
+    html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva los quesos ya preparados · solo se puede cambiar la salsa.</div>`;
+    html += `<div class="section-label">Cambiar salsa</div>`;
+    html += `<div class="swap-card">
+      <div class="swap-row">
+        <select id="cambio-salsa-from" class="swap-select">${salsaComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        <span class="swap-arrow">→</span>
+        <select id="cambio-salsa-to" class="swap-select">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+      </div>
+      <button class="swap-add-btn" onclick="addExtraCambio('salsa')">+ Añadir cambio</button>
+    </div>`;
+    if (extrasCambios.length) {
+      html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
+        `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
+      ).join('') + `</div>`;
+    }
+  } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
   if (!isBoniato) {
