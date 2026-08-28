@@ -157,21 +157,20 @@ function setOrderPaid(v) {
   document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
   document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
-  // El botón de abajo del todo de Cobrar hace de "Listo" mientras no está
-  // pagado, y se convierte en "Imprimir ticket" en cuanto se marca como
-  // pagado — ya no hay un botón de imprimir siempre visible aparte: el
-  // flujo ahora es cobrar primero, imprimir después.
+  // El botón de abajo del todo de Cobrar siempre imprime — solo cambia el
+  // texto según si ya está marcado como pagado o no: "IMPRIMIR COMANDA"
+  // antes de cobrar (para la cocina) y "Imprimir ticket" una vez pagado.
   const printBtn = document.getElementById('print-btn');
   if (printBtn) {
-    printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'Listo';
-    printBtn.className = orderPaid ? 'btn-print' : 'btn-secondary';
+    printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'IMPRIMIR COMANDA';
+    printBtn.className = 'btn-print';
   }
 }
-// Botón de abajo del Cobrar: si está pagado, cierra e imprime; si no,
-// solo cierra (para poder repasar el pedido sin marcarlo como cobrado).
+// Botón de abajo del Cobrar: cierra e imprime siempre (el estado
+// pagado/no pagado ya va grabado en el pedido, solo cambia el texto).
 function cobrarBottomAction() {
   closeCobrarModal();
-  if (orderPaid) handlePrintOrder();
+  handlePrintOrder();
 }
 function setPaymentMethod(m) {
   paymentMethod = m;
@@ -1041,6 +1040,11 @@ function updateChange() {
     label.textContent = 'Cambio a devolver';
     amountEl.textContent = fmt(Math.max(0, change)) + ' €';
     row.className = 'cash-change-row ok';
+    // En cuanto se ha metido efectivo suficiente para cubrir el total, el
+    // pedido se da por cobrado solo — no tiene sentido obligar a tocar
+    // "PAGADO" a mano si la propia calculadora ya ha sacado el cambio a
+    // devolver (el botón "Imprimir ticket" aparece con esto).
+    if (total > 0 && !orderPaid) setOrderPaid(true);
   }
 }
 
