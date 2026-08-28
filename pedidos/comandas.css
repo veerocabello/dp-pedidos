@@ -523,6 +523,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 90px);
+  /* Cinturón de seguridad: sin esto, si algo empuja el panel por encima
+     de max-height (una pantalla con una cabecera algo más alta de lo
+     calculado, etc.) el sobrante se desborda visualmente hacia abajo del
+     panel y "Cobrar"/"Imprimir" dejan de verse sin bajar la página
+     entera. Con overflow:hidden el panel nunca puede medir más que
+     max-height — lo único que puede quedarse corto es .cart-body, que ya
+     tiene su propio scroll interno. */
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
 }
 /* Solo .cart-body puede encogerse/hacer scroll; el resto (nombre, total,

@@ -275,14 +275,25 @@ if (!gotLock) {
     // trabajo "RAW" (sin interpretación), vía un pequeño script de
     // PowerShell que llama a la API WritePrinter de Windows — la técnica
     // estándar para imprimir tickets desde programas de TPV en Windows.
+    // Se guarda en memoria el nombre de la impresora predeterminada ya
+    // resuelto — si no se ha elegido una impresora concreta en Ajustes,
+    // antes se volvía a preguntar a Windows "¿cuál es la predeterminada?"
+    // en CADA comanda (recorrer la lista de impresoras instaladas tiene su
+    // coste), y eso solo puede cambiar si el usuario cambia la impresora
+    // predeterminada del sistema — algo que no pasa a media jornada.
+    let cachedDefaultPrinterName = null;
     ipcMain.handle('print:raw', async (event, { deviceName, bytesBase64 } = {}) => {
       try {
+        const usingCachedDefault = !deviceName;
         let printerName = deviceName;
         if (!printerName) {
-          const printers = await mainWindow.webContents.getPrintersAsync();
-          const def = printers.find(p => p.isDefault) || printers[0];
-          if (!def) return { success: false, reason: 'No hay ninguna impresora configurada en Windows' };
-          printerName = def.name;
+          if (!cachedDefaultPrinterName) {
+            const printers = await mainWindow.webContents.getPrintersAsync();
+            const def = printers.find(p => p.isDefault) || printers[0];
+            if (!def) return { success: false, reason: 'No hay ninguna impresora configurada en Windows' };
+            cachedDefaultPrinterName = def.name;
+          }
+          printerName = cachedDefaultPrinterName;
         }
         const scriptPath = app.isPackaged
           ? path.join(process.resourcesPath, 'print-raw.ps1')
@@ -295,7 +306,11 @@ if (!gotLock) {
         const result = await new Promise((resolve) => {
           execFile(
             'powershell.exe',
-            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-PrinterName', printerName, '-FilePath', tmpFile],
+            // -NoLogo/-NonInteractive/-WindowStyle Hidden: arrancan la consola
+            // de PowerShell algo más rápido y sin parpadeo de ventana; el
+            // grueso del tiempo ya se ahorró antes cacheando el .dll
+            // compilado (ver print-raw.ps1), esto es la siguiente milla.
+            ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-PrinterName', printerName, '-FilePath', tmpFile],
             { timeout: 10000 },
             (error, stdout, stderr) => {
               if (error) resolve({ success: false, reason: (stderr || error.message || '').trim().slice(0, 300) });
@@ -303,6 +318,10 @@ if (!gotLock) {
             }
           );
         });
+        // Si falló usando la impresora predeterminada en caché, puede que
+        // ya no sea la predeterminada (o se haya desconectado) — se
+        // olvida para que el siguiente intento la vuelva a detectar.
+        if (usingCachedDefault && !result.success) cachedDefaultPrinterName = null;
         try { fs.unlinkSync(tmpFile); } catch (e) { /* no crítico */ }
         return result;
       } catch (e) {
