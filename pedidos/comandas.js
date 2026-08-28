@@ -2743,6 +2743,19 @@ async function bleConectarDispositivo(device) {
 
 // Pide permiso al navegador — debe llamarse desde un click (gesto del
 // usuario), el navegador no deja hacerlo en segundo plano.
+// Toca el indicador de la cabecera ("🖨️ ...") para conectar sin tener que
+// entrar antes en ⚙️ Ajustes — un atajo directo al mismo botón que ya
+// existe ahí, para el caso más habitual (Bluetooth, en la tablet). Si ya
+// hay una impresora conectada, no vuelve a pedir emparejar (eso abriría
+// el selector de dispositivos sin necesidad); solo confirma el estado.
+function printerStatusClick() {
+  if (isPrinterConnected()) {
+    toast(printerTransport === 'ble' ? '🖨️ Ya conectada por Bluetooth' : '🖨️ Ya conectada por cable (USB)');
+    return;
+  }
+  pairPrinterBluetooth();
+}
+
 async function pairPrinterBluetooth() {
   if (!navigator.bluetooth) { toast('Este navegador no soporta Bluetooth. Usa Chrome en Android (no funciona en iPhone/iPad ni en Safari).'); return; }
   try {

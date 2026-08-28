@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
-<link rel="stylesheet" href="comandas.css?v=1787957192852">
+<link rel="stylesheet" href="comandas.css?v=1787957335026">
 </head>
 <body>
 
@@ -19,7 +19,7 @@
     </div>
   </div>
   <div class="topbar-actions">
-    <span id="printer-status" class="printer-status">comprobando impresora…</span>
+    <span id="printer-status" class="printer-status" onclick="printerStatusClick()" title="Toca para conectar la impresora por Bluetooth" style="cursor:pointer">comprobando impresora…</span>
     <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
     <button class="btn-ghost" onclick="openCaja()">🧮 Hacer caja</button>
     <button class="btn-ghost" onclick="openResumen()">📈 Resumen</button>
@@ -638,6 +638,6 @@
      siempre con los últimos precios conocidos. -->
 <script src="js/firebase-auth-compat.js"></script>
 <script src="js/config.js"></script>
-<script src="comandas.js?v=1787957192852"></script>
+<script src="comandas.js?v=1787957335026"></script>
 </body>
 </html>
