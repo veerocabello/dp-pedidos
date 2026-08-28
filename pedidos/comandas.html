@@ -300,12 +300,13 @@
     </div>
 
     <div class="settings-actions">
-      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
+      <button class="btn-secondary" onclick="pairPrinterBluetooth()">📶 Conectar impresora por Bluetooth</button>
+      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora por cable (USB)</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
     </div>
 
     <div class="settings-help">
-      <b>¿Cómo funciona?</b> "Directa a la impresora" manda el ticket por USB sin abrir ningún diálogo (necesita Chrome o Edge, y pulsar "Conectar impresora directa" una vez) — la mayoría de impresoras no lo permiten (Chrome lo bloquea por seguridad), así que casi siempre acaba usando la alternativa. "Silenciosa" (solo en la app de escritorio) manda el ticket directo a tu impresora ya instalada en Windows, sin ningún diálogo ni paso previo — es la opción recomendada si usas la app de escritorio. "Siempre usar el diálogo" abre el diálogo de impresión normal de Windows/Chrome cada vez, para elegir la impresora a mano; la primera vez configura ahí el tamaño de papel (58/80&nbsp;mm) y "sin márgenes".
+      <b>¿Cómo funciona?</b> "Conectar impresora por Bluetooth" es la vía pensada para la tablet, sin cable — pulsa el botón una vez, elige la impresora en la lista que aparece y ya queda emparejada (se reconecta sola las siguientes veces que abras Comandas). Solo funciona en Chrome sobre Android — en iPhone/iPad o Safari no está disponible, es un límite del propio sistema, no de esta herramienta. "Conectar impresora por cable (USB)" es la alternativa si usas Comandas desde un ordenador con la impresora enchufada. Con cualquiera de las dos conectada, "Directa a la impresora" (más abajo) manda el ticket sin abrir ningún diálogo. "Silenciosa" (solo en la app de escritorio) manda el ticket directo a tu impresora ya instalada en Windows. "Siempre usar el diálogo" abre el diálogo de impresión normal de Windows/Chrome cada vez, para elegir la impresora a mano; la primera vez configura ahí el tamaño de papel (58/80&nbsp;mm) y "sin márgenes".
     </div>
   </div>
 </div>
