@@ -9,22 +9,22 @@
 /* ── CARTA ── (mismos productos y precios que pedidos/src/carta.js) */
 const MENU = [
   { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla (una u otra, no las dos), sal y pimienta", price: 3.00, components: ["Aceite de oliva", "Mantequilla", "sal", "pimienta"] },
-  { id: 2, cat: "Patatas", name: "Patata Vegetal", desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural", price: 5.60 },
-  { id: 3, cat: "Patatas", name: "Patata Picante", desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas", price: 5.60 },
-  { id: 4, cat: "Patatas", name: "Patata Carbonara", desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario", price: 5.80 },
-  { id: 5, cat: "Patatas", name: "Patata Boloñesa", desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario", price: 5.80 },
-  { id: 6, cat: "Patatas", name: "Patata Hawaiana", desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella", price: 5.80 },
-  { id: 7, cat: "Patatas", name: "Patata Kebab", desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla", price: 5.90 },
-  { id: 8, cat: "Patatas", name: "Patata 4 Quesos", desc: "Salsa roquefort, emmental, gouda y mozzarella", price: 5.90 },
-  { id: 9, cat: "Patatas", name: "Patata Completa", desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón", price: 6.20 },
-  { id: 10, cat: "Patatas", name: "Patata Carnívora", desc: "Alioli, york, bacon, kebab y carne picada", price: 6.40 },
+  { id: 2, cat: "Patatas", name: "Patata Vegetal", desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural", price: 6.40 },
+  { id: 3, cat: "Patatas", name: "Patata Picante", desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas", price: 6.40 },
+  { id: 4, cat: "Patatas", name: "Patata Carbonara", desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario", price: 6.80 },
+  { id: 5, cat: "Patatas", name: "Patata Boloñesa", desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario", price: 6.80 },
+  { id: 6, cat: "Patatas", name: "Patata Hawaiana", desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella", price: 6.80 },
+  { id: 7, cat: "Patatas", name: "Patata Kebab", desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla", price: 6.90 },
+  { id: 8, cat: "Patatas", name: "Patata 4 Quesos", desc: "Salsa roquefort, emmental, gouda y mozzarella", price: 6.90 },
+  { id: 9, cat: "Patatas", name: "Patata Completa", desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón", price: 7.20 },
+  { id: 10, cat: "Patatas", name: "Patata Carnívora", desc: "Alioli, york, bacon, kebab y carne picada", price: 7.40 },
   { id: 11, cat: "Patatas", name: "Patata Philadelphia", desc: "Salsa philadelphia, york, huevo, pollo, queso mozzarella", price: 6.40 },
-  { id: 12, cat: "Patatas", name: "Patata Ranchera", desc: "Salsa ranchera, pollo, bacon y queso mozzarella", price: 6.50 },
-  { id: 13, cat: "Patatas", name: "Patata Granollers", desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria", price: 6.50 },
-  { id: 14, cat: "Patatas", name: "Patata Pulled Pork", desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella", price: 6.50, nuevo: true },
+  { id: 12, cat: "Patatas", name: "Patata Ranchera", desc: "Salsa ranchera, pollo, bacon y queso mozzarella", price: 7.50 },
+  { id: 13, cat: "Patatas", name: "Patata Granollers", desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria", price: 7.50 },
+  { id: 14, cat: "Patatas", name: "Patata Pulled Pork", desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella", price: 7.50, nuevo: true },
   { id: 50, cat: "Patatas", name: "Patata Cheddar-Bacon", desc: "Salsa queso cheddar, carne a elegir, caramelo de bacon y queso mozzarella gratinado", price: 8.50, nuevo: true },
-  { id: 15, cat: "Patatas", name: "Patata Al Gusto", desc: "1 salsa a elegir y 6 ingredientes", price: 6.90 },
-  { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 8.40, nuevo: true },
+  { id: 15, cat: "Patatas", name: "Patata Al Gusto", desc: "1 salsa a elegir y 6 ingredientes", price: 7.90 },
+  { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 9.40, nuevo: true },
 
   { id: 17, cat: "Boniato", name: "Boniato Fries", desc: "Tarrina de boniato fries", price: 4.50 },
   { id: 18, cat: "Boniato", name: "Boniato Lotus", desc: "Salsa Lotus + bacon + queso mozzarella + galletas Lotus", price: 5.50 },
@@ -55,15 +55,15 @@ const MENU = [
   { id: 39, cat: "Tartas", name: "Tarta de Queso Dinosaurio", desc: "Especial · elaboración propia", price: 3.90 },
   { id: 40, cat: "Tartas", name: "Tarta de Queso Kinder", desc: "Especial · elaboración propia", price: 3.90 },
 
-  { id: 41, cat: "Bebidas", name: "Refresco lata", desc: "", price: 1.10 },
-  { id: 42, cat: "Bebidas", name: "Cerveza lata", desc: "", price: 1.20 },
+  { id: 41, cat: "Bebidas", name: "Refresco lata", desc: "", price: 1.30 },
+  { id: 42, cat: "Bebidas", name: "Cerveza lata", desc: "", price: 1.40 },
   { id: 43, cat: "Bebidas", name: "Agua pequeña", desc: "", price: 0.80 },
-  { id: 44, cat: "Bebidas", name: "Refresco 500 ml", desc: "", price: 1.80 },
-  { id: 45, cat: "Bebidas", name: "Cerveza 1 litro", desc: "", price: 1.80 },
-  { id: 46, cat: "Bebidas", name: "Monster o Red Bull", desc: "", price: 1.80 },
-  { id: 47, cat: "Bebidas", name: "Agua 1,5 litros", desc: "", price: 1.30 },
-  { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.20 },
-  { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.50 },
+  { id: 44, cat: "Bebidas", name: "Refresco 500 ml", desc: "", price: 2.00 },
+  { id: 45, cat: "Bebidas", name: "Cerveza 1 litro", desc: "", price: 2.00 },
+  { id: 46, cat: "Bebidas", name: "Monster o Red Bull", desc: "", price: 2.00 },
+  { id: 47, cat: "Bebidas", name: "Agua 1,5 litros", desc: "", price: 1.50 },
+  { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.40 },
+  { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.70 },
 
   { id: 52, cat: "Extras", name: "Bolsa", desc: "Para llevar", price: 0.10 },
 ];
@@ -111,13 +111,21 @@ const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
+// Todos los ingredientes extra cuestan lo mismo (antes había dos precios
+// distintos, 1€/0,70€ según el ingrediente); estas dos listas se
+// conservan solo para agrupar/ordenar el desplegable, ya no para el precio.
 const EXTRAS_ING_PRECIO1 = ["4 Quesos", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Gambas", "Huevo", "Jamón York", "Pollo", "Queso Mozzarella", "Tronquitos de Mar"];
 const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Piña", "Remolacha", "Tomate Natural", "Zanahoria"];
-const EXTRAS_SALSA_PRECIO = 0.90;
+const EXTRAS_ING_PRECIO = 1;
+const EXTRAS_SALSA_PRECIO = 1;
+const EXTRAS_SALSA_PHILADELPHIA_PRECIO = 1.20;
+// La salsa Philadelphia cuesta más que el resto como extra; el resto de
+// salsas comparten el precio plano de EXTRAS_SALSA_PRECIO.
+function priceOfSalsaExtra(name) { return name === 'Philadelphia' ? EXTRAS_SALSA_PHILADELPHIA_PRECIO : EXTRAS_SALSA_PRECIO; }
 
 const CUSTOMIZER_CONFIG = {
-  algusto: { name: "Patata Al Gusto", price: 6.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
-  bomba: { name: "Patata Bomba 🆕", price: 8.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
+  algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
+  bomba: { name: "Patata Bomba 🆕", price: 9.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
@@ -345,7 +353,7 @@ function editSimpleItem(id) {
 // Bomba, se cobra el precio plano de esa patata en vez de sumar cada
 // extra por separado (evita cobrar de más por construir, ingrediente a
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
-function priceOfPick(p) { return p.type === 'salsa' ? EXTRAS_SALSA_PRECIO : (EXTRAS_ING_PRECIO1.includes(p.name) ? 1 : 0.7); }
+function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : EXTRAS_ING_PRECIO; }
 
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
@@ -380,8 +388,8 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   if (freeLeft > 0 && order) {
     order.forEach(p => { if (freeLeft > 0) freeLeft--; else core += priceOfPick(p); });
   } else {
-    (ingredientesExtra || []).forEach(i => { core += EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7; });
-    core += salsaCount * EXTRAS_SALSA_PRECIO;
+    core += (ingredientesExtra || []).length * EXTRAS_ING_PRECIO;
+    core += (salsasExtra || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
   }
   return core;
 }
@@ -444,7 +452,7 @@ function getExtrasItemDetails(e) {
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -463,8 +471,8 @@ function getExtrasItemTicketExtras(e) {
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : EXTRAS_SALSA_PRECIO, underline: true }));
-  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
+  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : EXTRAS_ING_PRECIO, underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
   return out;
@@ -817,13 +825,14 @@ function renderCart() {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
     const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO + extraIngPrice;
+    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
     total += subtotal;
     const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
-      ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'),
+      ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'),
       ...(c.extraIngredients || []).map(n => n + ' (extra +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€)'),
     ].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
@@ -1132,7 +1141,7 @@ function renderCustChips() {
   sEl.innerHTML = CUST_SAUCES.map(n => {
     const sel = custSelSauces.includes(n);
     const extra = custSelExtraSauces.includes(n);
-    const label = extra ? n + ' +' + fmt(EXTRAS_SALSA_PRECIO) + '€' : n;
+    const label = extra ? n + ' +' + fmt(priceOfSalsaExtra(n)) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
@@ -1208,7 +1217,7 @@ function updateCustTotalPrice() {
   let p = cfg.price;
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
-  p += custSelExtraSauces.length * EXTRAS_SALSA_PRECIO;
+  p += custSelExtraSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
   p += custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
 }
@@ -1281,7 +1290,7 @@ function renderCheddarSalsasExtra() {
     const slug = 'cheddar-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
     const on = !!cheddarSalsasExtra[s];
     return `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
       <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
     </label>`;
   }).join('');
@@ -1293,8 +1302,8 @@ function toggleCheddarSalsa(s) {
 }
 function updateCheddarPrice() {
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const n = Object.values(cheddarSalsasExtra).filter(Boolean).length;
-  document.getElementById('cheddar-price').textContent = fmt(item.price + n * EXTRAS_SALSA_PRECIO) + ' €';
+  const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
+  document.getElementById('cheddar-price').textContent = fmt(item.price + extra) + ' €';
 }
 function confirmCheddar() {
   if (!cheddarCarne) {
@@ -1514,7 +1523,7 @@ function renderExtrasBody(item) {
     if (!soloGratinar) {
       html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-        const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
+        const precio = EXTRAS_ING_PRECIO;
         const on = !!extrasIngredientes[ing];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
           <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
@@ -1526,7 +1535,7 @@ function renderExtrasBody(item) {
       CUST_SAUCES.forEach(s => {
         const on = !!extrasSalsas[s];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
           <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
@@ -1738,14 +1747,15 @@ function buildOrderObject(preview) {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
     const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO + extraIngPrice;
+    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas (incluidas y extra),
     // luego los ingredientes (incluidos y extra), y el queso/gratinado
     // siempre al final.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO, underline: true })),
+      ...(c.extraSauces || []).map(s => ({ name: s, price: priceOfSalsaExtra(s), underline: true })),
       ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
       ...quesoLastKeepOrder(c.extraIngredients || []).map(n => ({ name: n, price: priceOfPick({ type: 'ing', name: n }), underline: true })),
     ];
