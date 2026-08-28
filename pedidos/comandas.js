@@ -1726,7 +1726,14 @@ const TICKET_CONFIG_DEFAULTS = {
   nif: '77558832A',
   despedida: '¡Gracias por tu pedido! 🥔',
   textoPago: 'Pagar en caja',
-  anchoPapel: 80,
+  // 58mm (32 columnas) a propósito, no 80 — es el ancho real del papel de
+  // la impresora de la tienda (la misma que usa el panel de administración,
+  // donde ya está puesta así en Ajustes). Como cada herramienta guarda esta
+  // configuración por dispositivo, un dispositivo nuevo sin configurar
+  // (como una tablet recién estrenada con Comandas) tiene que arrancar ya
+  // con el valor correcto, no con el de fábrica de 80mm — si no, las líneas
+  // se descuadran y se cortan igual que si se hubiera puesto mal a mano.
+  anchoPapel: 58,
   // Ajuste fino (+/-) sobre las columnas de texto del ticket — cada
   // impresora/fuente cabe un pelín distinto en el mismo ancho de papel.
   // +4 de partida porque en la tienda, con 58mm/32 columnas "de libro", el
