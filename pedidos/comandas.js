@@ -816,12 +816,16 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
+    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO + extraIngPrice;
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)')].filter(Boolean).join(', ');
+    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
+      ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'),
+      ...(c.extraIngredients || []).map(n => n + ' (extra +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€)'),
+    ].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
       <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(item.name)}</button>
       <div class="cart-qty-mini">
@@ -1077,7 +1081,7 @@ function undoClearOrder() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — CUSTOMIZER (Al Gusto / Bomba)
    ══════════════════════════════════════════════════════════════ */
-let custType = null, custSelSauces = [], custSelIngredients = [], custExtraQueso = false, custExtraGratinado = false, custSelExtraSauces = [], custEditKey = null;
+let custType = null, custSelSauces = [], custSelIngredients = [], custExtraQueso = false, custExtraGratinado = false, custSelExtraSauces = [], custSelExtraIngredients = [], custEditKey = null;
 
 function openCustomizer(id, editKey) {
   custEditKey = editKey || null;
@@ -1089,8 +1093,9 @@ function openCustomizer(id, editKey) {
     custExtraQueso = !!existing.extraQueso;
     custExtraGratinado = !!existing.extraGratinado;
     custSelExtraSauces = [...(existing.extraSauces || [])];
+    custSelExtraIngredients = [...(existing.extraIngredients || [])];
   } else {
-    custSelSauces = []; custSelIngredients = []; custExtraQueso = false; custExtraGratinado = false; custSelExtraSauces = [];
+    custSelSauces = []; custSelIngredients = []; custExtraQueso = false; custExtraGratinado = false; custSelExtraSauces = []; custSelExtraIngredients = [];
   }
   const cfg = CUSTOMIZER_CONFIG[custType];
   document.getElementById('cust-title').textContent = cfg.name;
@@ -1108,7 +1113,7 @@ function openCustomizer(id, editKey) {
 // Si "Queso Mozzarella" ya está entre los ingredientes elegidos, no tiene
 // sentido cobrar aparte por añadir queso — solo queda la opción de
 // gratinar (ya tiene queso, solo falta pasarlo por el horno).
-function custHasQuesoIngredient() { return custSelIngredients.some(isQuesoIngredient); }
+function custHasQuesoIngredient() { return custSelIngredients.some(isQuesoIngredient) || custSelExtraIngredients.some(isQuesoIngredient); }
 function renderCustExtrasSection() {
   const hasQueso = custHasQuesoIngredient();
   const quesoLabel = document.getElementById('cust-queso-label');
@@ -1132,8 +1137,9 @@ function renderCustChips() {
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
     const sel = custSelIngredients.includes(n);
-    const disabled = !sel && ((cfg.maxIngredients !== null && custSelIngredients.length >= cfg.maxIngredients) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal));
-    return `<button class="chip ${sel ? 'selected' : ''} ${disabled ? 'disabled' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${n}</button>`;
+    const extra = custSelExtraIngredients.includes(n);
+    const label = extra ? n + ' +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
 function toggleCustSauce(n) {
@@ -1149,13 +1155,20 @@ function toggleCustSauce(n) {
   }
   renderCustChips(); updateCustBadges(); updateCustTotalPrice();
 }
+// Igual que con las salsas: pasarse del límite incluido ya no bloquea la
+// selección — el ingrediente de más se marca como "extra" y se cobra
+// aparte (como si se hubiera añadido en la patata normal), en vez de
+// dejar el chip deshabilitado sin forma de elegirlo.
 function toggleCustIng(n) {
+  const cfg = CUSTOMIZER_CONFIG[custType];
   const i = custSelIngredients.indexOf(n);
+  const iE = custSelExtraIngredients.indexOf(n);
   if (i >= 0) custSelIngredients.splice(i, 1);
+  else if (iE >= 0) custSelExtraIngredients.splice(iE, 1);
   else {
-    const cfg = CUSTOMIZER_CONFIG[custType];
-    if ((cfg.maxIngredients !== null && custSelIngredients.length >= cfg.maxIngredients) || (cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal)) return;
-    custSelIngredients.push(n);
+    const roomInLimit = (cfg.maxIngredients === null || custSelIngredients.length < cfg.maxIngredients) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
+    if (roomInLimit) custSelIngredients.push(n);
+    else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte
   }
   if (custHasQuesoIngredient() && custExtraQueso) {
     custExtraQueso = false;
@@ -1165,13 +1178,14 @@ function toggleCustIng(n) {
 }
 function updateCustBadges() {
   const cfg = CUSTOMIZER_CONFIG[custType];
-  const extraNote = custSelExtraSauces.length ? ' (+' + custSelExtraSauces.length + ' salsa extra)' : '';
+  const sauceExtraNote = custSelExtraSauces.length ? ' (+' + custSelExtraSauces.length + ' salsa extra)' : '';
+  const ingExtraNote = custSelExtraIngredients.length ? ' (+' + custSelExtraIngredients.length + ' ingrediente' + (custSelExtraIngredients.length > 1 ? 's' : '') + ' extra)' : '';
   if (cfg.maxTotal !== null) {
-    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + extraNote;
-    document.getElementById('cust-ing-badge').textContent = custSelTotal() + '/' + cfg.maxTotal;
+    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + sauceExtraNote;
+    document.getElementById('cust-ing-badge').textContent = custSelTotal() + '/' + cfg.maxTotal + ingExtraNote;
   } else {
-    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + '/' + cfg.maxSauces + extraNote;
-    document.getElementById('cust-ing-badge').textContent = custSelIngredients.length + '/' + cfg.maxIngredients;
+    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + '/' + cfg.maxSauces + sauceExtraNote;
+    document.getElementById('cust-ing-badge').textContent = custSelIngredients.length + '/' + cfg.maxIngredients + ingExtraNote;
   }
 }
 function toggleCustExtra(which) {
@@ -1195,18 +1209,19 @@ function updateCustTotalPrice() {
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
   p += custSelExtraSauces.length * EXTRAS_SALSA_PRECIO;
+  p += custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
 }
 function confirmCustomizer() {
   const cfg = CUSTOMIZER_CONFIG[custType];
   const errEl = document.getElementById('cust-error');
   errEl.style.display = 'none';
-  if (cfg.maxTotal !== null && custSelTotal() === 0 && custSelExtraSauces.length === 0) {
+  if (cfg.maxTotal !== null && custSelTotal() === 0 && custSelExtraSauces.length === 0 && custSelExtraIngredients.length === 0) {
     errEl.textContent = 'Elige al menos 1 ingrediente o salsa';
     errEl.style.display = 'block';
     return;
   }
-  if (cfg.maxTotal === null && custSelIngredients.length === 0 && custSelSauces.length === 0 && custSelExtraSauces.length === 0) {
+  if (cfg.maxTotal === null && custSelIngredients.length === 0 && custSelSauces.length === 0 && custSelExtraSauces.length === 0 && custSelExtraIngredients.length === 0) {
     errEl.textContent = 'Elige al menos 1 ingrediente';
     errEl.style.display = 'block';
     return;
@@ -1219,6 +1234,7 @@ function confirmCustomizer() {
     extraQueso: custExtraQueso,
     extraGratinado: custExtraGratinado,
     extraSauces: [...custSelExtraSauces],
+    extraIngredients: [...custSelExtraIngredients],
   };
   const wasEdit = !!custEditKey;
   if (custEditKey && custCart[custEditKey]) {
@@ -1721,14 +1737,17 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO;
+    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO + extraIngPrice;
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas (incluidas y extra),
-    // luego los ingredientes, y el queso/gratinado siempre al final.
+    // luego los ingredientes (incluidos y extra), y el queso/gratinado
+    // siempre al final.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
       ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO, underline: true })),
       ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
+      ...quesoLastKeepOrder(c.extraIngredients || []).map(n => ({ name: n, price: priceOfPick({ type: 'ing', name: n }), underline: true })),
     ];
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1, underline: true });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5, underline: true });
