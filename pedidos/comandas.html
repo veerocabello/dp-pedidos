@@ -58,7 +58,6 @@
     </div>
     <button type="button" class="btn-cobrar" id="btn-cobrar" style="display:none" onclick="openCobrarModal()">💰 COBRAR</button>
     <button class="btn-secondary" style="width:100%;margin-top:10px" onclick="previewTicket()">👁️ Ver ticket completo</button>
-    <button class="btn-print" id="print-btn" onclick="handlePrintOrder()">🖨️ Imprimir comanda</button>
   </aside>
 </div>
 
@@ -126,7 +125,7 @@
         <span id="cash-change-label">Cambio a devolver</span><span id="cash-change-amount">0,00 €</span>
       </div>
     </div>
-    <button class="btn-secondary" style="width:100%;margin-top:14px" onclick="closeCobrarModal()">Listo</button>
+    <button class="btn-secondary" id="print-btn" style="width:100%;margin-top:14px" onclick="cobrarBottomAction()">Listo</button>
   </div>
 </div>
 

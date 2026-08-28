@@ -157,6 +157,21 @@ function setOrderPaid(v) {
   document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
   document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
+  // El botón de abajo del todo de Cobrar hace de "Listo" mientras no está
+  // pagado, y se convierte en "Imprimir ticket" en cuanto se marca como
+  // pagado — ya no hay un botón de imprimir siempre visible aparte: el
+  // flujo ahora es cobrar primero, imprimir después.
+  const printBtn = document.getElementById('print-btn');
+  if (printBtn) {
+    printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'Listo';
+    printBtn.className = orderPaid ? 'btn-print' : 'btn-secondary';
+  }
+}
+// Botón de abajo del Cobrar: si está pagado, cierra e imprime; si no,
+// solo cierra (para poder repasar el pedido sin marcarlo como cobrado).
+function cobrarBottomAction() {
+  closeCobrarModal();
+  if (orderPaid) handlePrintOrder();
 }
 function setPaymentMethod(m) {
   paymentMethod = m;
