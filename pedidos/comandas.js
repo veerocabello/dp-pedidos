@@ -2775,15 +2775,24 @@ async function pairPrinterBluetooth() {
 // que hay que imprimir y no hay conexión activa (mismo patrón que USB).
 async function bleReconectar() {
   if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
-  try {
-    const dispositivos = await navigator.bluetooth.getDevices();
-    if (!dispositivos.length) return false;
-    await _conTimeout(bleConectarDispositivo(dispositivos[0]), 6000, 'timeout reconectando Bluetooth');
-    return true;
-  } catch (e) {
-    console.warn('[comandas] reconexión Bluetooth fallida', e);
-    return false;
+  const dispositivos = await navigator.bluetooth.getDevices().catch(() => []);
+  if (!dispositivos.length) return false;
+  // Dos intentos con una pequeña espera entre medias — algunas impresoras
+  // Bluetooth baratas de batería "duermen" tras un rato sin usarse, y el
+  // primer intento de reconexión justo después de despertar puede fallar
+  // aunque la segunda vez, un segundo más tarde, sí funcione. Sin este
+  // reintento, ese primer fallo pasaba directo al diálogo de impresión de
+  // Chrome sin haber probado de verdad si la impresora ya estaba lista.
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      await _conTimeout(bleConectarDispositivo(dispositivos[0]), 6000, 'timeout reconectando Bluetooth');
+      return true;
+    } catch (e) {
+      console.warn('[comandas] reconexión Bluetooth fallida (intento ' + (intento + 1) + '/2)', e);
+      if (intento === 0) await new Promise(r => setTimeout(r, 1000));
+    }
   }
+  return false;
 }
 
 // Se prefiere "con respuesta" (writeValue): cada trozo espera la
@@ -2995,6 +3004,7 @@ async function printOrder(order) {
     } catch (e) {
       console.warn('[comandas] impresión directa falló:', e);
       anyFailure = true;
+      failReason = e.message || 'motivo desconocido';
     }
   }
 
@@ -3024,7 +3034,16 @@ async function printOrder(order) {
     }
   }
 
-  if (!printedOk) window.print();
+  if (!printedOk) {
+    // Antes esto se caía al diálogo de impresión de Chrome sin decir por
+    // qué — desde fuera parecía que "antes iba directo y ahora no", sin
+    // ninguna pista de qué había pasado (impresora fuera de alcance,
+    // apagada, Bluetooth tardó en reconectar...). Con el motivo real
+    // delante, al menos se puede actuar (acercar/encender la impresora,
+    // volver a intentarlo) en vez de solo ver aparecer el diálogo.
+    if (anyFailure) toast('⚠️ No se pudo imprimir directo (' + (failReason || 'sin conexión con la impresora') + ') — se abre el diálogo de impresión', 6000);
+    window.print();
+  }
   updatePrinterStatusUI();
   playPrintSound(printedOk || !anyFailure);
   return { printedOk, failReason };
