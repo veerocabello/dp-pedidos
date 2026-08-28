@@ -856,7 +856,8 @@ function renderCart() {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
     document.getElementById('btn-cobrar').style.display = 'none';
-    document.getElementById('print-btn').disabled = true;
+    cobrarDone = false;
+    updatePrintButtonVisibility();
     syncCashTotal(0);
     clearCartDraft();
     return;
@@ -957,7 +958,7 @@ function renderCart() {
   const orderTotal = total - discountAmount;
   document.getElementById('cart-total').textContent = fmt(orderTotal) + ' €';
   document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
-  document.getElementById('print-btn').disabled = false;
+  updatePrintButtonVisibility();
   syncCashTotal(orderTotal);
   saveCartDraft();
 }
@@ -1026,8 +1027,18 @@ function openCobrarModal() {
   syncCashTotal(currentOrderTotal());
   document.getElementById('cobrar-modal').classList.add('open');
 }
+// Flujo: primero se cobra, luego se imprime — "🖨️ Imprimir ticket" está
+// oculto hasta que se pasa por "💰 COBRAR" al menos una vez para esta
+// comanda (renderCart() lo vuelve a ocultar en cuanto el carrito se vacía,
+// así que la siguiente comanda vuelve a pedir cobrar antes de imprimir).
+let cobrarDone = false;
+function updatePrintButtonVisibility() {
+  document.getElementById('print-btn').style.display = cobrarDone ? 'block' : 'none';
+}
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
+  cobrarDone = true;
+  updatePrintButtonVisibility();
 }
 function addCashAmount(v) {
   const el = document.getElementById('cash-received');
