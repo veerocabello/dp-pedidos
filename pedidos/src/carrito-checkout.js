@@ -1285,11 +1285,11 @@ async function _submitOrderInner() {
     if (c.boniatoSalsa) extras.push({ name: c.boniatoSalsa, price: 0 });
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     (c.ingredientesExtra || []).forEach(ing => {
-      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
+      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 1.00 : 0;
       extras.push({ name: 'Extra ' + ing, price: precioIng });
     });
     (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: 'Extra salsa ' + salsa, price: EXTRAS_SALSA_PRECIO });
+      extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
     });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });

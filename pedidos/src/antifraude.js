@@ -658,7 +658,7 @@ const custCart = {};
 const CUSTOMIZER_CONFIG = {
   algusto: {
     name: 'Patata Al Gusto',
-    price: 6.90,
+    price: 7.90,
     maxSauces: 1,
     maxIngredients: 6,
     maxTotal: null,
@@ -666,7 +666,7 @@ const CUSTOMIZER_CONFIG = {
   },
   bomba: {
     name: 'Patata Bomba 🆕',
-    price: 8.40,
+    price: 9.40,
     maxSauces: null,
     maxIngredients: null,
     maxTotal: 9,

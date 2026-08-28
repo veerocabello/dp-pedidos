@@ -766,13 +766,18 @@ function _precioRealExtra($nombre) {
     $n = trim((string)$nombre);
     if ($n === 'Extra Queso') return 1.00;
     if ($n === 'Gratinado') return 0.50;
-    if (strpos($n, 'Extra salsa ') === 0) return 0.90;
+    if (strpos($n, 'Extra salsa ') === 0) {
+        $salsa = substr($n, strlen('Extra salsa '));
+        return (stripos($salsa, 'philadelphia') !== false) ? 1.20 : 1.00;
+    }
     if (strpos($n, 'Extra ') === 0) {
         $ing = substr($n, strlen('Extra '));
         $precio1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
         $precio07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-        if (in_array($ing, $precio1, true)) return 1.00;
-        if (in_array($ing, $precio07, true)) return 0.70;
+        // Todos los ingredientes extra cuestan lo mismo ahora (1€) — se
+        // mantienen las dos listas solo para reconocer el nombre como
+        // ingrediente extra válido, no para variar el precio entre ellas.
+        if (in_array($ing, $precio1, true) || in_array($ing, $precio07, true)) return 1.00;
     }
     return null;
 }

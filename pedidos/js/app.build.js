@@ -126,7 +126,9 @@ let _extrasIngredientes = {}; // { name: true/false }
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
 const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort'];
-const EXTRAS_SALSA_PRECIO = 0.90;
+const EXTRAS_SALSA_PRECIO = 1.00;
+// Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
+function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
 let _extrasSalsas = {}; // { nombre: true/false }
 function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
@@ -160,7 +162,7 @@ function openExtrasModal(itemId) {
   optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
   EXTRAS_ING_PRECIO07.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+0,70 €</div></div>\n    </label>");
+    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   // Salsas extra +0,90€
@@ -168,7 +170,7 @@ function openExtrasModal(itemId) {
   optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
   EXTRAS_SALSAS.forEach(salsa => {
     const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraSalsa('").concat(salsa.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(salsa, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(EXTRAS_SALSA_PRECIO.toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
+    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraSalsa('").concat(salsa.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(salsa, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(precioSalsaExtra(salsa).toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
@@ -263,9 +265,9 @@ function updateExtrasTotal() {
       ing = _ref12[0],
       active = _ref12[1];
     if (!active) return;
-    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 0.70;
+    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 1.00;
   });
-  Object.values(_extrasSalsas).forEach(active => { if (active) total += EXTRAS_SALSA_PRECIO; });
+  Object.entries(_extrasSalsas).forEach(([nombre, active]) => { if (active) total += precioSalsaExtra(nombre); });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
 }
 function closeExtrasModal() {
@@ -388,9 +390,9 @@ function getExtrasItemPrice(c) {
   const _base = _itemMenu ? _itemMenu.price : c.basePrice;
   let p = _base + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
   (c.ingredientesExtra || []).forEach(ing => {
-    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
+    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 1.00;
   });
-  (c.salsasExtra || []).forEach(() => { p += EXTRAS_SALSA_PRECIO; });
+  (c.salsasExtra || []).forEach(nombre => { p += precioSalsaExtra(nombre); });
   return p;
 }
 // ══════════════════════════════════════════
@@ -4126,55 +4128,55 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Vegetal",
   desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural",
-  price: 5.60
+  price: 6.40
 }, {
   id: 3,
   cat: "Patatas",
   name: "Patata Picante",
   desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas",
-  price: 5.60
+  price: 6.40
 }, {
   id: 4,
   cat: "Patatas",
   name: "Patata Carbonara",
   desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario",
-  price: 5.80
+  price: 6.80
 }, {
   id: 5,
   cat: "Patatas",
   name: "Patata Boloñesa",
   desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario",
-  price: 5.80
+  price: 6.80
 }, {
   id: 6,
   cat: "Patatas",
   name: "Patata Hawaiana",
   desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella",
-  price: 5.80
+  price: 6.80
 }, {
   id: 7,
   cat: "Patatas",
   name: "Patata Kebab",
   desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla",
-  price: 5.90
+  price: 6.90
 }, {
   id: 8,
   cat: "Patatas",
   name: "Patata 4 Quesos",
   desc: "Salsa roquefort, emmental, gouda y mozzarella",
-  price: 5.90
+  price: 6.90
 }, {
   id: 9,
   cat: "Patatas",
   name: "Patata Completa",
   desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón",
-  price: 6.20
+  price: 7.20
 }, {
   id: 10,
   cat: "Patatas",
   name: "Patata Carnívora",
   desc: "Alioli, york, bacon, kebab y carne picada",
-  price: 6.40
+  price: 7.40
 }, {
   id: 11,
   cat: "Patatas",
@@ -4186,19 +4188,19 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Ranchera",
   desc: "Salsa ranchera, pollo, bacon y queso mozzarella",
-  price: 6.50
+  price: 7.50
 }, {
   id: 13,
   cat: "Patatas",
   name: "Patata Granollers",
   desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria",
-  price: 6.50
+  price: 7.50
 }, {
   id: 14,
   cat: "Patatas",
   name: "Patata Pulled Pork 🆕",
   desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella",
-  price: 6.50
+  price: 7.50
 }, {
   id: 50,
   cat: "Patatas",
@@ -4210,13 +4212,13 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Al Gusto",
   desc: "1 salsa a elegir y 6 ingredientes",
-  price: 6.90
+  price: 7.90
 }, {
   id: 16,
   cat: "Patatas",
   name: "Patata Bomba 🆕",
   desc: "Hasta 9 ingredientes y/o salsas al gusto",
-  price: 8.40
+  price: 9.40
 },
 // ── BONIATO FRIES ──
 {
@@ -4376,13 +4378,13 @@ const MENU = [
   cat: "Bebidas",
   name: "Refresco lata",
   desc: "",
-  price: 1.10
+  price: 1.30
 }, {
   id: 42,
   cat: "Bebidas",
   name: "Cerveza lata",
   desc: "",
-  price: 1.20
+  price: 1.40
 }, {
   id: 43,
   cat: "Bebidas",
@@ -4394,37 +4396,37 @@ const MENU = [
   cat: "Bebidas",
   name: "Refresco 500 ml",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 45,
   cat: "Bebidas",
   name: "Cerveza 1 litro",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 46,
   cat: "Bebidas",
   name: "Monster o Red Bull",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 47,
   cat: "Bebidas",
   name: "Agua 1,5 litros",
   desc: "",
-  price: 1.30
+  price: 1.50
 }, {
   id: 48,
   cat: "Bebidas",
   name: "Nestea / Aquarius 1,5 l",
   desc: "",
-  price: 2.20
+  price: 2.40
 }, {
   id: 49,
   cat: "Bebidas",
   name: "Refresco 2 litros",
   desc: "",
-  price: 2.50
+  price: 2.70
 }];
 // El JSON-LD del menú (schema.org Menu) y el listado de productos ya no se
 // generan aquí por JavaScript — los genera el servidor en el propio HTML
@@ -6752,11 +6754,11 @@ async function _submitOrderInner() {
     if (c.boniatoSalsa) extras.push({ name: c.boniatoSalsa, price: 0 });
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     (c.ingredientesExtra || []).forEach(ing => {
-      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 0.70 : 0;
+      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 1.00 : 0;
       extras.push({ name: 'Extra ' + ing, price: precioIng });
     });
     (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: 'Extra salsa ' + salsa, price: EXTRAS_SALSA_PRECIO });
+      extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
     });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
@@ -8002,7 +8004,7 @@ const custCart = {};
 const CUSTOMIZER_CONFIG = {
   algusto: {
     name: 'Patata Al Gusto',
-    price: 6.90,
+    price: 7.90,
     maxSauces: 1,
     maxIngredients: 6,
     maxTotal: null,
@@ -8010,7 +8012,7 @@ const CUSTOMIZER_CONFIG = {
   },
   bomba: {
     name: 'Patata Bomba 🆕',
-    price: 8.40,
+    price: 9.40,
     maxSauces: null,
     maxIngredients: null,
     maxTotal: 9,

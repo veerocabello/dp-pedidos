@@ -24,8 +24,8 @@ const MENU = [
   { id: 13, cat: "Patatas", name: "Patata Granollers", desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria", price: 6.50 },
   { id: 14, cat: "Patatas", name: "Patata Pulled Pork", desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella", price: 6.50, nuevo: true },
   { id: 50, cat: "Patatas", name: "Patata Cheddar-Bacon", desc: "Salsa queso cheddar, carne a elegir, caramelo de bacon y queso mozzarella gratinado", price: 8.50, nuevo: true },
-  { id: 15, cat: "Patatas", name: "Patata Al Gusto", desc: "1 salsa a elegir y 6 ingredientes", price: 6.90 },
-  { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 8.40, nuevo: true },
+  { id: 15, cat: "Patatas", name: "Patata Al Gusto", desc: "1 salsa a elegir y 6 ingredientes", price: 7.90 },
+  { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 9.40, nuevo: true },
 
   { id: 17, cat: "Boniato", name: "Boniato Fries", desc: "Tarrina de boniato fries", price: 4.50 },
   { id: 18, cat: "Boniato", name: "Boniato Lotus", desc: "Salsa Lotus + bacon + queso mozzarella + galletas Lotus", price: 5.50 },
@@ -190,11 +190,13 @@ const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
 const EXTRAS_ING_PRECIO1 = ["4 Quesos", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Gambas", "Huevo", "Jamón York", "Pollo", "Queso Mozzarella", "Tronquitos de Mar"];
 const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Piña", "Remolacha", "Tomate Natural", "Zanahoria"];
-const EXTRAS_SALSA_PRECIO = 0.90;
+const EXTRAS_SALSA_PRECIO = 1.00;
+// Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
+function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
 
 const CUSTOMIZER_CONFIG = {
-  algusto: { name: "Patata Al Gusto", price: 6.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
-  bomba: { name: "Patata Bomba 🆕", price: 8.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
+  algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
+  bomba: { name: "Patata Bomba 🆕", price: 9.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
@@ -422,7 +424,7 @@ function editSimpleItem(id) {
 // Bomba, se cobra el precio plano de esa patata en vez de sumar cada
 // extra por separado (evita cobrar de más por construir, ingrediente a
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
-function priceOfPick(p) { return p.type === 'salsa' ? EXTRAS_SALSA_PRECIO : (EXTRAS_ING_PRECIO1.includes(p.name) ? 1 : 0.7); }
+function priceOfPick(p) { return p.type === 'salsa' ? precioSalsaExtra(p.name) : precioIngredienteExtra(p.name); }
 
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
@@ -457,8 +459,8 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   if (freeLeft > 0 && order) {
     order.forEach(p => { if (freeLeft > 0) freeLeft--; else core += priceOfPick(p); });
   } else {
-    (ingredientesExtra || []).forEach(i => { core += EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7; });
-    core += salsaCount * EXTRAS_SALSA_PRECIO;
+    (ingredientesExtra || []).forEach(i => { core += precioIngredienteExtra(i); });
+    (salsasExtra || []).forEach(s => { core += precioSalsaExtra(s); });
   }
   return core;
 }
@@ -521,7 +523,7 @@ function getExtrasItemDetails(e) {
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(precioSalsaExtra(s)) + '€)'));
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -540,8 +542,8 @@ function getExtrasItemTicketExtras(e) {
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : EXTRAS_SALSA_PRECIO, underline: true }));
-  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : (EXTRAS_ING_PRECIO1.includes(i) ? 1 : 0.7), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : precioSalsaExtra(s), underline: true }));
+  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : precioIngredienteExtra(i), underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
   return out;
@@ -893,12 +895,12 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO + (c.extraIngredients || []).reduce((s, n) => s + precioIngredienteExtra(n), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).reduce((s, n) => s + precioSalsaExtra(n), 0) + (c.extraIngredients || []).reduce((s, n) => s + precioIngredienteExtra(n), 0);
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(EXTRAS_SALSA_PRECIO) + '€)'), ...(c.extraIngredients || []).map(n => n + ' (ingrediente extra +' + fmt(precioIngredienteExtra(n)) + '€)')].filter(Boolean).join(', ');
+    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(precioSalsaExtra(s)) + '€)'), ...(c.extraIngredients || []).map(n => n + ' (ingrediente extra +' + fmt(precioIngredienteExtra(n)) + '€)')].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
       <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(item.name)}</button>
       <div class="cart-qty-mini">
@@ -1155,9 +1157,9 @@ function undoClearOrder() {
    MODAL — CUSTOMIZER (Al Gusto / Bomba)
    ══════════════════════════════════════════════════════════════ */
 let custType = null, custSelSauces = [], custSelIngredients = [], custExtraQueso = false, custExtraGratinado = false, custSelExtraSauces = [], custSelExtraIngredients = [], custEditKey = null;
-// Mismo precio que ya se usa en el resto de la web para un ingrediente
-// suelto fuera de una patata prediseñada (ver EXTRAS_ING_PRECIO1/07).
-function precioIngredienteExtra(n) { return EXTRAS_ING_PRECIO1.includes(n) ? 1 : 0.7; }
+// Todos los ingredientes extra cuestan lo mismo (1€) — antes había dos
+// tramos (1€/0,70€ según EXTRAS_ING_PRECIO1/07), ahora unificado.
+function precioIngredienteExtra(n) { return 1.00; }
 
 function openCustomizer(id, editKey) {
   custEditKey = editKey || null;
@@ -1208,7 +1210,7 @@ function renderCustChips() {
   sEl.innerHTML = CUST_SAUCES.map(n => {
     const sel = custSelSauces.includes(n);
     const extra = custSelExtraSauces.includes(n);
-    const label = extra ? n + ' +' + fmt(EXTRAS_SALSA_PRECIO) + '€' : n;
+    const label = extra ? n + ' +' + fmt(precioSalsaExtra(n)) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
@@ -1280,7 +1282,7 @@ function updateCustTotalPrice() {
   let p = cfg.price;
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
-  p += custSelExtraSauces.length * EXTRAS_SALSA_PRECIO;
+  p += custSelExtraSauces.reduce((sum, n) => sum + precioSalsaExtra(n), 0);
   p += custSelExtraIngredients.reduce((sum, n) => sum + precioIngredienteExtra(n), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
 }
@@ -1353,7 +1355,7 @@ function renderCheddarSalsasExtra() {
     const slug = 'cheddar-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
     const on = !!cheddarSalsasExtra[s];
     return `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(precioSalsaExtra(s))} €</div></div>
       <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
     </label>`;
   }).join('');
@@ -1365,8 +1367,8 @@ function toggleCheddarSalsa(s) {
 }
 function updateCheddarPrice() {
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const n = Object.values(cheddarSalsasExtra).filter(Boolean).length;
-  document.getElementById('cheddar-price').textContent = fmt(item.price + n * EXTRAS_SALSA_PRECIO) + ' €';
+  const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((sum, [s]) => sum + precioSalsaExtra(s), 0);
+  document.getElementById('cheddar-price').textContent = fmt(item.price + extra) + ' €';
 }
 function confirmCheddar() {
   if (!cheddarCarne) {
@@ -1586,7 +1588,7 @@ function renderExtrasBody(item) {
     if (!soloGratinar) {
       html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-        const precio = EXTRAS_ING_PRECIO1.includes(ing) ? 1 : 0.7;
+        const precio = precioIngredienteExtra(ing);
         const on = !!extrasIngredientes[ing];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
           <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
@@ -1598,7 +1600,7 @@ function renderExtrasBody(item) {
       CUST_SAUCES.forEach(s => {
         const on = !!extrasSalsas[s];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(EXTRAS_SALSA_PRECIO)} €</div></div>
+          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(precioSalsaExtra(s))} €</div></div>
           <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
@@ -1816,14 +1818,14 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).length * EXTRAS_SALSA_PRECIO + (c.extraIngredients || []).reduce((s, n) => s + precioIngredienteExtra(n), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).reduce((s, n) => s + precioSalsaExtra(n), 0) + (c.extraIngredients || []).reduce((s, n) => s + precioIngredienteExtra(n), 0);
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas (incluidas y extra),
     // luego los ingredientes (incluidos y extra), y el queso/gratinado
     // siempre al final.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: EXTRAS_SALSA_PRECIO, underline: true })),
+      ...(c.extraSauces || []).map(s => ({ name: s, price: precioSalsaExtra(s), underline: true })),
       ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
       ...(c.extraIngredients || []).map(n => ({ name: n, price: precioIngredienteExtra(n), underline: true })),
     ];
