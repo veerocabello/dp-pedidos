@@ -107,6 +107,82 @@ function saveMenuOrder() { localStorage.setItem(MENU_ORDER_KEY, JSON.stringify(M
   }
 })();
 
+/* ── Sincronización de precios con la carta online ──────────────────
+   Los precios de MENU (arriba) eran, hasta ahora, una copia fija: si
+   cambiabas un precio desde el panel de administración de la web, esta
+   herramienta no se enteraba sola, había que venir a editar este archivo
+   a mano cada vez. Ahora, si el dispositivo tiene internet, se lee el
+   precio/nombre/descripción real desde Firebase (el mismo dato que ya usa
+   el panel para editar la carta — ver admin-config.js / nucleo-compartido.js
+   en pedidos/src/) y se sobreescribe aquí encima.
+
+   A propósito, SOLO se tocan esos tres campos, y SOLO sobre productos que
+   YA existen en la lista de arriba (por id) — no se añaden productos
+   nuevos solos: uno nuevo en la web puede necesitar su propio modal de
+   personalización, que aquí no se puede montar automáticamente sin
+   riesgo de romper algo al tocarlo. Si algún día se añade un producto
+   nuevo también aquí, hay que seguir haciéndolo a mano (o desde
+   "🍽️ Carta" si es un producto sencillo sin personalización).
+
+   Si no hay internet (o Firebase tarda/falla), no pasa nada: se sigue
+   usando el último precio conocido, guardado la última vez que sí hubo
+   conexión — y si esta es la primera vez que se abre esta herramienta y
+   nunca ha sincronizado, el precio de fábrica de arriba. Es una mejora
+   encima, no una dependencia nueva: todo lo demás sigue funcionando
+   exactamente igual sin conexión. ── */
+const MENU_FB_SYNC_KEY = 'comandas_menu_fb_sync_v1';
+(function aplicarUltimoPrecioSincronizado() {
+  try {
+    const guardado = JSON.parse(localStorage.getItem(MENU_FB_SYNC_KEY) || 'null');
+    const items = guardado && Array.isArray(guardado.items) ? guardado.items : null;
+    if (!items) return;
+    items.forEach(saved => {
+      const item = MENU.find(m => m.id == saved.id);
+      if (!item) return;
+      if (saved.price !== undefined) item.price = saved.price;
+      if (saved.name) item.name = saved.name;
+      if (saved.desc !== undefined) item.desc = saved.desc;
+    });
+  } catch (e) { /* sin copia guardada todavía, o corrupta — se ignora */ }
+})();
+function _sincronizarPreciosConWeb(data) {
+  const items = Array.isArray(data) ? data : (data && Array.isArray(data.items) ? data.items : null);
+  if (!items || !items.length) return;
+  let huboCambios = false;
+  items.forEach(saved => {
+    const item = MENU.find(m => m.id == saved.id);
+    if (!item) return;
+    if (saved.price !== undefined && item.price !== saved.price) { item.price = saved.price; huboCambios = true; }
+    if (saved.name && item.name !== saved.name) { item.name = saved.name; huboCambios = true; }
+    if (saved.desc !== undefined && item.desc !== saved.desc) { item.desc = saved.desc; huboCambios = true; }
+  });
+  try { localStorage.setItem(MENU_FB_SYNC_KEY, JSON.stringify({ items: items, ts: Date.now() })); } catch (e) {}
+  // Solo se vuelve a pintar si de verdad ha cambiado algo — evita un
+  // parpadeo/reseteo de scroll cada vez que el listener de Firebase
+  // manda el mismo menú sin ningún cambio real.
+  if (huboCambios && typeof renderMenu === 'function' && document.readyState !== 'loading') {
+    renderMenu();
+    if (typeof renderCart === 'function') renderCart();
+  }
+}
+function _iniciarSyncPreciosWeb() {
+  if (window.fb_loadMenu) {
+    window.fb_loadMenu().then(data => { if (data) _sincronizarPreciosConWeb(data); }).catch(() => {});
+  }
+  if (window.fb_listenMenu) {
+    window.fb_listenMenu(_sincronizarPreciosConWeb);
+  }
+}
+if (window._firebaseReady) {
+  _iniciarSyncPreciosWeb();
+} else {
+  document.addEventListener('firebaseReady', _iniciarSyncPreciosWeb);
+  // Por si firebase-auth-compat.js/config.js no han cargado (sin
+  // internet en la primera visita, bloqueados, etc.) — sin esto el
+  // listener de arriba se quedaría esperando un evento que nunca llega.
+  setTimeout(function () { if (!window._firebaseReady) _iniciarSyncPreciosWeb(); }, 4000);
+}
+
 const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);

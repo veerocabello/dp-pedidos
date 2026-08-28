@@ -631,6 +631,12 @@
   <button onclick="undoClearOrder()">↩️ Deshacer</button>
 </div>
 
+<!-- Solo para sincronizar precios con la carta online (ver comandas.js,
+     "Sincronización de precios") — si no hay internet, estos dos scripts
+     sencillamente no cargan y la herramienta sigue funcionando igual que
+     siempre con los últimos precios conocidos. -->
+<script src="js/firebase-auth-compat.js"></script>
+<script src="js/config.js"></script>
 <script src="comandas.js"></script>
 </body>
 </html>
