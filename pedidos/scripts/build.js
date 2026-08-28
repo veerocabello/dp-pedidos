@@ -118,3 +118,25 @@ Promise.all([
   fs.writeFileSync(path.join(rootDir, 'menu-default.json'), JSON.stringify(sandbox.MENU));
   console.log('✅ Construido: menu-default.json (' + sandbox.MENU.length + ' productos)');
 })();
+
+// index.php carga js/app.js y js/auth.js con un "?v=<timestamp>" fijo en
+// el propio HTML (a diferencia de js/app-admin.js, que ya se pide con
+// Date.now() calculado en el navegador — ver loadAdminShell() en
+// index.php, siempre fresco). Antes había que acordarse de subir ese
+// número a mano cada vez que cambiaba alguno de los dos archivos: si se
+// olvidaba, el navegador (o una caché del propio hosting) podía seguir
+// sirviendo la versión vieja aunque el archivo nuevo ya estuviera subido
+// — pasó de verdad: un botón nuevo del panel no respondía porque
+// auth.js seguía en caché. Ahora se regenera solo en cada build.
+(function actualizarVersionCache() {
+  const indexPath = path.join(rootDir, 'index.php');
+  const original = fs.readFileSync(indexPath, 'utf8');
+  const v = Date.now();
+  const actualizado = original
+    .replace(/js\/app\.js\?v=\d+/, 'js/app.js?v=' + v)
+    .replace(/js\/auth\.js\?v=\d+/, 'js/auth.js?v=' + v);
+  if (actualizado !== original) {
+    fs.writeFileSync(indexPath, actualizado);
+    console.log('✅ index.php: versión de caché de app.js/auth.js actualizada a ' + v);
+  }
+})();
