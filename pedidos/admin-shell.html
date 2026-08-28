@@ -978,14 +978,10 @@
             <div class="row-text"><div class="row-title">Pedidos proveedores</div></div>
             <span class="row-chevron">›</span>
           </div>
-          <div class="row" onclick="openIngredientesStockOverlay()">
-            <span class="row-icon">📦</span>
-            <div class="row-text"><div class="row-title">Ingredientes de stock</div><div class="row-desc">Define lo que pueden reponer los empleados</div></div>
-            <span class="row-chevron">›</span>
-          </div>
           <div class="row" onclick="bimbaIrAStock()">
-            <span class="row-icon">📋</span>
-            <div class="row-text"><div class="row-title">Hacer inventario</div><div class="row-desc">Marcar existencias — antes en la pestaña "Stock"</div></div>
+            <span class="row-icon">📦</span>
+            <div class="row-text"><div class="row-title">Stock</div><div class="row-desc">Marcar existencias</div></div>
+            <span onclick="event.stopPropagation(); openIngredientesStockOverlay()" title="Ajustes — qué pueden reponer los empleados" style="font-size:17px;padding:4px;cursor:pointer;flex-shrink:0">⚙️</span>
             <span class="row-chevron">›</span>
           </div>
         </div>

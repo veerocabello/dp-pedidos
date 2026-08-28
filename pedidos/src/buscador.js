@@ -84,7 +84,7 @@ function _buscadorSeccionesBimba() {
     { icon: '🎁', badge: 'section', tipo: 'Sección', nombre: 'Códigos de descuento', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('dc-panel', 'mkt-row-codigos') },
     { icon: '🎡', badge: 'section', tipo: 'Sección', nombre: 'Ruleta de premios', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('ruleta-admin-panel', 'mkt-row-ruleta') },
     { icon: '🎫', badge: 'section', tipo: 'Sección', nombre: 'Rasca y gana', ruta: 'bimba · Marketing', meta: [], go: volverYAbrir('rasca-admin-panel', 'mkt-row-rasca') },
-    { icon: '📋', badge: 'section', tipo: 'Sección', nombre: 'Hacer inventario', ruta: 'bimba · Pedidos y stock', meta: [], go: () => { if (typeof bimbaIrAStock === 'function') bimbaIrAStock(); } },
+    { icon: '📦', badge: 'section', tipo: 'Sección', nombre: 'Stock', ruta: 'bimba · Pedidos y stock', meta: [], go: () => { if (typeof bimbaIrAStock === 'function') bimbaIrAStock(); } },
     {
       icon: '👥', badge: 'section', tipo: 'Sección', nombre: 'Lista de empleados', ruta: 'bimba · Empleados', meta: [],
       go: () => { if (typeof bimbaIrAEmpleados === 'function') bimbaIrAEmpleados(); setTimeout(() => _buscadorAbrirBimbaAcordeon('bimba-emp-body', 'emp-row-lista'), 100); }
