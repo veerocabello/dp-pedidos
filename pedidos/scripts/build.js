@@ -140,3 +140,22 @@ Promise.all([
     console.log('✅ index.php: versión de caché de app.js/auth.js actualizada a ' + v);
   }
 })();
+
+// comandas.html es una página aparte (no pasa por index.php ni por este
+// build.js más arriba) que carga comandas.js/comandas.css con su propio
+// "?v=" fijo en el HTML — mismo motivo que arriba: sin esto, la tablet del
+// mostrador podía seguir sirviendo una versión vieja de Comandas aunque el
+// archivo nuevo ya estuviera subido, sin ningún aviso de que era eso lo
+// que pasaba.
+(function actualizarVersionCacheComandas() {
+  const comandasPath = path.join(rootDir, 'comandas.html');
+  const original = fs.readFileSync(comandasPath, 'utf8');
+  const v = Date.now();
+  const actualizado = original
+    .replace(/comandas\.js\?v=\d+/, 'comandas.js?v=' + v)
+    .replace(/comandas\.css\?v=\d+/, 'comandas.css?v=' + v);
+  if (actualizado !== original) {
+    fs.writeFileSync(comandasPath, actualizado);
+    console.log('✅ comandas.html: versión de caché de comandas.js/comandas.css actualizada a ' + v);
+  }
+})();
