@@ -1776,55 +1776,55 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Vegetal",
   desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural",
-  price: 5.60
+  price: 6.40
 }, {
   id: 3,
   cat: "Patatas",
   name: "Patata Picante",
   desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas",
-  price: 5.60
+  price: 6.40
 }, {
   id: 4,
   cat: "Patatas",
   name: "Patata Carbonara",
   desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario",
-  price: 5.80
+  price: 6.80
 }, {
   id: 5,
   cat: "Patatas",
   name: "Patata Boloñesa",
   desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario",
-  price: 5.80
+  price: 6.80
 }, {
   id: 6,
   cat: "Patatas",
   name: "Patata Hawaiana",
   desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella",
-  price: 5.80
+  price: 6.80
 }, {
   id: 7,
   cat: "Patatas",
   name: "Patata Kebab",
   desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla",
-  price: 5.90
+  price: 6.90
 }, {
   id: 8,
   cat: "Patatas",
   name: "Patata 4 Quesos",
   desc: "Salsa roquefort, emmental, gouda y mozzarella",
-  price: 5.90
+  price: 6.90
 }, {
   id: 9,
   cat: "Patatas",
   name: "Patata Completa",
   desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón",
-  price: 6.20
+  price: 7.20
 }, {
   id: 10,
   cat: "Patatas",
   name: "Patata Carnívora",
   desc: "Alioli, york, bacon, kebab y carne picada",
-  price: 6.40
+  price: 7.40
 }, {
   id: 11,
   cat: "Patatas",
@@ -1836,19 +1836,19 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Ranchera",
   desc: "Salsa ranchera, pollo, bacon y queso mozzarella",
-  price: 6.50
+  price: 7.50
 }, {
   id: 13,
   cat: "Patatas",
   name: "Patata Granollers",
   desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria",
-  price: 6.50
+  price: 7.50
 }, {
   id: 14,
   cat: "Patatas",
   name: "Patata Pulled Pork 🆕",
   desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella",
-  price: 6.50
+  price: 7.50
 }, {
   id: 50,
   cat: "Patatas",
@@ -1860,13 +1860,13 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Al Gusto",
   desc: "1 salsa a elegir y 6 ingredientes",
-  price: 6.90
+  price: 7.90
 }, {
   id: 16,
   cat: "Patatas",
   name: "Patata Bomba 🆕",
   desc: "9 ingredientes y/o salsas al gusto ¡sin límite!",
-  price: 8.40
+  price: 9.40
 },
 // ── BONIATO FRIES ──
 {
@@ -2026,13 +2026,13 @@ const MENU = [
   cat: "Bebidas",
   name: "Refresco lata",
   desc: "",
-  price: 1.10
+  price: 1.30
 }, {
   id: 42,
   cat: "Bebidas",
   name: "Cerveza lata",
   desc: "",
-  price: 1.20
+  price: 1.40
 }, {
   id: 43,
   cat: "Bebidas",
@@ -2044,37 +2044,37 @@ const MENU = [
   cat: "Bebidas",
   name: "Refresco 500 ml",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 45,
   cat: "Bebidas",
   name: "Cerveza 1 litro",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 46,
   cat: "Bebidas",
   name: "Monster o Red Bull",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 47,
   cat: "Bebidas",
   name: "Agua 1,5 litros",
   desc: "",
-  price: 1.30
+  price: 1.50
 }, {
   id: 48,
   cat: "Bebidas",
   name: "Nestea / Aquarius 1,5 l",
   desc: "",
-  price: 2.20
+  price: 2.40
 }, {
   id: 49,
   cat: "Bebidas",
   name: "Refresco 2 litros",
   desc: "",
-  price: 2.50
+  price: 2.70
 }];
 let cart = {};
 window._adminLoggedIn = false;
@@ -2365,10 +2365,13 @@ function renderCart() {
   const grandTotal = feeEnabled ? total + feeAmount : total;
   document.getElementById("cart-total").textContent = grandTotal.toFixed(2).replace('.', ',') + " €";
 
-  // Sync mobile FAB and drawer
-  _updateCartFab(totalItems, grandTotal);
-  _syncCartDrawer(cartHtml, grandTotal);
   // Only show total and form if orders are open
+  // IMPORTANTE: renderSlotPicker() debe ejecutarse ANTES de _syncCartDrawer(),
+  // porque _syncCartDrawer() (a través de _syncDrawerSlotPicker()) copia el
+  // estado visible de #slot-picker-group al drawer móvil. Si se sincroniza
+  // primero, el drawer copia el estado del render ANTERIOR (desactualizado),
+  // provocando que "Hora de recogida" no aparezca en el drawer justo tras
+  // el primer cambio de carrito (bug intermitente en móvil).
   if (getOrdersOpen()) {
     totalRowEl.style.display = "flex";
     formEl.style.display = "block";
@@ -2377,6 +2380,10 @@ function renderCart() {
     totalRowEl.style.display = "none";
     formEl.style.display = "none";
   }
+
+  // Sync mobile FAB and drawer (debe ir DESPUÉS de renderSlotPicker)
+  _updateCartFab(totalItems, grandTotal);
+  _syncCartDrawer(cartHtml, grandTotal);
 }
 
 
@@ -3983,7 +3990,7 @@ const custCart = {};
 const CUSTOMIZER_CONFIG = {
   algusto: {
     name: 'Patata Al Gusto',
-    price: 6.90,
+    price: 7.90,
     maxSauces: 1,
     maxIngredients: 6,
     maxTotal: null,
@@ -3991,7 +3998,7 @@ const CUSTOMIZER_CONFIG = {
   },
   bomba: {
     name: 'Patata Bomba 🆕',
-    price: 8.40,
+    price: 9.40,
     maxSauces: null,
     maxIngredients: null,
     maxTotal: 9,
@@ -4139,7 +4146,7 @@ function updateCustProgress() {
     if (sauceProg) sauceProg.style.display = 'none';
     document.getElementById('cust-sauce-badge').textContent = ns;
     document.getElementById('cust-ing-label').textContent = 'Total: ' + total + '/' + cfg.maxTotal + ' (salsas: ' + ns + ' · ing: ' + ni + ')';
-    document.getElementById('cust-ing-bar').style.width = pct + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pct / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill ' + cls;
     document.getElementById('cust-ing-badge').textContent = total + '/' + cfg.maxTotal;
   } else {
@@ -4148,11 +4155,11 @@ function updateCustProgress() {
     const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(ni / cfg.maxIngredients * 100));
     document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
-    document.getElementById('cust-sauce-bar').style.width = pctS + '%';
+    document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
     document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + ni + '/' + cfg.maxIngredients;
-    document.getElementById('cust-ing-bar').style.width = pctI + '%';
+    document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
     document.getElementById('cust-ing-badge').textContent = ni + '/' + cfg.maxIngredients;
   }
@@ -4301,8 +4308,7 @@ let _extrasQueso = false;
 let _extrasGratinado = false;
 let _extrasIngredientes = {}; // { name: true/false }
 
-const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
-const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos', 'Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
 function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
@@ -4328,13 +4334,6 @@ function openExtrasModal(itemId) {
   EXTRAS_ING_PRECIO1.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
     optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 \u20AC</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
-  // Ingredientes extra +0,70€
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_ING_PRECIO07.forEach(ing => {
-    const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+0,70 \u20AC</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
@@ -4412,7 +4411,7 @@ function updateExtrasTotal() {
       ing = _ref12[0],
       active = _ref12[1];
     if (!active) return;
-    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 0.70;
+    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;
   });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
 }
@@ -4476,7 +4475,7 @@ function removeExtrasItem(key) {
 function getExtrasItemPrice(c) {
   let p = c.basePrice + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
   (c.ingredientesExtra || []).forEach(ing => {
-    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 0.70;
+    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;
   });
   return p;
 }
@@ -7867,24 +7866,29 @@ function _ejecutarLoadOrdersStatus() {
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe
   checkVacationMode();
+  // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
+  // un cliente anónimo mirando la carta no tiene permiso de escritura en
+  // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
+  // generando avisos de "permission_denied" en la consola sin ningún efecto.
+  const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
       updateOpenBtn(false);
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
       localStorage.setItem(ORDERS_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
-      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
   const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
@@ -8593,9 +8597,12 @@ function scheduleSlotMidnightReset() {
     localStorage.removeItem(OPEN_KEY);
     localStorage.removeItem(ORDERS_KEY);
     localStorage.removeItem('dpf_open_manual_override');
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
-    if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    const _esAdminAutenticadoReset = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+    if (_esAdminAutenticadoReset) {
+      firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+      if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
+      if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+    }
     // También archivar el día anterior en historial
     try {
       const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8623,7 +8630,7 @@ function scheduleSlotMidnightReset() {
           modified = true;
         }
       });
-      if (modified) fichajesSave(fich);
+      if (modified && _esAdminAutenticadoReset) fichajesSave(fich);
     } catch (e) {
       console.warn('Auto-checkout error', e);
     }
