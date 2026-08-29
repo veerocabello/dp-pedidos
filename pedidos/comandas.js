@@ -1012,9 +1012,28 @@ function tapDenom(btn, v) {
   if (!badge) {
     badge = document.createElement('span');
     badge.className = 'denom-count';
+    badge.title = 'Tocar para quitar uno';
+    // El contador tiene su propio onclick (con stopPropagation) para poder
+    // quitar UNA unidad sin afectar al resto ni tener que pulsar "Limpiar"
+    // y volver a marcar todo desde cero.
+    badge.onclick = (e) => { e.stopPropagation(); untapDenom(btn, v); };
     btn.appendChild(badge);
   }
   badge.textContent = '×' + n;
+  updateChange(parseCashNum(keypadBuffer));
+}
+function untapDenom(btn, v) {
+  const n = (parseInt(btn.dataset.count, 10) || 0) - 1;
+  const badge = btn.querySelector('.denom-count');
+  if (n <= 0) {
+    btn.dataset.count = '0';
+    btn.classList.remove('tapped');
+    if (badge) badge.remove();
+  } else {
+    btn.dataset.count = n;
+    if (badge) badge.textContent = '×' + n;
+  }
+  cashEntregado = Math.max(0, cashEntregado - v);
   updateChange(parseCashNum(keypadBuffer));
 }
 
