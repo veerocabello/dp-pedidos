@@ -1,6 +1,6 @@
 {
   "name": "dulce-patata-comandas",
-  "version": "1.44.0",
+  "version": "1.45.0",
   "description": "Comandas Dulce Patata Food — app de mostrador, funciona sin conexión",
   "author": "Dulce Patata Food",
   "private": true,
@@ -21,7 +21,13 @@
     "files": [
       "main.js",
       "preload.js",
-      "comandas/**/*"
+      "comandas/**/*",
+      "node_modules/usb/**/*",
+      "node_modules/@node-usb/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/usb/**/*",
+      "node_modules/@node-usb/**/*"
     ],
     "extraResources": [
       {
@@ -63,6 +69,9 @@
       "identity": null,
       "category": "public.app-category.business"
     }
+  },
+  "dependencies": {
+    "usb": "3.1.0"
   },
   "devDependencies": {
     "electron": "^31.0.0",

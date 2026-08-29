@@ -14,6 +14,70 @@ const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
 
+/* ── Impresión USB directa en macOS/Linux, sin pasar por CUPS.
+   ("usb" — https://github.com/node-usb/node-usb-rs — es un binding nativo
+   N-API, no pasa por Chromium ni por su bloqueo de WebUSB a dispositivos de
+   "clase protegida" como las impresoras; ni por CUPS, que es justo lo que
+   se quedaba colgado en la tienda con esta impresora tras desenchufar y
+   volver a enchufar el USB.) Se importa de forma perezosa y protegida:
+   en Windows no hace falta (ya hay un camino que funciona con
+   PowerShell+WinSpool) y, si el módulo no estuviera disponible por lo que
+   sea, esto no debe tirar abajo toda la app al arrancar. ── */
+function findPrinterClassInterface(device) {
+  if (!device.configuration) return null;
+  const iface = device.configuration.interfaces.find(i => i.alternates.some(a => a.interfaceClass === 7))
+    || device.configuration.interfaces[0];
+  if (!iface) return null;
+  const alt = iface.alternates.find(a => a.endpoints.some(e => e.direction === 'out')) || iface.alternates[0];
+  const ep = (alt.endpoints || []).find(e => e.direction === 'out');
+  return ep ? { iface, ep } : null;
+}
+async function tryNativeUsbPrint(bytesBase64) {
+  let usbMod;
+  try { usbMod = require('usb'); }
+  catch (e) { return { success: false, reason: 'módulo USB no disponible: ' + e.message.split('\n')[0] }; }
+
+  const bytes = Buffer.from(bytesBase64, 'base64');
+  let device;
+  try {
+    const devices = await usbMod.usb.getDevices();
+    if (!devices.length) return { success: false, reason: 'no se ha detectado ninguna impresora por USB' };
+    // Igual que en la página (ver pickPrinterDevice en comandas.js): se
+    // prefiere un dispositivo con interfaz de clase "impresora" (7); si no
+    // hay ninguno claro, se prueba con el primero de la lista.
+    device = devices.find(d => {
+      try { return (d.configurations || []).some(cfg => (cfg.interfaces || []).some(i => (i.alternates || []).some(a => a.interfaceClass === 7))); }
+      catch (e) { return false; }
+    }) || devices[0];
+  } catch (e) {
+    return { success: false, reason: 'no se pudo listar dispositivos USB: ' + e.message };
+  }
+
+  let claimed = null;
+  try {
+    await device.open();
+    if (!device.configuration) await device.selectConfiguration(1);
+    const found = findPrinterClassInterface(device);
+    if (!found) { await device.close(); return { success: false, reason: 'la impresora no tiene una interfaz USB compatible' }; }
+    // No pasa nada si esto falla (p.ej. en macOS, donde no está soportado
+    // desconectar el driver del sistema por software) — se sigue intentando
+    // reclamar la interfaz igualmente.
+    try { await device.detachKernelDriver(found.iface.interfaceNumber); } catch (e) { /* no crítico */ }
+    await device.claimInterface(found.iface.interfaceNumber);
+    claimed = { device, interfaceNumber: found.iface.interfaceNumber };
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout enviando a la impresora por USB')), 8000));
+    await Promise.race([device.transferOut(found.ep.endpointNumber, bytes), timeout]);
+    return { success: true, reason: 'impreso por USB directo' };
+  } catch (e) {
+    return { success: false, reason: e.message };
+  } finally {
+    if (claimed) {
+      try { await claimed.device.releaseInterface(claimed.interfaceNumber); } catch (e) { /* no crítico */ }
+    }
+    try { await device.close(); } catch (e) { /* no crítico */ }
+  }
+}
+
 /* ── Ajustes propios de la app de escritorio (arranque automático, modo
    kiosco, carpeta de actualizaciones) — separados de los ajustes del
    ticket/impresora, que ya vivían en localStorage dentro de la propia
@@ -317,25 +381,34 @@ if (!gotLock) {
             );
           });
         } else {
-          // macOS/Linux: no hay PowerShell ni WinSpool, pero CUPS (el sistema
-          // de impresión que trae macOS de serie) tiene el mismo concepto de
-          // trabajo "RAW" — con "-o raw" manda los bytes ESC/POS tal cual al
-          // puerto de la impresora, sin que CUPS los intente reinterpretar
-          // como un documento normal (que es justo lo que hacía fallar
-          // print:silent). La impresora tiene que estar dada de alta en
-          // Ajustes del Sistema → Impresoras y escáneres para que "lp" la
-          // encuentre por su nombre.
-          result = await new Promise((resolve) => {
-            execFile(
-              'lp',
-              ['-d', printerName, '-o', 'raw', tmpFile],
-              { timeout: 10000 },
-              (error, stdout, stderr) => {
-                if (error) resolve({ success: false, reason: (stderr || error.message || '').trim().slice(0, 300) });
-                else resolve({ success: true, reason: stdout.trim() });
-              }
-            );
-          });
+          // macOS/Linux: se prueba primero USB directo (ver tryNativeUsbPrint
+          // más abajo) — en la tienda, la cola de CUPS se quedaba "esperando
+          // a que la impresora esté disponible" para siempre después de
+          // desenchufar/enchufar el USB (macOS no reengancha la cola sola),
+          // así que los tickets nunca llegaban a salir por ese camino aunque
+          // el trabajo se mandara bien. Yendo directo al USB (como hacen los
+          // programas de TPV de verdad) nos saltamos esa cola por completo.
+          const usbResult = await tryNativeUsbPrint(bytesBase64);
+          if (usbResult.success) {
+            result = usbResult;
+          } else {
+            // Si el USB directo falla (o la interfaz ya está reclamada por
+            // macOS porque la impresora sigue dada de alta como impresora
+            // del sistema), se cae a CUPS "lp -o raw" como hasta ahora — con
+            // "-o raw" manda los bytes ESC/POS tal cual, sin que CUPS los
+            // intente reinterpretar como un documento normal.
+            result = await new Promise((resolve) => {
+              execFile(
+                'lp',
+                ['-d', printerName, '-o', 'raw', tmpFile],
+                { timeout: 10000 },
+                (error, stdout, stderr) => {
+                  if (error) resolve({ success: false, reason: 'USB directo: ' + usbResult.reason + ' · CUPS: ' + (stderr || error.message || '').trim().slice(0, 200) });
+                  else resolve({ success: true, reason: stdout.trim() });
+                }
+              );
+            });
+          }
         }
         try { fs.unlinkSync(tmpFile); } catch (e) { /* no crítico */ }
         return result;
