@@ -1254,13 +1254,53 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .historial-item button:hover { background: var(--amber); color: #fff; }
 .historial-empty { text-align: center; color: var(--muted); padding: 26px; font-size: 13px; }
 
-.historial-unpaid-list { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
-.historial-unpaid-chip {
-  background: #FBE7E4; border: 1.5px solid rgba(192,57,43,.4); color: var(--error);
-  border-radius: 999px; padding: 7px 13px; font-weight: 700; font-size: 12.5px;
-  cursor: pointer; transition: background .15s, color .15s;
+/* ── Pedidos no pagados: recogidos dentro de un botón desplegable (antes
+     una fila de chips siempre a la vista) para no ocupar sitio cuando no
+     hace falta consultarlo. ── */
+.unpaid-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #FBE7E4; border: 1.5px solid rgba(192,57,43,.35); border-radius: var(--radius-sm);
+  padding: 12px 14px; cursor: pointer; margin-bottom: 14px;
+  font-family: var(--font-head); color: var(--error); transition: background .15s, border-color .15s;
 }
-.historial-unpaid-chip:hover { background: var(--error); color: #fff; border-color: var(--error); }
+.unpaid-toggle:hover { background: #F8D9D4; }
+.unpaid-toggle-left { display: flex; align-items: center; gap: 9px; }
+.unpaid-toggle-count {
+  background: var(--error); color: #fff; min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 999px; font-size: 12.5px; font-weight: 700; display: flex; align-items: center;
+  justify-content: center; font-family: var(--font-body);
+}
+.unpaid-toggle-label { font-weight: 700; font-size: 14px; letter-spacing: .2px; }
+.unpaid-toggle-sum { font-size: 12px; color: var(--error); opacity: .85; font-family: var(--font-body); font-weight: 500; }
+.unpaid-toggle-chevron { font-size: 12px; transition: transform .2s; flex-shrink: 0; }
+.unpaid-toggle.open .unpaid-toggle-chevron { transform: rotate(180deg); }
+
+.unpaid-panel {
+  display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease;
+  margin: -8px 0 14px;
+}
+.unpaid-panel.open { grid-template-rows: 1fr; }
+.unpaid-panel-inner { overflow: hidden; }
+.unpaid-list { display: flex; flex-direction: column; gap: 7px; padding-top: 2px; padding-bottom: 4px; }
+.unpaid-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: 10px 12px; cursor: pointer; text-align: left; width: 100%;
+  font-family: var(--font-body); transition: background .15s, border-color .15s, transform .06s;
+}
+.unpaid-row:hover { background: var(--amber-light); border-color: var(--amber); }
+.unpaid-row:active { transform: scale(.99); }
+.unpaid-row-num { font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--brown); }
+.unpaid-row-name { font-size: 12.5px; color: var(--muted); }
+.unpaid-row-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.unpaid-row-price {
+  font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--error);
+  font-variant-numeric: tabular-nums;
+}
+.unpaid-row-go {
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--brown);
+  padding: 5px 9px; border-radius: 999px; white-space: nowrap;
+}
 
 /* ── Gestionar carta ── */
 .carta-admin-row {

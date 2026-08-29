@@ -387,8 +387,22 @@
       </div>
     </div>
     <div id="historial-unpaid-section" style="display:none">
-      <div class="section-label" style="color:var(--error);margin-top:0">⚠️ Pedidos no pagados</div>
-      <div id="historial-unpaid-list" class="historial-unpaid-list"></div>
+      <button type="button" class="unpaid-toggle" id="historial-unpaid-toggle" onclick="toggleHistorialUnpaid()">
+        <div class="unpaid-toggle-left">
+          <span>⚠️</span>
+          <span class="unpaid-toggle-label">Pedidos no pagados</span>
+          <span class="unpaid-toggle-count" id="historial-unpaid-count"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="unpaid-toggle-sum" id="historial-unpaid-sum"></span>
+          <span class="unpaid-toggle-chevron">▾</span>
+        </div>
+      </button>
+      <div class="unpaid-panel" id="historial-unpaid-panel">
+        <div class="unpaid-panel-inner">
+          <div id="historial-unpaid-list" class="unpaid-list"></div>
+        </div>
+      </div>
     </div>
     <div id="historial-list"></div>
   </div>

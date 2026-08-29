@@ -2259,10 +2259,16 @@ function openHistorial() {
   if (fechaInput) fechaInput.value = historialFechaSel;
   const buscarInput = document.getElementById('historial-search');
   if (buscarInput) buscarInput.value = '';
+  document.getElementById('historial-unpaid-panel').classList.remove('open');
+  document.getElementById('historial-unpaid-toggle').classList.remove('open');
   renderHistorial();
   document.getElementById('historial-modal').classList.add('open');
 }
 function closeHistorial() { document.getElementById('historial-modal').classList.remove('open'); }
+function toggleHistorialUnpaid() {
+  document.getElementById('historial-unpaid-panel').classList.toggle('open');
+  document.getElementById('historial-unpaid-toggle').classList.toggle('open');
+}
 function setHistorialFecha(fecha) { historialFechaSel = fecha || todayISO(); renderHistorial(); }
 function setHistorialBusqueda(v) { historialBusqueda = v || ''; renderHistorial(); }
 function renderHistorial() {
@@ -2277,15 +2283,28 @@ function renderHistorial() {
 
   // Pedidos por teléfono que se cobran cuando vienen a recogerlos: un
   // acceso directo con solo los que faltan por pagar de hoy, para no tener
-  // que buscarlos entre todos los pedidos ya cobrados.
+  // que buscarlos entre todos los pedidos ya cobrados. Recogido dentro de
+  // un botón desplegable (en vez de una fila de chips siempre a la vista)
+  // para no ocupar sitio cuando no hace falta consultarlo.
   const unpaidSection = document.getElementById('historial-unpaid-section');
   const unpaidList = list.map((o, i) => [o, i]).filter(([o]) => !o.paid);
   if (unpaidSection) {
     if (esHoy && unpaidList.length > 0) {
       unpaidSection.style.display = 'block';
-      document.getElementById('historial-unpaid-list').innerHTML = unpaidList.map(([o, i]) =>
-        `<button class="historial-unpaid-chip" onclick="payHistorialOrder(${i})">${escapeHtml(o.num)}${o.name ? ' · ' + escapeHtml(o.name) : ''} · ${fmt(o.total)} €</button>`
-      ).join('');
+      document.getElementById('historial-unpaid-count').textContent = unpaidList.length;
+      document.getElementById('historial-unpaid-sum').textContent = fmt(unpaidList.reduce((s, [o]) => s + o.total, 0)) + ' € pendientes';
+      document.getElementById('historial-unpaid-list').innerHTML = unpaidList.map(([o, i]) => `
+        <button class="unpaid-row" onclick="payHistorialOrder(${i})">
+          <div>
+            <span class="unpaid-row-num">${escapeHtml(o.num)}</span>
+            ${o.name ? `<span class="unpaid-row-name"> · ${escapeHtml(o.name)}</span>` : ''}
+          </div>
+          <div class="unpaid-row-right">
+            <span class="unpaid-row-price">${fmt(o.total)} €</span>
+            <span class="unpaid-row-go">Cobrar →</span>
+          </div>
+        </button>
+      `).join('');
     } else {
       unpaidSection.style.display = 'none';
     }
