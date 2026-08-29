@@ -702,10 +702,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cart-total-row span:last-child { font-variant-numeric: tabular-nums; color: var(--gold); }
 
-.paid-toggle-row { display: flex; gap: 6px; margin-top: 6px; }
+/* ── Todo lo de Cobrar de aquí en adelante se dimensiona con clamp()
+     ligado a vh: al achicarse la ventana, TODO se encoge en proporción
+     (en vez de tallas fijas que a partir de cierta altura obligaban a
+     hacer scroll) — así cabe siempre entero, sea cual sea la pantalla. ── */
+.paid-toggle-row { display: flex; gap: 6px; margin-top: clamp(4px, 0.9vh, 6px); }
 .paid-toggle-btn {
   flex: 1;
-  padding: 9px 6px;
+  padding: clamp(6px, 1.1vh, 9px) 6px;
   border: 1.5px solid var(--warm);
   border-radius: var(--radius-xs);
   background: var(--white);
@@ -721,10 +725,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .paid-toggle-btn.paid-toggle-no.active { background: var(--error); border-color: var(--error); color: #fff; }
 .paid-toggle-btn.paid-toggle-yes.active { background: #2e8b57; border-color: #2e8b57; color: #fff; }
 
-.payment-method-row { display: flex; gap: 6px; margin-top: 6px; }
+.payment-method-row { display: flex; gap: 6px; margin-top: clamp(4px, 0.9vh, 6px); }
 .payment-method-btn {
   flex: 1;
-  padding: 8px 6px;
+  padding: clamp(5px, 1vh, 8px) 6px;
   border: 1.5px solid var(--warm);
   border-radius: var(--radius-xs);
   background: var(--white);
@@ -738,84 +742,103 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .payment-method-btn:hover { border-color: var(--brown); }
 .payment-method-btn.active { background: var(--brown); border-color: var(--brown); color: #fff; }
 
-/* ── Calculadora de cambio (pago en efectivo) ── */
-.cash-calc {
-  margin-top: 8px;
-  background: var(--amber-light);
-  border: 1.5px solid rgba(224,129,42,.4);
+/* ── Calculadora de cambio (pago en efectivo), estilo uniCenta:
+     Total/Entregado/Cambio en una sola casilla arriba, y billetes/monedas
+     a un lado con teclado numérico al otro. ── */
+.summary-card {
+  margin-top: clamp(6px, 1vh, 8px);
+  background: var(--white);
+  border: 1.5px solid var(--warm);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-.cash-calc-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
+.summary-row { text-align: center; padding: clamp(5px, 1vh, 8px) 16px; }
+.summary-row + .summary-row { border-top: 1px dashed var(--warm); }
+.summary-row .lbl { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.summary-row .num { font-family: var(--font-head); font-size: clamp(16px, 2.4vh, 21px); font-weight: 700; color: var(--brown); font-variant-numeric: tabular-nums; }
+.summary-row.cambio { padding: clamp(7px, 1.3vh, 10px) 16px; background: var(--amber-light); transition: background .15s; }
+.summary-row.cambio .num { font-size: clamp(19px, 3vh, 25px); }
+.summary-row.cambio.ok { background: var(--success-light, #E3F3E9); }
+.summary-row.cambio.ok .lbl, .summary-row.cambio.ok .num { color: var(--success); }
+.summary-row.cambio.short { background: #FBE7E4; }
+.summary-row.cambio.short .lbl, .summary-row.cambio.short .num { color: var(--error); }
+
+.calc-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: clamp(10px, 1.8vh, 16px); margin-top: clamp(6px, 1vh, 10px); }
+
+.denom-col { display: flex; flex-direction: column; }
+.denom-sep {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin: clamp(3px, 0.6vh, 6px) 0 clamp(2px, 0.4vh, 4px) 2px;
+}
+.denom-sep:first-child { margin-top: 0; }
+.denom-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(4px, 0.9vh, 7px); }
+.denom-btn {
+  position: relative;
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: clamp(5px, 1vh, 10px) 4px; font-family: var(--font-head); font-weight: 700; font-size: clamp(12px, 1.8vh, 15px); color: var(--brown);
+  cursor: pointer; transition: background .1s, border-color .1s, transform .06s;
+}
+.denom-btn:hover { background: var(--amber-light); border-color: var(--amber); }
+.denom-btn:active { transform: scale(.93); }
+.denom-btn.tapped { background: var(--amber); border-color: var(--amber-dark); color: #fff; }
+.denom-count {
+  /* Dentro del propio botón (no asomando por fuera, que se solapaba con
+     el botón de al lado en la rejilla y hacía casi imposible acertar al
+     tocarlo) y con hueco de sobra para el dedo. */
+  position: absolute; top: 2px; right: 2px; min-width: 24px; height: 24px; padding: 0 5px;
+  background: var(--brown); color: var(--gold); border-radius: 999px;
+  font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35), 0 0 0 2px var(--white);
   cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--brown);
-  text-transform: uppercase;
-  letter-spacing: .5px;
-  list-style: none;
-  user-select: none;
+  z-index: 1;
 }
-.cash-calc-summary::-webkit-details-marker { display: none; }
-.cash-calc-summary::after {
-  content: '▾';
-  font-size: 13px;
-  color: var(--amber-dark);
-  transition: transform .15s;
+.denom-count:hover { background: var(--error); color: #fff; transform: scale(1.1); }
+.denom-count:active { transform: scale(.9); }
+
+.keypad-col { display: flex; flex-direction: column; gap: clamp(4px, 0.8vh, 6px); }
+.keypad-display {
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: clamp(4px, 0.8vh, 7px) 14px; text-align: right; font-family: var(--font-head); font-weight: 700; font-size: clamp(15px, 2.2vh, 20px);
+  color: var(--brown); font-variant-numeric: tabular-nums;
 }
-.cash-calc[open] .cash-calc-summary::after { transform: rotate(180deg); }
-.cash-calc-body { padding: 0 12px 10px; }
-.cash-clear-btn {
-  background: none; border: none; color: var(--muted);
-  font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: underline;
-  text-transform: none; letter-spacing: normal; flex-shrink: 0;
+.keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: clamp(4px, 0.8vh, 6px); flex: 1; }
+.keypad-btn {
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  font-family: var(--font-head); font-weight: 700; font-size: clamp(14px, 2.2vh, 20px); color: var(--brown);
+  cursor: pointer; transition: background .1s, transform .06s; padding: clamp(4px, 0.9vh, 9px) 0;
 }
-.cash-clear-btn:hover { color: var(--error); }
-.cash-calc-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
-.cash-calc-row:last-of-type { margin-bottom: 0; }
-.cash-calc-total-row { align-items: center; }
+.keypad-btn:hover { background: var(--amber-light); border-color: var(--amber); }
+.keypad-btn:active { transform: scale(.93); }
+.keypad-btn.ce { color: var(--error); border-color: rgba(192,57,43,.35); }
+.keypad-btn.ce:hover { background: var(--error); color: #fff; border-color: var(--error); }
+.keypad-equals {
+  background: var(--brown); color: var(--cream); border: none; border-radius: var(--radius-xs);
+  font-family: var(--font-head); font-weight: 700; font-size: clamp(14px, 2vh, 19px); padding: clamp(6px, 1.1vh, 12px) 0; cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.keypad-equals:hover { background: var(--amber-dark); }
+.keypad-equals:active { transform: scale(.97); }
+
+/* El modal de Cobrar es el único con tanto contenido apilado, así que
+   encoge también su propio padding y el botón de abajo (sin tocar las
+   reglas genéricas .modal-box/.btn-print que usan el resto de modales). */
+#cobrar-modal .modal-box { padding: clamp(14px, 2.5vh, 26px); }
+#cobrar-modal .btn-print { padding: clamp(9px, 1.6vh, 15px); font-size: clamp(13px, 2vh, 16px); }
+
+.clear-link { display: block; text-align: center; margin: clamp(4px, 0.8vh, 8px) 0 0; }
+.clear-link button {
+  background: none; border: none; color: var(--error); font-size: 12.5px; font-weight: 700; cursor: pointer;
+  text-decoration: underline; padding: 2px 4px;
+}
+
+/* ── Fila "etiqueta + valor en negrita" reutilizada en resúmenes (Caja) ── */
+.cash-calc-total-row { display: flex; align-items: center; }
 .cash-calc-total-row label {
   font-size: 11.5px; font-weight: 700; color: var(--brown);
   text-transform: uppercase; letter-spacing: .4px; flex-shrink: 0;
 }
-#cash-total {
-  flex: 1; min-width: 80px; padding: 5px 8px;
-  border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
-  font-size: 13px; font-weight: 700; font-family: var(--font-body);
-  background: var(--white); color: var(--text); text-align: right;
-}
-.cash-quick-btn {
-  background: var(--white);
-  border: 1.5px solid var(--warm);
-  border-radius: var(--radius-xs);
-  padding: 5px 8px;
-  font-weight: 700;
-  font-size: 12.5px;
-  color: var(--brown);
-  cursor: pointer;
-  transition: all .15s;
-}
-.cash-quick-btn:hover { background: var(--brown); color: var(--cream); border-color: var(--brown); }
-.cash-quick-btn:active { transform: scale(.95); }
-.cash-quick-btn-coin { padding: 4px 7px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
-.cash-quick-btn-coin:hover { background: var(--amber-dark); color: #fff; border-color: var(--amber-dark); }
-#cash-received {
-  flex: 1;
-  min-width: 90px;
-  padding: 5px 8px;
-  border: 1.5px solid var(--warm);
-  border-radius: var(--radius-xs);
-  font-size: 14px;
-  font-weight: 700;
-  font-family: var(--font-body);
-  background: var(--white);
-  color: var(--text);
-  text-align: right;
-}
+
+/* ── Teclado numérico táctil reutilizado en Descuento y Hora de recogida ── */
 .cash-keypad { margin-top: 6px; }
 .cash-keypad-display {
   background: var(--white);
@@ -867,22 +890,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cash-keypad-equals:hover { background: var(--amber-dark); }
 .cash-keypad-equals:active { transform: scale(.97); }
-
-.cash-change-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed rgba(138,106,78,.35);
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 17px;
-  color: var(--brown);
-}
-.cash-change-row span:last-child { font-variant-numeric: tabular-nums; }
-.cash-change-row.short span:last-child { color: var(--error); }
-.cash-change-row.ok span:last-child { color: var(--success); }
 
 .btn-cobrar {
   width: 100%;
@@ -1246,6 +1253,54 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .historial-item button:hover { background: var(--amber); color: #fff; }
 .historial-empty { text-align: center; color: var(--muted); padding: 26px; font-size: 13px; }
+
+/* ── Pedidos no pagados: recogidos dentro de un botón desplegable (antes
+     una fila de chips siempre a la vista) para no ocupar sitio cuando no
+     hace falta consultarlo. ── */
+.unpaid-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #FBE7E4; border: 1.5px solid rgba(192,57,43,.35); border-radius: var(--radius-sm);
+  padding: 12px 14px; cursor: pointer; margin-bottom: 14px;
+  font-family: var(--font-head); color: var(--error); transition: background .15s, border-color .15s;
+}
+.unpaid-toggle:hover { background: #F8D9D4; }
+.unpaid-toggle-left { display: flex; align-items: center; gap: 9px; }
+.unpaid-toggle-count {
+  background: var(--error); color: #fff; min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 999px; font-size: 12.5px; font-weight: 700; display: flex; align-items: center;
+  justify-content: center; font-family: var(--font-body);
+}
+.unpaid-toggle-label { font-weight: 700; font-size: 14px; letter-spacing: .2px; }
+.unpaid-toggle-sum { font-size: 12px; color: var(--error); opacity: .85; font-family: var(--font-body); font-weight: 500; }
+.unpaid-toggle-chevron { font-size: 12px; transition: transform .2s; flex-shrink: 0; }
+.unpaid-toggle.open .unpaid-toggle-chevron { transform: rotate(180deg); }
+
+.unpaid-panel {
+  display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease;
+  margin: -8px 0 14px;
+}
+.unpaid-panel.open { grid-template-rows: 1fr; }
+.unpaid-panel-inner { overflow: hidden; }
+.unpaid-list { display: flex; flex-direction: column; gap: 7px; padding-top: 2px; padding-bottom: 4px; }
+.unpaid-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: 10px 12px; cursor: pointer; text-align: left; width: 100%;
+  font-family: var(--font-body); transition: background .15s, border-color .15s, transform .06s;
+}
+.unpaid-row:hover { background: var(--amber-light); border-color: var(--amber); }
+.unpaid-row:active { transform: scale(.99); }
+.unpaid-row-num { font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--brown); }
+.unpaid-row-name { font-size: 12.5px; color: var(--muted); }
+.unpaid-row-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.unpaid-row-price {
+  font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--error);
+  font-variant-numeric: tabular-nums;
+}
+.unpaid-row-go {
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--brown);
+  padding: 5px 9px; border-radius: 999px; white-space: nowrap;
+}
 
 /* ── Gestionar carta ── */
 .carta-admin-row {

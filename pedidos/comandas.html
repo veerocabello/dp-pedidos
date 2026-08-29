@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
-<link rel="stylesheet" href="comandas.css?v=1787960049253">
+<link rel="stylesheet" href="comandas.css?v=1788025357368">
 </head>
 <body>
 
@@ -56,9 +56,8 @@
     <div class="cart-total-row" id="cart-total-row" style="display:none">
       <span>Total</span><span id="cart-total">0,00 €</span>
     </div>
-    <button type="button" class="btn-cobrar" id="btn-cobrar" style="display:none" onclick="openCobrarModal()">💰 COBRAR</button>
+    <button type="button" class="btn-cobrar" id="btn-cobrar" onclick="openCobrarModal()">💰 COBRAR</button>
     <button class="btn-secondary" style="width:100%;margin-top:10px" onclick="previewTicket()">👁️ Ver ticket completo</button>
-    <button class="btn-print" id="print-btn" style="display:none" onclick="handlePrintOrder()">🖨️ Imprimir ticket</button>
   </aside>
 </div>
 
@@ -67,12 +66,9 @@
      quedaba corta y no dejaba ver el teclado por mucho que se
      deslizara). ── -->
 <div id="cobrar-modal" class="modal-overlay" onclick="if(event.target===this)closeCobrarModal()">
-  <div class="modal-box" style="max-width:420px">
+  <div class="modal-box" style="max-width:660px">
     <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
-    <div class="cash-calc-row cash-calc-total-row" style="margin-bottom:10px">
-      <label style="flex:1">Total del pedido</label><b id="cobrar-modal-total">0,00 €</b>
-    </div>
     <div class="paid-toggle-row" id="paid-toggle-row">
       <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
       <button type="button" class="paid-toggle-btn paid-toggle-yes" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ PAGADO</button>
@@ -81,52 +77,58 @@
       <button type="button" class="payment-method-btn active" id="pay-method-cash" onclick="setPaymentMethod('efectivo')">💵 Efectivo</button>
       <button type="button" class="payment-method-btn" id="pay-method-card" onclick="setPaymentMethod('tarjeta')">💳 Tarjeta</button>
     </div>
-    <div class="cash-calc-body">
-      <div class="cash-calc-row cash-calc-total-row">
-        <label for="cash-total">Total a cobrar</label>
-        <input id="cash-total" type="tel" inputmode="decimal" placeholder="0,00" oninput="cashTotalEdited=true;updateChange()">
-        <button class="cash-clear-btn" onclick="clearCashReceived()">✕ Limpiar</button>
-      </div>
-      <div class="cash-calc-row">
-        <button class="cash-quick-btn" onclick="addCashAmount(5)">+5€</button>
-        <button class="cash-quick-btn" onclick="addCashAmount(10)">+10€</button>
-        <button class="cash-quick-btn" onclick="addCashAmount(20)">+20€</button>
-        <button class="cash-quick-btn" onclick="addCashAmount(50)">+50€</button>
-        <input id="cash-received" type="tel" inputmode="decimal" placeholder="Paga con" oninput="keypadBuffer='';updateKeypadDisplay();updateChange()">
-      </div>
-      <div class="cash-calc-row">
-        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.05)">+0,05€</button>
-        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.10)">+0,10€</button>
-        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.20)">+0,20€</button>
-        <button class="cash-quick-btn cash-quick-btn-coin" onclick="addCashAmount(0.50)">+0,50€</button>
-      </div>
-      <!-- Teclado numérico táctil (igual que el "Pagos" de uniCenta) — en
-           una pantalla táctil de mostrador no hay teclado físico para
-           escribir un importe exacto en "Paga con"; con esto se escribe
-           tocando, y "=" lo suma a lo ya entregado. -->
-      <div class="cash-keypad">
-        <div class="cash-keypad-display" id="cash-keypad-display">0</div>
-        <div class="cash-keypad-grid">
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('1')">1</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('2')">2</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('3')">3</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('4')">4</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('5')">5</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('6')">6</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('7')">7</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('8')">8</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('9')">9</button>
-          <button type="button" class="cash-keypad-btn cash-keypad-ce" onclick="keypadClear()">CE</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit('0')">0</button>
-          <button type="button" class="cash-keypad-btn" onclick="keypadDigit(',')">,</button>
+    <!-- Calculadora de cambio al estilo uniCenta: Total/Entregado/Cambio
+         en una sola casilla arriba, siempre visibles, y billetes/monedas
+         a un lado con teclado numérico al otro. Tocar un billete/moneda
+         suma al momento; escribir con el teclado se ve en vivo aunque no
+         se pulse "=" (solo hace falta "=" para sumarlo de verdad). -->
+    <div class="summary-card">
+      <div class="summary-row"><div class="lbl">Total</div><div class="num" id="cobrar-modal-total">0,00 €</div></div>
+      <div class="summary-row"><div class="lbl">Entregado</div><div class="num" id="cash-entregado">0,00 €</div></div>
+      <div class="summary-row cambio" id="cash-change-row"><div class="lbl" id="cash-change-label">Cambio a devolver</div><div class="num" id="cash-change-amount">0,00 €</div></div>
+    </div>
+    <div class="calc-columns">
+      <div class="denom-col">
+        <div class="denom-sep">Billetes</div>
+        <div class="denom-grid">
+          <button type="button" class="denom-btn" onclick="tapDenom(this,50)">50€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,20)">20€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,10)">10€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,5)">5€</button>
         </div>
-        <button type="button" class="cash-keypad-equals" onclick="keypadEquals()">=</button>
+        <div class="denom-sep">Monedas</div>
+        <div class="denom-grid">
+          <button type="button" class="denom-btn" onclick="tapDenom(this,2)">2€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,1)">1€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,0.50)">0,50€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,0.20)">0,20€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,0.10)">0,10€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,0.05)">0,05€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,0.02)">0,02€</button>
+          <button type="button" class="denom-btn" onclick="tapDenom(this,0.01)">0,01€</button>
+        </div>
       </div>
-      <div class="cash-change-row" id="cash-change-row" style="display:none">
-        <span id="cash-change-label">Cambio a devolver</span><span id="cash-change-amount">0,00 €</span>
+      <div class="keypad-col">
+        <div class="keypad-display" id="cash-keypad-display">0</div>
+        <div class="keypad-grid">
+          <button type="button" class="keypad-btn" onclick="keypadDigit('1')">1</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('2')">2</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('3')">3</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('4')">4</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('5')">5</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('6')">6</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('7')">7</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('8')">8</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('9')">9</button>
+          <button type="button" class="keypad-btn ce" onclick="keypadClear()">CE</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit('0')">0</button>
+          <button type="button" class="keypad-btn" onclick="keypadDigit(',')">,</button>
+        </div>
+        <button type="button" class="keypad-equals" onclick="keypadEquals()">=</button>
       </div>
     </div>
-    <button class="btn-secondary" style="width:100%;margin-top:14px" onclick="closeCobrarModal()">Listo</button>
+    <div class="clear-link"><button type="button" onclick="clearCashReceived()">✕ Limpiar</button></div>
+    <button class="btn-print" id="print-btn" style="width:100%;margin-top:clamp(6px,1.2vh,14px)" onclick="cobrarBottomAction()">IMPRIMIR COMANDA</button>
   </div>
 </div>
 
@@ -342,6 +344,12 @@
     <div class="settings-help">
       Los productos que añadas aquí se añaden directos a la comanda con un solo precio (sin personalización de ingredientes, como las bebidas). Usa ⬆️/⬇️ para moverlos, 👁️ para ocultarlos temporalmente si se agota algo (sin borrarlo), ✏️ para editar nombre/descripción y si se pueden quitar ingredientes, y 🗑️ para quitarlos de la carta del todo — esto último no tiene deshacer, así que revisa antes de confirmar.
     </div>
+
+    <div class="section-label">Precio de los extras</div>
+    <div class="settings-help" style="margin-top:0">
+      Precio de cada salsa o ingrediente al añadirse como "extra" — en Al Gusto, Bomba, o encima de cualquier patata normal. Cambia el número y listo, se guarda solo.
+    </div>
+    <div id="carta-extras-list"></div>
   </div>
 </div>
 
@@ -377,6 +385,24 @@
       <div class="form-group">
         <label>Buscar</label>
         <input type="text" id="historial-search" placeholder="Nombre o nº de pedido…" oninput="setHistorialBusqueda(this.value)">
+      </div>
+    </div>
+    <div id="historial-unpaid-section" style="display:none">
+      <button type="button" class="unpaid-toggle" id="historial-unpaid-toggle" onclick="toggleHistorialUnpaid()">
+        <div class="unpaid-toggle-left">
+          <span>⚠️</span>
+          <span class="unpaid-toggle-label">Pedidos no pagados</span>
+          <span class="unpaid-toggle-count" id="historial-unpaid-count"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="unpaid-toggle-sum" id="historial-unpaid-sum"></span>
+          <span class="unpaid-toggle-chevron">▾</span>
+        </div>
+      </button>
+      <div class="unpaid-panel" id="historial-unpaid-panel">
+        <div class="unpaid-panel-inner">
+          <div id="historial-unpaid-list" class="unpaid-list"></div>
+        </div>
       </div>
     </div>
     <div id="historial-list"></div>
@@ -638,6 +664,6 @@
      siempre con los últimos precios conocidos. -->
 <script src="js/firebase-auth-compat.js"></script>
 <script src="js/config.js"></script>
-<script src="comandas.js?v=1787960049253"></script>
+<script src="comandas.js?v=1788025357368"></script>
 </body>
 </html>

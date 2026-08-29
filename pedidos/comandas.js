@@ -10,19 +10,19 @@
 /* ── CARTA ── (mismos productos y precios que pedidos/src/carta.js) */
 const MENU = [
   { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla (una u otra, no las dos), sal y pimienta", price: 3.00, components: ["Aceite de oliva", "Mantequilla", "sal", "pimienta"] },
-  { id: 2, cat: "Patatas", name: "Patata Vegetal", desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural", price: 5.60 },
-  { id: 3, cat: "Patatas", name: "Patata Picante", desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas", price: 5.60 },
-  { id: 4, cat: "Patatas", name: "Patata Carbonara", desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario", price: 5.80 },
-  { id: 5, cat: "Patatas", name: "Patata Boloñesa", desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario", price: 5.80 },
-  { id: 6, cat: "Patatas", name: "Patata Hawaiana", desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella", price: 5.80 },
-  { id: 7, cat: "Patatas", name: "Patata Kebab", desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla", price: 5.90 },
-  { id: 8, cat: "Patatas", name: "Patata 4 Quesos", desc: "Salsa roquefort, emmental, gouda y mozzarella", price: 5.90 },
-  { id: 9, cat: "Patatas", name: "Patata Completa", desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón", price: 6.20 },
-  { id: 10, cat: "Patatas", name: "Patata Carnívora", desc: "Alioli, york, bacon, kebab y carne picada", price: 6.40 },
+  { id: 2, cat: "Patatas", name: "Patata Vegetal", desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural", price: 6.40 },
+  { id: 3, cat: "Patatas", name: "Patata Picante", desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas", price: 6.40 },
+  { id: 4, cat: "Patatas", name: "Patata Carbonara", desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario", price: 6.80 },
+  { id: 5, cat: "Patatas", name: "Patata Boloñesa", desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario", price: 6.80 },
+  { id: 6, cat: "Patatas", name: "Patata Hawaiana", desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella", price: 6.80 },
+  { id: 7, cat: "Patatas", name: "Patata Kebab", desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla", price: 6.90 },
+  { id: 8, cat: "Patatas", name: "Patata 4 Quesos", desc: "Salsa roquefort, emmental, gouda y mozzarella", price: 6.90 },
+  { id: 9, cat: "Patatas", name: "Patata Completa", desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón", price: 7.20 },
+  { id: 10, cat: "Patatas", name: "Patata Carnívora", desc: "Alioli, york, bacon, kebab y carne picada", price: 7.40 },
   { id: 11, cat: "Patatas", name: "Patata Philadelphia", desc: "Salsa philadelphia, york, huevo, pollo, queso mozzarella", price: 6.40 },
-  { id: 12, cat: "Patatas", name: "Patata Ranchera", desc: "Salsa ranchera, pollo, bacon y queso mozzarella", price: 6.50 },
-  { id: 13, cat: "Patatas", name: "Patata Granollers", desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria", price: 6.50 },
-  { id: 14, cat: "Patatas", name: "Patata Pulled Pork", desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella", price: 6.50, nuevo: true },
+  { id: 12, cat: "Patatas", name: "Patata Ranchera", desc: "Salsa ranchera, pollo, bacon y queso mozzarella", price: 7.50 },
+  { id: 13, cat: "Patatas", name: "Patata Granollers", desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria", price: 7.50 },
+  { id: 14, cat: "Patatas", name: "Patata Pulled Pork", desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella", price: 7.50, nuevo: true },
   { id: 50, cat: "Patatas", name: "Patata Cheddar-Bacon", desc: "Salsa queso cheddar, carne a elegir, caramelo de bacon y queso mozzarella gratinado", price: 8.50, nuevo: true },
   { id: 15, cat: "Patatas", name: "Patata Al Gusto", desc: "1 salsa a elegir y 6 ingredientes", price: 7.90 },
   { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 9.40, nuevo: true },
@@ -56,15 +56,15 @@ const MENU = [
   { id: 39, cat: "Tartas", name: "Tarta de Queso Dinosaurio", desc: "Especial · elaboración propia", price: 3.90 },
   { id: 40, cat: "Tartas", name: "Tarta de Queso Kinder", desc: "Especial · elaboración propia", price: 3.90 },
 
-  { id: 41, cat: "Bebidas", name: "Refresco lata", desc: "", price: 1.10 },
-  { id: 42, cat: "Bebidas", name: "Cerveza lata", desc: "", price: 1.20 },
+  { id: 41, cat: "Bebidas", name: "Refresco lata", desc: "", price: 1.30 },
+  { id: 42, cat: "Bebidas", name: "Cerveza lata", desc: "", price: 1.40 },
   { id: 43, cat: "Bebidas", name: "Agua pequeña", desc: "", price: 0.80 },
-  { id: 44, cat: "Bebidas", name: "Refresco 500 ml", desc: "", price: 1.80 },
-  { id: 45, cat: "Bebidas", name: "Cerveza 1 litro", desc: "", price: 1.80 },
-  { id: 46, cat: "Bebidas", name: "Monster o Red Bull", desc: "", price: 1.80 },
-  { id: 47, cat: "Bebidas", name: "Agua 1,5 litros", desc: "", price: 1.30 },
-  { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.20 },
-  { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.50 },
+  { id: 44, cat: "Bebidas", name: "Refresco 500 ml", desc: "", price: 2.00 },
+  { id: 45, cat: "Bebidas", name: "Cerveza 1 litro", desc: "", price: 2.00 },
+  { id: 46, cat: "Bebidas", name: "Monster o Red Bull", desc: "", price: 2.00 },
+  { id: 47, cat: "Bebidas", name: "Agua 1,5 litros", desc: "", price: 1.50 },
+  { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.40 },
+  { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.70 },
 
   { id: 52, cat: "Extras", name: "Bolsa", desc: "Para llevar", price: 0.10 },
 ];
@@ -188,11 +188,39 @@ const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
+// Todos los ingredientes extra cuestan lo mismo (antes había dos precios
+// distintos, 1€/0,70€ según el ingrediente); estas dos listas se
+// conservan solo para agrupar/ordenar el desplegable, ya no para el precio.
 const EXTRAS_ING_PRECIO1 = ["4 Quesos", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Gambas", "Huevo", "Jamón York", "Pollo", "Queso Mozzarella", "Tronquitos de Mar"];
 const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Piña", "Remolacha", "Tomate Natural", "Zanahoria"];
-const EXTRAS_SALSA_PRECIO = 1.00;
-// Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
-function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
+const EXTRAS_ING_PRECIO = 1;
+const EXTRAS_SALSA_PRECIO = 1;
+const EXTRAS_PRECIO_ALTO = 1.20; // Philadelphia, Queso Mozzarella y 4 Quesos parten con este precio más alto
+const EXTRAS_ING_PRECIO_ALTO_DEFAULT = new Set(['Queso Mozzarella', '4 Quesos']);
+function defaultPriceOfIngExtra(name) { return EXTRAS_ING_PRECIO_ALTO_DEFAULT.has(name) ? EXTRAS_PRECIO_ALTO : EXTRAS_ING_PRECIO; }
+function defaultPriceOfSalsaExtra(name) { return name === 'Philadelphia' ? EXTRAS_PRECIO_ALTO : EXTRAS_SALSA_PRECIO; }
+// Precios de "extra" (salsas e ingredientes) editables desde 🍽️ Carta —
+// así se pueden ajustar sin tocar código. Lo de arriba son solo los
+// valores de fábrica con los que arranca cada uno la primera vez.
+const EXTRAS_PRECIOS_KEY = 'comandas_extras_precios_v1';
+function loadExtrasPrecios() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(EXTRAS_PRECIOS_KEY) || '{}'); } catch (e) { /* ignora datos corruptos */ }
+  const ing = {}, salsa = {};
+  CUST_INGREDIENTS.forEach(n => { ing[n] = (saved.ing && typeof saved.ing[n] === 'number') ? saved.ing[n] : defaultPriceOfIngExtra(n); });
+  CUST_SAUCES.forEach(n => { salsa[n] = (saved.salsa && typeof saved.salsa[n] === 'number') ? saved.salsa[n] : defaultPriceOfSalsaExtra(n); });
+  return { ing, salsa };
+}
+function saveExtraPrecio(tipo, name, value) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(EXTRAS_PRECIOS_KEY) || '{}'); } catch (e) { /* ignora datos corruptos */ }
+  if (!saved.ing) saved.ing = {};
+  if (!saved.salsa) saved.salsa = {};
+  saved[tipo][name] = value;
+  localStorage.setItem(EXTRAS_PRECIOS_KEY, JSON.stringify(saved));
+}
+function priceOfIngExtra(name) { return loadExtrasPrecios().ing[name]; }
+function priceOfSalsaExtra(name) { return loadExtrasPrecios().salsa[name]; }
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
@@ -228,6 +256,20 @@ function setOrderPaid(v) {
   document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
   document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
+  // El botón de abajo del todo de Cobrar siempre imprime — solo cambia el
+  // texto según si ya está marcado como pagado o no: "IMPRIMIR COMANDA"
+  // antes de cobrar (para la cocina) y "Imprimir ticket" una vez pagado.
+  const printBtn = document.getElementById('print-btn');
+  if (printBtn) {
+    printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'IMPRIMIR COMANDA';
+    printBtn.className = 'btn-print';
+  }
+}
+// Botón de abajo del Cobrar: cierra e imprime siempre (el estado
+// pagado/no pagado ya va grabado en el pedido, solo cambia el texto).
+function cobrarBottomAction() {
+  closeCobrarModal();
+  handlePrintOrder();
 }
 function setPaymentMethod(m) {
   paymentMethod = m;
@@ -424,7 +466,7 @@ function editSimpleItem(id) {
 // Bomba, se cobra el precio plano de esa patata en vez de sumar cada
 // extra por separado (evita cobrar de más por construir, ingrediente a
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
-function priceOfPick(p) { return p.type === 'salsa' ? precioSalsaExtra(p.name) : precioIngredienteExtra(p.name); }
+function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : priceOfIngExtra(p.name); }
 
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
@@ -459,8 +501,8 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   if (freeLeft > 0 && order) {
     order.forEach(p => { if (freeLeft > 0) freeLeft--; else core += priceOfPick(p); });
   } else {
-    (ingredientesExtra || []).forEach(i => { core += precioIngredienteExtra(i); });
-    (salsasExtra || []).forEach(s => { core += precioSalsaExtra(s); });
+    core += (ingredientesExtra || []).reduce((s, name) => s + priceOfIngExtra(name), 0);
+    core += (salsasExtra || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
   }
   return core;
 }
@@ -523,7 +565,7 @@ function getExtrasItemDetails(e) {
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(precioSalsaExtra(s)) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -542,8 +584,8 @@ function getExtrasItemTicketExtras(e) {
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : precioSalsaExtra(s), underline: true }));
-  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : precioIngredienteExtra(i), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
+  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
   return out;
@@ -855,14 +897,14 @@ function renderCart() {
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
-    document.getElementById('btn-cobrar').style.display = 'none';
-    cobrarDone = false;
-    updatePrintButtonVisibility();
+    // El botón de Cobrar se queda siempre a la vista aunque la comanda esté
+    // vacía (pedidos por teléfono que se cobran después, sin haber tocado
+    // aún el carrito).
+    document.getElementById('print-btn').disabled = true;
     syncCashTotal(0);
     clearCartDraft();
     return;
   }
-  document.getElementById('btn-cobrar').style.display = 'block';
 
   let total = 0;
   const rows = []; // { rank, html } — se ordenan por categoría antes de pintar
@@ -896,12 +938,17 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).reduce((s, n) => s + precioSalsaExtra(n), 0) + (c.extraIngredients || []).reduce((s, n) => s + precioIngredienteExtra(n), 0);
+    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
+    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '', ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(precioSalsaExtra(s)) + '€)'), ...(c.extraIngredients || []).map(n => n + ' (ingrediente extra +' + fmt(precioIngredienteExtra(n)) + '€)')].filter(Boolean).join(', ');
+    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
+      ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'),
+      ...(c.extraIngredients || []).map(n => n + ' (extra +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€)'),
+    ].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
       <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(item.name)}</button>
       <div class="cart-qty-mini">
@@ -957,8 +1004,7 @@ function renderCart() {
   totalRowEl.style.display = 'flex';
   const orderTotal = total - discountAmount;
   document.getElementById('cart-total').textContent = fmt(orderTotal) + ' €';
-  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
-  updatePrintButtonVisibility();
+  document.getElementById('print-btn').disabled = false;
   syncCashTotal(orderTotal);
   saveCartDraft();
 }
@@ -1007,53 +1053,72 @@ function restoreCartDraftIfAny() {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   CALCULADORA DE CAMBIO (pago en efectivo) — siempre visible, debajo
-   de la comanda; el total se rellena solo desde el carrito pero se
-   puede editar a mano para calcular un cobro suelto.
+   CALCULADORA DE CAMBIO (pago en efectivo) — estilo uniCenta: Total,
+   Entregado y Cambio en una sola casilla, siempre visibles; el dinero
+   entregado se suma tocando billetes/monedas o escribiéndolo con el
+   teclado numérico (con "=" para sumarlo del todo).
    ══════════════════════════════════════════════════════════════ */
-let cashTotalEdited = false;
-// El teclado táctil (type="tel") no valida el formato como type="number",
-// así que aquí se admite tanto coma como punto decimal.
 function parseCashNum(str) { return parseFloat(String(str || '').replace(',', '.')) || 0; }
+let cashOrderTotal = 0;
 function syncCashTotal(orderTotal) {
-  if (!cashTotalEdited) document.getElementById('cash-total').value = orderTotal > 0 ? orderTotal.toFixed(2) : '';
+  cashOrderTotal = orderTotal;
+  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
   updateChange();
 }
 // El "Cobrar" ya no vive encajado en la barra lateral (se quedaba corto
 // de alto y no se podía bajar más para ver el teclado) — ahora es un
 // modal a pantalla completa, con la misma calculadora de uniCenta.
 function openCobrarModal() {
-  cashTotalEdited = false;
   syncCashTotal(currentOrderTotal());
   document.getElementById('cobrar-modal').classList.add('open');
 }
-// Flujo: primero se cobra, luego se imprime — "🖨️ Imprimir ticket" está
-// oculto hasta que se pasa por "💰 COBRAR" al menos una vez para esta
-// comanda (renderCart() lo vuelve a ocultar en cuanto el carrito se vacía,
-// así que la siguiente comanda vuelve a pedir cobrar antes de imprimir).
-let cobrarDone = false;
-function updatePrintButtonVisibility() {
-  document.getElementById('print-btn').style.display = cobrarDone ? 'block' : 'none';
-}
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
-  cobrarDone = true;
-  updatePrintButtonVisibility();
-}
-function addCashAmount(v) {
-  const el = document.getElementById('cash-received');
-  const pending = parseCashNum(keypadBuffer);
-  el.value = (parseCashNum(el.value) + pending + v).toFixed(2);
-  keypadBuffer = '';
-  updateKeypadDisplay();
-  updateChange();
 }
 
-// Teclado numérico táctil para "Paga con" (igual que el de "Pagos" de
-// uniCenta) — en el mostrador no hay teclado físico, así que escribir un
-// importe exacto necesitaba el teclado táctil de Windows. Se escribe aquí
-// dentro y, al pulsar "=", se SUMA a lo que ya hubiera en "Paga con" (igual
-// que los botones +5€/+10€/etc., por si se van metiendo billetes sueltos).
+// Entregado se compone de lo entregado por billetes/monedas tocados
+// (cashEntregado) más lo que se esté escribiendo en el teclado sin
+// confirmar todavía (keypadBuffer) — este último solo se ve en vivo,
+// hasta que se pulsa "=" y pasa a sumarse de verdad a cashEntregado.
+let cashEntregado = 0;
+function tapDenom(btn, v) {
+  cashEntregado += v;
+  const n = (parseInt(btn.dataset.count, 10) || 0) + 1;
+  btn.dataset.count = n;
+  btn.classList.add('tapped');
+  let badge = btn.querySelector('.denom-count');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'denom-count';
+    badge.title = 'Tocar para quitar uno';
+    // El contador tiene su propio onclick (con stopPropagation) para poder
+    // quitar UNA unidad sin afectar al resto ni tener que pulsar "Limpiar"
+    // y volver a marcar todo desde cero.
+    badge.onclick = (e) => { e.stopPropagation(); untapDenom(btn, v); };
+    btn.appendChild(badge);
+  }
+  badge.textContent = '×' + n;
+  updateChange(parseCashNum(keypadBuffer));
+}
+function untapDenom(btn, v) {
+  const n = (parseInt(btn.dataset.count, 10) || 0) - 1;
+  const badge = btn.querySelector('.denom-count');
+  if (n <= 0) {
+    btn.dataset.count = '0';
+    btn.classList.remove('tapped');
+    if (badge) badge.remove();
+  } else {
+    btn.dataset.count = n;
+    if (badge) badge.textContent = '×' + n;
+  }
+  cashEntregado = Math.max(0, cashEntregado - v);
+  updateChange(parseCashNum(keypadBuffer));
+}
+
+// Teclado numérico táctil (igual que el de "Pagos" de uniCenta) — en el
+// mostrador no hay teclado físico, así que escribir un importe exacto
+// necesita el teclado táctil. Se escribe aquí dentro y, al pulsar "=", se
+// SUMA a lo ya entregado (igual que tocar un billete/moneda suelta).
 let keypadBuffer = '';
 function keypadDigit(d) {
   if (d === ',' && keypadBuffer.includes(',')) return;
@@ -1068,41 +1133,60 @@ function keypadClear() {
 function updateKeypadDisplay() {
   const el = document.getElementById('cash-keypad-display');
   if (el) el.textContent = keypadBuffer || '0';
+  // El cambio (y el Entregado) se ven al momento mientras se escribe, sin
+  // tener que pulsar "=" primero — "=" sigue haciendo falta solo para que
+  // ese importe quede sumado de verdad a lo entregado (por si se van
+  // metiendo más billetes sueltos después).
+  updateChange(parseCashNum(keypadBuffer));
 }
 function keypadEquals() {
   const val = parseCashNum(keypadBuffer);
   keypadBuffer = '';
+  if (val > 0) cashEntregado += val;
   updateKeypadDisplay();
-  if (val > 0) addCashAmount(val);
 }
 function clearCashReceived() {
-  document.getElementById('cash-received').value = '';
+  cashEntregado = 0;
   keypadBuffer = '';
+  document.querySelectorAll('#cobrar-modal .denom-btn').forEach(btn => {
+    btn.dataset.count = '0';
+    btn.classList.remove('tapped');
+    const badge = btn.querySelector('.denom-count');
+    if (badge) badge.remove();
+  });
   updateKeypadDisplay();
-  cashTotalEdited = false;
-  syncCashTotal(currentOrderTotal());
 }
 function currentOrderTotal() {
   const el = document.getElementById('cart-total');
   return el ? parseFloat(el.textContent.replace(',', '.')) || 0 : 0;
 }
-function updateChange() {
-  const total = parseCashNum(document.getElementById('cash-total').value);
-  const received = parseCashNum(document.getElementById('cash-received').value);
+function updateChange(previewExtra) {
+  const total = cashOrderTotal;
+  const shown = cashEntregado + (previewExtra || 0);
+  document.getElementById('cash-entregado').textContent = fmt(shown) + ' €';
   const row = document.getElementById('cash-change-row');
   const label = document.getElementById('cash-change-label');
   const amountEl = document.getElementById('cash-change-amount');
-  if (received <= 0) { row.style.display = 'none'; return; }
-  row.style.display = 'flex';
-  const change = received - total;
+  if (shown <= 0) {
+    row.className = 'summary-row cambio';
+    label.textContent = 'Cambio a devolver';
+    amountEl.textContent = '0,00 €';
+    return;
+  }
+  const change = shown - total;
   if (change < -0.001) {
     label.textContent = 'Faltan';
     amountEl.textContent = fmt(-change) + ' €';
-    row.className = 'cash-change-row short';
+    row.className = 'summary-row cambio short';
   } else {
     label.textContent = 'Cambio a devolver';
     amountEl.textContent = fmt(Math.max(0, change)) + ' €';
-    row.className = 'cash-change-row ok';
+    row.className = 'summary-row cambio ok';
+    // En cuanto se ha metido efectivo suficiente para cubrir el total, el
+    // pedido se da por cobrado solo — no tiene sentido obligar a tocar
+    // "PAGADO" a mano si la propia calculadora ya ha sacado el cambio a
+    // devolver (el botón "Imprimir ticket" aparece con esto).
+    if (total > 0 && !orderPaid) setOrderPaid(true);
   }
 }
 
@@ -1125,10 +1209,7 @@ function clearOrder(silent) {
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('pickup-time').value = '';
-  document.getElementById('cash-received').value = '';
-  keypadBuffer = '';
-  updateKeypadDisplay();
-  cashTotalEdited = false;
+  clearCashReceived();
   setOrderPaid(false);
   setPaymentMethod('efectivo');
   renderMenu();
@@ -1168,9 +1249,6 @@ function undoClearOrder() {
    MODAL — CUSTOMIZER (Al Gusto / Bomba)
    ══════════════════════════════════════════════════════════════ */
 let custType = null, custSelSauces = [], custSelIngredients = [], custExtraQueso = false, custExtraGratinado = false, custSelExtraSauces = [], custSelExtraIngredients = [], custEditKey = null;
-// Todos los ingredientes extra cuestan lo mismo (1€) — antes había dos
-// tramos (1€/0,70€ según EXTRAS_ING_PRECIO1/07), ahora unificado.
-function precioIngredienteExtra(n) { return 1.00; }
 
 function openCustomizer(id, editKey) {
   custEditKey = editKey || null;
@@ -1202,7 +1280,7 @@ function openCustomizer(id, editKey) {
 // Si "Queso Mozzarella" ya está entre los ingredientes elegidos, no tiene
 // sentido cobrar aparte por añadir queso — solo queda la opción de
 // gratinar (ya tiene queso, solo falta pasarlo por el horno).
-function custHasQuesoIngredient() { return custSelIngredients.some(isQuesoIngredient); }
+function custHasQuesoIngredient() { return custSelIngredients.some(isQuesoIngredient) || custSelExtraIngredients.some(isQuesoIngredient); }
 function renderCustExtrasSection() {
   const hasQueso = custHasQuesoIngredient();
   const quesoLabel = document.getElementById('cust-queso-label');
@@ -1221,13 +1299,13 @@ function renderCustChips() {
   sEl.innerHTML = CUST_SAUCES.map(n => {
     const sel = custSelSauces.includes(n);
     const extra = custSelExtraSauces.includes(n);
-    const label = extra ? n + ' +' + fmt(precioSalsaExtra(n)) + '€' : n;
+    const label = extra ? n + ' +' + fmt(priceOfSalsaExtra(n)) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
     const sel = custSelIngredients.includes(n);
     const extra = custSelExtraIngredients.includes(n);
-    const label = extra ? n + ' +' + fmt(precioIngredienteExtra(n)) + '€' : n;
+    const label = extra ? n + ' +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
@@ -1244,16 +1322,20 @@ function toggleCustSauce(n) {
   }
   renderCustChips(); updateCustBadges(); updateCustTotalPrice();
 }
+// Igual que con las salsas: pasarse del límite incluido ya no bloquea la
+// selección — el ingrediente de más se marca como "extra" y se cobra
+// aparte (como si se hubiera añadido en la patata normal), en vez de
+// dejar el chip deshabilitado sin forma de elegirlo.
 function toggleCustIng(n) {
+  const cfg = CUSTOMIZER_CONFIG[custType];
   const i = custSelIngredients.indexOf(n);
   const iE = custSelExtraIngredients.indexOf(n);
   if (i >= 0) custSelIngredients.splice(i, 1);
   else if (iE >= 0) custSelExtraIngredients.splice(iE, 1);
   else {
-    const cfg = CUSTOMIZER_CONFIG[custType];
     const roomInLimit = (cfg.maxIngredients === null || custSelIngredients.length < cfg.maxIngredients) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelIngredients.push(n);
-    else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte, como ya pasaba con las salsas
+    else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte
   }
   if (custHasQuesoIngredient() && custExtraQueso) {
     custExtraQueso = false;
@@ -1263,14 +1345,14 @@ function toggleCustIng(n) {
 }
 function updateCustBadges() {
   const cfg = CUSTOMIZER_CONFIG[custType];
-  const extraSauceNote = custSelExtraSauces.length ? ' (+' + custSelExtraSauces.length + ' salsa extra)' : '';
-  const extraIngNote = custSelExtraIngredients.length ? ' (+' + custSelExtraIngredients.length + ' ingrediente extra)' : '';
+  const sauceExtraNote = custSelExtraSauces.length ? ' (+' + custSelExtraSauces.length + ' salsa extra)' : '';
+  const ingExtraNote = custSelExtraIngredients.length ? ' (+' + custSelExtraIngredients.length + ' ingrediente' + (custSelExtraIngredients.length > 1 ? 's' : '') + ' extra)' : '';
   if (cfg.maxTotal !== null) {
-    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + extraSauceNote;
-    document.getElementById('cust-ing-badge').textContent = custSelTotal() + '/' + cfg.maxTotal + extraIngNote;
+    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + sauceExtraNote;
+    document.getElementById('cust-ing-badge').textContent = custSelTotal() + '/' + cfg.maxTotal + ingExtraNote;
   } else {
-    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + '/' + cfg.maxSauces + extraSauceNote;
-    document.getElementById('cust-ing-badge').textContent = custSelIngredients.length + '/' + cfg.maxIngredients + extraIngNote;
+    document.getElementById('cust-sauce-badge').textContent = custSelSauces.length + '/' + cfg.maxSauces + sauceExtraNote;
+    document.getElementById('cust-ing-badge').textContent = custSelIngredients.length + '/' + cfg.maxIngredients + ingExtraNote;
   }
 }
 function toggleCustExtra(which) {
@@ -1293,8 +1375,8 @@ function updateCustTotalPrice() {
   let p = cfg.price;
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
-  p += custSelExtraSauces.reduce((sum, n) => sum + precioSalsaExtra(n), 0);
-  p += custSelExtraIngredients.reduce((sum, n) => sum + precioIngredienteExtra(n), 0);
+  p += custSelExtraSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+  p += custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
 }
 function confirmCustomizer() {
@@ -1366,7 +1448,7 @@ function renderCheddarSalsasExtra() {
     const slug = 'cheddar-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
     const on = !!cheddarSalsasExtra[s];
     return `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(precioSalsaExtra(s))} €</div></div>
+      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
       <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
     </label>`;
   }).join('');
@@ -1378,7 +1460,7 @@ function toggleCheddarSalsa(s) {
 }
 function updateCheddarPrice() {
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((sum, [s]) => sum + precioSalsaExtra(s), 0);
+  const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
   document.getElementById('cheddar-price').textContent = fmt(item.price + extra) + ' €';
 }
 function confirmCheddar() {
@@ -1599,7 +1681,7 @@ function renderExtrasBody(item) {
     if (!soloGratinar) {
       html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-        const precio = precioIngredienteExtra(ing);
+        const precio = priceOfIngExtra(ing);
         const on = !!extrasIngredientes[ing];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
           <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
@@ -1611,7 +1693,7 @@ function renderExtrasBody(item) {
       CUST_SAUCES.forEach(s => {
         const on = !!extrasSalsas[s];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(precioSalsaExtra(s))} €</div></div>
+          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
           <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
@@ -1829,16 +1911,18 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + (c.extraSauces || []).reduce((s, n) => s + precioSalsaExtra(n), 0) + (c.extraIngredients || []).reduce((s, n) => s + precioIngredienteExtra(n), 0);
+    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
+    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas (incluidas y extra),
     // luego los ingredientes (incluidos y extra), y el queso/gratinado
     // siempre al final.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: precioSalsaExtra(s), underline: true })),
+      ...(c.extraSauces || []).map(s => ({ name: s, price: priceOfSalsaExtra(s), underline: true })),
       ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
-      ...(c.extraIngredients || []).map(n => ({ name: n, price: precioIngredienteExtra(n), underline: true })),
+      ...quesoLastKeepOrder(c.extraIngredients || []).map(n => ({ name: n, price: priceOfPick({ type: 'ing', name: n }), underline: true })),
     ];
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1, underline: true });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5, underline: true });
@@ -2259,10 +2343,16 @@ function openHistorial() {
   if (fechaInput) fechaInput.value = historialFechaSel;
   const buscarInput = document.getElementById('historial-search');
   if (buscarInput) buscarInput.value = '';
+  document.getElementById('historial-unpaid-panel').classList.remove('open');
+  document.getElementById('historial-unpaid-toggle').classList.remove('open');
   renderHistorial();
   document.getElementById('historial-modal').classList.add('open');
 }
 function closeHistorial() { document.getElementById('historial-modal').classList.remove('open'); }
+function toggleHistorialUnpaid() {
+  document.getElementById('historial-unpaid-panel').classList.toggle('open');
+  document.getElementById('historial-unpaid-toggle').classList.toggle('open');
+}
 function setHistorialFecha(fecha) { historialFechaSel = fecha || todayISO(); renderHistorial(); }
 function setHistorialBusqueda(v) { historialBusqueda = v || ''; renderHistorial(); }
 function renderHistorial() {
@@ -2274,6 +2364,36 @@ function renderHistorial() {
   const esHoy = historialFechaSel === todayISO();
   const label = document.getElementById('historial-modal-fecha');
   if (label) label.textContent = esHoy ? 'hoy' : new Date(historialFechaSel + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // Pedidos por teléfono que se cobran cuando vienen a recogerlos: un
+  // acceso directo con solo los que faltan por pagar de hoy, para no tener
+  // que buscarlos entre todos los pedidos ya cobrados. Recogido dentro de
+  // un botón desplegable (en vez de una fila de chips siempre a la vista)
+  // para no ocupar sitio cuando no hace falta consultarlo.
+  const unpaidSection = document.getElementById('historial-unpaid-section');
+  const unpaidList = list.map((o, i) => [o, i]).filter(([o]) => !o.paid);
+  if (unpaidSection) {
+    if (esHoy && unpaidList.length > 0) {
+      unpaidSection.style.display = 'block';
+      document.getElementById('historial-unpaid-count').textContent = unpaidList.length;
+      document.getElementById('historial-unpaid-sum').textContent = fmt(unpaidList.reduce((s, [o]) => s + o.total, 0)) + ' € pendientes';
+      document.getElementById('historial-unpaid-list').innerHTML = unpaidList.map(([o, i]) => `
+        <button class="unpaid-row" onclick="payHistorialOrder(${i})">
+          <div>
+            <span class="unpaid-row-num">${escapeHtml(o.num)}</span>
+            ${o.name ? `<span class="unpaid-row-name"> · ${escapeHtml(o.name)}</span>` : ''}
+          </div>
+          <div class="unpaid-row-right">
+            <span class="unpaid-row-price">${fmt(o.total)} €</span>
+            <span class="unpaid-row-go">Cobrar →</span>
+          </div>
+        </button>
+      `).join('');
+    } else {
+      unpaidSection.style.display = 'none';
+    }
+  }
+
   const el = document.getElementById('historial-list');
   el.innerHTML = filtrado.length === 0
     ? `<div class="historial-empty">${list.length === 0 ? 'No hay comandas guardadas ese día.' : 'Ningún pedido coincide con la búsqueda.'}</div>`
@@ -2334,6 +2454,33 @@ function modifyHistorialOrder(index) {
   renderMenu();
   renderCart();
   toast('✏️ Pedido ' + order.num + ' recuperado — modifícalo y vuelve a imprimir');
+}
+// Pedido por teléfono que aún no se ha pagado: lo recupera en la comanda
+// en curso (igual que "Modificar") pero abre directamente la pantalla de
+// Cobrar, para no tener que ir a buscarlo manualmente en la carta.
+function payHistorialOrder(index) {
+  const list = getHistorial(historialFechaSel);
+  const order = list[index];
+  if (!order || !order.rawState) { toast('⚠️ Este pedido no se puede recuperar para cobrar'); return; }
+  if (historialFechaSel !== todayISO()) { toast('⚠️ Solo se puede cobrar un pedido de hoy'); return; }
+  if (cartHasAnyItem() && !confirm('Ya hay productos en la comanda actual. ¿Sustituirlos por el pedido ' + order.num + ' para cobrarlo?')) return;
+  cart = order.rawState.cart || {};
+  custCart = order.rawState.custCart || {};
+  extrasCart = order.rawState.extrasCart || {};
+  orderDiscount = order.rawState.orderDiscount || null;
+  lineDiscounts = order.rawState.lineDiscounts || {};
+  document.getElementById('order-name').value = order.name || '';
+  document.getElementById('pickup-time').value = order.pickupTime || '';
+  setOrderPaid(false);
+  setPaymentMethod(order.paymentMethod || 'efectivo');
+  list.splice(index, 1);
+  localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
+  _cajaTotalesAplicar(order, -1, historialFechaSel);
+  closeHistorial();
+  renderMenu();
+  renderCart();
+  openCobrarModal();
+  toast('💰 Pedido ' + order.num + ' cargado para cobrar');
 }
 async function reprintOrder(index) {
   const list = getHistorial(historialFechaSel);
@@ -2661,10 +2808,10 @@ function isPrinterConnected() {
    USB emparejado (lector de códigos de barras, báscula, etc.) podía
    intentar imprimir en el dispositivo equivocado. Ahora se recuerda el
    vendorId/productId de la impresora la primera vez que se empareja con
-   "🔌 Conectar impresora directa" y se busca por eso; solo si no hay nada
-   guardado (primer uso de siempre) se cae a buscar un dispositivo con
-   interfaz de clase impresora (7), y como último recurso al primero de
-   la lista, igual que antes. ── */
+   "🔌 Conectar impresora por cable (USB)" y se busca por eso; solo si no
+   hay nada guardado (primer uso de siempre) se cae a buscar un
+   dispositivo con interfaz de clase impresora (7), y como último recurso
+   al primero de la lista, igual que antes. ── */
 const PRINTER_IDS_KEY = 'dpf_comandas_printer_ids';
 function savePrinterIds(device) {
   try { localStorage.setItem(PRINTER_IDS_KEY, JSON.stringify({ vendorId: device.vendorId, productId: device.productId })); } catch (e) {}
@@ -2697,6 +2844,13 @@ function updatePrinterStatusUI() {
     el.className = 'printer-status ok';
   } else if (printerTransport === 'usb' && printerDevice) {
     el.textContent = '🖨️ Impresora conectada (cable)';
+    el.className = 'printer-status ok';
+  } else if (isDesktopApp() && window.comandasDesktop.printRaw && getTicketConfig().modoImpresion !== 'dialog') {
+    // La impresión RAW de la app de escritorio (PowerShell+WinSpool en
+    // Windows, "lp -o raw" en Mac/Linux) no depende de emparejar nada por
+    // USB — este aviso antes decía siempre "sin impresora" aquí también,
+    // aunque la impresión directa sí estuviera funcionando de verdad.
+    el.textContent = '🖨️ Impresión directa activa (app de escritorio)';
     el.className = 'printer-status ok';
   } else if (!navigator.usb && !navigator.bluetooth) {
     el.textContent = '🖨️ Sin impresión directa (usa Chrome/Edge) — diálogo de impresión';
@@ -2769,19 +2923,6 @@ async function bleConectarDispositivo(device) {
 
 // Pide permiso al navegador — debe llamarse desde un click (gesto del
 // usuario), el navegador no deja hacerlo en segundo plano.
-// Toca el indicador de la cabecera ("🖨️ ...") para conectar sin tener que
-// entrar antes en ⚙️ Ajustes — un atajo directo al mismo botón que ya
-// existe ahí, para el caso más habitual (Bluetooth, en la tablet). Si ya
-// hay una impresora conectada, no vuelve a pedir emparejar (eso abriría
-// el selector de dispositivos sin necesidad); solo confirma el estado.
-function printerStatusClick() {
-  if (isPrinterConnected()) {
-    toast(printerTransport === 'ble' ? '🖨️ Ya conectada por Bluetooth' : '🖨️ Ya conectada por cable (USB)');
-    return;
-  }
-  pairPrinterBluetooth();
-}
-
 async function pairPrinterBluetooth() {
   if (!navigator.bluetooth) { toast('Este navegador no soporta Bluetooth. Usa Chrome en Android (no funciona en iPhone/iPad ni en Safari).'); return; }
   try {
@@ -2807,6 +2948,19 @@ async function pairPrinterBluetooth() {
     console.warn('[comandas] conexión Bluetooth cancelada o fallida', e);
     if (e && e.name !== 'NotFoundError') toast('No se pudo conectar por Bluetooth: ' + e.message);
   }
+}
+
+// Toca el indicador de la cabecera ("🖨️ ...") para conectar sin tener que
+// entrar antes en ⚙️ Ajustes — un atajo directo al mismo botón que ya
+// existe ahí, para el caso más habitual (Bluetooth, en la tablet). Si ya
+// hay una impresora conectada, no vuelve a pedir emparejar (eso abriría
+// el selector de dispositivos sin necesidad); solo confirma el estado.
+function printerStatusClick() {
+  if (isPrinterConnected()) {
+    toast(printerTransport === 'ble' ? '🖨️ Ya conectada por Bluetooth' : '🖨️ Ya conectada por cable (USB)');
+    return;
+  }
+  pairPrinterBluetooth();
 }
 
 // Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
@@ -2978,6 +3132,7 @@ if (navigator.usb) {
     if (printerDevice && e.device === printerDevice) {
       printerDevice = null;
       printerEndpoint = null;
+      printerTransport = null;
       updatePrinterStatusUI();
       toast('⚠️ Se ha desconectado la impresora', 5000);
       playDisconnectAlert();
@@ -3321,9 +3476,36 @@ function openCartaAdmin() {
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
   renderCartaAdminList();
+  renderCartaExtrasList();
   document.getElementById('carta-modal').classList.add('open');
 }
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
+function cartaExtraPrecioRow(tipo, name, precio) {
+  return `<div class="option-row" style="cursor:default">
+    <div class="option-title" style="font-size:13.5px">${escapeHtml(name)}</div>
+    <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+      <input type="number" min="0" step="0.01" value="${precio}" style="width:72px;padding:7px 9px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;text-align:right;font-family:inherit"
+        onchange="setExtraPrecio('${tipo}','${name.replace(/'/g, "\\'")}',this.value)">
+      <span style="font-size:12px;color:var(--muted)">€</span>
+    </div>
+  </div>`;
+}
+function renderCartaExtrasList() {
+  const el = document.getElementById('carta-extras-list');
+  if (!el) return;
+  const precios = loadExtrasPrecios();
+  let html = '<div class="section-label" style="margin-top:0;font-size:11px">Salsas</div>';
+  html += CUST_SAUCES.map(s => cartaExtraPrecioRow('salsa', s, precios.salsa[s])).join('');
+  html += '<div class="section-label" style="font-size:11px">Ingredientes</div>';
+  html += sortEs(CUST_INGREDIENTS).map(i => cartaExtraPrecioRow('ing', i, precios.ing[i])).join('');
+  el.innerHTML = html;
+}
+function setExtraPrecio(tipo, name, value) {
+  const n = parseFloat(String(value).replace(',', '.'));
+  if (!(n >= 0)) { toast('⚠️ Precio no válido'); renderCartaExtrasList(); return; }
+  saveExtraPrecio(tipo, name, n);
+  toast('✅ ' + name + ': ' + fmt(n) + ' €');
+}
 function renderCartaAdminList() {
   const html = categories.filter(c => c !== 'Todos').map(cat => {
     const items = MENU.filter(m => m.cat === cat);
