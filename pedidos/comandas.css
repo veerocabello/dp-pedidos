@@ -748,53 +748,53 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-.summary-row { text-align: center; padding: 9px 14px; }
+.summary-row { text-align: center; padding: 11px 16px; }
 .summary-row + .summary-row { border-top: 1px dashed var(--warm); }
-.summary-row .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-.summary-row .num { font-family: var(--font-head); font-size: 20px; font-weight: 700; color: var(--brown); font-variant-numeric: tabular-nums; }
-.summary-row.cambio { padding: 12px 14px; background: var(--amber-light); transition: background .15s; }
-.summary-row.cambio .num { font-size: 25px; }
+.summary-row .lbl { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.summary-row .num { font-family: var(--font-head); font-size: 24px; font-weight: 700; color: var(--brown); font-variant-numeric: tabular-nums; }
+.summary-row.cambio { padding: 15px 16px; background: var(--amber-light); transition: background .15s; }
+.summary-row.cambio .num { font-size: 30px; }
 .summary-row.cambio.ok { background: var(--success-light, #E3F3E9); }
 .summary-row.cambio.ok .lbl, .summary-row.cambio.ok .num { color: var(--success); }
 .summary-row.cambio.short { background: #FBE7E4; }
 .summary-row.cambio.short .lbl, .summary-row.cambio.short .num { color: var(--error); }
 
-.calc-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; margin-top: 10px; }
+.calc-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; margin-top: 12px; }
 
 .denom-col { display: flex; flex-direction: column; }
 .denom-sep {
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
-  color: var(--muted); margin: 6px 0 4px 2px;
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin: 8px 0 6px 2px;
 }
 .denom-sep:first-child { margin-top: 0; }
-.denom-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.denom-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .denom-btn {
   position: relative;
   background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
-  padding: 9px 2px; font-family: var(--font-head); font-weight: 700; font-size: 12px; color: var(--brown);
+  padding: 14px 4px; font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--brown);
   cursor: pointer; transition: background .1s, border-color .1s, transform .06s;
 }
 .denom-btn:hover { background: var(--amber-light); border-color: var(--amber); }
 .denom-btn:active { transform: scale(.93); }
 .denom-btn.tapped { background: var(--amber); border-color: var(--amber-dark); color: #fff; }
 .denom-count {
-  position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 3px;
+  position: absolute; top: -7px; right: -7px; min-width: 20px; height: 20px; padding: 0 4px;
   background: var(--brown); color: var(--gold); border-radius: 999px;
-  font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 1px 3px rgba(0,0,0,.25);
 }
 
-.keypad-col { display: flex; flex-direction: column; gap: 6px; }
+.keypad-col { display: flex; flex-direction: column; gap: 9px; }
 .keypad-display {
   background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
-  padding: 7px 10px; text-align: right; font-family: var(--font-head); font-weight: 700; font-size: 18px;
+  padding: 10px 14px; text-align: right; font-family: var(--font-head); font-weight: 700; font-size: 24px;
   color: var(--brown); font-variant-numeric: tabular-nums;
 }
-.keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: 5px; flex: 1; }
+.keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; flex: 1; }
 .keypad-btn {
   background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
-  font-family: var(--font-head); font-weight: 700; font-size: 18px; color: var(--brown);
-  cursor: pointer; transition: background .1s, transform .06s; padding: 8px 0;
+  font-family: var(--font-head); font-weight: 700; font-size: 24px; color: var(--brown);
+  cursor: pointer; transition: background .1s, transform .06s; padding: 14px 0;
 }
 .keypad-btn:hover { background: var(--amber-light); border-color: var(--amber); }
 .keypad-btn:active { transform: scale(.93); }
@@ -802,15 +802,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .keypad-btn.ce:hover { background: var(--error); color: #fff; border-color: var(--error); }
 .keypad-equals {
   background: var(--brown); color: var(--cream); border: none; border-radius: var(--radius-xs);
-  font-family: var(--font-head); font-weight: 700; font-size: 18px; padding: 11px 0; cursor: pointer;
+  font-family: var(--font-head); font-weight: 700; font-size: 22px; padding: 16px 0; cursor: pointer;
   transition: background .15s, transform .1s;
 }
 .keypad-equals:hover { background: var(--amber-dark); }
 .keypad-equals:active { transform: scale(.97); }
 
-.clear-link { display: block; text-align: center; margin: 8px 0 0; }
+.clear-link { display: block; text-align: center; margin: 10px 0 0; }
 .clear-link button {
-  background: none; border: none; color: var(--error); font-size: 12px; font-weight: 700; cursor: pointer;
+  background: none; border: none; color: var(--error); font-size: 13px; font-weight: 700; cursor: pointer;
   text-decoration: underline; padding: 2px 4px;
 }
 
