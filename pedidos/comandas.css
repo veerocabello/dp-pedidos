@@ -738,84 +738,90 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .payment-method-btn:hover { border-color: var(--brown); }
 .payment-method-btn.active { background: var(--brown); border-color: var(--brown); color: #fff; }
 
-/* ── Calculadora de cambio (pago en efectivo) ── */
-.cash-calc {
+/* ── Calculadora de cambio (pago en efectivo), estilo uniCenta:
+     Total/Entregado/Cambio en una sola casilla arriba, y billetes/monedas
+     a un lado con teclado numérico al otro. ── */
+.summary-card {
   margin-top: 8px;
-  background: var(--amber-light);
-  border: 1.5px solid rgba(224,129,42,.4);
+  background: var(--white);
+  border: 1.5px solid var(--warm);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-.cash-calc-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--brown);
-  text-transform: uppercase;
-  letter-spacing: .5px;
-  list-style: none;
-  user-select: none;
+.summary-row { text-align: center; padding: 9px 14px; }
+.summary-row + .summary-row { border-top: 1px dashed var(--warm); }
+.summary-row .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.summary-row .num { font-family: var(--font-head); font-size: 20px; font-weight: 700; color: var(--brown); font-variant-numeric: tabular-nums; }
+.summary-row.cambio { padding: 12px 14px; background: var(--amber-light); transition: background .15s; }
+.summary-row.cambio .num { font-size: 25px; }
+.summary-row.cambio.ok { background: var(--success-light, #E3F3E9); }
+.summary-row.cambio.ok .lbl, .summary-row.cambio.ok .num { color: var(--success); }
+.summary-row.cambio.short { background: #FBE7E4; }
+.summary-row.cambio.short .lbl, .summary-row.cambio.short .num { color: var(--error); }
+
+.calc-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; margin-top: 10px; }
+
+.denom-col { display: flex; flex-direction: column; }
+.denom-sep {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin: 6px 0 4px 2px;
 }
-.cash-calc-summary::-webkit-details-marker { display: none; }
-.cash-calc-summary::after {
-  content: '▾';
-  font-size: 13px;
-  color: var(--amber-dark);
-  transition: transform .15s;
+.denom-sep:first-child { margin-top: 0; }
+.denom-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.denom-btn {
+  position: relative;
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: 9px 2px; font-family: var(--font-head); font-weight: 700; font-size: 12px; color: var(--brown);
+  cursor: pointer; transition: background .1s, border-color .1s, transform .06s;
 }
-.cash-calc[open] .cash-calc-summary::after { transform: rotate(180deg); }
-.cash-calc-body { padding: 0 12px 10px; }
-.cash-clear-btn {
-  background: none; border: none; color: var(--muted);
-  font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: underline;
-  text-transform: none; letter-spacing: normal; flex-shrink: 0;
+.denom-btn:hover { background: var(--amber-light); border-color: var(--amber); }
+.denom-btn:active { transform: scale(.93); }
+.denom-btn.tapped { background: var(--amber); border-color: var(--amber-dark); color: #fff; }
+.denom-count {
+  position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 3px;
+  background: var(--brown); color: var(--gold); border-radius: 999px;
+  font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
 }
-.cash-clear-btn:hover { color: var(--error); }
-.cash-calc-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
-.cash-calc-row:last-of-type { margin-bottom: 0; }
-.cash-calc-total-row { align-items: center; }
+
+.keypad-col { display: flex; flex-direction: column; gap: 6px; }
+.keypad-display {
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: 7px 10px; text-align: right; font-family: var(--font-head); font-weight: 700; font-size: 18px;
+  color: var(--brown); font-variant-numeric: tabular-nums;
+}
+.keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: 5px; flex: 1; }
+.keypad-btn {
+  background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  font-family: var(--font-head); font-weight: 700; font-size: 18px; color: var(--brown);
+  cursor: pointer; transition: background .1s, transform .06s; padding: 8px 0;
+}
+.keypad-btn:hover { background: var(--amber-light); border-color: var(--amber); }
+.keypad-btn:active { transform: scale(.93); }
+.keypad-btn.ce { color: var(--error); border-color: rgba(192,57,43,.35); }
+.keypad-btn.ce:hover { background: var(--error); color: #fff; border-color: var(--error); }
+.keypad-equals {
+  background: var(--brown); color: var(--cream); border: none; border-radius: var(--radius-xs);
+  font-family: var(--font-head); font-weight: 700; font-size: 18px; padding: 11px 0; cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.keypad-equals:hover { background: var(--amber-dark); }
+.keypad-equals:active { transform: scale(.97); }
+
+.clear-link { display: block; text-align: center; margin: 8px 0 0; }
+.clear-link button {
+  background: none; border: none; color: var(--error); font-size: 12px; font-weight: 700; cursor: pointer;
+  text-decoration: underline; padding: 2px 4px;
+}
+
+/* ── Fila "etiqueta + valor en negrita" reutilizada en resúmenes (Caja) ── */
+.cash-calc-total-row { display: flex; align-items: center; }
 .cash-calc-total-row label {
   font-size: 11.5px; font-weight: 700; color: var(--brown);
   text-transform: uppercase; letter-spacing: .4px; flex-shrink: 0;
 }
-#cash-total {
-  flex: 1; min-width: 80px; padding: 5px 8px;
-  border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
-  font-size: 13px; font-weight: 700; font-family: var(--font-body);
-  background: var(--white); color: var(--text); text-align: right;
-}
-.cash-quick-btn {
-  background: var(--white);
-  border: 1.5px solid var(--warm);
-  border-radius: var(--radius-xs);
-  padding: 5px 8px;
-  font-weight: 700;
-  font-size: 12.5px;
-  color: var(--brown);
-  cursor: pointer;
-  transition: all .15s;
-}
-.cash-quick-btn:hover { background: var(--brown); color: var(--cream); border-color: var(--brown); }
-.cash-quick-btn:active { transform: scale(.95); }
-.cash-quick-btn-coin { padding: 4px 7px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
-.cash-quick-btn-coin:hover { background: var(--amber-dark); color: #fff; border-color: var(--amber-dark); }
-#cash-received {
-  flex: 1;
-  min-width: 90px;
-  padding: 5px 8px;
-  border: 1.5px solid var(--warm);
-  border-radius: var(--radius-xs);
-  font-size: 14px;
-  font-weight: 700;
-  font-family: var(--font-body);
-  background: var(--white);
-  color: var(--text);
-  text-align: right;
-}
+
+/* ── Teclado numérico táctil reutilizado en Descuento y Hora de recogida ── */
 .cash-keypad { margin-top: 6px; }
 .cash-keypad-display {
   background: var(--white);
@@ -867,22 +873,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cash-keypad-equals:hover { background: var(--amber-dark); }
 .cash-keypad-equals:active { transform: scale(.97); }
-
-.cash-change-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed rgba(138,106,78,.35);
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 17px;
-  color: var(--brown);
-}
-.cash-change-row span:last-child { font-variant-numeric: tabular-nums; }
-.cash-change-row.short span:last-child { color: var(--error); }
-.cash-change-row.ok span:last-child { color: var(--success); }
 
 .btn-cobrar {
   width: 100%;

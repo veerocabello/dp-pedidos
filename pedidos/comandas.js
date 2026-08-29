@@ -926,7 +926,6 @@ function renderCart() {
   totalRowEl.style.display = 'flex';
   const orderTotal = total - discountAmount;
   document.getElementById('cart-total').textContent = fmt(orderTotal) + ' €';
-  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
   document.getElementById('print-btn').disabled = false;
   syncCashTotal(orderTotal);
   saveCartDraft();
@@ -976,43 +975,53 @@ function restoreCartDraftIfAny() {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   CALCULADORA DE CAMBIO (pago en efectivo) — siempre visible, debajo
-   de la comanda; el total se rellena solo desde el carrito pero se
-   puede editar a mano para calcular un cobro suelto.
+   CALCULADORA DE CAMBIO (pago en efectivo) — estilo uniCenta: Total,
+   Entregado y Cambio en una sola casilla, siempre visibles; el dinero
+   entregado se suma tocando billetes/monedas o escribiéndolo con el
+   teclado numérico (con "=" para sumarlo del todo).
    ══════════════════════════════════════════════════════════════ */
-let cashTotalEdited = false;
-// El teclado táctil (type="tel") no valida el formato como type="number",
-// así que aquí se admite tanto coma como punto decimal.
 function parseCashNum(str) { return parseFloat(String(str || '').replace(',', '.')) || 0; }
+let cashOrderTotal = 0;
 function syncCashTotal(orderTotal) {
-  if (!cashTotalEdited) document.getElementById('cash-total').value = orderTotal > 0 ? orderTotal.toFixed(2) : '';
+  cashOrderTotal = orderTotal;
+  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
   updateChange();
 }
 // El "Cobrar" ya no vive encajado en la barra lateral (se quedaba corto
 // de alto y no se podía bajar más para ver el teclado) — ahora es un
 // modal a pantalla completa, con la misma calculadora de uniCenta.
 function openCobrarModal() {
-  cashTotalEdited = false;
   syncCashTotal(currentOrderTotal());
   document.getElementById('cobrar-modal').classList.add('open');
 }
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
 }
-function addCashAmount(v) {
-  const el = document.getElementById('cash-received');
-  const pending = parseCashNum(keypadBuffer);
-  el.value = (parseCashNum(el.value) + pending + v).toFixed(2);
-  keypadBuffer = '';
-  updateKeypadDisplay();
-  updateChange();
+
+// Entregado se compone de lo entregado por billetes/monedas tocados
+// (cashEntregado) más lo que se esté escribiendo en el teclado sin
+// confirmar todavía (keypadBuffer) — este último solo se ve en vivo,
+// hasta que se pulsa "=" y pasa a sumarse de verdad a cashEntregado.
+let cashEntregado = 0;
+function tapDenom(btn, v) {
+  cashEntregado += v;
+  const n = (parseInt(btn.dataset.count, 10) || 0) + 1;
+  btn.dataset.count = n;
+  btn.classList.add('tapped');
+  let badge = btn.querySelector('.denom-count');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'denom-count';
+    btn.appendChild(badge);
+  }
+  badge.textContent = '×' + n;
+  updateChange(parseCashNum(keypadBuffer));
 }
 
-// Teclado numérico táctil para "Paga con" (igual que el de "Pagos" de
-// uniCenta) — en el mostrador no hay teclado físico, así que escribir un
-// importe exacto necesitaba el teclado táctil de Windows. Se escribe aquí
-// dentro y, al pulsar "=", se SUMA a lo que ya hubiera en "Paga con" (igual
-// que los botones +5€/+10€/etc., por si se van metiendo billetes sueltos).
+// Teclado numérico táctil (igual que el de "Pagos" de uniCenta) — en el
+// mostrador no hay teclado físico, así que escribir un importe exacto
+// necesita el teclado táctil. Se escribe aquí dentro y, al pulsar "=", se
+// SUMA a lo ya entregado (igual que tocar un billete/moneda suelta).
 let keypadBuffer = '';
 function keypadDigit(d) {
   if (d === ',' && keypadBuffer.includes(',')) return;
@@ -1027,47 +1036,55 @@ function keypadClear() {
 function updateKeypadDisplay() {
   const el = document.getElementById('cash-keypad-display');
   if (el) el.textContent = keypadBuffer || '0';
-  // El cambio se ve al momento mientras se escribe (ej. "50" del billete
-  // que dan), sin tener que pulsar "=" primero para que se entere de
-  // cuánto se ha escrito — "=" sigue haciendo falta solo para que ese
-  // importe quede sumado de verdad a "Paga con" (por si se van metiendo
-  // más billetes sueltos después).
+  // El cambio (y el Entregado) se ven al momento mientras se escribe, sin
+  // tener que pulsar "=" primero — "=" sigue haciendo falta solo para que
+  // ese importe quede sumado de verdad a lo entregado (por si se van
+  // metiendo más billetes sueltos después).
   updateChange(parseCashNum(keypadBuffer));
 }
 function keypadEquals() {
   const val = parseCashNum(keypadBuffer);
   keypadBuffer = '';
+  if (val > 0) cashEntregado += val;
   updateKeypadDisplay();
-  if (val > 0) addCashAmount(val);
 }
 function clearCashReceived() {
-  document.getElementById('cash-received').value = '';
+  cashEntregado = 0;
   keypadBuffer = '';
+  document.querySelectorAll('#cobrar-modal .denom-btn').forEach(btn => {
+    btn.dataset.count = '0';
+    btn.classList.remove('tapped');
+    const badge = btn.querySelector('.denom-count');
+    if (badge) badge.remove();
+  });
   updateKeypadDisplay();
-  cashTotalEdited = false;
-  syncCashTotal(currentOrderTotal());
 }
 function currentOrderTotal() {
   const el = document.getElementById('cart-total');
   return el ? parseFloat(el.textContent.replace(',', '.')) || 0 : 0;
 }
 function updateChange(previewExtra) {
-  const total = parseCashNum(document.getElementById('cash-total').value);
-  const received = parseCashNum(document.getElementById('cash-received').value) + (previewExtra || 0);
+  const total = cashOrderTotal;
+  const shown = cashEntregado + (previewExtra || 0);
+  document.getElementById('cash-entregado').textContent = fmt(shown) + ' €';
   const row = document.getElementById('cash-change-row');
   const label = document.getElementById('cash-change-label');
   const amountEl = document.getElementById('cash-change-amount');
-  if (received <= 0) { row.style.display = 'none'; return; }
-  row.style.display = 'flex';
-  const change = received - total;
+  if (shown <= 0) {
+    row.className = 'summary-row cambio';
+    label.textContent = 'Cambio a devolver';
+    amountEl.textContent = '0,00 €';
+    return;
+  }
+  const change = shown - total;
   if (change < -0.001) {
     label.textContent = 'Faltan';
     amountEl.textContent = fmt(-change) + ' €';
-    row.className = 'cash-change-row short';
+    row.className = 'summary-row cambio short';
   } else {
     label.textContent = 'Cambio a devolver';
     amountEl.textContent = fmt(Math.max(0, change)) + ' €';
-    row.className = 'cash-change-row ok';
+    row.className = 'summary-row cambio ok';
     // En cuanto se ha metido efectivo suficiente para cubrir el total, el
     // pedido se da por cobrado solo — no tiene sentido obligar a tocar
     // "PAGADO" a mano si la propia calculadora ya ha sacado el cambio a
@@ -1095,10 +1112,7 @@ function clearOrder(silent) {
   cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('pickup-time').value = '';
-  document.getElementById('cash-received').value = '';
-  keypadBuffer = '';
-  updateKeypadDisplay();
-  cashTotalEdited = false;
+  clearCashReceived();
   setOrderPaid(false);
   setPaymentMethod('efectivo');
   renderMenu();
