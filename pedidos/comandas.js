@@ -820,13 +820,14 @@ function renderCart() {
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
-    document.getElementById('btn-cobrar').style.display = 'none';
+    // El botón de Cobrar se queda siempre a la vista aunque la comanda esté
+    // vacía (pedidos por teléfono que se cobran después, sin haber tocado
+    // aún el carrito).
     document.getElementById('print-btn').disabled = true;
     syncCashTotal(0);
     clearCartDraft();
     return;
   }
-  document.getElementById('btn-cobrar').style.display = 'block';
 
   let total = 0;
   const rows = []; // { rank, html } — se ordenan por categoría antes de pintar
@@ -2273,6 +2274,23 @@ function renderHistorial() {
   const esHoy = historialFechaSel === todayISO();
   const label = document.getElementById('historial-modal-fecha');
   if (label) label.textContent = esHoy ? 'hoy' : new Date(historialFechaSel + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // Pedidos por teléfono que se cobran cuando vienen a recogerlos: un
+  // acceso directo con solo los que faltan por pagar de hoy, para no tener
+  // que buscarlos entre todos los pedidos ya cobrados.
+  const unpaidSection = document.getElementById('historial-unpaid-section');
+  const unpaidList = list.map((o, i) => [o, i]).filter(([o]) => !o.paid);
+  if (unpaidSection) {
+    if (esHoy && unpaidList.length > 0) {
+      unpaidSection.style.display = 'block';
+      document.getElementById('historial-unpaid-list').innerHTML = unpaidList.map(([o, i]) =>
+        `<button class="historial-unpaid-chip" onclick="payHistorialOrder(${i})">${escapeHtml(o.num)}${o.name ? ' · ' + escapeHtml(o.name) : ''} · ${fmt(o.total)} €</button>`
+      ).join('');
+    } else {
+      unpaidSection.style.display = 'none';
+    }
+  }
+
   const el = document.getElementById('historial-list');
   el.innerHTML = filtrado.length === 0
     ? `<div class="historial-empty">${list.length === 0 ? 'No hay comandas guardadas ese día.' : 'Ningún pedido coincide con la búsqueda.'}</div>`
@@ -2333,6 +2351,33 @@ function modifyHistorialOrder(index) {
   renderMenu();
   renderCart();
   toast('✏️ Pedido ' + order.num + ' recuperado — modifícalo y vuelve a imprimir');
+}
+// Pedido por teléfono que aún no se ha pagado: lo recupera en la comanda
+// en curso (igual que "Modificar") pero abre directamente la pantalla de
+// Cobrar, para no tener que ir a buscarlo manualmente en la carta.
+function payHistorialOrder(index) {
+  const list = getHistorial(historialFechaSel);
+  const order = list[index];
+  if (!order || !order.rawState) { toast('⚠️ Este pedido no se puede recuperar para cobrar'); return; }
+  if (historialFechaSel !== todayISO()) { toast('⚠️ Solo se puede cobrar un pedido de hoy'); return; }
+  if (cartHasAnyItem() && !confirm('Ya hay productos en la comanda actual. ¿Sustituirlos por el pedido ' + order.num + ' para cobrarlo?')) return;
+  cart = order.rawState.cart || {};
+  custCart = order.rawState.custCart || {};
+  extrasCart = order.rawState.extrasCart || {};
+  orderDiscount = order.rawState.orderDiscount || null;
+  lineDiscounts = order.rawState.lineDiscounts || {};
+  document.getElementById('order-name').value = order.name || '';
+  document.getElementById('pickup-time').value = order.pickupTime || '';
+  setOrderPaid(false);
+  setPaymentMethod(order.paymentMethod || 'efectivo');
+  list.splice(index, 1);
+  localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
+  _cajaTotalesAplicar(order, -1, historialFechaSel);
+  closeHistorial();
+  renderMenu();
+  renderCart();
+  openCobrarModal();
+  toast('💰 Pedido ' + order.num + ' cargado para cobrar');
 }
 async function reprintOrder(index) {
   const list = getHistorial(historialFechaSel);
