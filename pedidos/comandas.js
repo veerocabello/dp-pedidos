@@ -118,10 +118,32 @@ const EXTRAS_ING_PRECIO1 = ["4 Quesos", "Atún", "Bacon", "Carne Kebab", "Carne 
 const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Piña", "Remolacha", "Tomate Natural", "Zanahoria"];
 const EXTRAS_ING_PRECIO = 1;
 const EXTRAS_SALSA_PRECIO = 1;
-const EXTRAS_SALSA_PHILADELPHIA_PRECIO = 1.20;
-// La salsa Philadelphia cuesta más que el resto como extra; el resto de
-// salsas comparten el precio plano de EXTRAS_SALSA_PRECIO.
-function priceOfSalsaExtra(name) { return name === 'Philadelphia' ? EXTRAS_SALSA_PHILADELPHIA_PRECIO : EXTRAS_SALSA_PRECIO; }
+const EXTRAS_PRECIO_ALTO = 1.20; // Philadelphia, Queso Mozzarella y 4 Quesos parten con este precio más alto
+const EXTRAS_ING_PRECIO_ALTO_DEFAULT = new Set(['Queso Mozzarella', '4 Quesos']);
+function defaultPriceOfIngExtra(name) { return EXTRAS_ING_PRECIO_ALTO_DEFAULT.has(name) ? EXTRAS_PRECIO_ALTO : EXTRAS_ING_PRECIO; }
+function defaultPriceOfSalsaExtra(name) { return name === 'Philadelphia' ? EXTRAS_PRECIO_ALTO : EXTRAS_SALSA_PRECIO; }
+// Precios de "extra" (salsas e ingredientes) editables desde 🍽️ Carta —
+// así se pueden ajustar sin tocar código. Lo de arriba son solo los
+// valores de fábrica con los que arranca cada uno la primera vez.
+const EXTRAS_PRECIOS_KEY = 'comandas_extras_precios_v1';
+function loadExtrasPrecios() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(EXTRAS_PRECIOS_KEY) || '{}'); } catch (e) { /* ignora datos corruptos */ }
+  const ing = {}, salsa = {};
+  CUST_INGREDIENTS.forEach(n => { ing[n] = (saved.ing && typeof saved.ing[n] === 'number') ? saved.ing[n] : defaultPriceOfIngExtra(n); });
+  CUST_SAUCES.forEach(n => { salsa[n] = (saved.salsa && typeof saved.salsa[n] === 'number') ? saved.salsa[n] : defaultPriceOfSalsaExtra(n); });
+  return { ing, salsa };
+}
+function saveExtraPrecio(tipo, name, value) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(EXTRAS_PRECIOS_KEY) || '{}'); } catch (e) { /* ignora datos corruptos */ }
+  if (!saved.ing) saved.ing = {};
+  if (!saved.salsa) saved.salsa = {};
+  saved[tipo][name] = value;
+  localStorage.setItem(EXTRAS_PRECIOS_KEY, JSON.stringify(saved));
+}
+function priceOfIngExtra(name) { return loadExtrasPrecios().ing[name]; }
+function priceOfSalsaExtra(name) { return loadExtrasPrecios().salsa[name]; }
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
@@ -367,7 +389,7 @@ function editSimpleItem(id) {
 // Bomba, se cobra el precio plano de esa patata en vez de sumar cada
 // extra por separado (evita cobrar de más por construir, ingrediente a
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
-function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : EXTRAS_ING_PRECIO; }
+function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : priceOfIngExtra(p.name); }
 
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
@@ -402,7 +424,7 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   if (freeLeft > 0 && order) {
     order.forEach(p => { if (freeLeft > 0) freeLeft--; else core += priceOfPick(p); });
   } else {
-    core += (ingredientesExtra || []).length * EXTRAS_ING_PRECIO;
+    core += (ingredientesExtra || []).reduce((s, name) => s + priceOfIngExtra(name), 0);
     core += (salsasExtra || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
   }
   return core;
@@ -486,7 +508,7 @@ function getExtrasItemTicketExtras(e) {
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
   (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
-  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : EXTRAS_ING_PRECIO, underline: true }));
+  quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
   return out;
@@ -1005,6 +1027,12 @@ function keypadClear() {
 function updateKeypadDisplay() {
   const el = document.getElementById('cash-keypad-display');
   if (el) el.textContent = keypadBuffer || '0';
+  // El cambio se ve al momento mientras se escribe (ej. "50" del billete
+  // que dan), sin tener que pulsar "=" primero para que se entere de
+  // cuánto se ha escrito — "=" sigue haciendo falta solo para que ese
+  // importe quede sumado de verdad a "Paga con" (por si se van metiendo
+  // más billetes sueltos después).
+  updateChange(parseCashNum(keypadBuffer));
 }
 function keypadEquals() {
   const val = parseCashNum(keypadBuffer);
@@ -1023,9 +1051,9 @@ function currentOrderTotal() {
   const el = document.getElementById('cart-total');
   return el ? parseFloat(el.textContent.replace(',', '.')) || 0 : 0;
 }
-function updateChange() {
+function updateChange(previewExtra) {
   const total = parseCashNum(document.getElementById('cash-total').value);
-  const received = parseCashNum(document.getElementById('cash-received').value);
+  const received = parseCashNum(document.getElementById('cash-received').value) + (previewExtra || 0);
   const row = document.getElementById('cash-change-row');
   const label = document.getElementById('cash-change-label');
   const amountEl = document.getElementById('cash-change-amount');
@@ -1542,7 +1570,7 @@ function renderExtrasBody(item) {
     if (!soloGratinar) {
       html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-        const precio = EXTRAS_ING_PRECIO;
+        const precio = priceOfIngExtra(ing);
         const on = !!extrasIngredientes[ing];
         html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
           <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
@@ -2622,6 +2650,13 @@ function updatePrinterStatusUI() {
   if (printerDevice) {
     el.textContent = '🖨️ Impresora conectada';
     el.className = 'printer-status ok';
+  } else if (isDesktopApp() && window.comandasDesktop.printRaw && getTicketConfig().modoImpresion !== 'dialog') {
+    // La impresión RAW de la app de escritorio (PowerShell+WinSpool en
+    // Windows, "lp -o raw" en Mac/Linux) no depende de emparejar nada por
+    // USB — este aviso antes decía siempre "sin impresora" aquí también,
+    // aunque la impresión directa sí estuviera funcionando de verdad.
+    el.textContent = '🖨️ Impresión directa activa (app de escritorio)';
+    el.className = 'printer-status ok';
   } else if (!navigator.usb) {
     el.textContent = '🖨️ Sin impresión directa (usa Chrome/Edge) — diálogo de impresión';
     el.className = 'printer-status warn';
@@ -3052,9 +3087,36 @@ function openCartaAdmin() {
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
   renderCartaAdminList();
+  renderCartaExtrasList();
   document.getElementById('carta-modal').classList.add('open');
 }
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
+function cartaExtraPrecioRow(tipo, name, precio) {
+  return `<div class="option-row" style="cursor:default">
+    <div class="option-title" style="font-size:13.5px">${escapeHtml(name)}</div>
+    <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+      <input type="number" min="0" step="0.01" value="${precio}" style="width:72px;padding:7px 9px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;text-align:right;font-family:inherit"
+        onchange="setExtraPrecio('${tipo}','${name.replace(/'/g, "\\'")}',this.value)">
+      <span style="font-size:12px;color:var(--muted)">€</span>
+    </div>
+  </div>`;
+}
+function renderCartaExtrasList() {
+  const el = document.getElementById('carta-extras-list');
+  if (!el) return;
+  const precios = loadExtrasPrecios();
+  let html = '<div class="section-label" style="margin-top:0;font-size:11px">Salsas</div>';
+  html += CUST_SAUCES.map(s => cartaExtraPrecioRow('salsa', s, precios.salsa[s])).join('');
+  html += '<div class="section-label" style="font-size:11px">Ingredientes</div>';
+  html += sortEs(CUST_INGREDIENTS).map(i => cartaExtraPrecioRow('ing', i, precios.ing[i])).join('');
+  el.innerHTML = html;
+}
+function setExtraPrecio(tipo, name, value) {
+  const n = parseFloat(String(value).replace(',', '.'));
+  if (!(n >= 0)) { toast('⚠️ Precio no válido'); renderCartaExtrasList(); return; }
+  saveExtraPrecio(tipo, name, n);
+  toast('✅ ' + name + ': ' + fmt(n) + ' €');
+}
 function renderCartaAdminList() {
   const html = categories.filter(c => c !== 'Todos').map(cat => {
     const items = MENU.filter(m => m.cat === cat);

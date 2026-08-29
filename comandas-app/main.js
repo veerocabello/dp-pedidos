@@ -275,53 +275,68 @@ if (!gotLock) {
     // trabajo "RAW" (sin interpretación), vía un pequeño script de
     // PowerShell que llama a la API WritePrinter de Windows — la técnica
     // estándar para imprimir tickets desde programas de TPV en Windows.
-    // Se guarda en memoria el nombre de la impresora predeterminada ya
-    // resuelto — si no se ha elegido una impresora concreta en Ajustes,
-    // antes se volvía a preguntar a Windows "¿cuál es la predeterminada?"
-    // en CADA comanda (recorrer la lista de impresoras instaladas tiene su
-    // coste), y eso solo puede cambiar si el usuario cambia la impresora
-    // predeterminada del sistema — algo que no pasa a media jornada.
-    let cachedDefaultPrinterName = null;
+    // Se preguntaba a Windows "¿cuál es la impresora predeterminada?" solo
+    // una vez y se guardaba en memoria para las siguientes comandas — pero
+    // eso hacía que, si esa primera consulta fallaba o llegaba antes de
+    // que el sistema de impresión estuviera listo del todo (recién
+    // arrancada la app), el fallo (o la impresora equivocada) se quedara
+    // pegado el resto del día. Mejor preguntar siempre fresco: consultar
+    // la lista de impresoras es rápido, la fiabilidad importa más aquí que
+    // ahorrarse esa consulta.
     ipcMain.handle('print:raw', async (event, { deviceName, bytesBase64 } = {}) => {
       try {
-        const usingCachedDefault = !deviceName;
         let printerName = deviceName;
         if (!printerName) {
-          if (!cachedDefaultPrinterName) {
-            const printers = await mainWindow.webContents.getPrintersAsync();
-            const def = printers.find(p => p.isDefault) || printers[0];
-            if (!def) return { success: false, reason: 'No hay ninguna impresora configurada en Windows' };
-            cachedDefaultPrinterName = def.name;
-          }
-          printerName = cachedDefaultPrinterName;
+          const printers = await mainWindow.webContents.getPrintersAsync();
+          const def = printers.find(p => p.isDefault) || printers[0];
+          if (!def) return { success: false, reason: 'No hay ninguna impresora configurada en Windows' };
+          printerName = def.name;
         }
-        const scriptPath = app.isPackaged
-          ? path.join(process.resourcesPath, 'print-raw.ps1')
-          : path.join(__dirname, 'resources', 'print-raw.ps1');
-        if (!fs.existsSync(scriptPath)) return { success: false, reason: 'No se encuentra print-raw.ps1' };
-
         const tmpFile = path.join(os.tmpdir(), 'comanda-' + Date.now() + '.bin');
         fs.writeFileSync(tmpFile, Buffer.from(bytesBase64, 'base64'));
 
-        const result = await new Promise((resolve) => {
-          execFile(
-            'powershell.exe',
-            // -NoLogo/-NonInteractive/-WindowStyle Hidden: arrancan la consola
-            // de PowerShell algo más rápido y sin parpadeo de ventana; el
-            // grueso del tiempo ya se ahorró antes cacheando el .dll
-            // compilado (ver print-raw.ps1), esto es la siguiente milla.
-            ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-PrinterName', printerName, '-FilePath', tmpFile],
-            { timeout: 10000 },
-            (error, stdout, stderr) => {
-              if (error) resolve({ success: false, reason: (stderr || error.message || '').trim().slice(0, 300) });
-              else resolve({ success: stdout.trim() === 'OK', reason: stdout.trim() || stderr.trim() });
-            }
-          );
-        });
-        // Si falló usando la impresora predeterminada en caché, puede que
-        // ya no sea la predeterminada (o se haya desconectado) — se
-        // olvida para que el siguiente intento la vuelva a detectar.
-        if (usingCachedDefault && !result.success) cachedDefaultPrinterName = null;
+        let result;
+        if (process.platform === 'win32') {
+          const scriptPath = app.isPackaged
+            ? path.join(process.resourcesPath, 'print-raw.ps1')
+            : path.join(__dirname, 'resources', 'print-raw.ps1');
+          if (!fs.existsSync(scriptPath)) return { success: false, reason: 'No se encuentra print-raw.ps1' };
+          result = await new Promise((resolve) => {
+            execFile(
+              'powershell.exe',
+              // -NoLogo/-NonInteractive/-WindowStyle Hidden: arrancan la consola
+              // de PowerShell algo más rápido y sin parpadeo de ventana; el
+              // grueso del tiempo ya se ahorró antes cacheando el .dll
+              // compilado (ver print-raw.ps1), esto es la siguiente milla.
+              ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-PrinterName', printerName, '-FilePath', tmpFile],
+              { timeout: 10000 },
+              (error, stdout, stderr) => {
+                if (error) resolve({ success: false, reason: (stderr || error.message || '').trim().slice(0, 300) });
+                else resolve({ success: stdout.trim() === 'OK', reason: stdout.trim() || stderr.trim() });
+              }
+            );
+          });
+        } else {
+          // macOS/Linux: no hay PowerShell ni WinSpool, pero CUPS (el sistema
+          // de impresión que trae macOS de serie) tiene el mismo concepto de
+          // trabajo "RAW" — con "-o raw" manda los bytes ESC/POS tal cual al
+          // puerto de la impresora, sin que CUPS los intente reinterpretar
+          // como un documento normal (que es justo lo que hacía fallar
+          // print:silent). La impresora tiene que estar dada de alta en
+          // Ajustes del Sistema → Impresoras y escáneres para que "lp" la
+          // encuentre por su nombre.
+          result = await new Promise((resolve) => {
+            execFile(
+              'lp',
+              ['-d', printerName, '-o', 'raw', tmpFile],
+              { timeout: 10000 },
+              (error, stdout, stderr) => {
+                if (error) resolve({ success: false, reason: (stderr || error.message || '').trim().slice(0, 300) });
+                else resolve({ success: true, reason: stdout.trim() });
+              }
+            );
+          });
+        }
         try { fs.unlinkSync(tmpFile); } catch (e) { /* no crítico */ }
         return result;
       } catch (e) {
