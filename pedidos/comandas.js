@@ -251,25 +251,49 @@ let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQues
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
 let orderPaid = false;
 let paymentMethod = 'efectivo';
+// Pedido por teléfono cargado desde "Pedidos no pagados" (ver
+// payHistorialOrder): su comanda para cocina YA se imprimió cuando se hizo
+// el pedido, así que al cobrarlo ahora no hay que volver a imprimir nada —
+// solo marcarlo como pagado y que desaparezca de la lista de pendientes.
+let pedidoACobrarSinImprimir = null;
 function setOrderPaid(v) {
   orderPaid = v;
   document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
   document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
-  // El botón de abajo del todo de Cobrar siempre imprime — solo cambia el
-  // texto según si ya está marcado como pagado o no: "IMPRIMIR COMANDA"
-  // antes de cobrar (para la cocina) y "Imprimir ticket" una vez pagado.
   const printBtn = document.getElementById('print-btn');
   if (printBtn) {
-    printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'IMPRIMIR COMANDA';
+    if (pedidoACobrarSinImprimir) {
+      // Ya impreso de antes: el botón solo registra el cobro, no imprime.
+      printBtn.textContent = '✅ Marcar como cobrado';
+    } else {
+      // El botón de abajo del todo de Cobrar siempre imprime — solo cambia
+      // el texto según si ya está marcado como pagado o no: "IMPRIMIR
+      // COMANDA" antes de cobrar (para la cocina) y "Imprimir ticket" una
+      // vez pagado.
+      printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'IMPRIMIR COMANDA';
+    }
     printBtn.className = 'btn-print';
   }
 }
-// Botón de abajo del Cobrar: cierra e imprime siempre (el estado
-// pagado/no pagado ya va grabado en el pedido, solo cambia el texto).
+// Botón de abajo del Cobrar: si el pedido ya estaba impreso (venía de
+// "Pedidos no pagados"), solo se registra el cobro; si no, cierra e
+// imprime siempre (el estado pagado/no pagado ya va grabado en el pedido,
+// solo cambia el texto).
 function cobrarBottomAction() {
   closeCobrarModal();
-  handlePrintOrder();
+  if (pedidoACobrarSinImprimir) finalizarCobroSinImprimir();
+  else handlePrintOrder();
+}
+function finalizarCobroSinImprimir() {
+  const order = pedidoACobrarSinImprimir;
+  if (!order) return;
+  order.paid = true;
+  order.paymentMethod = paymentMethod;
+  saveToHistorial(order);
+  pedidoACobrarSinImprimir = null;
+  clearOrder(true);
+  toast('✅ Pedido ' + order.num + ' cobrado');
 }
 function setPaymentMethod(m) {
   paymentMethod = m;
@@ -1210,6 +1234,7 @@ function clearOrder(silent) {
   document.getElementById('order-name').value = '';
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
+  pedidoACobrarSinImprimir = null;
   setOrderPaid(false);
   setPaymentMethod('efectivo');
   renderMenu();
@@ -2471,6 +2496,10 @@ function payHistorialOrder(index) {
   lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
   document.getElementById('pickup-time').value = order.pickupTime || '';
+  // Se guarda el pedido ORIGINAL entero (mismo número de ticket, ya
+  // impreso) para poder cobrarlo sin generar uno nuevo ni volver a
+  // imprimir — ver cobrarBottomAction/finalizarCobroSinImprimir.
+  pedidoACobrarSinImprimir = order;
   setOrderPaid(false);
   setPaymentMethod(order.paymentMethod || 'efectivo');
   list.splice(index, 1);
