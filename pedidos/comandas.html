@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
-<link rel="stylesheet" href="comandas.css?v=1788083801485">
+<link rel="stylesheet" href="comandas.css?v=1788084198387">
 </head>
 <body>
 
@@ -65,9 +65,9 @@
      modal a pantalla completa (no dentro de la barra lateral, que se
      quedaba corta y no dejaba ver el teclado por mucho que se
      deslizara). ── -->
-<div id="cobrar-modal" class="modal-overlay" onclick="if(event.target===this)closeCobrarModal()">
+<div id="cobrar-modal" class="modal-overlay" onclick="if(event.target===this)cancelCobrarModal()">
   <div class="modal-box" style="max-width:660px">
-    <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
+    <button class="modal-close" onclick="cancelCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
     <div class="paid-toggle-row" id="paid-toggle-row">
       <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
@@ -664,6 +664,6 @@
      siempre con los últimos precios conocidos. -->
 <script src="js/firebase-auth-compat.js"></script>
 <script src="js/config.js"></script>
-<script src="comandas.js?v=1788083801485"></script>
+<script src="comandas.js?v=1788084198387"></script>
 </body>
 </html>

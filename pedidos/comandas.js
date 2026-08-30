@@ -1099,6 +1099,24 @@ function openCobrarModal() {
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
 }
+// Cerrar Cobrar con la X o tocando fuera (a diferencia del botón de abajo,
+// que siempre completa el cobro) — si el pedido venía de "Pedidos no
+// pagados" (payHistorialOrder ya lo había quitado de esa lista y descontado
+// de la caja para cargarlo aquí), cerrar sin cobrar lo dejaría perdido sin
+// ningún rastro: ni en "Pedidos no pagados" ni cobrado. Se devuelve tal
+// cual a la lista (mismo camino que un cobro normal, saveToHistorial) antes
+// de cerrar.
+function cancelCobrarModal() {
+  if (pedidoACobrarSinImprimir) {
+    const order = pedidoACobrarSinImprimir;
+    if (!confirm('¿Cerrar sin cobrar el pedido ' + order.num + '? Volverá a "Pedidos no pagados".')) return;
+    saveToHistorial(order);
+    pedidoACobrarSinImprimir = null;
+    clearOrder(true);
+    toast('↩️ Pedido ' + order.num + ' devuelto a "Pedidos no pagados"');
+  }
+  closeCobrarModal();
+}
 
 // Entregado se compone de lo entregado por billetes/monedas tocados
 // (cashEntregado) más lo que se esté escribiendo en el teclado sin
