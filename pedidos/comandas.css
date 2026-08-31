@@ -754,6 +754,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .summary-row { text-align: center; padding: clamp(5px, 1vh, 8px) 16px; }
 .summary-row + .summary-row { border-top: 1px dashed var(--warm); }
+/* Total tocable cuando no hay pedido (repasar un ticket, un cobro suelto) */
+#cobrar-total-row.editable { cursor: pointer; }
+#cobrar-total-row.editable:hover { background: var(--amber-light); }
+#cobrar-total-row.editable .num { text-decoration: underline dashed var(--amber); text-underline-offset: 3px; }
+#cobrar-total-row.editable .lbl::after { content: ' ✏️'; }
 .summary-row .lbl { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
 .summary-row .num { font-family: var(--font-head); font-size: clamp(16px, 2.4vh, 21px); font-weight: 700; color: var(--brown); font-variant-numeric: tabular-nums; }
 .summary-row.cambio { padding: clamp(7px, 1.3vh, 10px) 16px; background: var(--amber-light); transition: background .15s; }

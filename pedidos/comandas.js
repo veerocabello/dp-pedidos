@@ -844,6 +844,10 @@ function renderCart() {
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
+    // "0,00 €" también en el texto (no solo ocultando la fila) para que
+    // currentOrderTotal() no se quede leyendo el importe del pedido
+    // anterior si se abre Cobrar con la comanda vacía.
+    document.getElementById('cart-total').textContent = '0,00 €';
     // El botón de Cobrar se queda siempre a la vista aunque la comanda esté
     // vacía (pedidos por teléfono que se cobran después, sin haber tocado
     // aún el carrito).
@@ -1007,9 +1011,17 @@ function restoreCartDraftIfAny() {
    ══════════════════════════════════════════════════════════════ */
 function parseCashNum(str) { return parseFloat(String(str || '').replace(',', '.')) || 0; }
 let cashOrderTotal = 0;
+// Con la comanda vacía (repasar un ticket, un cobro suelto que no es un
+// pedido de la carta...) se puede escribir el total a mano — en cuanto hay
+// algún producto en la comanda, ese importe manual se descarta sin más: el
+// total vuelve a seguir siempre al pedido, como toda la vida.
+let cobrarTotalManual = null;
 function syncCashTotal(orderTotal) {
-  cashOrderTotal = orderTotal;
-  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
+  if (orderTotal > 0) cobrarTotalManual = null;
+  cashOrderTotal = (orderTotal <= 0 && cobrarTotalManual != null) ? cobrarTotalManual : orderTotal;
+  document.getElementById('cobrar-modal-total').textContent = fmt(cashOrderTotal) + ' €';
+  const totalRow = document.getElementById('cobrar-total-row');
+  if (totalRow) totalRow.classList.toggle('editable', !cartHasAnyItem());
   updateChange();
 }
 // El "Cobrar" ya no vive encajado en la barra lateral (se quedaba corto
@@ -1018,6 +1030,16 @@ function syncCashTotal(orderTotal) {
 function openCobrarModal() {
   syncCashTotal(currentOrderTotal());
   document.getElementById('cobrar-modal').classList.add('open');
+}
+// Toca el Total para escribirlo a mano — solo tiene sentido sin comanda
+// (si hay productos, el total es el del pedido, sin excepciones).
+function editCobrarTotal() {
+  if (cartHasAnyItem()) { toast('El total sigue al pedido mientras haya productos en la comanda'); return; }
+  openNumpad('cobrar-total-manual-input', 'Total a cobrar');
+}
+function setCobrarTotalManual(v) {
+  cobrarTotalManual = parseCashNum(v);
+  syncCashTotal(currentOrderTotal());
 }
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
@@ -1095,6 +1117,7 @@ function keypadEquals() {
 function clearCashReceived() {
   cashEntregado = 0;
   keypadBuffer = '';
+  cobrarTotalManual = null;
   document.querySelectorAll('#cobrar-modal .denom-btn').forEach(btn => {
     btn.dataset.count = '0';
     btn.classList.remove('tapped');
@@ -1102,6 +1125,7 @@ function clearCashReceived() {
     if (badge) badge.remove();
   });
   updateKeypadDisplay();
+  syncCashTotal(currentOrderTotal());
 }
 function currentOrderTotal() {
   const el = document.getElementById('cart-total');

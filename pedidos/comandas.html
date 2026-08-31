@@ -83,7 +83,11 @@
          suma al momento; escribir con el teclado se ve en vivo aunque no
          se pulse "=" (solo hace falta "=" para sumarlo de verdad). -->
     <div class="summary-card">
-      <div class="summary-row"><div class="lbl">Total</div><div class="num" id="cobrar-modal-total">0,00 €</div></div>
+      <!-- Con la comanda vacía se puede tocar el Total para escribirlo a
+           mano (repasar un ticket, un cobro suelto...); con productos en la
+           comanda sigue fijo al pedido, como siempre. -->
+      <div class="summary-row" id="cobrar-total-row" onclick="editCobrarTotal()"><div class="lbl">Total</div><div class="num" id="cobrar-modal-total">0,00 €</div></div>
+      <input type="hidden" id="cobrar-total-manual-input" oninput="setCobrarTotalManual(this.value)">
       <div class="summary-row"><div class="lbl">Entregado</div><div class="num" id="cash-entregado">0,00 €</div></div>
       <div class="summary-row cambio" id="cash-change-row"><div class="lbl" id="cash-change-label">Cambio a devolver</div><div class="num" id="cash-change-amount">0,00 €</div></div>
     </div>
