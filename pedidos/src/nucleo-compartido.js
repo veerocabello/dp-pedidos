@@ -840,6 +840,7 @@ async function openAdmin() {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    if (typeof _iniciarIdleTimeoutAdmin === 'function') _iniciarIdleTimeoutAdmin();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();
