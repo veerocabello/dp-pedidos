@@ -2899,36 +2899,6 @@ async function isTrustedDevice() {
   }
 }
 
-// ── AUTO-CIERRE DEL PANEL POR INACTIVIDAD ─────────────────────────────────────
-// Si el panel se queda abierto sin querer en un dispositivo desatendido (el
-// PC del mostrador, una tablet compartida...), tras un rato sin ningún toque/
-// clic/tecla se cierra solo — mismo camino que el botón "Cerrar" (closeAdmin),
-// así que en un dispositivo de confianza no vuelve a pedir contraseña al
-// reabrir (solo se cierra la vista), y en uno normal sí. Se cuenta cualquier
-// interacción real de la página entera mientras el panel está abierto, no
-// solo dentro del panel — mover el ratón sí cuenta como "sigo aquí" aunque en
-// ese momento se esté mirando otra parte de la pantalla.
-const ADMIN_IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutos
-const ADMIN_IDLE_EVENTS = ['mousedown', 'keydown', 'touchstart'];
-let _adminIdleTimer = null;
-function _onAdminIdleActivity() {
-  clearTimeout(_adminIdleTimer);
-  _adminIdleTimer = setTimeout(function () {
-    if (window._adminLoggedIn) {
-      if (typeof logActivity === 'function') logActivity('🔒 Panel cerrado solo por inactividad (20 min)');
-      closeAdmin();
-    }
-  }, ADMIN_IDLE_TIMEOUT_MS);
-}
-function _iniciarIdleTimeoutAdmin() {
-  ADMIN_IDLE_EVENTS.forEach(ev => document.addEventListener(ev, _onAdminIdleActivity));
-  _onAdminIdleActivity();
-}
-function _pararIdleTimeoutAdmin() {
-  clearTimeout(_adminIdleTimer);
-  ADMIN_IDLE_EVENTS.forEach(ev => document.removeEventListener(ev, _onAdminIdleActivity));
-}
-
 function getTrustedDeviceName() {
   return localStorage.getItem(TRUSTED_NAME_KEY) || 'Sin nombre';
 }
@@ -3009,7 +2979,6 @@ function toggleAdminPwdVisibility(btn) {
 
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
-  if (typeof _pararIdleTimeoutAdmin === 'function') _pararIdleTimeoutAdmin();
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}
   // Solo cerrar sesión Firebase si el dispositivo NO es de confianza.
   // Si es de confianza, mantener la sesión activa para no pedir contraseña al reabrir.
@@ -3411,7 +3380,6 @@ async function checkAdminPwd() {
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
-    if (typeof _iniciarIdleTimeoutAdmin === 'function') _iniciarIdleTimeoutAdmin();
     _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();

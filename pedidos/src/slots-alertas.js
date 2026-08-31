@@ -1,6 +1,5 @@
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
-  if (typeof _pararIdleTimeoutAdmin === 'function') _pararIdleTimeoutAdmin();
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}
   // Solo cerrar sesión Firebase si el dispositivo NO es de confianza.
   // Si es de confianza, mantener la sesión activa para no pedir contraseña al reabrir.
@@ -402,7 +401,6 @@ async function checkAdminPwd() {
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
-    if (typeof _iniciarIdleTimeoutAdmin === 'function') _iniciarIdleTimeoutAdmin();
     _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();

@@ -186,36 +186,6 @@ async function isTrustedDevice() {
   }
 }
 
-// ── AUTO-CIERRE DEL PANEL POR INACTIVIDAD ─────────────────────────────────────
-// Si el panel se queda abierto sin querer en un dispositivo desatendido (el
-// PC del mostrador, una tablet compartida...), tras un rato sin ningún toque/
-// clic/tecla se cierra solo — mismo camino que el botón "Cerrar" (closeAdmin),
-// así que en un dispositivo de confianza no vuelve a pedir contraseña al
-// reabrir (solo se cierra la vista), y en uno normal sí. Se cuenta cualquier
-// interacción real de la página entera mientras el panel está abierto, no
-// solo dentro del panel — mover el ratón sí cuenta como "sigo aquí" aunque en
-// ese momento se esté mirando otra parte de la pantalla.
-const ADMIN_IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutos
-const ADMIN_IDLE_EVENTS = ['mousedown', 'keydown', 'touchstart'];
-let _adminIdleTimer = null;
-function _onAdminIdleActivity() {
-  clearTimeout(_adminIdleTimer);
-  _adminIdleTimer = setTimeout(function () {
-    if (window._adminLoggedIn) {
-      if (typeof logActivity === 'function') logActivity('🔒 Panel cerrado solo por inactividad (20 min)');
-      closeAdmin();
-    }
-  }, ADMIN_IDLE_TIMEOUT_MS);
-}
-function _iniciarIdleTimeoutAdmin() {
-  ADMIN_IDLE_EVENTS.forEach(ev => document.addEventListener(ev, _onAdminIdleActivity));
-  _onAdminIdleActivity();
-}
-function _pararIdleTimeoutAdmin() {
-  clearTimeout(_adminIdleTimer);
-  ADMIN_IDLE_EVENTS.forEach(ev => document.removeEventListener(ev, _onAdminIdleActivity));
-}
-
 function getTrustedDeviceName() {
   return localStorage.getItem(TRUSTED_NAME_KEY) || 'Sin nombre';
 }
