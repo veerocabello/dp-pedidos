@@ -2573,11 +2573,26 @@ async function guardarCopiaOrganizadaManual() {
    no se repite hasta que toque de nuevo. Con la opción "cada día"
    (recomendada) cae siempre en el primer pedido de cada jornada. ── */
 const AUTO_BACKUP_ULTIMA_FECHA_KEY = 'dpf_comandas_autobackup_ultima_fecha';
-function exportarCopiaAutomatica(fecha) {
+async function exportarCopiaAutomatica(fecha) {
+  marcarBackupHecho(fecha);
+  // En la app de escritorio, si hay carpeta de copias configurada, la
+  // automática se guarda ahí directamente (organizada por año/mes/semana,
+  // igual que "📁 Guardar copia organizada") en vez de en Descargas —así no
+  // se pierde entre archivos sueltos ni hay que acordarse de nada. Si
+  // todavía no hay carpeta configurada, se cae al descargable de siempre
+  // para que la copia no falte igualmente, avisando de paso que conviene
+  // configurar una carpeta en Ajustes.
+  if (isDesktopApp()) {
+    const res = await guardarCopiaOrganizada(fecha);
+    if (res.ok) { toast('📥 Copia automática guardada', 3200); return; }
+  }
   const horaCorta = new Date().toTimeString().slice(0, 5).replace(':', '');
   _descargarArchivo('dulce-patata-auto-' + fecha + '-' + horaCorta + '.json', JSON.stringify(construirCopiaJSON(fecha), null, 2), 'application/json');
-  marcarBackupHecho(fecha);
-  toast('📥 Copia automática guardada en Descargas', 3200);
+  if (isDesktopApp()) {
+    toast('📥 Copia automática guardada en Descargas — configura una carpeta de copias en Ajustes para que se guarde organizada sola', 5000);
+  } else {
+    toast('📥 Copia automática guardada en Descargas', 3200);
+  }
 }
 function maybeAutoBackup(fecha) {
   const cadaDias = parseInt(getTicketConfig().copiaAutoCadaDias, 10) || 0;
@@ -3127,13 +3142,26 @@ async function initDesktopSettingsSection() {
   document.getElementById('set-kiosk').checked = !!kiosk;
   document.getElementById('set-update-path').value = updatePath || '';
   document.getElementById('set-backup-folder').value = backupFolder || '';
+  updateBackupFolderHint(!!backupFolder);
   loadPrinterNameOptions();
+}
+// Resalta el aviso mientras no haya carpeta configurada — la copia
+// automática diaria solo llega a Descargas hasta que se elija una.
+function updateBackupFolderHint(configurada) {
+  const hint = document.getElementById('set-backup-folder-hint');
+  if (!hint) return;
+  hint.textContent = configurada
+    ? 'La copia automática diaria (y "📥 Descargar copia" en Hacer Caja) se guarda sola aquí, organizada en carpetas.'
+    : '⚠️ Sin configurar: la copia automática diaria solo llega a Descargas, no queda organizada aparte. Recomendado elegir una carpeta.';
+  hint.style.color = configurada ? '' : 'var(--error)';
+  hint.style.fontWeight = configurada ? '' : '600';
 }
 async function chooseBackupFolder() {
   if (!isDesktopApp()) return;
   const res = await window.comandasDesktop.chooseBackupFolder();
   if (res && res.ok) {
     document.getElementById('set-backup-folder').value = res.folder;
+    updateBackupFolderHint(true);
     toast('✅ Carpeta de copias configurada');
   }
 }
