@@ -65,6 +65,27 @@ const MENU = [
   { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.40 },
   { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.70 },
 
+  { id: 53, cat: "Snacks", name: "Lays Campesinas", desc: "", price: 1.70 },
+  { id: 54, cat: "Snacks", name: "Lays Clásicas", desc: "", price: 1.70 },
+  { id: 55, cat: "Snacks", name: "Ruffles York Queso", desc: "", price: 1.70 },
+  { id: 56, cat: "Snacks", name: "Ruffles Jamón", desc: "", price: 1.70 },
+  { id: 57, cat: "Snacks", name: "Doritos Verdes", desc: "", price: 1.70 },
+  { id: 58, cat: "Snacks", name: "Doritos Naranjas", desc: "", price: 1.70 },
+  { id: 59, cat: "Snacks", name: "Cheetos Pandilla Fantasma", desc: "", price: 1.50 },
+  { id: 60, cat: "Snacks", name: "Cheetos Pelotazos", desc: "", price: 1.50 },
+  { id: 61, cat: "Snacks", name: "Cheetos Palitos Stick", desc: "", price: 1.50 },
+  { id: 62, cat: "Snacks", name: "Mix Ups", desc: "", price: 1.50 },
+  { id: 63, cat: "Snacks", name: "Cheetos Gustosines", desc: "", price: 1.50 },
+  { id: 64, cat: "Snacks", name: "Cheetos Palomitas", desc: "", price: 1.50 },
+  { id: 65, cat: "Snacks", name: "Bits Verdes Pequeños", desc: "", price: 0.50 },
+  { id: 66, cat: "Snacks", name: "Bits Rojos Pequeños", desc: "", price: 0.50 },
+  { id: 67, cat: "Snacks", name: "Bits Naranjas Pequeños", desc: "", price: 0.50 },
+  { id: 68, cat: "Snacks", name: "Bits Rojos Grandes", desc: "", price: 1.00 },
+  { id: 69, cat: "Snacks", name: "Bits Verdes Grandes", desc: "", price: 1.00 },
+  { id: 70, cat: "Snacks", name: "Bits Naranjas Grandes", desc: "", price: 1.00 },
+  { id: 71, cat: "Snacks", name: "Revoltillo", desc: "", price: 2.80 },
+  { id: 72, cat: "Snacks", name: "Pipas", desc: "", price: 1.90 },
+
   { id: 52, cat: "Extras", name: "Bolsa", desc: "Para llevar", price: 0.10 },
 ];
 
@@ -155,10 +176,18 @@ const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Keba
 const BOLSA_ID = 52;
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
 // sin importar el orden en que estén los productos en MENU).
-const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas"];
-const menuCatsSet = new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat));
-const extraCats = [...menuCatsSet].filter(c => !CATEGORY_ORDER.includes(c));
-const categories = ["Todos", ...CATEGORY_ORDER.filter(c => menuCatsSet.has(c)), ...extraCats];
+const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas", "Snacks"];
+let menuCatsSet, extraCats, categories;
+// Categorías nuevas creadas a mano desde "Gestionar carta" (ver
+// addCartaProduct): no están en CATEGORY_ORDER, así que caen al final —
+// esta función se vuelve a llamar cada vez que se añade un producto con una
+// categoría distinta, para que la nueva pestaña aparezca sin recargar.
+function refreshCategoriesFromMenu() {
+  menuCatsSet = new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat));
+  extraCats = [...menuCatsSet].filter(c => !CATEGORY_ORDER.includes(c));
+  categories = ["Todos", ...CATEGORY_ORDER.filter(c => menuCatsSet.has(c)), ...extraCats];
+}
+refreshCategoriesFromMenu();
 let activeCategory = "Todos";
 // Mismo orden fijo para las líneas de la comanda y del ticket: patatas,
 // boniato, paninis, tartas, cookies, bebidas y la bolsa siempre la última
@@ -253,7 +282,7 @@ function toast(msg, ms = 2600) {
 /* ══════════════════════════════════════════════════════════════
    RENDER — CARTA
    ══════════════════════════════════════════════════════════════ */
-const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Extras: '🛍️' };
+const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Snacks: '🍿', Extras: '🛍️' };
 
 function initTabs() {
   const catTabs = categories.map(c =>
@@ -3257,9 +3286,13 @@ function saveSettingsForm() {
 
 /* ── Gestionar carta: añadir/quitar productos sencillos y poner/quitar
    la etiqueta NUEVO, todo guardado en este ordenador (localStorage). ── */
+const CARTA_NEW_CAT_SENTINEL = '__nueva__';
 function openCartaAdmin() {
   const catSelect = document.getElementById('carta-new-cat');
-  catSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  catSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
+  document.getElementById('carta-new-cat-custom-group').style.display = 'none';
+  document.getElementById('carta-new-cat-custom').value = '';
   document.getElementById('carta-new-name').value = '';
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
@@ -3269,6 +3302,13 @@ function openCartaAdmin() {
   document.getElementById('carta-modal').classList.add('open');
 }
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
+// Al elegir "➕ Nueva categoría…" aparece un campo para escribir su nombre
+// (hasta ahora solo se podía elegir una categoría ya existente).
+function onCartaCatSelectChange() {
+  const esNueva = document.getElementById('carta-new-cat').value === CARTA_NEW_CAT_SENTINEL;
+  document.getElementById('carta-new-cat-custom-group').style.display = esNueva ? '' : 'none';
+  if (esNueva) document.getElementById('carta-new-cat-custom').focus();
+}
 function cartaExtraPrecioRow(tipo, name, precio) {
   return `<div class="option-row" style="cursor:default">
     <div class="option-title" style="font-size:13.5px">${escapeHtml(name)}</div>
@@ -3391,11 +3431,17 @@ function saveCartaEdit() {
 }
 function addCartaProduct() {
   const name = document.getElementById('carta-new-name').value.trim();
-  const cat = document.getElementById('carta-new-cat').value;
+  const catSelect = document.getElementById('carta-new-cat').value;
+  const cat = catSelect === CARTA_NEW_CAT_SENTINEL
+    ? document.getElementById('carta-new-cat-custom').value.trim()
+    : catSelect;
   const price = parseFloat(document.getElementById('carta-new-price').value);
   const desc = document.getElementById('carta-new-desc').value.trim();
   const nuevo = document.getElementById('carta-new-nuevo').checked;
-  if (!name || !cat || !(price >= 0)) { toast('⚠️ Rellena nombre, categoría y precio'); return; }
+  if (!name || !cat || !(price >= 0)) {
+    toast(catSelect === CARTA_NEW_CAT_SENTINEL && !cat ? '⚠️ Escribe el nombre de la categoría nueva' : '⚠️ Rellena nombre, categoría y precio');
+    return;
+  }
   const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
   const item = { id: nextId, cat, name, desc, price };
   if (nuevo) item.nuevo = true;
@@ -3403,13 +3449,25 @@ function addCartaProduct() {
   custom.push(item);
   localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
   MENU.push(item);
+  // Si la categoría es nueva de verdad, tiene que aparecer ya en la propia
+  // lista desplegable (y seguir seleccionada) por si se añaden más
+  // productos seguidos a esa misma categoría.
+  refreshCategoriesFromMenu();
+  const wasNewCat = catSelect === CARTA_NEW_CAT_SENTINEL;
+  initTabs();
   renderMenu();
   renderCartaAdminList();
   document.getElementById('carta-new-name').value = '';
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
-  toast('✅ Producto añadido');
+  const newCatSelect = document.getElementById('carta-new-cat');
+  newCatSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
+  if (wasNewCat) newCatSelect.value = cat;
+  document.getElementById('carta-new-cat-custom-group').style.display = 'none';
+  document.getElementById('carta-new-cat-custom').value = '';
+  toast(wasNewCat ? '✅ Categoría "' + cat + '" creada con este producto' : '✅ Producto añadido');
 }
 function removeCartaProduct(id, name) {
   if (!confirm('¿Quitar "' + name + '" de la carta?')) return;
