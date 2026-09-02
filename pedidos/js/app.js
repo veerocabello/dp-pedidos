@@ -36,7 +36,7 @@ Ven a recogerlo y paga en caja`,window.open("https://wa.me/?text="+encodeURIComp
     <div class="cart-line">
       <span class="cart-line-name">`.concat(V.name,`</span>
       <span class="cart-line-qty">x`).concat(L,`</span>
-      <span class="cart-line-price">`).concat(M.toFixed(2),` \u20AC</span>
+      <span class="cart-line-price">`).concat(M.toFixed(2).replace(".",","),` \u20AC</span>
       <button class="cart-remove" onclick="removeItem(`).concat(R,`)" title="Quitar">&#128465;</button>
     </div>`)}).join(""),m=t.map(h=>{const P=MENU.find(M=>M.id==h.menuId);if(!P)return console.error("renderCart: producto custom no encontrado menuId="+h.menuId),"";const L=(P.price+(h.extraQueso?1:0)+(h.extraGratinado?.5:0))*h.qty;l+=L;const V=[...h.sauces.map(M=>"Extra salsa "+M),...h.ingredients.map(M=>"Extra "+M)].join(", ");return`
     <div class="cart-line" style="flex-wrap:wrap">
