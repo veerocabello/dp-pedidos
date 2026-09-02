@@ -158,14 +158,14 @@ function openExtrasModal(itemId) {
     optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
-  // Ingredientes extra +0,70€
+  // Ingredientes extra +1,00€
   optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
   EXTRAS_ING_PRECIO07.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
     optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
-  // Salsas extra +0,90€
+  // Salsas extra +1,00€ (Philadelphia +1,20€, ver precioSalsaExtra)
   optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">SALSAS EXTRA</div>";
   optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
   EXTRAS_SALSAS.forEach(salsa => {
@@ -5184,10 +5184,12 @@ function renderCart() {
     const extras = [];
     if (c.queso) extras.push('+ Extra Queso +1,00€');
     (c.ingredientesExtra || []).forEach(ing => {
-      const _precioIng = (typeof EXTRAS_ING_PRECIO1 !== 'undefined' && EXTRAS_ING_PRECIO1.includes(ing)) ? '1,00' : '0,70';
-      extras.push('+ Extra ' + ing + ' +' + _precioIng + '€');
+      extras.push('+ Extra ' + ing + ' +1,00€');
     });
-    (c.salsasExtra || []).forEach(salsa => extras.push('+ Extra salsa ' + salsa + ' +0,90€'));
+    (c.salsasExtra || []).forEach(salsa => {
+      const _precioSalsa = (typeof precioSalsaExtra === 'function') ? precioSalsaExtra(salsa) : 1.00;
+      extras.push('+ Extra salsa ' + salsa + ' +' + _precioSalsa.toFixed(2).replace('.', ',') + '€');
+    });
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');

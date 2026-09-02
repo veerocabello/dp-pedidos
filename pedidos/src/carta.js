@@ -1076,10 +1076,12 @@ function renderCart() {
     const extras = [];
     if (c.queso) extras.push('+ Extra Queso +1,00€');
     (c.ingredientesExtra || []).forEach(ing => {
-      const _precioIng = (typeof EXTRAS_ING_PRECIO1 !== 'undefined' && EXTRAS_ING_PRECIO1.includes(ing)) ? '1,00' : '0,70';
-      extras.push('+ Extra ' + ing + ' +' + _precioIng + '€');
+      extras.push('+ Extra ' + ing + ' +1,00€');
     });
-    (c.salsasExtra || []).forEach(salsa => extras.push('+ Extra salsa ' + salsa + ' +0,90€'));
+    (c.salsasExtra || []).forEach(salsa => {
+      const _precioSalsa = (typeof precioSalsaExtra === 'function') ? precioSalsaExtra(salsa) : 1.00;
+      extras.push('+ Extra salsa ' + salsa + ' +' + _precioSalsa.toFixed(2).replace('.', ',') + '€');
+    });
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
