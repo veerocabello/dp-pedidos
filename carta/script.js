@@ -25,7 +25,7 @@ const PATATAS = [
   { n: 17, name: 'Bomba', price: '9,40€', desc: '9 ingredientes y/o salsas al gusto ¡sin límite!' },
 ];
 
-const INGREDIENTES_PREMIUM = ['Jamón York', 'Carne picada', 'Pollo', 'Carne kebab', 'Atún', 'Gambas', 'Tronquitos de mar', 'Huevo', 'Bacon', 'Mozzarella', '4 quesos'];
+const INGREDIENTES_PREMIUM = ['Jamón York', 'Carne picada', 'Pollo', 'Carne kebab', 'Atún', 'Gambas', 'Tronquitos de mar', 'Huevo', 'Bacon'];
 const INGREDIENTES_BASE = ['Tomate natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
 const SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Roquefort'];
 

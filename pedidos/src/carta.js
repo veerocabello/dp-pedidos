@@ -186,43 +186,43 @@ const MENU = [
   cat: "Cookies",
   name: "Crumbl Cookie Pistacho",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 }, {
   id: 28,
   cat: "Cookies",
   name: "Crumbl Cookie Lotus",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 }, {
   id: 29,
   cat: "Cookies",
   name: "Crumbl Cookie Oreo",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 }, {
   id: 30,
   cat: "Cookies",
   name: "Crumbl Cookie Kit Kat",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 }, {
   id: 31,
   cat: "Cookies",
   name: "Crumbl Cookie Nutella",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 }, {
   id: 32,
   cat: "Cookies",
   name: "Crumbl Cookie Kinder",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 }, {
   id: 33,
   cat: "Cookies",
   name: "Crumbl Cookie Huesitos Blanco",
   desc: "Recién horneada",
-  price: 3.99
+  price: 4.99
 },
 // ── TARTAS ──
 {
