@@ -3564,6 +3564,28 @@ function aplicarPreciosNuevosAgosto2026() {
     : 'Ya estaba todo al día — ningún precio ha cambiado.';
   if (typeof showAlert === 'function') showAlert(msg, 'Precios nuevos');
 }
+// Subida de precio de las 7 Cookies (+1€, de 2,99€ a 3,99€) — mismo patrón
+// que aplicarPreciosNuevosAgosto2026() de arriba: un botón de un solo uso
+// en vez de editar 7 productos a mano, solo toca price, deja todo lo demás
+// (nombre, descripción, orden...) intacto.
+function aplicarPrecioCookiesNuevo() {
+  const NUEVOS_PRECIOS = { 27: 3.99, 28: 3.99, 29: 3.99, 30: 3.99, 31: 3.99, 32: 3.99, 33: 3.99 };
+  let cambiados = 0;
+  const sinCambio = [];
+  MENU.forEach(item => {
+    if (!Object.prototype.hasOwnProperty.call(NUEVOS_PRECIOS, item.id)) return;
+    if (item.price === NUEVOS_PRECIOS[item.id]) { sinCambio.push(item.name); return; }
+    item.price = NUEVOS_PRECIOS[item.id];
+    cambiados++;
+  });
+  saveMenu();
+  renderMenu();
+  renderAdminProducts();
+  const msg = cambiados
+    ? 'Precios actualizados: ' + cambiados + ' cookie(s) a 3,99€.' + (sinCambio.length ? ' Ya estaban al día: ' + sinCambio.join(', ') + '.' : '')
+    : 'Ya estaba todo al día — ningún precio ha cambiado.';
+  if (typeof showAlert === 'function') showAlert(msg, 'Precio de Cookies');
+}
 function renderAdminProducts() {
   const cats = [...new Set(MENU.map(i => i.cat))];
   const emojiMapAdmin = {"Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
