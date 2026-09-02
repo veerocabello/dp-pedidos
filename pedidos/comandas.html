@@ -38,6 +38,7 @@
     <div class="cart-header">
       <h2>Comanda</h2>
       <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal()">➕ Añadir</button>
         <button class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
         <button class="btn-text" onclick="clearOrder()">Vaciar</button>
       </div>
@@ -524,6 +525,28 @@
     <div class="modal-footer">
       <button class="btn-secondary" id="discount-remove-btn" onclick="removeDiscount()" style="display:none">🗑️ Quitar descuento</button>
       <button class="modal-confirm-btn" onclick="applyDiscount()">→ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── COBRO SUELTO — para cobrar algo que no está en la carta (una
+     reparación, un extra puntual...) sin darlo de alta como producto. ── -->
+<div id="manual-item-modal" class="modal-overlay" onclick="if(event.target===this)closeManualItemModal()">
+  <div class="modal-box" style="max-width:380px">
+    <button class="modal-close" onclick="closeManualItemModal()">&#x2715;</button>
+    <div class="modal-title">➕ Añadir cobro suelto</div>
+    <div class="modal-subtitle">Para cobrar algo que no está en la carta.</div>
+    <div class="form-group">
+      <label>Descripción</label>
+      <input id="manual-item-name" type="text" maxlength="40" placeholder="Ej. Servilletas">
+    </div>
+    <div class="form-group">
+      <label>Precio</label>
+      <input id="manual-item-price" type="text" inputmode="none" readonly placeholder="0,00" onclick="openNumpad('manual-item-price','Precio')">
+    </div>
+    <div class="modal-error" id="manual-item-error"></div>
+    <div class="modal-footer">
+      <button class="modal-confirm-btn" onclick="confirmManualItem()">→ Añadir a la comanda</button>
     </div>
   </div>
 </div>

@@ -172,6 +172,20 @@ const CUSTOMIZER_CONFIG = {
 };
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
+// "Doble" de un ingrediente (base o extra) solo se ofrece cuando hay un
+// precio de referencia con el que cobrarlo — si el componente no está en
+// la lista de ingredientes con precio (p.ej. "galletas Lotus" o "pulled
+// pork BBQ", propios de una receta de Boniato) no se adivina ningún precio.
+function matchCustIngredientName(comp) {
+  const norm = String(comp).trim().toLowerCase();
+  return CUST_INGREDIENTS.find(n => n.toLowerCase() === norm) || null;
+}
+// Suma el recargo de cada ingrediente marcado "doble" (una unidad extra al
+// mismo precio que ese ingrediente como extra) — independiente del resto
+// del precio, no cuenta para los umbrales de Al Gusto/Bomba.
+function dobleSurcharge(dobles) {
+  return (dobles || []).reduce((s, name) => s + (priceOfIngExtra(name) || 0), 0);
+}
 
 const BOLSA_ID = 52;
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
@@ -197,10 +211,12 @@ function categoryRank(cat) {
   return idx === -1 ? CATEGORY_ORDER.length : idx;
 }
 
-/* ── Estado del carrito (3 capas, igual que en la web) ── */
+/* ── Estado del carrito (3 capas, igual que en la web, + cobros sueltos) ── */
 let cart = {};        // id -> qty (productos simples, sin personalizar)
 let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
+let manualCart = {};   // key -> {key, name, price, qty} — cobros sueltos que no están en la carta
+let manualIdSeq = 0, manualItemEditKey = null;
 let orderPaid = false;
 let paymentMethod = 'efectivo';
 // Pedido por teléfono cargado desde "Pedidos no pagados" (ver
@@ -412,6 +428,49 @@ function changeExtrasQty(key, delta) {
   if (c.qty <= 0) { delete extrasCart[key]; clearLineDiscount(key); }
   renderCart();
 }
+
+/* ── Cobro suelto: para cobrar algo que no está en la carta (una
+   reparación, una venta puntual...) sin tener que darlo de alta como
+   producto — nombre y precio libres, se añade como una línea más de la
+   comanda, con su propio descuento/quitar igual que cualquier otra. ── */
+function openManualItemModal(editKey) {
+  manualItemEditKey = editKey || null;
+  const existing = manualItemEditKey ? manualCart[manualItemEditKey] : null;
+  document.getElementById('manual-item-name').value = existing ? existing.name : '';
+  document.getElementById('manual-item-price').value = existing ? fmt(existing.price) : '';
+  document.getElementById('manual-item-error').style.display = 'none';
+  document.getElementById('manual-item-modal').classList.add('open');
+}
+function closeManualItemModal() {
+  document.getElementById('manual-item-modal').classList.remove('open');
+  manualItemEditKey = null;
+}
+function editManualItem(key) { openManualItemModal(key); }
+function confirmManualItem() {
+  const name = document.getElementById('manual-item-name').value.trim();
+  const price = parseCashNum(document.getElementById('manual-item-price').value);
+  const errEl = document.getElementById('manual-item-error');
+  if (!name) { errEl.textContent = 'Escribe una descripción'; errEl.style.display = 'block'; return; }
+  if (!price || price <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
+  if (manualItemEditKey && manualCart[manualItemEditKey]) {
+    Object.assign(manualCart[manualItemEditKey], { name, price });
+  } else {
+    manualIdSeq++;
+    const key = 'manual:' + manualIdSeq;
+    manualCart[key] = { key, name, price, qty: 1 };
+  }
+  closeManualItemModal();
+  renderCart();
+  toast('✅ Añadido a la comanda');
+}
+function removeManualItem(key) { delete manualCart[key]; clearLineDiscount(key); renderCart(); }
+function changeManualQty(key, delta) {
+  const m = manualCart[key];
+  if (!m) return;
+  m.qty += delta;
+  if (m.qty <= 0) { delete manualCart[key]; clearLineDiscount(key); }
+  renderCart();
+}
 function editCustItem(key) {
   const c = custCart[key];
   if (!c) return;
@@ -507,7 +566,7 @@ function freeSwapPickSet(pickOrder, freePasses) {
 function getExtrasItemPrice(e) {
   const free = computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
-  return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0);
+  return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
   const ingCount = (ingredientesExtra || []).length;
@@ -537,6 +596,7 @@ function getExtrasItemLabel(e) {
 function getExtrasItemDetails(e) {
   const out = [];
   (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
+  (e.dobles || []).forEach(d => out.push('⨯2 ' + d + ' (extra)'));
   (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to));
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
@@ -554,6 +614,7 @@ function getExtrasItemDetails(e) {
 function getExtrasItemTicketExtras(e) {
   const out = [];
   (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q, underline: true }));
+  (e.dobles || []).forEach(d => out.push({ name: d + ' (extra)', price: priceOfIngExtra(d) || 0, underline: true }));
   (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to, underline: true }));
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
@@ -567,7 +628,7 @@ function getExtrasItemTicketExtras(e) {
   return out;
 }
 function cartHasAnyItem() {
-  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0);
+  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0) || Object.values(manualCart).some(c => c.qty > 0);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -605,6 +666,7 @@ function getLineDiscountContextLabel(key) {
   }
   if (custCart[key]) { const item = MENU.find(m => m.id == custCart[key].menuId); return item ? item.name : null; }
   if (extrasCart[key]) return getExtrasItemLabel(extrasCart[key]);
+  if (manualCart[key]) return manualCart[key].name;
   return null;
 }
 
@@ -860,6 +922,7 @@ function swipeRemoveByKey(type, key) {
   if (type === 'simple') removeItem(parseInt(key, 10));
   else if (type === 'cust') removeCustItem(key);
   else if (type === 'extras') removeExtrasItem(key);
+  else if (type === 'manual') removeManualItem(key);
   else if (type === 'discount') removeDiscount();
 }
 
@@ -869,8 +932,9 @@ function renderCart() {
   const lines = Object.entries(cart);
   const custLines = Object.values(custCart).filter(c => c.qty > 0);
   const extLines = Object.values(extrasCart).filter(c => c.qty > 0);
+  const manualLines = Object.values(manualCart).filter(c => c.qty > 0);
 
-  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
+  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0 && manualLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
     // "0,00 €" también en el texto (no solo ocultando la fila) para que
@@ -967,6 +1031,25 @@ function renderCart() {
     </div>`) });
   });
 
+  manualLines.forEach(m => {
+    const raw = m.price * m.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[m.key]);
+    const subtotal = raw - discAmt;
+    total += subtotal;
+    rows.push({ rank: CATEGORY_ORDER.length, html: wrapSwipe('manual', m.key, `<div class="cart-line">
+      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editManualItem('${m.key}')" title="Editar">${escapeHtml(m.name)}</button>
+      <div class="cart-qty-mini">
+        <button class="qty-btn-sm" onclick="changeManualQty('${m.key}',-1)">−</button>
+        <span>${m.qty}</span>
+        <button class="qty-btn-sm" onclick="changeManualQty('${m.key}',1)">+</button>
+      </div>
+      <span class="cart-line-price">${fmt(subtotal)} €</span>
+      <button class="cart-edit" onclick="openDiscountModal('${m.key}')" title="Descuento en este producto">🏷️</button>
+      <button class="cart-remove" onclick="removeManualItem('${m.key}')" title="Quitar">🗑️</button>
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[m.key]))} (-${fmt(discAmt)} €)</div>` : ''}
+    </div>`) });
+  });
+
   rows.sort((a, b) => a.rank - b.rank);
   let html = rows.map(r => r.html).join('');
 
@@ -999,6 +1082,7 @@ function saveCartDraft() {
       cart: { ...cart },
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+      manualCart: JSON.parse(JSON.stringify(manualCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
       lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: (document.getElementById('order-name') || {}).value || '',
@@ -1014,11 +1098,12 @@ function restoreCartDraftIfAny() {
   let draft;
   try { draft = JSON.parse(localStorage.getItem(CART_DRAFT_KEY) || 'null'); } catch (e) { return; }
   if (!draft) return;
-  const hasContent = Object.keys(draft.cart || {}).length || Object.keys(draft.custCart || {}).length || Object.keys(draft.extrasCart || {}).length;
+  const hasContent = Object.keys(draft.cart || {}).length || Object.keys(draft.custCart || {}).length || Object.keys(draft.extrasCart || {}).length || Object.keys(draft.manualCart || {}).length;
   if (!hasContent) return;
   cart = draft.cart || {};
   custCart = draft.custCart || {};
   extrasCart = draft.extrasCart || {};
+  manualCart = draft.manualCart || {};
   orderDiscount = draft.orderDiscount || null;
   lineDiscounts = draft.lineDiscounts || {};
   const nameEl = document.getElementById('order-name');
@@ -1198,6 +1283,7 @@ function clearOrder(silent) {
       cart: { ...cart },
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+      manualCart: JSON.parse(JSON.stringify(manualCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
       lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: document.getElementById('order-name').value,
@@ -1206,7 +1292,7 @@ function clearOrder(silent) {
       paymentMethod,
     };
   }
-  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
+  cart = {}; custCart = {}; extrasCart = {}; manualCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
@@ -1231,6 +1317,7 @@ function undoClearOrder() {
   cart = clearedOrderSnapshot.cart;
   custCart = clearedOrderSnapshot.custCart;
   extrasCart = clearedOrderSnapshot.extrasCart;
+  manualCart = clearedOrderSnapshot.manualCart || {};
   orderDiscount = clearedOrderSnapshot.orderDiscount;
   lineDiscounts = clearedOrderSnapshot.lineDiscounts || {};
   document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
@@ -1521,6 +1608,8 @@ function getOrderedExtrasPicks() {
 }
 
 function openExtrasModal(id, editKey) {
+  const item = MENU.find(m => m.id == id);
+  if (!item) return;
   extrasEditKey = editKey || null;
   extrasCurrentId = id;
   const existing = extrasEditKey ? extrasCart[extrasEditKey] : null;
@@ -1532,9 +1621,20 @@ function openExtrasModal(id, editKey) {
   extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to })) : [] : [];
   extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
-    (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = true);
+    (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = 1);
     (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = true);
-    (existing.quitados || []).forEach(q => extrasQuitados[q] = true);
+    (existing.quitados || []).forEach(q => extrasQuitados[q] = 'quitado');
+    // "dobles" puede venir de un ingrediente extra (sube su estado a 2) o
+    // de un ingrediente ya incluido en la base (el chip de quitar pasa a
+    // 'doble') — hay que reconstruir cada uno en el sitio del que salió.
+    (existing.dobles || []).forEach(name => {
+      if (Object.prototype.hasOwnProperty.call(extrasIngredientes, name)) {
+        extrasIngredientes[name] = 2;
+      } else {
+        const comp = parseBaseComponents(item).find(c => matchCustIngredientName(c) === name);
+        if (comp) extrasQuitados[comp] = 'doble';
+      }
+    });
     // Reconstruye el orden de selección para saber qué se cobra "extra" si se edita.
     // Si el pedido no lo guardó (versiones anteriores), usa el orden de los arrays tal cual.
     const order = (existing.pickOrder && existing.pickOrder.length) ? existing.pickOrder : [
@@ -1546,8 +1646,6 @@ function openExtrasModal(id, editKey) {
       if (p.type === 'ing') extrasIngOrder[p.name] = extrasPickSeq; else extrasSalsaOrder[p.name] = extrasPickSeq;
     });
   }
-  const item = MENU.find(m => m.id == id);
-  if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
   document.getElementById('extras-base-price').textContent = 'Base: ' + fmt(item.price) + ' €';
   document.getElementById('extras-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
@@ -1608,10 +1706,12 @@ function renderExtrasBody(item) {
   if (canQuitar) {
     const quitarComponents = baseComponents.filter(c => !isElegirSalsaComp(c));
     if (quitarComponents.length) {
-      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes</div><div class="chip-grid">`;
+      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca dos veces para doble, si se puede)</span></div><div class="chip-grid">`;
       quitarComponents.forEach(comp => {
-        const on = !!extrasQuitados[comp];
-        html += `<button class="chip ${on ? 'quitado' : ''}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${on ? '🚫 ' : ''}${escapeHtml(comp)}</button>`;
+        const state = extrasQuitados[comp]; // undefined | 'quitado' | 'doble'
+        const cls = state === 'quitado' ? 'quitado' : state === 'doble' ? 'doble' : '';
+        const label = state === 'quitado' ? '🚫 ' + escapeHtml(comp) : state === 'doble' ? '⨯2 ' + escapeHtml(comp) : escapeHtml(comp);
+        html += `<button class="chip ${cls}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${label}</button>`;
       });
       html += `</div>`;
     }
@@ -1642,6 +1742,28 @@ function renderExtrasBody(item) {
         html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
           `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
         ).join('') + `</div>`;
+      }
+    } else {
+      // Boniato: las recetas van ya preparadas tal cual, así que solo se
+      // puede cambiar el bacon (si lo lleva) — el resto de ingredientes de
+      // cada receta (salsa Lotus, pistacho, pulled pork...) no se tocan.
+      const baconComp = ingComponents.find(c => c.trim().toLowerCase() === 'bacon');
+      if (baconComp) {
+        const elegido = extrasCambios.find(c => c.from === baconComp);
+        html += `<div class="section-label">Cambiar el bacon</div>`;
+        if (elegido) {
+          html += `<div class="swap-list"><div class="swap-chip"><span>${escapeHtml(baconComp)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(elegido.to)}</span><button onclick="removeExtraCambio(${extrasCambios.indexOf(elegido)})" title="Quitar cambio">✕</button></div></div>`;
+        } else {
+          html += `<div class="swap-card">
+            <div class="swap-row">
+              <select id="cambio-ing-from" class="swap-select" style="display:none"><option value="${escapeHtml(baconComp)}" selected>${escapeHtml(baconComp)}</option></select>
+              <span style="font-weight:600;padding:0 4px;white-space:nowrap">${escapeHtml(baconComp)}</span>
+              <span class="swap-arrow">→</span>
+              <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS.filter(n => n.toLowerCase() !== 'bacon')).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            </div>
+            <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Cambiar bacon</button>
+          </div>`;
+        }
       }
     }
   } else if (canCambiarSalsaBloqueado) {
@@ -1680,13 +1802,15 @@ function renderExtrasBody(item) {
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
     if (!soloGratinar) {
-      html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
+      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca dos veces para doble)</span></div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
         const precio = priceOfIngExtra(ing);
-        const on = !!extrasIngredientes[ing];
-        html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+        const qty = extrasIngredientes[ing] || 0;
+        const on = qty > 0, doble = qty === 2;
+        const label = doble ? ing + ' (x2)' : ing;
+        html += `<label class="option-row ${on ? 'on' : ''}${doble ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(doble ? precio * 2 : precio)} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}${doble ? ' doble' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
       html += `</div>`;
@@ -1711,8 +1835,15 @@ function renderExtrasBody(item) {
   document.getElementById('extras-options').innerHTML = html;
   if (modalBox) modalBox.scrollTop = scrollPos;
 }
+// Ciclo de 3 estados por ingrediente base: normal → quitado 🚫 → doble ⨯2
+// (solo si hay un precio de referencia con el que cobrarlo) → normal.
 function toggleExtraQuitar(comp) {
-  extrasQuitados[comp] = !extrasQuitados[comp];
+  const cur = extrasQuitados[comp];
+  if (!cur) extrasQuitados[comp] = 'quitado';
+  else if (cur === 'quitado') {
+    if (matchCustIngredientName(comp)) extrasQuitados[comp] = 'doble';
+    else delete extrasQuitados[comp];
+  } else delete extrasQuitados[comp];
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -1746,11 +1877,17 @@ function toggleExtra(which) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+// Ciclo de 3 estados por ingrediente extra: apagado → normal (1x) → doble
+// (2x, mismo precio otra vez) → apagado. El "doble" es un recargo aparte
+// (ver dobleSurcharge) — no cuenta dos veces para los umbrales de Al
+// Gusto/Bomba, que siguen viendo el ingrediente una sola vez.
 function toggleExtraIng(ing) {
-  const on = !extrasIngredientes[ing];
-  extrasIngredientes[ing] = on;
-  if (on) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; } else { delete extrasIngOrder[ing]; }
-  if (isQuesoIngredient(ing) && on && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
+  const cur = extrasIngredientes[ing] || 0;
+  const next = (cur + 1) % 3;
+  extrasIngredientes[ing] = next;
+  if (cur === 0 && next > 0) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; }
+  else if (next === 0) { delete extrasIngOrder[ing]; }
+  if (isQuesoIngredient(ing) && next > 0 && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -1761,15 +1898,23 @@ function toggleExtraSalsa(s) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+// "Doble" de un ingrediente extra (estado 2) sube su propio nombre a la
+// lista de "dobles" del pedido — el ingrediente en sí sigue contando una
+// sola vez en ingList (mismo umbral de Al Gusto/Bomba de siempre).
+function currentDoblesList() {
+  const dobles = Object.entries(extrasIngredientes).filter(([, q]) => q === 2).map(([ing]) => ing);
+  Object.entries(extrasQuitados).forEach(([comp, v]) => { if (v === 'doble') { const m = matchCustIngredientName(comp); if (m) dobles.push(m); } });
+  return dobles;
+}
 function updateExtrasTotalPrice() {
   const item = MENU.find(m => m.id == extrasCurrentId);
   if (!item) return;
-  const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing);
+  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
-  const quitadosCount = Object.values(extrasQuitados).filter(Boolean).length;
+  const quitadosCount = Object.values(extrasQuitados).filter(v => v === 'quitado').length;
   const free = computeFreeSwapPasses(quitadosCount, extrasCambios.length);
   const core = computeExtrasCorePrice(item.price, ingList, salsaList, getOrderedExtrasPicks(), free);
-  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0);
+  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
   if (noteEl) noteEl.textContent = extrasAutoUpgradeLabel(ingList, salsaList);
@@ -1783,15 +1928,17 @@ function confirmExtras() {
     toast('🚫 Elige una salsa antes de añadir ' + item.name);
     return;
   }
-  const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing).sort();
+  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing).sort();
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
-  const quitadosList = Object.entries(extrasQuitados).filter(([, on]) => on).map(([q]) => q).sort();
+  const quitadosList = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q).sort();
+  const dobles = currentDoblesList().sort();
   const cambiosList = extrasCambios.map(c => ({ from: c.from, to: c.to }));
   const pickOrder = getOrderedExtrasPicks();
   const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
     + (quitadosList.length ? 'X' + quitadosList.join('|') : '')
+    + (dobles.length ? 'D' + dobles.join('|') : '')
     + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '') || 'BASE';
   const key = 'ext:' + id + ':' + sig;
   let qtyToSet = 1;
@@ -1800,7 +1947,7 @@ function confirmExtras() {
     delete extrasCart[extrasEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, cambios: cambiosList, pickOrder, basePrice: item.price, key };
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, key };
   // Se estaba personalizando una unidad que ya estaba en el carrito simple
   // (tocando su nombre) — se retira de ahí, ya está aquí personalizada.
   if (convertingSimpleId === id) {
@@ -1937,6 +2084,11 @@ function buildOrderObject(preview) {
       _rank: categoryRank(baseItem ? baseItem.cat : ''),
       _menuId: c.menuId,
     }, c.key));
+  });
+  Object.values(manualCart).filter(m => m.qty > 0).forEach(m => {
+    items.push(applyLineDiscountToTicketItem(
+      { name: m.name, qty: m.qty, subtotal: m.price * m.qty, extras: [], _rank: CATEGORY_ORDER.length, _menuId: null },
+      m.key));
   });
   items.sort((a, b) => a._rank - b._rank);
   items.forEach(it => delete it._rank);
@@ -2482,6 +2634,7 @@ function modifyHistorialOrder(index) {
   cart = order.rawState.cart || {};
   custCart = order.rawState.custCart || {};
   extrasCart = order.rawState.extrasCart || {};
+  manualCart = order.rawState.manualCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
@@ -2508,6 +2661,7 @@ function payHistorialOrder(index) {
   cart = order.rawState.cart || {};
   custCart = order.rawState.custCart || {};
   extrasCart = order.rawState.extrasCart || {};
+  manualCart = order.rawState.manualCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
@@ -3166,6 +3320,7 @@ async function handlePrintOrder() {
     cart: { ...cart },
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    manualCart: JSON.parse(JSON.stringify(manualCart)),
     orderDiscount: orderDiscount ? { ...orderDiscount } : null,
     lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
   };
