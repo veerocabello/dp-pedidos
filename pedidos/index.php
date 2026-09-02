@@ -1100,8 +1100,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787443449421" defer></script>
-<script src="js/app.js?v=1788344620458" defer></script>
-<script src="js/auth.js?v=1788344620458" defer></script>
+<script src="js/app.js?v=1788389125982" defer></script>
+<script src="js/auth.js?v=1788389125982" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
@@ -1188,13 +1188,18 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     });
   }
 
-  // Precargar en segundo plano tras 2 segundos SOLO el HTML del panel (es
-  // ligero, y así el candado/triple-tap de acceso responde al instante) —
-  // el bundle de JavaScript del admin NO se precarga aquí a propósito: se
-  // descarga solo cuando de verdad se intenta entrar al panel (ver
-  // loadAdminShell arriba), para no obligar a cada visitante a bajarse
-  // ~370KB que nunca va a usar.
-  setTimeout(function() { _loadAdminHtml(); }, 2000);
+  // (Antes, aquí se precargaba admin-shell.html en segundo plano a los 2
+  // segundos para cada visitante, para que el candado/triple-tap de acceso
+  // respondiera al instante. Se quita: admin-shell.html lleva contraseña
+  // (Basic Auth) desde el .htaccess, y esa descarga en segundo plano
+  // recibía un 401 con WWW-Authenticate — el navegador muestra el diálogo
+  // nativo de usuario/contraseña para CUALQUIER petición 401 con esa
+  // cabecera, la pida quien la pida y se vea o no en pantalla, así que
+  // salía ese aviso de contraseña a todos los clientes 2 segundos después
+  // de entrar, aunque la página en sí cargara bien detrás. Ahora
+  // admin-shell.html se descarga solo cuando de verdad se abre el panel
+  // (ver loadAdminShell arriba) — un pelín más lento para quien lo abre,
+  // pero sin el aviso de contraseña de fondo para el resto.)
 </script>
 
 <script>
