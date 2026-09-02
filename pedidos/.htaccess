@@ -58,19 +58,11 @@ DirectoryIndex index.php index.html
     Require all denied
 </FilesMatch>
 
-# ── Bloquear el código fuente sin construir y ficheros de desarrollo — PERMANENTE ──
-# NO quitar este bloque el día de la reapertura (a diferencia del de más abajo,
-# marcado como temporal). El Service Worker sirve /src/ en producción (para
-# cachearlo como estático), y hasta ahora lo único que impedía leerlo desde
-# fuera era el Basic Auth "cerrado por obras" de toda la web — nada más en
-# este fichero bloquea /src/, /scripts/ ni package.json por nombre de ruta
-# (FilesMatch solo compara el nombre del archivo, no la carpeta, así que no
-# sirve para distinguir src/config.js de js/config.js). Al quitar ese Basic
-# Auth en la reapertura, sin esto quedaría público el código sin minificar
-# con comentarios que explican rutas de secretos, umbrales antifraude y el
-# resto de la arquitectura de seguridad — información que solo debe estar
-# donde ya la protege el .htaccess (fuera de public_html) o compilada/
-# minificada en js/app.js y js/app-admin.js.
+# ── Bloquear el código fuente sin construir y ficheros de desarrollo ──
+# El Service Worker sirve /src/ en producción (para cachearlo como
+# estático) — sin esto, con el Basic Auth ya quitado, quedaría público el
+# código sin minificar con comentarios que explican rutas de secretos,
+# umbrales antifraude y el resto de la arquitectura de seguridad.
 RewriteEngine On
 RewriteRule ^src/ - [F,L]
 RewriteRule ^scripts/ - [F,L]
@@ -90,49 +82,17 @@ RewriteRule ^bimba-verify\.php$ - [L]
 RewriteRule ^fichar-pin-check\.php$ - [L]
 RewriteRule ^csp-report\.php$ - [L]
 # estado-servidor.php: para que el monitor externo (UptimeRobot, etc.) pueda
-# comprobarlo sin toparse con la contraseña de "cerrado por obras" — no
-# expone nada sensible, solo si Firebase/Twilio responden (ver el propio
-# archivo, con su límite de intentos aparte).
+# comprobarlo sin toparse con nada — no expone nada sensible, solo si
+# Firebase/Twilio responden (ver el propio archivo, con su límite de
+# intentos aparte).
 RewriteRule ^estado-servidor\.php$ - [L]
 
-# ── Excepción TEMPORAL (solo mientras dura el Basic Auth): fichar-standalone.html
-#    es una página propia, solo con la pantalla de fichar (sin carta ni
-#    carrito detrás), accesible SIN contraseña mientras la web está cerrada,
-#    para que los empleados puedan fichar con su enlace (?fichar=TOKEN) sin
-#    conocer la contraseña de la web. Los archivos que esa página necesita
-#    (JS del fichaje, fichar-pin-check.php) se abren también SOLO cuando el
-#    navegador los pide con ese mismo enlace como "Referer".
-#    admin-shell.html NUNCA se salta, tiene su propia regla aparte.
-#
-#    IMPORTANTE — el día de la reapertura, quitar SOLO este bloque de
-#    SetEnvIf/RequireAny (deja de hacer nada útil sin Basic Auth de por
-#    medio) — pero fichar-standalone.html, js/fichar.js y
-#    fichar-pin-check.php se QUEDAN para siempre: no son un parche del
-#    Basic Auth, resuelven un problema de fondo (que el móvil de un
-#    empleado no tenga que leer la lista completa de compañeros para
-#    comprobar su propio PIN) que existe da igual si la web tiene
-#    contraseña o no.
-#
-#    NOTA DE SEGURIDAD: antes esto comprobaba solo que el Referer
-#    CONTUVIERA el texto "fichar=" en cualquier parte — el Referer lo
-#    manda el propio navegador de quien pide la página, así que
-#    cualquiera podía falsificarlo (curl -e, o incluso enlazando desde
-#    una URL propia que también tuviera "fichar=" en la query) y saltarse
-#    el aviso de "cerrado por obras" para TODA la web sin saber nada.
-#    Ahora exige que el Referer sea la URL exacta de fichar-standalone.html
-#    con un token de forma plausible (16+ caracteres) — mucho más difícil
-#    de falsificar a ciegas, aunque un Apache .htaccess no puede comprobar
-#    por sí solo si ese token es EL REAL (eso solo lo sabe Firebase). El
-#    farol solo dura hasta la reapertura, así que no merece la pena montar
-#    algo más elaborado (ej. una cookie firmada por PHP) para esto.
-<IfModule mod_setenvif.c>
-    SetEnvIf Referer "^https://pedidos\.dulcepatatafood\.es/fichar-standalone\.html\?fichar=[A-Za-z0-9_-]{16,}$" allow_fichar
-</IfModule>
-
-# admin-shell.html y comandas.html: siempre con contraseña, sin excepción de
-# fichar — comandas.html es la herramienta de mostrador (cobra, hace caja,
-# imprime), tan sensible como el propio panel de administración, así que
-# lleva la misma protección aunque técnicamente sea un archivo aparte.
+# admin-shell.html y comandas.html: siempre con contraseña — esto NO se
+# quita nunca, ni el día de la reapertura ni después. admin-shell.html es
+# la única puerta (junto con el login de Firebase Auth dentro de la propia
+# página) al panel de administración. comandas.html es la herramienta de
+# mostrador (cobra, hace caja, imprime) — tan sensible como el propio
+# panel aunque sea un archivo aparte, así que lleva la misma protección.
 <FilesMatch "^(admin-shell|comandas)\.html$">
     AuthType Basic
     AuthName "Zona privada"
@@ -140,14 +100,18 @@ RewriteRule ^estado-servidor\.php$ - [L]
     Require valid-user
 </FilesMatch>
 
-# ── Zona privada — se aplica a TODO excepto a la lista de archivos públicos ──
-# (cerrado temporalmente por obras — quitar este bloque el día de la reapertura, ver .htaccess preparado sin Basic Auth)
-<FilesMatch "^(?!(send-code\.php|verify-code\.php|webhook-incidencia\.php|bimba-verify\.php|fichar-pin-check\.php|csp-report\.php|manifest\.json|sw\.js|fichar-standalone\.html|admin-shell\.html)$).*$">
-    AuthType Basic
-    AuthName "Zona privada"
-    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
-    <RequireAny>
-        Require valid-user
-        Require env allow_fichar
-    </RequireAny>
+# ── EXPERIMENTO "por si acaso" (2 sept, mientras se investiga con
+# Hostinger un 401 en "/" que no viene de ningún .htaccess visible) —
+# fuerza explícitamente que la página principal (index.php, a la que
+# resuelve "/") esté abierta sin contraseña, por si la petición viene de
+# una regla puesta a un nivel más alto (fuera de este archivo) que sí se
+# pueda anular desde aquí. A propósito solo apunta a index.php (no a
+# "todo menos admin-shell/comandas" como un primer intento que descarté) —
+# eso habría abierto también los PHP sensibles bloqueados más arriba
+# (twilio-config.php, .htpasswd...), porque varios FilesMatch que
+# coinciden a la vez se combinan con un "si alguno deja pasar, pasa".
+# Quitar este bloque en cuanto Hostinger confirme la causa real.
+<FilesMatch "^index\.php$">
+    Satisfy Any
+    Require all granted
 </FilesMatch>
