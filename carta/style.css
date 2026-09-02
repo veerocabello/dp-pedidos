@@ -873,11 +873,4 @@ body {
   box-shadow: 0 4px 12px rgba(244, 164, 21, .4);
 }
 
-.action-btn--pedidos {
-  background: linear-gradient(#E3B23C, #A63B2C);
-  font-size: 11px;
-  line-height: 1.15;
-  box-shadow: 0 4px 12px rgba(166, 59, 44, .45);
-}
-
 .action-btn__icon { flex: none; }
