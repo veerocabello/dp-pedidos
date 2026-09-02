@@ -1005,7 +1005,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       </label>
     </div>
     <div class="customizer-footer">
-      <div class="customizer-price" id="cust-price">6,90 &#x20AC;</div>
+      <div class="customizer-price" id="cust-price">7,90 &#x20AC;</div>
       <button class="customizer-confirm-btn" id="cust-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
     </div>
     <div id="cust-error" style="display:none;font-size:12px;color:var(--error);font-weight:600;margin-top:10px;text-align:center"></div>
