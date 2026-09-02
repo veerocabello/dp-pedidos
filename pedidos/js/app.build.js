@@ -1237,8 +1237,8 @@ function renderMenu() {
     // tachado junto al rebajado, para que se note el "chollo" de un vistazo.
     const _precioOferta = (typeof _precioConOferta === 'function') ? _precioConOferta(item) : item.price;
     const priceHtml = _precioOferta < item.price
-      ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2) + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2) + ' € ⚡</span>'
-      : item.price.toFixed(2) + ' €';
+      ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2).replace('.', ',') + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2).replace('.', ',') + ' € ⚡</span>'
+      : item.price.toFixed(2).replace('.', ',') + ' €';
     const tagsHtml = dietaryTagsHtml(item);
     return sep
       + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
