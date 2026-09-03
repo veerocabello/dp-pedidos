@@ -184,9 +184,14 @@ function matchCustIngredientName(comp) {
   const norm = String(comp).trim().toLowerCase();
   return CUST_INGREDIENTS.find(n => n.toLowerCase() === norm) || null;
 }
-// Suma el recargo de cada ingrediente marcado "doble" (una unidad extra al
-// mismo precio que ese ingrediente como extra) — independiente del resto
-// del precio, no cuenta para los umbrales de Al Gusto/Bomba.
+// Tope de unidades del mismo ingrediente (doble = 2, triple = 3) — un
+// cuádruple ya no cabe en el ciclo de toques del chip, así que a partir de
+// ahí hay que usar el cobro suelto ("➕ Añadir").
+const MAX_ING_MULTIPLICIDAD = 3;
+// Suma el recargo de cada ingrediente marcado "doble"/"triple" (una unidad
+// extra por cada vez que aparece en la lista, al mismo precio que ese
+// ingrediente como extra) — independiente del resto del precio, no cuenta
+// para los umbrales de Al Gusto/Bomba.
 function dobleSurcharge(dobles) {
   return (dobles || []).reduce((s, name) => s + (priceOfIngExtra(name) || 0), 0);
 }
@@ -221,17 +226,22 @@ let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQues
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
 let manualCart = {};   // key -> {key, name, price, qty} — cobros sueltos que no están en la carta
 let manualIdSeq = 0, manualItemEditKey = null;
-let orderPaid = false;
+// Toda comanda cuenta como pagada desde el principio — antes había que
+// marcar "PAGADO"/"NO PAGADO" a mano en Cobrar, pero en la práctica el
+// cobro real se hace fuera de la app (al recoger, en mano), así que ese
+// aviso solo generaba descuadres cuando se olvidaba marcarlo. orderPaid se
+// deja tal cual (en vez de quitarlo del todo) porque sigue haciendo falta
+// para pedidos antiguos ya guardados como no pagados (ver
+// modifyHistorialOrder/payHistorialOrder, que restauran su estado real).
+let orderPaid = true;
 let paymentMethod = 'efectivo';
-// Pedido por teléfono cargado desde "Pedidos no pagados" (ver
-// payHistorialOrder): su comanda para cocina YA se imprimió cuando se hizo
-// el pedido, así que al cobrarlo ahora no hay que volver a imprimir nada —
-// solo marcarlo como pagado y que desaparezca de la lista de pendientes.
+// Pedido por teléfono recuperado de un historial antiguo que se guardó
+// como no pagado (de antes de quitar esa distinción): su comanda para
+// cocina YA se imprimió, así que al cobrarlo ahora no hay que volver a
+// imprimir nada — solo marcarlo como pagado.
 let pedidoACobrarSinImprimir = null;
 function setOrderPaid(v) {
   orderPaid = v;
-  document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
-  document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
   const printBtn = document.getElementById('print-btn');
   if (printBtn) {
@@ -239,11 +249,7 @@ function setOrderPaid(v) {
       // Ya impreso de antes: el botón solo registra el cobro, no imprime.
       printBtn.textContent = '✅ Marcar como cobrado';
     } else {
-      // El botón de abajo del todo de Cobrar siempre imprime — solo cambia
-      // el texto según si ya está marcado como pagado o no: "IMPRIMIR
-      // COMANDA" antes de cobrar (para la cocina) y "Imprimir ticket" una
-      // vez pagado.
-      printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'IMPRIMIR COMANDA';
+      printBtn.textContent = 'IMPRIMIR COMANDA';
     }
     printBtn.className = 'btn-print';
   }
@@ -600,7 +606,7 @@ function getExtrasItemLabel(e) {
 function getExtrasItemDetails(e) {
   const out = [];
   (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
-  (e.dobles || []).forEach(d => out.push('⨯2 ' + d + ' (extra)'));
+  (e.dobles || []).forEach(d => out.push('+ ' + d + ' (extra)'));
   (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to));
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
@@ -1301,7 +1307,7 @@ function clearOrder(silent) {
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
   pedidoACobrarSinImprimir = null;
-  setOrderPaid(false);
+  setOrderPaid(true);
   setPaymentMethod('efectivo');
   renderMenu();
   renderCart();
@@ -1398,11 +1404,11 @@ function renderCustChips() {
     const countIncluded = custSelIngredients.filter(x => x === n).length;
     const countExtra = custSelExtraIngredients.filter(x => x === n).length;
     const total = countIncluded + countExtra;
-    const doble = total === 2;
+    const mult = total >= 2;
     const sel = total > 0;
     const priceUnit = priceOfPick({ type: 'ing', name: n });
-    const label = doble ? n + ' x2 +' + fmt(priceUnit) + '€' : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
-    return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${doble ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
+    const label = mult ? n + ' x' + total + ' +' + fmt(priceUnit * countExtra) + '€' : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
 function toggleCustSauce(n) {
@@ -1422,12 +1428,13 @@ function toggleCustSauce(n) {
 // selección — el ingrediente de más se marca como "extra" y se cobra
 // aparte (como si se hubiera añadido en la patata normal), en vez de
 // dejar el chip deshabilitado sin forma de elegirlo.
-// Ciclo de 3 toques: no elegido → elegido (1x) → doble (2x, la segunda
-// unidad siempre se cobra aparte, cuente o no como de las incluidas) → no
-// elegido. La segunda unidad de un "doble" vive siempre en
-// custSelExtraIngredients (nunca en custSelIngredients), así que doblar un
-// ingrediente no gasta un hueco incluido de más ni cambia el umbral de Al
-// Gusto/Bomba — es un recargo aparte, igual que cualquier otro extra.
+// Ciclo de toques: no elegido → elegido (1x) → doble (2x) → triple (3x) →
+// no elegido — cada unidad de más siempre se cobra aparte, cuente o no
+// como de las incluidas. La 2ª y 3ª unidad de un ingrediente viven siempre
+// en custSelExtraIngredients (nunca en custSelIngredients), así que
+// doblar/triplicar un ingrediente no gasta un hueco incluido de más ni
+// cambia el umbral de Al Gusto/Bomba — es un recargo aparte, igual que
+// cualquier otro extra.
 function toggleCustIng(n) {
   const cfg = CUSTOMIZER_CONFIG[custType];
   const countIncluded = custSelIngredients.filter(x => x === n).length;
@@ -1437,8 +1444,8 @@ function toggleCustIng(n) {
     const roomInLimit = (cfg.maxIngredients === null || custSelIngredients.length < cfg.maxIngredients) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelIngredients.push(n);
     else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte
-  } else if (total === 1) {
-    custSelExtraIngredients.push(n); // doble → la segunda unidad se cobra aparte
+  } else if (total < MAX_ING_MULTIPLICIDAD) {
+    custSelExtraIngredients.push(n); // doble/triple → cada unidad de más se cobra aparte
   } else {
     const i = custSelIngredients.indexOf(n);
     if (i >= 0) custSelIngredients.splice(i, 1);
@@ -1725,11 +1732,12 @@ function renderExtrasBody(item) {
   if (canQuitar) {
     const quitarComponents = baseComponents.filter(c => !isElegirSalsaComp(c));
     if (quitarComponents.length) {
-      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca dos veces para doble, si se puede)</span></div><div class="chip-grid">`;
+      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple, si se puede)</span></div><div class="chip-grid">`;
       quitarComponents.forEach(comp => {
-        const state = extrasQuitados[comp]; // undefined | 'quitado' | 'doble'
-        const cls = state === 'quitado' ? 'quitado' : state === 'doble' ? 'doble' : '';
-        const label = state === 'quitado' ? '🚫 ' + escapeHtml(comp) : state === 'doble' ? '⨯2 ' + escapeHtml(comp) : escapeHtml(comp);
+        const state = extrasQuitados[comp]; // undefined | 'quitado' | 2 | 3
+        const isMult = typeof state === 'number';
+        const cls = state === 'quitado' ? 'quitado' : isMult ? 'doble' : '';
+        const label = state === 'quitado' ? '🚫 ' + escapeHtml(comp) : isMult ? '⨯' + state + ' ' + escapeHtml(comp) : escapeHtml(comp);
         html += `<button class="chip ${cls}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${label}</button>`;
       });
       html += `</div>`;
@@ -1821,15 +1829,15 @@ function renderExtrasBody(item) {
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
     if (!soloGratinar) {
-      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca dos veces para doble)</span></div><div class="ing-grid">`;
+      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
         const precio = priceOfIngExtra(ing);
         const qty = extrasIngredientes[ing] || 0;
-        const on = qty > 0, doble = qty === 2;
-        const label = doble ? ing + ' (x2)' : ing;
-        html += `<label class="option-row ${on ? 'on' : ''}${doble ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(doble ? precio * 2 : precio)} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}${doble ? ' doble' : ''}" style="width:20px;height:20px"></div>
+        const on = qty > 0, mult = qty >= 2;
+        const label = mult ? ing + ' (x' + qty + ')' : ing;
+        html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
       html += `</div>`;
@@ -1854,15 +1862,20 @@ function renderExtrasBody(item) {
   document.getElementById('extras-options').innerHTML = html;
   if (modalBox) modalBox.scrollTop = scrollPos;
 }
-// Ciclo de 3 estados por ingrediente base: normal → quitado 🚫 → doble ⨯2
-// (solo si hay un precio de referencia con el que cobrarlo) → normal.
+// Ciclo por ingrediente base: normal → quitado 🚫 → doble ⨯2 → triple ⨯3
+// (los dos últimos solo si hay un precio de referencia con el que
+// cobrarlos) → normal. La multiplicidad se guarda como número (2 o 3).
 function toggleExtraQuitar(comp) {
   const cur = extrasQuitados[comp];
   if (!cur) extrasQuitados[comp] = 'quitado';
   else if (cur === 'quitado') {
-    if (matchCustIngredientName(comp)) extrasQuitados[comp] = 'doble';
+    if (matchCustIngredientName(comp)) extrasQuitados[comp] = 2;
     else delete extrasQuitados[comp];
-  } else delete extrasQuitados[comp];
+  } else if (typeof cur === 'number' && cur < MAX_ING_MULTIPLICIDAD) {
+    extrasQuitados[comp] = cur + 1;
+  } else {
+    delete extrasQuitados[comp];
+  }
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -1896,13 +1909,13 @@ function toggleExtra(which) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-// Ciclo de 3 estados por ingrediente extra: apagado → normal (1x) → doble
-// (2x, mismo precio otra vez) → apagado. El "doble" es un recargo aparte
-// (ver dobleSurcharge) — no cuenta dos veces para los umbrales de Al
-// Gusto/Bomba, que siguen viendo el ingrediente una sola vez.
+// Ciclo por ingrediente extra: apagado → normal (1x) → doble (2x) → triple
+// (3x) → apagado, cada unidad de más al mismo precio (ver dobleSurcharge).
+// No cuenta más de una vez para los umbrales de Al Gusto/Bomba, que
+// siguen viendo el ingrediente una sola vez sea cual sea su multiplicidad.
 function toggleExtraIng(ing) {
   const cur = extrasIngredientes[ing] || 0;
-  const next = (cur + 1) % 3;
+  const next = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
   extrasIngredientes[ing] = next;
   if (cur === 0 && next > 0) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; }
   else if (next === 0) { delete extrasIngOrder[ing]; }
@@ -1917,12 +1930,19 @@ function toggleExtraSalsa(s) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-// "Doble" de un ingrediente extra (estado 2) sube su propio nombre a la
-// lista de "dobles" del pedido — el ingrediente en sí sigue contando una
-// sola vez en ingList (mismo umbral de Al Gusto/Bomba de siempre).
+// Cada unidad de más de un ingrediente (doble = 1 unidad de más, triple = 2)
+// añade una copia de su nombre a la lista de "dobles" del pedido — el
+// ingrediente en sí sigue contando una sola vez en ingList (mismo umbral
+// de Al Gusto/Bomba de siempre), sea cual sea su multiplicidad.
 function currentDoblesList() {
-  const dobles = Object.entries(extrasIngredientes).filter(([, q]) => q === 2).map(([ing]) => ing);
-  Object.entries(extrasQuitados).forEach(([comp, v]) => { if (v === 'doble') { const m = matchCustIngredientName(comp); if (m) dobles.push(m); } });
+  const dobles = [];
+  Object.entries(extrasIngredientes).forEach(([ing, q]) => { for (let i = 1; i < q; i++) dobles.push(ing); });
+  Object.entries(extrasQuitados).forEach(([comp, v]) => {
+    if (typeof v === 'number') {
+      const m = matchCustIngredientName(comp);
+      if (m) for (let i = 1; i < v; i++) dobles.push(m);
+    }
+  });
   return dobles;
 }
 function updateExtrasTotalPrice() {
@@ -4011,6 +4031,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   renderMenu();
   initCartSwipeToDelete();
+  setOrderPaid(orderPaid); // sincroniza el estado "pagado" por defecto en el DOM
   restoreCartDraftIfAny();
   renderCart();
   trySilentReconnect();
