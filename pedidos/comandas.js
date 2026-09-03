@@ -1395,10 +1395,14 @@ function renderCustChips() {
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
-    const sel = custSelIngredients.includes(n);
-    const extra = custSelExtraIngredients.includes(n);
-    const label = extra ? n + ' +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€' : n;
-    return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
+    const countIncluded = custSelIngredients.filter(x => x === n).length;
+    const countExtra = custSelExtraIngredients.filter(x => x === n).length;
+    const total = countIncluded + countExtra;
+    const doble = total === 2;
+    const sel = total > 0;
+    const priceUnit = priceOfPick({ type: 'ing', name: n });
+    const label = doble ? n + ' x2 +' + fmt(priceUnit) + '€' : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${doble ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
 function toggleCustSauce(n) {
@@ -1418,16 +1422,27 @@ function toggleCustSauce(n) {
 // selección — el ingrediente de más se marca como "extra" y se cobra
 // aparte (como si se hubiera añadido en la patata normal), en vez de
 // dejar el chip deshabilitado sin forma de elegirlo.
+// Ciclo de 3 toques: no elegido → elegido (1x) → doble (2x, la segunda
+// unidad siempre se cobra aparte, cuente o no como de las incluidas) → no
+// elegido. La segunda unidad de un "doble" vive siempre en
+// custSelExtraIngredients (nunca en custSelIngredients), así que doblar un
+// ingrediente no gasta un hueco incluido de más ni cambia el umbral de Al
+// Gusto/Bomba — es un recargo aparte, igual que cualquier otro extra.
 function toggleCustIng(n) {
   const cfg = CUSTOMIZER_CONFIG[custType];
-  const i = custSelIngredients.indexOf(n);
-  const iE = custSelExtraIngredients.indexOf(n);
-  if (i >= 0) custSelIngredients.splice(i, 1);
-  else if (iE >= 0) custSelExtraIngredients.splice(iE, 1);
-  else {
+  const countIncluded = custSelIngredients.filter(x => x === n).length;
+  const countExtra = custSelExtraIngredients.filter(x => x === n).length;
+  const total = countIncluded + countExtra;
+  if (total === 0) {
     const roomInLimit = (cfg.maxIngredients === null || custSelIngredients.length < cfg.maxIngredients) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelIngredients.push(n);
     else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte
+  } else if (total === 1) {
+    custSelExtraIngredients.push(n); // doble → la segunda unidad se cobra aparte
+  } else {
+    const i = custSelIngredients.indexOf(n);
+    if (i >= 0) custSelIngredients.splice(i, 1);
+    custSelExtraIngredients = custSelExtraIngredients.filter(x => x !== n);
   }
   if (custHasQuesoIngredient() && custExtraQueso) {
     custExtraQueso = false;
