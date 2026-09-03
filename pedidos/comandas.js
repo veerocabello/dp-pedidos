@@ -1444,7 +1444,7 @@ function renderCustChips() {
     const mult = total >= 2;
     const sel = total > 0;
     const priceUnit = priceOfPick({ type: 'ing', name: n });
-    const label = mult ? n + ' x' + total + ' +' + fmt(priceUnit * countExtra) + '€' : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
+    const label = mult ? n + ' x' + total + (countExtra > 0 ? ' +' + fmt(priceUnit * countExtra) + '€' : '') : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
     return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
@@ -1466,26 +1466,22 @@ function toggleCustSauce(n) {
 // aparte (como si se hubiera añadido en la patata normal), en vez de
 // dejar el chip deshabilitado sin forma de elegirlo.
 // Ciclo de toques: no elegido → elegido (1x) → doble (2x) → triple (3x) →
-// no elegido — cada unidad de más siempre se cobra aparte, cuente o no
-// como de las incluidas. La 2ª y 3ª unidad de un ingrediente viven siempre
-// en custSelExtraIngredients (nunca en custSelIngredients), así que
-// doblar/triplicar un ingrediente no gasta un hueco incluido de más ni
-// cambia el umbral de Al Gusto/Bomba — es un recargo aparte, igual que
-// cualquier otro extra.
+// no elegido. Cada unidad (la primera o una de más al doblar/triplicar)
+// ocupa un hueco incluido mientras quede sitio en el límite gratis — solo
+// se cobra aparte la que ya no cabe, igual que si fuera un ingrediente
+// distinto más. Por eso doblar SÍ cuenta para el umbral de Al Gusto/Bomba:
+// dos unidades del mismo ingrediente gastan dos huecos de los 6/9.
 function toggleCustIng(n) {
   const cfg = CUSTOMIZER_CONFIG[custType];
   const countIncluded = custSelIngredients.filter(x => x === n).length;
   const countExtra = custSelExtraIngredients.filter(x => x === n).length;
   const total = countIncluded + countExtra;
-  if (total === 0) {
+  if (total < MAX_ING_MULTIPLICIDAD) {
     const roomInLimit = (cfg.maxIngredients === null || custSelIngredients.length < cfg.maxIngredients) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelIngredients.push(n);
     else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte
-  } else if (total < MAX_ING_MULTIPLICIDAD) {
-    custSelExtraIngredients.push(n); // doble/triple → cada unidad de más se cobra aparte
   } else {
-    const i = custSelIngredients.indexOf(n);
-    if (i >= 0) custSelIngredients.splice(i, 1);
+    custSelIngredients = custSelIngredients.filter(x => x !== n);
     custSelExtraIngredients = custSelExtraIngredients.filter(x => x !== n);
   }
   if (custHasQuesoIngredient() && custExtraQueso) {
