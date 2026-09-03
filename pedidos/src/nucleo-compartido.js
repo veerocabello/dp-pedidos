@@ -3162,6 +3162,22 @@ function getBlacklist() {
 function saveBlacklistLocal(list) {
   localStorage.setItem(BLACKLIST_KEY, JSON.stringify(list));
 }
+// Clientes ocultados a mano de la lista "Clientes" del panel (Historial).
+// Solo afecta a esa lista — no borra pedidos ni cuenta para nada más
+// (fidelización, antispam...) — se guarda por teléfono, igual que la
+// blacklist, y sincroniza vía Firebase para que ocultar en un dispositivo
+// también se refleje en los demás.
+const CLIENTES_OCULTOS_KEY = 'dpf_clientes_ocultos';
+function getClientesOcultos() {
+  try {
+    return JSON.parse(localStorage.getItem(CLIENTES_OCULTOS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+function saveClientesOcultosLocal(list) {
+  localStorage.setItem(CLIENTES_OCULTOS_KEY, JSON.stringify(list));
+}
 function getAntiSpamCfg() {
   try {
     var _c$cooldown, _c$dailyLimit;

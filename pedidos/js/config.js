@@ -418,6 +418,9 @@ function _initFirebase() {
   window.fb_saveBlacklist = async function(list) { await jset("config/blacklist", jstr(list)); };
   window.fb_loadBlacklist = async function() { var sn=await jget("config/blacklist"); return sn.exists()?jparse(sn.val()):null; };
   window.fb_listenBlacklist = function(cb) { return jlisten("config/blacklist",function(sn){if(sn.exists())cb(jparse(sn.val()));}); };
+  // CLIENTES OCULTOS (borrado manual de la lista "Clientes" del panel — no borra pedidos)
+  window.fb_saveClientesOcultos = async function(list) { await jset("config/clientesOcultos", jstr(list)); };
+  window.fb_loadClientesOcultos = async function() { var sn=await jget("config/clientesOcultos"); return sn.exists()?jparse(sn.val()):null; };
   // ANTISPAM CONFIG (cooldown + dailyLimit)
   window.fb_saveAntiSpamCfg = async function(cfg) { await jset("config/antiSpamCfg", jstr(cfg)); };
   window.fb_loadAntiSpamCfg = async function() { var sn=await jget("config/antiSpamCfg"); return sn.exists()?jparse(sn.val()):null; };

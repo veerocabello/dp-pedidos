@@ -8045,6 +8045,42 @@ function _buildClientesMap() {
   });
   return Object.values(map).sort((a, b) => b.count - a.count);
 }
+// Cargar clientes ocultos desde Firebase al abrir la pestaña Clientes —
+// mismo patrón que loadAntiSpamFromFirebase() con la blacklist, para que
+// ocultar un cliente en un dispositivo (p.ej. el PC) también se refleje en
+// los demás (p.ej. la tablet), en vez de quedarse solo en su localStorage.
+async function loadClientesOcultosFromFirebase() {
+  if (window.fb_loadClientesOcultos) {
+    try {
+      const oc = await window.fb_loadClientesOcultos();
+      if (oc) saveClientesOcultosLocal(oc);
+    } catch {}
+  }
+  renderClientes();
+}
+let _clientesMostrarOcultos = false;
+function toggleMostrarOcultosClientes() {
+  _clientesMostrarOcultos = !_clientesMostrarOcultos;
+  renderClientes();
+}
+// Ocultar un cliente de la lista "Clientes" — NO borra ningún pedido ni
+// dato del historial, solo deja de aparecer aquí. Reversible con
+// restaurarCliente().
+async function ocultarCliente(phone) {
+  if (!phone) return;
+  if (!confirm('¿Ocultar este cliente de la lista de Clientes?\n\nNo se borra ningún pedido — solo deja de aparecer aquí. Puedes recuperarlo luego con el botón "🗑️ Ocultos".')) return;
+  const list = getClientesOcultos();
+  if (!list.includes(phone)) list.push(phone);
+  saveClientesOcultosLocal(list);
+  if (window.fb_saveClientesOcultos) await window.fb_saveClientesOcultos(list).catch(() => {});
+  renderClientes();
+}
+async function restaurarCliente(phone) {
+  const list = getClientesOcultos().filter(p => p !== phone);
+  saveClientesOcultosLocal(list);
+  if (window.fb_saveClientesOcultos) await window.fb_saveClientesOcultos(list).catch(() => {});
+  renderClientes();
+}
 var _clientesSort = 'az';
 function setClientesSort(modo) {
   _clientesSort = modo;
@@ -8070,7 +8106,27 @@ function _nombreCanonico(c) {
 }
 function renderClientes() {
   var _document$getElementB29;
-  const clientes = _buildClientesMap();
+  const todos = _buildClientesMap();
+  const ocultos = getClientesOcultos();
+  const clientes = _clientesMostrarOcultos
+    ? todos.filter(c => ocultos.includes(c.phone))
+    : todos.filter(c => !ocultos.includes(c.phone));
+
+  const toggleBtn = document.getElementById('cocultos-toggle-btn');
+  if (toggleBtn) {
+    if (_clientesMostrarOcultos) {
+      toggleBtn.textContent = '👁️ Ver clientes (' + (todos.length - ocultos.length) + ')';
+      toggleBtn.style.background = 'var(--brown)';
+      toggleBtn.style.color = 'var(--cream)';
+      toggleBtn.style.borderColor = 'var(--brown)';
+    } else {
+      toggleBtn.textContent = '🗑️ Ocultos (' + ocultos.length + ')';
+      toggleBtn.style.background = 'var(--white)';
+      toggleBtn.style.color = 'var(--muted)';
+      toggleBtn.style.borderColor = 'var(--warm)';
+    }
+  }
+
   const q = (((_document$getElementB29 = document.getElementById('clientes-search')) === null || _document$getElementB29 === void 0 ? void 0 : _document$getElementB29.value) || '').trim().toLowerCase();
   let filtered = q ? clientes.filter(c => c.phone.includes(q) || [...c.names].some(n => n.toLowerCase().includes(q))) : clientes.slice();
 
@@ -8153,9 +8209,11 @@ function renderClientes() {
     const waBtn = phoneClean
       ? '<a href="https://wa.me/34' + phoneClean + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;text-decoration:none;font-family:\'DM Sans\',sans-serif">\uD83D\uDCAC WhatsApp</a>'
       : '';
-    const actionBtns = (callBtn || waBtn)
-      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px" onclick="event.stopPropagation()">' + callBtn + waBtn + '</div>'
-      : '';
+    const phoneAttr = c.phone.replace(/'/g, "\\'");
+    const hideBtn = _clientesMostrarOcultos
+      ? '<button onclick="event.stopPropagation();restaurarCliente(\'' + phoneAttr + '\')" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩️ Restaurar</button>'
+      : '<button onclick="event.stopPropagation();ocultarCliente(\'' + phoneAttr + '\')" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #e74c3c;background:#fdf0ee;color:#c0392b;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Ocultar</button>';
+    const actionBtns = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px" onclick="event.stopPropagation()">' + callBtn + waBtn + hideBtn + '</div>';
     const phoneId = phoneClean || c.phone.replace(/\W/g, '');
 
     const ordersHtml = c.orders.slice().reverse().slice(0, 20).map((o) => {
@@ -8537,7 +8595,7 @@ function showAdminSection(id, btn) {
   // historial por días (p.ej. una tablet usada solo para pedidos en vivo)
   // mostraría la lista de Clientes vacía, con solo lo que hubiera quedado
   // en su localStorage local.
-  if (id === 'historial') loadHistorial(renderClientes);
+  if (id === 'historial') { loadClientesOcultosFromFirebase(); loadHistorial(renderClientes); }
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();

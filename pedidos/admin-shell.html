@@ -548,7 +548,10 @@
       <div class="admin-section" id="admin-historial">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap">
           <div style="font-size:13px;font-weight:600;color:var(--brown)">Clientes de los últimos 30 días</div>
-          <button class="admin-save-btn" onclick="exportClientesCSV()" style="background:var(--brown);color:var(--cream)">⬇️ Exportar CSV</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="cocultos-toggle-btn" onclick="toggleMostrarOcultosClientes()" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">🗑️ Ocultos (0)</button>
+            <button class="admin-save-btn" onclick="exportClientesCSV()" style="background:var(--brown);color:var(--cream)">⬇️ Exportar CSV</button>
+          </div>
         </div>
         <!-- Buscador -->
         <div style="position:relative;margin-bottom:12px">
