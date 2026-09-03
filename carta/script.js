@@ -16,7 +16,7 @@ const PATATAS = [
   { n: 8, name: '4 Quesos', price: '6,90€', desc: 'Salsa roquefort, emmental, gouda y mozzarella' },
   { n: 9, name: 'Completa', price: '7,20€', desc: 'Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón' },
   { n: 10, name: 'Carnívora', price: '7,40€', desc: 'Alioli, york, bacon, kebab y carne picada' },
-  { n: 11, name: 'Philadelphia', price: '6,40€', desc: 'Salsa philadelphia, york, huevo, pollo y mozzarella' },
+  { n: 11, name: 'Philadelphia', price: '7,40€', desc: 'Salsa philadelphia, york, huevo, pollo y mozzarella' },
   { n: 12, name: 'Ranchera', price: '7,50€', desc: 'Salsa ranchera, pollo, bacon y mozzarella' },
   { n: 13, name: 'Granollers', price: '7,50€', desc: 'Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria' },
   { n: 14, name: 'Pulled Pork', price: '7,50€', desc: 'Salsa barbacoa, cebolla, carne pulled pork y mozzarella' },

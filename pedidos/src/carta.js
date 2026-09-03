@@ -78,7 +78,7 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Philadelphia",
   desc: "Salsa philadelphia, york, huevo, pollo, queso mozzarella",
-  price: 6.40
+  price: 7.40
 }, {
   id: 12,
   cat: "Patatas",
