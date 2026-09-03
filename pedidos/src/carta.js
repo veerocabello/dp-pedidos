@@ -24,79 +24,79 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Vegetal",
   desc: "Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural",
-  price: 5.60
+  price: 6.40
 }, {
   id: 3,
   cat: "Patatas",
   name: "Patata Picante",
   desc: "Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas",
-  price: 5.60
+  price: 6.40
 }, {
   id: 4,
   cat: "Patatas",
   name: "Patata Carbonara",
   desc: "Nata, cebolla cocinada, bacon y queso mozzarella · Salsa cocinada a diario",
-  price: 5.80
+  price: 6.80
 }, {
   id: 5,
   cat: "Patatas",
   name: "Patata Boloñesa",
   desc: "Tomate frito, carne picada, cebolla cocinada y queso mozzarella · Salsa cocinada a diario",
-  price: 5.80
+  price: 6.80
 }, {
   id: 6,
   cat: "Patatas",
   name: "Patata Hawaiana",
   desc: "Mayonesa, york, aceitunas, maíz, piña y queso mozzarella",
-  price: 5.80
+  price: 6.80
 }, {
   id: 7,
   cat: "Patatas",
   name: "Patata Kebab",
   desc: "Salsa de yogur, carne de kebab pollo, maíz, aceitunas y cebolla",
-  price: 5.90
+  price: 6.90
 }, {
   id: 8,
   cat: "Patatas",
   name: "Patata 4 Quesos",
   desc: "Salsa roquefort, emmental, gouda y mozzarella",
-  price: 5.90
+  price: 6.90
 }, {
   id: 9,
   cat: "Patatas",
   name: "Patata Completa",
   desc: "Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón",
-  price: 6.20
+  price: 7.20
 }, {
   id: 10,
   cat: "Patatas",
   name: "Patata Carnívora",
   desc: "Alioli, york, bacon, kebab y carne picada",
-  price: 6.40
+  price: 7.40
 }, {
   id: 11,
   cat: "Patatas",
   name: "Patata Philadelphia",
   desc: "Salsa philadelphia, york, huevo, pollo, queso mozzarella",
-  price: 6.40
+  price: 7.40
 }, {
   id: 12,
   cat: "Patatas",
   name: "Patata Ranchera",
   desc: "Salsa ranchera, pollo, bacon y queso mozzarella",
-  price: 6.50
+  price: 7.50
 }, {
   id: 13,
   cat: "Patatas",
   name: "Patata Granollers",
   desc: "Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria",
-  price: 6.50
+  price: 7.50
 }, {
   id: 14,
   cat: "Patatas",
   name: "Patata Pulled Pork 🆕",
   desc: "Salsa barbacoa, cebolla, carne pulled pork y mozzarella",
-  price: 6.50
+  price: 7.50
 }, {
   id: 50,
   cat: "Patatas",
@@ -108,13 +108,13 @@ const MENU = [
   cat: "Patatas",
   name: "Patata Al Gusto",
   desc: "1 salsa a elegir y 6 ingredientes",
-  price: 6.90
+  price: 7.90
 }, {
   id: 16,
   cat: "Patatas",
   name: "Patata Bomba 🆕",
   desc: "9 ingredientes y/o salsas al gusto ¡sin límite!",
-  price: 8.40
+  price: 9.40
 },
 // ── BONIATO FRIES ──
 {
@@ -186,43 +186,43 @@ const MENU = [
   cat: "Cookies",
   name: "Crumbl Cookie Pistacho",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 }, {
   id: 28,
   cat: "Cookies",
   name: "Crumbl Cookie Lotus",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 }, {
   id: 29,
   cat: "Cookies",
   name: "Crumbl Cookie Oreo",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 }, {
   id: 30,
   cat: "Cookies",
   name: "Crumbl Cookie Kit Kat",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 }, {
   id: 31,
   cat: "Cookies",
   name: "Crumbl Cookie Nutella",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 }, {
   id: 32,
   cat: "Cookies",
   name: "Crumbl Cookie Kinder",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 }, {
   id: 33,
   cat: "Cookies",
   name: "Crumbl Cookie Huesitos Blanco",
   desc: "Recién horneada",
-  price: 2.99
+  price: 3.20
 },
 // ── TARTAS ──
 {
@@ -274,13 +274,13 @@ const MENU = [
   cat: "Bebidas",
   name: "Refresco lata",
   desc: "",
-  price: 1.10
+  price: 1.30
 }, {
   id: 42,
   cat: "Bebidas",
   name: "Cerveza lata",
   desc: "",
-  price: 1.20
+  price: 1.40
 }, {
   id: 43,
   cat: "Bebidas",
@@ -292,37 +292,37 @@ const MENU = [
   cat: "Bebidas",
   name: "Refresco 500 ml",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 45,
   cat: "Bebidas",
   name: "Cerveza 1 litro",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 46,
   cat: "Bebidas",
   name: "Monster o Red Bull",
   desc: "",
-  price: 1.80
+  price: 2.00
 }, {
   id: 47,
   cat: "Bebidas",
   name: "Agua 1,5 litros",
   desc: "",
-  price: 1.30
+  price: 1.50
 }, {
   id: 48,
   cat: "Bebidas",
   name: "Nestea / Aquarius 1,5 l",
   desc: "",
-  price: 2.20
+  price: 2.40
 }, {
   id: 49,
   cat: "Bebidas",
   name: "Refresco 2 litros",
   desc: "",
-  price: 2.50
+  price: 2.70
 }];
 let cart = {};
 window._adminLoggedIn = false;

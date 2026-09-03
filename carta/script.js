@@ -7,27 +7,27 @@
 
 const PATATAS = [
   { n: 1, name: 'Simple', price: '3,00€', desc: 'Aceite de oliva o mantequilla, sal y pimienta' },
-  { n: 2, name: 'Vegetal', price: '5,60€', desc: 'Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural' },
-  { n: 3, name: 'Picante', price: '5,60€', desc: 'Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas' },
-  { n: 4, name: 'Carbonara', price: '5,80€', desc: 'Nata, cebolla cocinada, bacon y mozzarella', nota: '(Salsa cocinada a diario, no se pueden quitar ingredientes)' },
-  { n: 5, name: 'Boloñesa', price: '5,80€', desc: 'Tomate frito, carne picada, cebolla cocinada y mozzarella', nota: '(Salsa cocinada a diario, no se pueden quitar ingredientes)' },
-  { n: 6, name: 'Hawaiana', price: '5,80€', desc: 'Mayonesa, york, aceitunas, maíz, piña y mozzarella' },
-  { n: 7, name: 'Kebab', price: '5,90€', desc: 'Salsa de yogur, kebab de pollo, maíz, aceitunas y cebolla' },
-  { n: 8, name: '4 Quesos', price: '5,90€', desc: 'Salsa roquefort, emmental, gouda y mozzarella' },
-  { n: 9, name: 'Completa', price: '6,20€', desc: 'Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón' },
-  { n: 10, name: 'Carnívora', price: '6,40€', desc: 'Alioli, york, bacon, kebab y carne picada' },
-  { n: 11, name: 'Philadelphia', price: '6,40€', desc: 'Salsa philadelphia, york, huevo, pollo y mozzarella' },
-  { n: 12, name: 'Ranchera', price: '6,50€', desc: 'Salsa ranchera, pollo, bacon y mozzarella' },
-  { n: 13, name: 'Granollers', price: '6,50€', desc: 'Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria' },
-  { n: 14, name: 'Pulled Pork', price: '6,50€', desc: 'Salsa barbacoa, cebolla, carne pulled pork y mozzarella' },
+  { n: 2, name: 'Vegetal', price: '6,40€', desc: 'Aceite de oliva, maíz, aceitunas, zanahoria, remolacha, champiñón, tomate natural' },
+  { n: 3, name: 'Picante', price: '6,40€', desc: 'Salsa brava, carne picada, remolacha, zanahoria, maíz, aceitunas' },
+  { n: 4, name: 'Carbonara', price: '6,80€', desc: 'Nata, cebolla cocinada, bacon y mozzarella', nota: '(Salsa cocinada a diario, no se pueden quitar ingredientes)' },
+  { n: 5, name: 'Boloñesa', price: '6,80€', desc: 'Tomate frito, carne picada, cebolla cocinada y mozzarella', nota: '(Salsa cocinada a diario, no se pueden quitar ingredientes)' },
+  { n: 6, name: 'Hawaiana', price: '6,80€', desc: 'Mayonesa, york, aceitunas, maíz, piña y mozzarella' },
+  { n: 7, name: 'Kebab', price: '6,90€', desc: 'Salsa de yogur, kebab de pollo, maíz, aceitunas y cebolla' },
+  { n: 8, name: '4 Quesos', price: '6,90€', desc: 'Salsa roquefort, emmental, gouda y mozzarella' },
+  { n: 9, name: 'Completa', price: '7,20€', desc: 'Alioli, york, atún, maíz, aceitunas, zanahoria, remolacha, champiñón' },
+  { n: 10, name: 'Carnívora', price: '7,40€', desc: 'Alioli, york, bacon, kebab y carne picada' },
+  { n: 11, name: 'Philadelphia', price: '7,40€', desc: 'Salsa philadelphia, york, huevo, pollo y mozzarella' },
+  { n: 12, name: 'Ranchera', price: '7,50€', desc: 'Salsa ranchera, pollo, bacon y mozzarella' },
+  { n: 13, name: 'Granollers', price: '7,50€', desc: 'Salsa rosa, atún, gambas, tronquitos, maíz, aceitunas, zanahoria' },
+  { n: 14, name: 'Pulled Pork', price: '7,50€', desc: 'Salsa barbacoa, cebolla, carne pulled pork y mozzarella' },
   { n: 15, name: 'Cheddar Bacon', price: '8,50€', desc: 'Salsa queso cheddar, carne picada o kebab, caramelo bacon y mozzarella gratinada', nuevo: true },
-  { n: 16, name: 'Al Gusto', price: '6,90€', desc: '1 salsa a elegir y 6 ingredientes' },
-  { n: 17, name: 'Bomba', price: '8,40€', desc: '9 ingredientes y/o salsas al gusto ¡sin límite!' },
+  { n: 16, name: 'Al Gusto', price: '7,90€', desc: '1 salsa a elegir y 6 ingredientes' },
+  { n: 17, name: 'Bomba', price: '9,40€', desc: '9 ingredientes y/o salsas al gusto ¡sin límite!' },
 ];
 
-const INGREDIENTES_PREMIUM = ['Jamón York', 'Carne picada', 'Pollo', 'Carne kebab', 'Atún', 'Gambas', 'Tronquitos de mar', 'Huevo', 'Bacon', 'Mozzarella', '4 quesos'];
+const INGREDIENTES_PREMIUM = ['Jamón York', 'Carne picada', 'Pollo', 'Carne kebab', 'Atún', 'Gambas', 'Tronquitos de mar', 'Huevo', 'Bacon'];
 const INGREDIENTES_BASE = ['Tomate natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-const SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Philadelphia', 'Roquefort'];
+const SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Roquefort'];
 
 const TARRINAS = [
   { name: 'Tarrina Lotus', desc: 'Salsa Lotus + bacon + mozzarella + galletas Lotus' },
@@ -43,15 +43,15 @@ const TARTAS_CLASICAS = ["Queso tradicional 'La Viña'", 'Tres chocolates', 'La 
 const TARTAS_ESPECIALES = ['Queso Lotus', 'Queso Pistacho', 'Queso Dinosaurio', 'Queso Kinder', 'Filipinos blancos', 'Cereales rellenos de leche', 'Donuts'];
 
 const BEBIDAS = [
-  { name: 'Refrescos 2 litros', price: '2,50€' },
-  { name: 'Nestea y Aquarius 1,5 l', price: '2,20€' },
-  { name: 'Agua 1,5 litros', price: '1,30€' },
+  { name: 'Refrescos 2 litros', price: '2,70€' },
+  { name: 'Nestea y Aquarius 1,5 l', price: '2,40€' },
+  { name: 'Agua 1,5 litros', price: '1,50€' },
   { name: 'Agua pequeña', price: '0,80€' },
-  { name: 'Cerveza 1 litro', price: '1,80€' },
-  { name: 'Refresco 500 ml', price: '1,80€' },
-  { name: 'Refresco lata', price: '1,10€' },
-  { name: 'Cerveza lata', price: '1,20€' },
-  { name: 'Monster o Red Bull', price: '1,80€' },
+  { name: 'Cerveza 1 litro', price: '2,00€' },
+  { name: 'Refresco 500 ml', price: '2,00€' },
+  { name: 'Refresco lata', price: '1,30€' },
+  { name: 'Cerveza lata', price: '1,40€' },
+  { name: 'Monster o Red Bull', price: '2,00€' },
 ];
 
 /* ---------- Helpers de render ---------- */
