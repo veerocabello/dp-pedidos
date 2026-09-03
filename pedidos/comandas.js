@@ -233,9 +233,17 @@ const BOLSA_ID = 52;
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
 // sin importar el orden en que estén los productos en MENU).
 const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas"];
-const menuCatsSet = new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat));
-const extraCats = [...menuCatsSet].filter(c => !CATEGORY_ORDER.includes(c));
-const categories = ["Todos", ...CATEGORY_ORDER.filter(c => menuCatsSet.has(c)), ...extraCats];
+let menuCatsSet, extraCats, categories;
+// Categorías nuevas creadas a mano desde "Gestionar carta" (ver
+// addCartaProduct): no están en CATEGORY_ORDER, así que caen al final —
+// esta función se vuelve a llamar cada vez que se añade un producto con una
+// categoría distinta, para que la nueva pestaña aparezca sin recargar.
+function refreshCategoriesFromMenu() {
+  menuCatsSet = new Set(MENU.filter(i => i.id !== BOLSA_ID).map(i => i.cat));
+  extraCats = [...menuCatsSet].filter(c => !CATEGORY_ORDER.includes(c));
+  categories = ["Todos", ...CATEGORY_ORDER.filter(c => menuCatsSet.has(c)), ...extraCats];
+}
+refreshCategoriesFromMenu();
 let activeCategory = "Todos";
 // Mismo orden fijo para las líneas de la comanda y del ticket: patatas,
 // boniato, paninis, tartas, cookies, bebidas y la bolsa siempre la última
@@ -249,6 +257,8 @@ function categoryRank(cat) {
 let cart = {};        // id -> qty (productos simples, sin personalizar)
 let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
+let manualCart = {};   // key -> {key, name, price, qty} — cobros sueltos que no están en la carta
+let manualIdSeq = 0, manualItemEditKey = null;
 let orderPaid = false;
 let paymentMethod = 'efectivo';
 // Pedido por teléfono cargado desde "Pedidos no pagados" (ver
@@ -460,6 +470,48 @@ function changeExtrasQty(key, delta) {
   if (c.qty <= 0) { delete extrasCart[key]; clearLineDiscount(key); }
   renderCart();
 }
+/* ── Cobro suelto: para cobrar algo que no está en la carta (una
+   reparación, una venta puntual...) sin tener que darlo de alta como
+   producto — nombre y precio libres, se añade como una línea más de la
+   comanda, con su propio descuento/quitar igual que cualquier otra. ── */
+function openManualItemModal(editKey) {
+  manualItemEditKey = editKey || null;
+  const existing = manualItemEditKey ? manualCart[manualItemEditKey] : null;
+  document.getElementById('manual-item-name').value = existing ? existing.name : '';
+  document.getElementById('manual-item-price').value = existing ? fmt(existing.price) : '';
+  document.getElementById('manual-item-error').style.display = 'none';
+  document.getElementById('manual-item-modal').classList.add('open');
+}
+function closeManualItemModal() {
+  document.getElementById('manual-item-modal').classList.remove('open');
+  manualItemEditKey = null;
+}
+function editManualItem(key) { openManualItemModal(key); }
+function confirmManualItem() {
+  const name = document.getElementById('manual-item-name').value.trim();
+  const price = parseCashNum(document.getElementById('manual-item-price').value);
+  const errEl = document.getElementById('manual-item-error');
+  if (!name) { errEl.textContent = 'Escribe una descripción'; errEl.style.display = 'block'; return; }
+  if (!price || price <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
+  if (manualItemEditKey && manualCart[manualItemEditKey]) {
+    Object.assign(manualCart[manualItemEditKey], { name, price });
+  } else {
+    manualIdSeq++;
+    const key = 'manual:' + manualIdSeq;
+    manualCart[key] = { key, name, price, qty: 1 };
+  }
+  closeManualItemModal();
+  renderCart();
+  toast('✅ Añadido a la comanda');
+}
+function removeManualItem(key) { delete manualCart[key]; clearLineDiscount(key); renderCart(); }
+function changeManualQty(key, delta) {
+  const m = manualCart[key];
+  if (!m) return;
+  m.qty += delta;
+  if (m.qty <= 0) { delete manualCart[key]; clearLineDiscount(key); }
+  renderCart();
+}
 function editCustItem(key) {
   const c = custCart[key];
   if (!c) return;
@@ -615,7 +667,7 @@ function getExtrasItemTicketExtras(e) {
   return out;
 }
 function cartHasAnyItem() {
-  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0);
+  return Object.keys(cart).length > 0 || Object.values(custCart).some(c => c.qty > 0) || Object.values(extrasCart).some(c => c.qty > 0) || Object.values(manualCart).some(c => c.qty > 0);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -653,6 +705,7 @@ function getLineDiscountContextLabel(key) {
   }
   if (custCart[key]) { const item = MENU.find(m => m.id == custCart[key].menuId); return item ? item.name : null; }
   if (extrasCart[key]) return getExtrasItemLabel(extrasCart[key]);
+  if (manualCart[key]) return manualCart[key].name;
   return null;
 }
 
@@ -698,18 +751,24 @@ function numpadConfirm() {
 // teclado en pantalla (igual que el numérico de arriba, pero de letras).
 let nameKbBuffer = '';
 let nameKbShiftOn = true;
+let nameKbTargetId = 'order-name';
+let nameKbPlaceholder = 'Ej. Ana';
 const NAMEKB_ACCENTS = new Set(['á', 'é', 'í', 'ó', 'ú', 'ñ']);
-function openNameKeyboard() {
-  nameKbBuffer = document.getElementById('order-name').value || '';
+function openNameKeyboard(targetId, placeholder) {
+  nameKbTargetId = targetId || 'order-name';
+  nameKbPlaceholder = placeholder || 'Ej. Ana';
+  const input = document.getElementById(nameKbTargetId);
+  nameKbBuffer = (input && input.value) || '';
   nameKbShiftOn = nameKbBuffer.length === 0;
   nameKbRenderCase();
   nameKbUpdateDisplay();
   document.getElementById('namekb-overlay').classList.add('open');
-  document.getElementById('order-name').classList.add('kb-active');
+  if (input) input.classList.add('kb-active');
 }
 function closeNameKeyboard() {
   document.getElementById('namekb-overlay').classList.remove('open');
-  document.getElementById('order-name').classList.remove('kb-active');
+  const input = document.getElementById(nameKbTargetId);
+  if (input) input.classList.remove('kb-active');
 }
 function nameKbLetter(l) {
   if (nameKbBuffer.length >= 40) return;
@@ -734,9 +793,10 @@ function nameKbRenderCase() {
 }
 function nameKbUpdateDisplay() {
   const el = document.getElementById('namekb-display');
-  el.textContent = nameKbBuffer || 'Ej. Ana';
+  el.textContent = nameKbBuffer || nameKbPlaceholder;
   el.classList.toggle('placeholder', !nameKbBuffer);
-  const input = document.getElementById('order-name');
+  const input = document.getElementById(nameKbTargetId);
+  if (!input) return;
   input.value = nameKbBuffer;
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
@@ -908,6 +968,7 @@ function swipeRemoveByKey(type, key) {
   if (type === 'simple') removeItem(parseInt(key, 10));
   else if (type === 'cust') removeCustItem(key);
   else if (type === 'extras') removeExtrasItem(key);
+  else if (type === 'manual') removeManualItem(key);
   else if (type === 'discount') removeDiscount();
 }
 
@@ -917,8 +978,9 @@ function renderCart() {
   const lines = Object.entries(cart);
   const custLines = Object.values(custCart).filter(c => c.qty > 0);
   const extLines = Object.values(extrasCart).filter(c => c.qty > 0);
+  const manualLines = Object.values(manualCart).filter(c => c.qty > 0);
 
-  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0) {
+  if (lines.length === 0 && custLines.length === 0 && extLines.length === 0 && manualLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
     // El botón de Cobrar se queda siempre a la vista aunque la comanda esté
@@ -1011,6 +1073,25 @@ function renderCart() {
     </div>`) });
   });
 
+  manualLines.forEach(m => {
+    const raw = m.price * m.qty;
+    const discAmt = computeDiscountAmount(raw, lineDiscounts[m.key]);
+    const subtotal = raw - discAmt;
+    total += subtotal;
+    rows.push({ rank: CATEGORY_ORDER.length, html: wrapSwipe('manual', m.key, `<div class="cart-line">
+      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editManualItem('${m.key}')" title="Editar">${escapeHtml(m.name)}</button>
+      <div class="cart-qty-mini">
+        <button class="qty-btn-sm" onclick="changeManualQty('${m.key}',-1)">−</button>
+        <span>${m.qty}</span>
+        <button class="qty-btn-sm" onclick="changeManualQty('${m.key}',1)">+</button>
+      </div>
+      <span class="cart-line-price">${fmt(subtotal)} €</span>
+      <button class="cart-edit" onclick="openDiscountModal('${m.key}')" title="Descuento en este producto">🏷️</button>
+      <button class="cart-remove" onclick="removeManualItem('${m.key}')" title="Quitar">🗑️</button>
+      ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[m.key]))} (-${fmt(discAmt)} €)</div>` : ''}
+    </div>`) });
+  });
+
   rows.sort((a, b) => a.rank - b.rank);
   let html = rows.map(r => r.html).join('');
 
@@ -1043,6 +1124,7 @@ function saveCartDraft() {
       cart: { ...cart },
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+      manualCart: JSON.parse(JSON.stringify(manualCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
       lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: (document.getElementById('order-name') || {}).value || '',
@@ -1058,11 +1140,12 @@ function restoreCartDraftIfAny() {
   let draft;
   try { draft = JSON.parse(localStorage.getItem(CART_DRAFT_KEY) || 'null'); } catch (e) { return; }
   if (!draft) return;
-  const hasContent = Object.keys(draft.cart || {}).length || Object.keys(draft.custCart || {}).length || Object.keys(draft.extrasCart || {}).length;
+  const hasContent = Object.keys(draft.cart || {}).length || Object.keys(draft.custCart || {}).length || Object.keys(draft.extrasCart || {}).length || Object.keys(draft.manualCart || {}).length;
   if (!hasContent) return;
   cart = draft.cart || {};
   custCart = draft.custCart || {};
   extrasCart = draft.extrasCart || {};
+  manualCart = draft.manualCart || {};
   orderDiscount = draft.orderDiscount || null;
   lineDiscounts = draft.lineDiscounts || {};
   const nameEl = document.getElementById('order-name');
@@ -1084,9 +1167,17 @@ function restoreCartDraftIfAny() {
    ══════════════════════════════════════════════════════════════ */
 function parseCashNum(str) { return parseFloat(String(str || '').replace(',', '.')) || 0; }
 let cashOrderTotal = 0;
+// Con la comanda vacía (repasar un ticket, un cobro suelto que no es un
+// pedido de la carta...) se puede escribir el total a mano — en cuanto hay
+// algún producto en la comanda, ese importe manual se descarta sin más: el
+// total vuelve a seguir siempre al pedido, como toda la vida.
+let cobrarTotalManual = null;
 function syncCashTotal(orderTotal) {
-  cashOrderTotal = orderTotal;
-  document.getElementById('cobrar-modal-total').textContent = fmt(orderTotal) + ' €';
+  if (orderTotal > 0) cobrarTotalManual = null;
+  cashOrderTotal = (orderTotal <= 0 && cobrarTotalManual != null) ? cobrarTotalManual : orderTotal;
+  document.getElementById('cobrar-modal-total').textContent = fmt(cashOrderTotal) + ' €';
+  const totalRow = document.getElementById('cobrar-total-row');
+  if (totalRow) totalRow.classList.toggle('editable', !cartHasAnyItem());
   updateChange();
 }
 // El "Cobrar" ya no vive encajado en la barra lateral (se quedaba corto
@@ -1095,6 +1186,16 @@ function syncCashTotal(orderTotal) {
 function openCobrarModal() {
   syncCashTotal(currentOrderTotal());
   document.getElementById('cobrar-modal').classList.add('open');
+}
+// Toca el Total para escribirlo a mano — solo tiene sentido sin comanda
+// (si hay productos, el total es el del pedido, sin excepciones).
+function editCobrarTotal() {
+  if (cartHasAnyItem()) { toast('El total sigue al pedido mientras haya productos en la comanda'); return; }
+  openNumpad('cobrar-total-manual-input', 'Total a cobrar');
+}
+function setCobrarTotalManual(v) {
+  cobrarTotalManual = parseCashNum(v);
+  syncCashTotal(currentOrderTotal());
 }
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
@@ -1190,6 +1291,7 @@ function keypadEquals() {
 function clearCashReceived() {
   cashEntregado = 0;
   keypadBuffer = '';
+  cobrarTotalManual = null;
   document.querySelectorAll('#cobrar-modal .denom-btn').forEach(btn => {
     btn.dataset.count = '0';
     btn.classList.remove('tapped');
@@ -1197,6 +1299,7 @@ function clearCashReceived() {
     if (badge) badge.remove();
   });
   updateKeypadDisplay();
+  syncCashTotal(currentOrderTotal());
 }
 function currentOrderTotal() {
   const el = document.getElementById('cart-total');
@@ -1240,6 +1343,7 @@ function clearOrder(silent) {
       cart: { ...cart },
       custCart: JSON.parse(JSON.stringify(custCart)),
       extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+      manualCart: JSON.parse(JSON.stringify(manualCart)),
       orderDiscount: orderDiscount ? { ...orderDiscount } : null,
       lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
       name: document.getElementById('order-name').value,
@@ -1248,7 +1352,7 @@ function clearOrder(silent) {
       paymentMethod,
     };
   }
-  cart = {}; custCart = {}; extrasCart = {}; orderDiscount = null; lineDiscounts = {};
+  cart = {}; custCart = {}; extrasCart = {}; manualCart = {}; orderDiscount = null; lineDiscounts = {};
   document.getElementById('order-name').value = '';
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
@@ -1273,6 +1377,7 @@ function undoClearOrder() {
   cart = clearedOrderSnapshot.cart;
   custCart = clearedOrderSnapshot.custCart;
   extrasCart = clearedOrderSnapshot.extrasCart;
+  manualCart = clearedOrderSnapshot.manualCart || {};
   orderDiscount = clearedOrderSnapshot.orderDiscount;
   lineDiscounts = clearedOrderSnapshot.lineDiscounts || {};
   document.getElementById('order-name').value = clearedOrderSnapshot.name || '';
@@ -1987,6 +2092,11 @@ function buildOrderObject(preview) {
       _menuId: c.menuId,
     }, c.key));
   });
+  Object.values(manualCart).filter(m => m.qty > 0).forEach(m => {
+    items.push(applyLineDiscountToTicketItem(
+      { name: m.name, qty: m.qty, subtotal: m.price * m.qty, extras: [], _rank: CATEGORY_ORDER.length, _menuId: null },
+      m.key));
+  });
   items.sort((a, b) => a._rank - b._rank);
   items.forEach(it => delete it._rank);
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
@@ -2494,6 +2604,7 @@ function modifyHistorialOrder(index) {
   cart = order.rawState.cart || {};
   custCart = order.rawState.custCart || {};
   extrasCart = order.rawState.extrasCart || {};
+  manualCart = order.rawState.manualCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
@@ -2520,6 +2631,7 @@ function payHistorialOrder(index) {
   cart = order.rawState.cart || {};
   custCart = order.rawState.custCart || {};
   extrasCart = order.rawState.extrasCart || {};
+  manualCart = order.rawState.manualCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
   document.getElementById('order-name').value = order.name || '';
@@ -3405,6 +3517,7 @@ async function handlePrintOrder() {
     cart: { ...cart },
     custCart: JSON.parse(JSON.stringify(custCart)),
     extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    manualCart: JSON.parse(JSON.stringify(manualCart)),
     orderDiscount: orderDiscount ? { ...orderDiscount } : null,
     lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
   };
@@ -3618,9 +3731,13 @@ function saveSettingsForm() {
 
 /* ── Gestionar carta: añadir/quitar productos sencillos y poner/quitar
    la etiqueta NUEVO, todo guardado en este ordenador (localStorage). ── */
+const CARTA_NEW_CAT_SENTINEL = '__nueva__';
 function openCartaAdmin() {
   const catSelect = document.getElementById('carta-new-cat');
-  catSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  catSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
+  document.getElementById('carta-new-cat-custom-group').style.display = 'none';
+  document.getElementById('carta-new-cat-custom').value = '';
   document.getElementById('carta-new-name').value = '';
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
@@ -3630,6 +3747,13 @@ function openCartaAdmin() {
   document.getElementById('carta-modal').classList.add('open');
 }
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
+// Al elegir "➕ Nueva categoría…" aparece un campo para escribir su nombre
+// (hasta ahora solo se podía elegir una categoría ya existente).
+function onCartaCatSelectChange() {
+  const esNueva = document.getElementById('carta-new-cat').value === CARTA_NEW_CAT_SENTINEL;
+  document.getElementById('carta-new-cat-custom-group').style.display = esNueva ? '' : 'none';
+  if (esNueva) document.getElementById('carta-new-cat-custom').focus();
+}
 function cartaExtraPrecioRow(tipo, name, precio) {
   return `<div class="option-row" style="cursor:default">
     <div class="option-title" style="font-size:13.5px">${escapeHtml(name)}</div>
@@ -3752,11 +3876,17 @@ function saveCartaEdit() {
 }
 function addCartaProduct() {
   const name = document.getElementById('carta-new-name').value.trim();
-  const cat = document.getElementById('carta-new-cat').value;
+  const catSelect = document.getElementById('carta-new-cat').value;
+  const cat = catSelect === CARTA_NEW_CAT_SENTINEL
+    ? document.getElementById('carta-new-cat-custom').value.trim()
+    : catSelect;
   const price = parseFloat(document.getElementById('carta-new-price').value);
   const desc = document.getElementById('carta-new-desc').value.trim();
   const nuevo = document.getElementById('carta-new-nuevo').checked;
-  if (!name || !cat || !(price >= 0)) { toast('⚠️ Rellena nombre, categoría y precio'); return; }
+  if (!name || !cat || !(price >= 0)) {
+    toast(catSelect === CARTA_NEW_CAT_SENTINEL && !cat ? '⚠️ Escribe el nombre de la categoría nueva' : '⚠️ Rellena nombre, categoría y precio');
+    return;
+  }
   const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
   const item = { id: nextId, cat, name, desc, price };
   if (nuevo) item.nuevo = true;
@@ -3764,13 +3894,25 @@ function addCartaProduct() {
   custom.push(item);
   localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
   MENU.push(item);
+  // Si la categoría es nueva de verdad, tiene que aparecer ya en la propia
+  // lista desplegable (y seguir seleccionada) por si se añaden más
+  // productos seguidos a esa misma categoría.
+  refreshCategoriesFromMenu();
+  const wasNewCat = catSelect === CARTA_NEW_CAT_SENTINEL;
+  initTabs();
   renderMenu();
   renderCartaAdminList();
   document.getElementById('carta-new-name').value = '';
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
-  toast('✅ Producto añadido');
+  const newCatSelect = document.getElementById('carta-new-cat');
+  newCatSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
+  if (wasNewCat) newCatSelect.value = cat;
+  document.getElementById('carta-new-cat-custom-group').style.display = 'none';
+  document.getElementById('carta-new-cat-custom').value = '';
+  toast(wasNewCat ? '✅ Categoría "' + cat + '" creada con este producto' : '✅ Producto añadido');
 }
 function removeCartaProduct(id, name) {
   if (!confirm('¿Quitar "' + name + '" de la carta?')) return;

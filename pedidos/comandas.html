@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
-<link rel="stylesheet" href="comandas.css?v=1788451883363">
+<link rel="stylesheet" href="comandas.css?v=1788452706181">
 </head>
 <body>
 
@@ -38,6 +38,7 @@
     <div class="cart-header">
       <h2>Comanda</h2>
       <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal()">➕ Añadir</button>
         <button class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
         <button class="btn-text" onclick="clearOrder()">Vaciar</button>
       </div>
@@ -69,6 +70,7 @@
   <div class="modal-box" style="max-width:660px">
     <button class="modal-close" onclick="cancelCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
+    <button type="button" class="btn-text" style="color:var(--amber-dark);margin-bottom:8px" onclick="openManualItemModal()">➕ Añadir gasto/cobro suelto</button>
     <div class="paid-toggle-row" id="paid-toggle-row">
       <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
       <button type="button" class="paid-toggle-btn paid-toggle-yes" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ PAGADO</button>
@@ -83,7 +85,11 @@
          suma al momento; escribir con el teclado se ve en vivo aunque no
          se pulse "=" (solo hace falta "=" para sumarlo de verdad). -->
     <div class="summary-card">
-      <div class="summary-row"><div class="lbl">Total</div><div class="num" id="cobrar-modal-total">0,00 €</div></div>
+      <!-- Con la comanda vacía se puede tocar el Total para escribirlo a
+           mano (repasar un ticket, un cobro suelto...); con productos en la
+           comanda sigue fijo al pedido, como siempre. -->
+      <div class="summary-row" id="cobrar-total-row" onclick="editCobrarTotal()"><div class="lbl">Total</div><div class="num" id="cobrar-modal-total">0,00 €</div></div>
+      <input type="hidden" id="cobrar-total-manual-input" oninput="setCobrarTotalManual(this.value)">
       <div class="summary-row"><div class="lbl">Entregado</div><div class="num" id="cash-entregado">0,00 €</div></div>
       <div class="summary-row cambio" id="cash-change-row"><div class="lbl" id="cash-change-label">Cambio a devolver</div><div class="num" id="cash-change-amount">0,00 €</div></div>
     </div>
@@ -325,9 +331,13 @@
     <div class="settings-grid">
       <div class="form-group">
         <label>Categoría</label>
-        <select id="carta-new-cat"></select>
+        <select id="carta-new-cat" onchange="onCartaCatSelectChange()"></select>
       </div>
       <div class="form-group"><label>Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
+    </div>
+    <div class="form-group" id="carta-new-cat-custom-group" style="display:none">
+      <label>Nombre de la categoría nueva</label>
+      <input id="carta-new-cat-custom" type="text" placeholder="Ej. Snacks">
     </div>
     <div class="form-group"><label>Descripción (opcional)</label><input id="carta-new-desc" type="text" placeholder="Ej. 500 ml"></div>
     <label class="option-row" style="padding:10px 14px">
@@ -487,6 +497,28 @@
     <div class="modal-title">👁️ Ticket</div>
     <div class="ticket-view-wrap">
       <div class="ticket-doc" id="ticket-view-content"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── COBRO SUELTO — para cobrar algo que no está en la carta (una
+     reparación, un extra puntual...) sin darlo de alta como producto. ── -->
+<div id="manual-item-modal" class="modal-overlay" onclick="if(event.target===this)closeManualItemModal()">
+  <div class="modal-box" style="max-width:380px">
+    <button class="modal-close" onclick="closeManualItemModal()">&#x2715;</button>
+    <div class="modal-title">➕ Añadir cobro suelto</div>
+    <div class="modal-subtitle">Para cobrar algo que no está en la carta.</div>
+    <div class="form-group">
+      <label>Descripción</label>
+      <input id="manual-item-name" type="text" maxlength="40" placeholder="Ej. Servilletas" readonly onclick="openNameKeyboard('manual-item-name','Ej. Servilletas')">
+    </div>
+    <div class="form-group">
+      <label>Precio</label>
+      <input id="manual-item-price" type="text" inputmode="none" readonly placeholder="0,00" onclick="openNumpad('manual-item-price','Precio')">
+    </div>
+    <div class="modal-error" id="manual-item-error"></div>
+    <div class="modal-footer">
+      <button class="modal-confirm-btn" onclick="confirmManualItem()">→ Añadir a la comanda</button>
     </div>
   </div>
 </div>
@@ -665,6 +697,6 @@
      siempre con los últimos precios conocidos. -->
 <script src="js/firebase-auth-compat.js"></script>
 <script src="js/config.js"></script>
-<script src="comandas.js?v=1788451883363"></script>
+<script src="comandas.js?v=1788452706181"></script>
 </body>
 </html>
