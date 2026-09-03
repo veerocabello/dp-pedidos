@@ -169,13 +169,13 @@
     <button class="modal-close" onclick="closeCheddarModal()">&#x2715;</button>
     <div class="modal-title">Patata Cheddar-Bacon 🆕</div>
     <div class="modal-subtitle">Salsa queso cheddar · caramelo de bacon · queso mozzarella gratinado</div>
-    <div class="section-label" style="margin-top:0">🍖 Elige la carne *</div>
+    <div class="section-label" style="margin-top:0">🍖 Elige la carne * <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca la elegida otra vez para doble/triple)</span></div>
     <label class="option-row" id="cheddar-opt-picada" onclick="selectCheddarCarne('picada')">
-      <div class="option-title">Carne Picada</div>
+      <div class="option-title" id="cheddar-title-picada">Carne Picada</div>
       <div class="option-check" id="cheddar-check-picada"></div>
     </label>
     <label class="option-row" id="cheddar-opt-kebab" onclick="selectCheddarCarne('kebab')">
-      <div class="option-title">Carne Kebab</div>
+      <div class="option-title" id="cheddar-title-kebab">Carne Kebab</div>
       <div class="option-check" id="cheddar-check-kebab"></div>
     </label>
     <div class="modal-error" id="cheddar-error">⚠️ Elige la carne para continuar</div>
