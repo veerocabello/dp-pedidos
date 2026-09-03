@@ -736,23 +736,31 @@ function numpadConfirm() {
   closeNumpad();
 }
 
-// Teclado alfabético táctil para "Nombre para avisar" — el mostrador no
-// tiene teclado físico, así que este campo también necesitaba su propio
-// teclado en pantalla (igual que el numérico de arriba, pero de letras).
+// Teclado alfabético táctil, genérico para cualquier campo de texto — el
+// mostrador no tiene teclado físico. Nació para "Nombre para avisar", pero
+// sirve igual para cualquier otro input de texto (p.ej. la descripción del
+// cobro suelto) pasando su id; sin argumentos mantiene el comportamiento
+// de siempre sobre "order-name".
 let nameKbBuffer = '';
 let nameKbShiftOn = true;
+let nameKbTargetId = 'order-name';
+let nameKbPlaceholder = 'Ej. Ana';
 const NAMEKB_ACCENTS = new Set(['á', 'é', 'í', 'ó', 'ú', 'ñ']);
-function openNameKeyboard() {
-  nameKbBuffer = document.getElementById('order-name').value || '';
+function openNameKeyboard(targetId, placeholder) {
+  nameKbTargetId = targetId || 'order-name';
+  nameKbPlaceholder = placeholder || 'Ej. Ana';
+  const input = document.getElementById(nameKbTargetId);
+  nameKbBuffer = (input && input.value) || '';
   nameKbShiftOn = nameKbBuffer.length === 0;
   nameKbRenderCase();
   nameKbUpdateDisplay();
   document.getElementById('namekb-overlay').classList.add('open');
-  document.getElementById('order-name').classList.add('kb-active');
+  if (input) input.classList.add('kb-active');
 }
 function closeNameKeyboard() {
   document.getElementById('namekb-overlay').classList.remove('open');
-  document.getElementById('order-name').classList.remove('kb-active');
+  const input = document.getElementById(nameKbTargetId);
+  if (input) input.classList.remove('kb-active');
 }
 function nameKbLetter(l) {
   if (nameKbBuffer.length >= 40) return;
@@ -777,9 +785,10 @@ function nameKbRenderCase() {
 }
 function nameKbUpdateDisplay() {
   const el = document.getElementById('namekb-display');
-  el.textContent = nameKbBuffer || 'Ej. Ana';
+  el.textContent = nameKbBuffer || nameKbPlaceholder;
   el.classList.toggle('placeholder', !nameKbBuffer);
-  const input = document.getElementById('order-name');
+  const input = document.getElementById(nameKbTargetId);
+  if (!input) return;
   input.value = nameKbBuffer;
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
