@@ -190,16 +190,29 @@ function matchCustIngredientName(comp) {
   const norm = String(comp).trim().toLowerCase();
   return CUST_INGREDIENTS.find(n => n.toLowerCase() === norm) || CUST_INGREDIENT_ALIASES[norm] || null;
 }
-// Tope de unidades del mismo ingrediente (doble = 2, triple = 3) — un
+// Las salsas de la descripción llevan el prefijo "salsa " ("Salsa
+// ranchera"), pero en CUST_SAUCES están sin él ("Ranchera") — hay que
+// quitarlo antes de comparar. Los que no llevan la palabra "salsa" delante
+// (Alioli, Mayonesa...) ya coinciden tal cual.
+function matchCustSauceName(comp) {
+  const norm = String(comp).trim().toLowerCase().replace(/^salsa\s+/, '');
+  return CUST_SAUCES.find(s => s.toLowerCase() === norm) || null;
+}
+// Un componente base puede ser un ingrediente o una salsa — cualquiera de
+// los dos puede marcarse doble/triple si hay un precio de referencia.
+function matchCustIngredientOrSauceName(comp) {
+  return matchCustIngredientName(comp) || matchCustSauceName(comp);
+}
+// Tope de unidades del mismo ingrediente/salsa (doble = 2, triple = 3) — un
 // cuádruple ya no cabe en el ciclo de toques del chip, así que a partir de
 // ahí hay que usar el cobro suelto ("➕ Añadir").
 const MAX_ING_MULTIPLICIDAD = 3;
-// Suma el recargo de cada ingrediente marcado "doble"/"triple" (una unidad
-// extra por cada vez que aparece en la lista, al mismo precio que ese
-// ingrediente como extra) — independiente del resto del precio, no cuenta
-// para los umbrales de Al Gusto/Bomba.
+// Suma el recargo de cada ingrediente/salsa marcado "doble"/"triple" (una
+// unidad extra por cada vez que aparece en la lista, al mismo precio que
+// ese ingrediente/salsa como extra) — independiente del resto del precio,
+// no cuenta para los umbrales de Al Gusto/Bomba.
 function dobleSurcharge(dobles) {
-  return (dobles || []).reduce((s, name) => s + (priceOfIngExtra(name) || 0), 0);
+  return (dobles || []).reduce((s, name) => s + (priceOfIngExtra(name) || priceOfSalsaExtra(name) || 0), 0);
 }
 
 const BOLSA_ID = 52;
@@ -1654,17 +1667,24 @@ function openExtrasModal(id, editKey) {
   extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
     (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = 1);
-    (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = true);
+    (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = 1);
     (existing.quitados || []).forEach(q => extrasQuitados[q] = 'quitado');
-    // "dobles" puede venir de un ingrediente extra (sube su estado a 2) o
-    // de un ingrediente ya incluido en la base (el chip de quitar pasa a
-    // 'doble') — hay que reconstruir cada uno en el sitio del que salió.
+    // "dobles" trae una copia del nombre por cada unidad de más (doble = 1
+    // copia, triple = 2) — puede venir de un ingrediente/salsa extra (sube
+    // su cuenta) o de un ingrediente/salsa ya incluido en la base (el chip
+    // de quitar pasa a multiplicidad numérica) — cada copia suma 1 unidad
+    // en el sitio del que salió.
     (existing.dobles || []).forEach(name => {
       if (Object.prototype.hasOwnProperty.call(extrasIngredientes, name)) {
-        extrasIngredientes[name] = 2;
+        extrasIngredientes[name] = Math.min(MAX_ING_MULTIPLICIDAD, (extrasIngredientes[name] || 1) + 1);
+      } else if (Object.prototype.hasOwnProperty.call(extrasSalsas, name)) {
+        extrasSalsas[name] = Math.min(MAX_ING_MULTIPLICIDAD, (extrasSalsas[name] || 1) + 1);
       } else {
-        const comp = parseBaseComponents(item).find(c => matchCustIngredientName(c) === name);
-        if (comp) extrasQuitados[comp] = 'doble';
+        const comp = parseBaseComponents(item).find(c => matchCustIngredientOrSauceName(c) === name);
+        if (comp) {
+          const cur = extrasQuitados[comp];
+          extrasQuitados[comp] = typeof cur === 'number' ? Math.min(MAX_ING_MULTIPLICIDAD, cur + 1) : 2;
+        }
       }
     });
     // Reconstruye el orden de selección para saber qué se cobra "extra" si se edita.
@@ -1847,12 +1867,15 @@ function renderExtrasBody(item) {
         </label>`;
       });
       html += `</div>`;
-      html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
+      html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
       CUST_SAUCES.forEach(s => {
-        const on = !!extrasSalsas[s];
-        html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+        const precio = priceOfSalsaExtra(s);
+        const qty = extrasSalsas[s] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const label = mult ? s + ' (x' + qty + ')' : s;
+        html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
       html += `</div>`;
@@ -1875,7 +1898,7 @@ function toggleExtraQuitar(comp) {
   const cur = extrasQuitados[comp];
   if (!cur) extrasQuitados[comp] = 'quitado';
   else if (cur === 'quitado') {
-    if (matchCustIngredientName(comp)) extrasQuitados[comp] = 2;
+    if (matchCustIngredientOrSauceName(comp)) extrasQuitados[comp] = 2;
     else delete extrasQuitados[comp];
   } else if (typeof cur === 'number' && cur < MAX_ING_MULTIPLICIDAD) {
     extrasQuitados[comp] = cur + 1;
@@ -1929,10 +1952,16 @@ function toggleExtraIng(ing) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+// Mismo ciclo que toggleExtraIng: apagado → normal (1x) → doble → triple →
+// apagado. El seguimiento de orden (extrasSalsaOrder) solo cuenta la
+// primera vez que se elige, igual que con los ingredientes — doblar/
+// triplicar no cuenta más de una vez para el umbral de Al Gusto/Bomba.
 function toggleExtraSalsa(s) {
-  const on = !extrasSalsas[s];
-  extrasSalsas[s] = on;
-  if (on) { extrasPickSeq++; extrasSalsaOrder[s] = extrasPickSeq; } else { delete extrasSalsaOrder[s]; }
+  const cur = extrasSalsas[s] || 0;
+  const next = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  extrasSalsas[s] = next;
+  if (cur === 0 && next > 0) { extrasPickSeq++; extrasSalsaOrder[s] = extrasPickSeq; }
+  else if (next === 0) { delete extrasSalsaOrder[s]; }
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -1943,9 +1972,10 @@ function toggleExtraSalsa(s) {
 function currentDoblesList() {
   const dobles = [];
   Object.entries(extrasIngredientes).forEach(([ing, q]) => { for (let i = 1; i < q; i++) dobles.push(ing); });
+  Object.entries(extrasSalsas).forEach(([s, q]) => { for (let i = 1; i < q; i++) dobles.push(s); });
   Object.entries(extrasQuitados).forEach(([comp, v]) => {
     if (typeof v === 'number') {
-      const m = matchCustIngredientName(comp);
+      const m = matchCustIngredientOrSauceName(comp);
       if (m) for (let i = 1; i < v; i++) dobles.push(m);
     }
   });
