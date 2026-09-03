@@ -228,6 +228,44 @@ const CUSTOMIZER_CONFIG = {
 };
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
+// Algunas descripciones de patatas usan la forma corta del ingrediente
+// ("york", "kebab", "tronquitos") en vez del nombre completo de la lista
+// de precios ("Jamón York", "Carne Kebab", "Tronquitos de Mar") — sin este
+// alias, matchCustIngredientName no los reconocía y esos chips concretos
+// se quedaban sin opción de doble/triple aunque tuvieran precio de sobra.
+const CUST_INGREDIENT_ALIASES = { 'york': 'Jamón York', 'kebab': 'Carne Kebab', 'tronquitos': 'Tronquitos de Mar' };
+// "Doble" de un ingrediente (base o extra) solo se ofrece cuando hay un
+// precio de referencia con el que cobrarlo — si el componente no está en
+// la lista de ingredientes con precio (p.ej. "galletas Lotus" o "pulled
+// pork BBQ", propios de una receta de Boniato) no se adivina ningún precio.
+function matchCustIngredientName(comp) {
+  const norm = String(comp).trim().toLowerCase();
+  return CUST_INGREDIENTS.find(n => n.toLowerCase() === norm) || CUST_INGREDIENT_ALIASES[norm] || null;
+}
+// Las salsas de la descripción llevan el prefijo "salsa " ("Salsa
+// ranchera"), pero en CUST_SAUCES están sin él ("Ranchera") — hay que
+// quitarlo antes de comparar. Los que no llevan la palabra "salsa" delante
+// (Alioli, Mayonesa...) ya coinciden tal cual.
+function matchCustSauceName(comp) {
+  const norm = String(comp).trim().toLowerCase().replace(/^salsa\s+/, '');
+  return CUST_SAUCES.find(s => s.toLowerCase() === norm) || null;
+}
+// Un componente base puede ser un ingrediente o una salsa — cualquiera de
+// los dos puede marcarse doble/triple si hay un precio de referencia.
+function matchCustIngredientOrSauceName(comp) {
+  return matchCustIngredientName(comp) || matchCustSauceName(comp);
+}
+// Tope de unidades del mismo ingrediente/salsa (doble = 2, triple = 3) — un
+// cuádruple ya no cabe en el ciclo de toques del chip, así que a partir de
+// ahí hay que usar el cobro suelto ("➕ Añadir").
+const MAX_ING_MULTIPLICIDAD = 3;
+// Suma el recargo de cada ingrediente/salsa marcado "doble"/"triple" (una
+// unidad extra por cada vez que aparece en la lista, al mismo precio que
+// ese ingrediente/salsa como extra) — independiente del resto del precio,
+// no cuenta para los umbrales de Al Gusto/Bomba.
+function dobleSurcharge(dobles) {
+  return (dobles || []).reduce((s, name) => s + (priceOfIngExtra(name) || priceOfSalsaExtra(name) || 0), 0);
+}
 
 const BOLSA_ID = 52;
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
@@ -607,7 +645,7 @@ function freeSwapPickSet(pickOrder, freePasses) {
 function getExtrasItemPrice(e) {
   const free = computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
-  return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0);
+  return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
   const ingCount = (ingredientesExtra || []).length;
@@ -637,6 +675,7 @@ function getExtrasItemLabel(e) {
 function getExtrasItemDetails(e) {
   const out = [];
   (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
+  (e.dobles || []).forEach(d => out.push('+ ' + d + ' (extra)'));
   (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to));
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
@@ -654,6 +693,7 @@ function getExtrasItemDetails(e) {
 function getExtrasItemTicketExtras(e) {
   const out = [];
   (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q, underline: true }));
+  (e.dobles || []).forEach(d => out.push({ name: d + ' (extra)', price: priceOfIngExtra(d) || 0, underline: true }));
   (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to, underline: true }));
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
@@ -1668,6 +1708,8 @@ function getOrderedExtrasPicks() {
 }
 
 function openExtrasModal(id, editKey) {
+  const item = MENU.find(m => m.id == id);
+  if (!item) return;
   extrasEditKey = editKey || null;
   extrasCurrentId = id;
   const existing = extrasEditKey ? extrasCart[extrasEditKey] : null;
@@ -1679,9 +1721,27 @@ function openExtrasModal(id, editKey) {
   extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to })) : [] : [];
   extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
-    (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = true);
-    (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = true);
-    (existing.quitados || []).forEach(q => extrasQuitados[q] = true);
+    (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = 1);
+    (existing.salsasExtra || []).forEach(s => extrasSalsas[s] = 1);
+    (existing.quitados || []).forEach(q => extrasQuitados[q] = 'quitado');
+    // "dobles" trae una copia del nombre por cada unidad de más (doble = 1
+    // copia, triple = 2) — puede venir de un ingrediente/salsa extra (sube
+    // su cuenta) o de un ingrediente/salsa ya incluido en la base (el chip
+    // de quitar pasa a multiplicidad numérica) — cada copia suma 1 unidad
+    // en el sitio del que salió.
+    (existing.dobles || []).forEach(name => {
+      if (Object.prototype.hasOwnProperty.call(extrasIngredientes, name)) {
+        extrasIngredientes[name] = Math.min(MAX_ING_MULTIPLICIDAD, (extrasIngredientes[name] || 1) + 1);
+      } else if (Object.prototype.hasOwnProperty.call(extrasSalsas, name)) {
+        extrasSalsas[name] = Math.min(MAX_ING_MULTIPLICIDAD, (extrasSalsas[name] || 1) + 1);
+      } else {
+        const comp = parseBaseComponents(item).find(c => matchCustIngredientOrSauceName(c) === name);
+        if (comp) {
+          const cur = extrasQuitados[comp];
+          extrasQuitados[comp] = typeof cur === 'number' ? Math.min(MAX_ING_MULTIPLICIDAD, cur + 1) : 2;
+        }
+      }
+    });
     // Reconstruye el orden de selección para saber qué se cobra "extra" si se edita.
     // Si el pedido no lo guardó (versiones anteriores), usa el orden de los arrays tal cual.
     const order = (existing.pickOrder && existing.pickOrder.length) ? existing.pickOrder : [
@@ -1693,8 +1753,6 @@ function openExtrasModal(id, editKey) {
       if (p.type === 'ing') extrasIngOrder[p.name] = extrasPickSeq; else extrasSalsaOrder[p.name] = extrasPickSeq;
     });
   }
-  const item = MENU.find(m => m.id == id);
-  if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
   document.getElementById('extras-base-price').textContent = 'Base: ' + fmt(item.price) + ' €';
   document.getElementById('extras-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
@@ -1755,10 +1813,13 @@ function renderExtrasBody(item) {
   if (canQuitar) {
     const quitarComponents = baseComponents.filter(c => !isElegirSalsaComp(c));
     if (quitarComponents.length) {
-      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes</div><div class="chip-grid">`;
+      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple, si se puede)</span></div><div class="chip-grid">`;
       quitarComponents.forEach(comp => {
-        const on = !!extrasQuitados[comp];
-        html += `<button class="chip ${on ? 'quitado' : ''}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${on ? '🚫 ' : ''}${escapeHtml(comp)}</button>`;
+        const state = extrasQuitados[comp]; // undefined | 'quitado' | 2 | 3
+        const isMult = typeof state === 'number';
+        const cls = state === 'quitado' ? 'quitado' : isMult ? 'doble' : '';
+        const label = state === 'quitado' ? '🚫 ' + escapeHtml(comp) : isMult ? '⨯' + state + ' ' + escapeHtml(comp) : escapeHtml(comp);
+        html += `<button class="chip ${cls}" onclick="toggleExtraQuitar('${comp.replace(/'/g, "\\'")}')">${label}</button>`;
       });
       html += `</div>`;
     }
@@ -1827,22 +1888,27 @@ function renderExtrasBody(item) {
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
     if (!soloGratinar) {
-      html += `<div class="section-label">Ingredientes extra</div><div class="ing-grid">`;
+      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
         const precio = priceOfIngExtra(ing);
-        const on = !!extrasIngredientes[ing];
-        html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${ing}</div><div class="option-sub">+${fmt(precio)} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+        const qty = extrasIngredientes[ing] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const label = mult ? ing + ' (x' + qty + ')' : ing;
+        html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
       html += `</div>`;
-      html += `<div class="section-label">Salsas extra</div><div class="ing-grid">`;
+      html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
       CUST_SAUCES.forEach(s => {
-        const on = !!extrasSalsas[s];
-        html += `<label class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}" style="width:20px;height:20px"></div>
+        const precio = priceOfSalsaExtra(s);
+        const qty = extrasSalsas[s] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const label = mult ? s + ' (x' + qty + ')' : s;
+        html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
+          <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
         </label>`;
       });
       html += `</div>`;
@@ -1858,8 +1924,20 @@ function renderExtrasBody(item) {
   document.getElementById('extras-options').innerHTML = html;
   if (modalBox) modalBox.scrollTop = scrollPos;
 }
+// Ciclo por ingrediente base: normal → quitado 🚫 → doble ⨯2 → triple ⨯3
+// (los dos últimos solo si hay un precio de referencia con el que
+// cobrarlos) → normal. La multiplicidad se guarda como número (2 o 3).
 function toggleExtraQuitar(comp) {
-  extrasQuitados[comp] = !extrasQuitados[comp];
+  const cur = extrasQuitados[comp];
+  if (!cur) extrasQuitados[comp] = 'quitado';
+  else if (cur === 'quitado') {
+    if (matchCustIngredientOrSauceName(comp)) extrasQuitados[comp] = 2;
+    else delete extrasQuitados[comp];
+  } else if (typeof cur === 'number' && cur < MAX_ING_MULTIPLICIDAD) {
+    extrasQuitados[comp] = cur + 1;
+  } else {
+    delete extrasQuitados[comp];
+  }
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -1893,30 +1971,58 @@ function toggleExtra(which) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+// Ciclo por ingrediente extra: apagado → normal (1x) → doble (2x) → triple
+// (3x) → apagado, cada unidad de más al mismo precio (ver dobleSurcharge).
+// No cuenta más de una vez para los umbrales de Al Gusto/Bomba, que
+// siguen viendo el ingrediente una sola vez sea cual sea su multiplicidad.
 function toggleExtraIng(ing) {
-  const on = !extrasIngredientes[ing];
-  extrasIngredientes[ing] = on;
-  if (on) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; } else { delete extrasIngOrder[ing]; }
-  if (isQuesoIngredient(ing) && on && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
+  const cur = extrasIngredientes[ing] || 0;
+  const next = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  extrasIngredientes[ing] = next;
+  if (cur === 0 && next > 0) { extrasPickSeq++; extrasIngOrder[ing] = extrasPickSeq; }
+  else if (next === 0) { delete extrasIngOrder[ing]; }
+  if (isQuesoIngredient(ing) && next > 0 && extrasQueso) extrasQueso = false; // ya está incluido, no cobrar aparte
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+// Mismo ciclo que toggleExtraIng: apagado → normal (1x) → doble → triple →
+// apagado. El seguimiento de orden (extrasSalsaOrder) solo cuenta la
+// primera vez que se elige, igual que con los ingredientes — doblar/
+// triplicar no cuenta más de una vez para el umbral de Al Gusto/Bomba.
 function toggleExtraSalsa(s) {
-  const on = !extrasSalsas[s];
-  extrasSalsas[s] = on;
-  if (on) { extrasPickSeq++; extrasSalsaOrder[s] = extrasPickSeq; } else { delete extrasSalsaOrder[s]; }
+  const cur = extrasSalsas[s] || 0;
+  const next = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  extrasSalsas[s] = next;
+  if (cur === 0 && next > 0) { extrasPickSeq++; extrasSalsaOrder[s] = extrasPickSeq; }
+  else if (next === 0) { delete extrasSalsaOrder[s]; }
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
+}
+// Cada unidad de más de un ingrediente (doble = 1 unidad de más, triple = 2)
+// añade una copia de su nombre a la lista de "dobles" del pedido — el
+// ingrediente en sí sigue contando una sola vez en ingList (mismo umbral
+// de Al Gusto/Bomba de siempre), sea cual sea su multiplicidad.
+function currentDoblesList() {
+  const dobles = [];
+  Object.entries(extrasIngredientes).forEach(([ing, q]) => { for (let i = 1; i < q; i++) dobles.push(ing); });
+  Object.entries(extrasSalsas).forEach(([s, q]) => { for (let i = 1; i < q; i++) dobles.push(s); });
+  Object.entries(extrasQuitados).forEach(([comp, v]) => {
+    if (typeof v === 'number') {
+      const m = matchCustIngredientOrSauceName(comp);
+      if (m) for (let i = 1; i < v; i++) dobles.push(m);
+    }
+  });
+  return dobles;
 }
 function updateExtrasTotalPrice() {
   const item = MENU.find(m => m.id == extrasCurrentId);
   if (!item) return;
-  const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing);
+  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
-  const quitadosCount = Object.values(extrasQuitados).filter(Boolean).length;
+  const quitadosCount = Object.values(extrasQuitados).filter(v => v === 'quitado').length;
   const free = computeFreeSwapPasses(quitadosCount, extrasCambios.length);
   const core = computeExtrasCorePrice(item.price, ingList, salsaList, getOrderedExtrasPicks(), free);
-  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0);
+  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
   if (noteEl) noteEl.textContent = extrasAutoUpgradeLabel(ingList, salsaList);
@@ -1930,15 +2036,17 @@ function confirmExtras() {
     toast('🚫 Elige una salsa antes de añadir ' + item.name);
     return;
   }
-  const ingList = Object.entries(extrasIngredientes).filter(([, on]) => on).map(([ing]) => ing).sort();
+  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing).sort();
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
-  const quitadosList = Object.entries(extrasQuitados).filter(([, on]) => on).map(([q]) => q).sort();
+  const quitadosList = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q).sort();
+  const dobles = currentDoblesList().sort();
   const cambiosList = extrasCambios.map(c => ({ from: c.from, to: c.to }));
   const pickOrder = getOrderedExtrasPicks();
   const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
     + (quitadosList.length ? 'X' + quitadosList.join('|') : '')
+    + (dobles.length ? 'D' + dobles.join('|') : '')
     + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '') || 'BASE';
   const key = 'ext:' + id + ':' + sig;
   let qtyToSet = 1;
@@ -1947,7 +2055,7 @@ function confirmExtras() {
     delete extrasCart[extrasEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, cambios: cambiosList, pickOrder, basePrice: item.price, key };
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, key };
   // Se estaba personalizando una unidad que ya estaba en el carrito simple
   // (tocando su nombre) — se retira de ahí, ya está aquí personalizada.
   if (convertingSimpleId === id) {

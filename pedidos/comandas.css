@@ -999,7 +999,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .option-check.on { background: var(--brown); border-color: var(--brown); box-shadow: var(--shadow-sm); }
 .option-check.on::after { content: '✓'; color: #fff; font-size: 12px; font-weight: 700; }
+.option-check.doble::after { content: '2×'; }
+.option-check.doble { background: var(--amber-dark); border-color: var(--amber-dark); }
 .option-row.on { border-color: var(--brown); background: var(--amber-light); }
+.option-row.doble { border-color: var(--amber-dark); }
 
 .section-label {
   font-size: 11.5px; font-weight: 700; color: var(--brown);
@@ -1016,6 +1019,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .chip.selected { background: linear-gradient(155deg, var(--brown) 0%, var(--brown-dark) 100%); border-color: var(--brown); color: var(--gold); font-weight: 700; box-shadow: var(--shadow-md); }
 .chip.extra { background: var(--amber-light); border-color: var(--amber-dark); color: var(--amber-dark); font-weight: 700; }
 .chip.quitado { background: rgba(192,57,43,.1); border-color: var(--error); color: var(--error); font-weight: 700; text-decoration: line-through; }
+.chip.doble { background: var(--amber-light); border-color: var(--amber-dark); color: var(--amber-dark); font-weight: 700; }
 .chip.disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .chip.disabled:hover { transform: none; border-color: var(--warm); background: var(--white); }
 
