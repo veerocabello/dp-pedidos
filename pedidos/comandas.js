@@ -176,13 +176,19 @@ const CUSTOMIZER_CONFIG = {
 };
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
+// Algunas descripciones de patatas usan la forma corta del ingrediente
+// ("york", "kebab", "tronquitos") en vez del nombre completo de la lista
+// de precios ("Jamón York", "Carne Kebab", "Tronquitos de Mar") — sin este
+// alias, matchCustIngredientName no los reconocía y esos chips concretos
+// se quedaban sin opción de doble/triple aunque tuvieran precio de sobra.
+const CUST_INGREDIENT_ALIASES = { 'york': 'Jamón York', 'kebab': 'Carne Kebab', 'tronquitos': 'Tronquitos de Mar' };
 // "Doble" de un ingrediente (base o extra) solo se ofrece cuando hay un
 // precio de referencia con el que cobrarlo — si el componente no está en
 // la lista de ingredientes con precio (p.ej. "galletas Lotus" o "pulled
 // pork BBQ", propios de una receta de Boniato) no se adivina ningún precio.
 function matchCustIngredientName(comp) {
   const norm = String(comp).trim().toLowerCase();
-  return CUST_INGREDIENTS.find(n => n.toLowerCase() === norm) || null;
+  return CUST_INGREDIENTS.find(n => n.toLowerCase() === norm) || CUST_INGREDIENT_ALIASES[norm] || null;
 }
 // Tope de unidades del mismo ingrediente (doble = 2, triple = 3) — un
 // cuádruple ya no cabe en el ciclo de toques del chip, así que a partir de
