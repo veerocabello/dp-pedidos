@@ -1087,8 +1087,6 @@ function bimbaPintarTicketConfig() {
   document.getElementById('tc-despedida').value = tc.despedida;
   document.getElementById('tc-texto-pago').value = tc.textoPago;
   document.getElementById('tc-ancho-papel').value = String(tc.anchoPapel || 80);
-  const columnasAjusteEl = document.getElementById('tc-columnas-ajuste');
-  if (columnasAjusteEl) columnasAjusteEl.value = String(tc.columnasAjuste || 0);
   document.getElementById('tc-copias').value = tc.copias || 1;
   const autoEl = document.getElementById('tc-auto-imprimir');
   autoEl.checked = tc.autoImprimir !== false;
@@ -1132,7 +1130,6 @@ function bimbaGuardarTicketConfig() {
     despedida: document.getElementById('tc-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
-    columnasAjuste: parseInt(document.getElementById('tc-columnas-ajuste').value, 10) || 0,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
     autoImprimir: document.getElementById('tc-auto-imprimir').checked
   };

@@ -2001,11 +2001,6 @@ const TICKET_CONFIG_DEFAULTS = {
   despedida: '¡Gracias por tu pedido! 🥔',
   textoPago: 'Pagar en caja',
   anchoPapel: 80,
-  // Ajuste fino (+/-) sobre las columnas de texto del ticket — cada
-  // impresora/fuente cabe un pelín distinto en el mismo ancho de papel,
-  // así que sin esto el precio puede quedarse corto del borde derecho
-  // (o pasarse) según la impresora concreta de cada sitio.
-  columnasAjuste: 0,
   copias: 1,
   autoImprimir: true
 };

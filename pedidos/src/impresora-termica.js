@@ -129,7 +129,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     const extrasNombre = partes.slice(1);
     const extrasArr = item.extras || [];
     const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
-    const W = Math.max(20, (tc.anchoPapel === 58 ? 32 : 48) + (parseInt(tc.columnasAjuste, 10) || 0));
+    const W = tc.anchoPapel === 58 ? 32 : 48;
     const prefix = item.qty + 'x ';
     const spaces = W - prefix.length - nombrePrincipal.length - precio.length;
     if (spaces >= 0) {
