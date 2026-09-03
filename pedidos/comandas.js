@@ -2117,9 +2117,11 @@ function buildTicketBlocks(order) {
   return B;
 }
 
-/* ── Vista previa en pantalla / diálogo de impresión (HTML) ── */
-function buildTicketPreviewHTML(order) {
-  const blocks = buildTicketBlocks(order);
+/* ── Vista previa en pantalla / diálogo de impresión (HTML) ── Separada de
+   buildTicketBlocks() en dos pasos ("blocks" del pedido → HTML) para poder
+   reutilizar el mismo dibujado con otros "blocks" que no son un pedido —
+   ver buildCajaResumenBlocks()/imprimirResumenCaja() más abajo. ── */
+function blocksToPreviewHTML(blocks) {
   let html = '';
   blocks.forEach(b => {
     if (b.logo) {
@@ -2142,6 +2144,9 @@ function buildTicketPreviewHTML(order) {
     html += '<div style="' + style + '">' + content + '</div>';
   });
   return html;
+}
+function buildTicketPreviewHTML(order) {
+  return blocksToPreviewHTML(buildTicketBlocks(order));
 }
 function renderTicketPreview(order) {
   document.getElementById('ticket-html-content').innerHTML = buildTicketPreviewHTML(order);
@@ -2215,8 +2220,10 @@ function bytesToBase64(bytes) {
   }
   return btoa(binary);
 }
-function buildEscPosBytes(order) {
-  const blocks = buildTicketBlocks(order);
+// Mismo motivo que blocksToPreviewHTML(): separado en dos pasos para poder
+// convertir a bytes ESC/POS cualquier lista de "blocks", no solo la de un
+// pedido — lo usa también imprimirResumenCaja() más abajo.
+function blocksToEscPosBytes(blocks) {
   const b = new EscPosBuilder();
   b.init();
   blocks.forEach(blk => {
@@ -2243,6 +2250,9 @@ function buildEscPosBytes(order) {
   b.text('\n\n\n');
   b.cut();
   return b.toBytes();
+}
+function buildEscPosBytes(order) {
+  return blocksToEscPosBytes(buildTicketBlocks(order));
 }
 
 /* ── Numeración diaria de comandas ── */
@@ -2596,6 +2606,99 @@ function renderCaja() {
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
     + row('💰 Efectivo esperado en caja', esperadoCajon, true);
+}
+
+/* ── Resumen de caja (fin de día) en papel — usa el mismo formato de
+   "blocks" que buildTicketBlocks(), así que reutiliza sin cambios toda la
+   maquinaria de vista previa / ESC-POS / impresión de un pedido normal
+   (blocksToPreviewHTML/blocksToEscPosBytes). No toca el historial ni la
+   numeración de pedidos: es solo un ticket informativo. ── */
+function buildCajaResumenBlocks(fecha) {
+  const cfg = getTicketConfig();
+  const width = getPaperWidthChars();
+  const divider = '-'.repeat(width);
+  const fondo = loadCajaFondo(fecha);
+  const t = loadCajaTotales(fecha);
+  const facturado = t.efectivo + t.tarjeta + t.pendiente;
+  const esperadoCajon = fondo + t.efectivo;
+  const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+  const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const B = [];
+  B.push({ logo: true });
+  B.push({ text: foldAccents(cfg.nombre), align: 'center', big: true });
+  B.push({ text: divider, align: 'center' });
+  B.push({ text: 'RESUMEN DE CAJA', align: 'center', big: true });
+  B.push({ text: fechaFmt, align: 'center' });
+  B.push({ text: 'Impreso a las ' + horaFmt, align: 'center' });
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'Pedidos: ' + t.count, align: 'left' });
+  B.push({ text: 'Fondo inicial: ' + fmtEur(fondo), align: 'left' });
+  B.push({ text: 'Efectivo cobrado: ' + fmtEur(t.efectivo), align: 'left' });
+  B.push({ text: 'Tarjeta cobrada: ' + fmtEur(t.tarjeta), align: 'left' });
+  if (t.pendiente > 0) {
+    B.push({ text: 'PENDIENTE DE COBRO: ' + fmtEur(t.pendiente), align: 'left', paidStatus: 'no' });
+  }
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'TOTAL FACTURADO: ' + fmtEur(facturado), align: 'left', big: true });
+  B.push({ text: 'EFECTIVO ESPERADO EN CAJA:', align: 'center' });
+  B.push({ text: fmtEur(esperadoCajon), align: 'center', big: true });
+  if (t.pendiente > 0) {
+    B.push({ text: divider, align: 'center' });
+    B.push({ text: 'Ojo: hay pedidos sin cobrar.', align: 'center' });
+    B.push({ text: 'Si se cobraron a mano sin marcarlos', align: 'center' });
+    B.push({ text: 'pagados aqui, la caja no cuadrara.', align: 'center' });
+  }
+  B.push({ text: divider, align: 'center' });
+  return B;
+}
+
+/* ── Imprimir resumen del día al cerrar caja — mismo pipeline de tres
+   intentos (impresión directa → silenciosa app de escritorio → diálogo)
+   que ya usa printOrder() para las comandas, pero sin guardar nada en el
+   historial ni tocar la numeración: es solo un ticket informativo. ── */
+async function imprimirResumenCaja() {
+  const fecha = cajaFechaSel;
+  const blocks = buildCajaResumenBlocks(fecha);
+  document.getElementById('ticket-html-content').innerHTML = blocksToPreviewHTML(blocks);
+  const cfg = getTicketConfig();
+  let printedOk = false, anyFailure = false, failReason = '';
+
+  if (cfg.modoImpresion === 'auto') {
+    try {
+      const bytes = blocksToEscPosBytes(blocks);
+      await sendToPrinter(bytes);
+      printedOk = true;
+    } catch (e) {
+      console.warn('[comandas] impresión directa del resumen falló:', e);
+      anyFailure = true;
+      failReason = e.message || 'motivo desconocido';
+    }
+  }
+
+  if (!printedOk && cfg.modoImpresion !== 'dialog' && isDesktopApp() && window.comandasDesktop.printRaw) {
+    try {
+      const bytes = blocksToEscPosBytes(blocks);
+      const bytesBase64 = bytesToBase64(bytes);
+      const res = await _conTimeout(
+        window.comandasDesktop.printRaw(bytesBase64, cfg.printerDeviceName || undefined),
+        12000,
+        'timeout en impresión silenciosa — el driver no respondió a tiempo'
+      );
+      if (res && res.success) printedOk = true;
+      else { anyFailure = true; failReason = (res && res.reason) || 'motivo desconocido'; }
+    } catch (e) {
+      console.warn('[comandas] impresión silenciosa del resumen falló, usando diálogo:', e);
+      anyFailure = true;
+      failReason = e.message || 'motivo desconocido';
+    }
+  }
+
+  if (!printedOk) {
+    if (anyFailure) toast('⚠️ No se pudo imprimir directo (' + (failReason || 'sin conexión con la impresora') + ') — se abre el diálogo de impresión', 6000);
+    window.print();
+  }
+  playPrintSound(printedOk || !anyFailure);
+  if (printedOk) toast('✅ Resumen del día impreso');
 }
 
 /* ── Copia de seguridad / exportación (del día seleccionado en "Hacer
