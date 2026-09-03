@@ -2049,8 +2049,13 @@ async function cancelarPedidoAdmin(orderNum, phone) {
 function loadSlotTurnosUI() {
   const turnos = getSlotTurnos();
   const maxVal = getSlotMax();
+  // Hay dos campos con el mismo valor en dos sitios distintos del panel
+  // (Turnos y Configuración) — los dos se sincronizan aquí para que
+  // ninguno se quede mostrando un número antiguo.
   const inp = document.getElementById('slot-max-input');
   if (inp) inp.value = maxVal;
+  const inpCfg = document.getElementById('slot-max-input-cfg');
+  if (inpCfg) inpCfg.value = maxVal;
   renderSlotTurnosList(turnos);
 }
 function renderSlotTurnosList(turnos) {
@@ -2123,8 +2128,14 @@ function updateSlotTurno(idx, field, value) {
     if (t[target]) t[target][field] = value;
   });
 }
-function saveSlotConfig() {
-  const maxInp = document.getElementById('slot-max-input');
+function saveSlotConfig(inputId) {
+  // El panel de Configuración tiene su propio campo (slot-max-input-cfg),
+  // aparte del de Turnos (slot-max-input) — antes esto SIEMPRE leía
+  // slot-max-input pasara lo que pasara, así que cambiar el número desde
+  // Configuración y pulsar Guardar no hacía nada (guardaba el valor del
+  // OTRO campo, que ni se molestaba en mostrar el número real). Ahora cada
+  // botón dice qué campo es el suyo.
+  const maxInp = document.getElementById(inputId || 'slot-max-input');
   const max = parseInt(maxInp ? maxInp.value : '4', 10);
   if (isNaN(max) || max < 1) {
     alert('El número de pedidos por turno debe ser al menos 1');
@@ -2132,6 +2143,12 @@ function saveSlotConfig() {
   }
   localStorage.setItem(SLOT_MAX_KEY, max);
   SLOT_MAX = max;
+  // Refleja el nuevo valor también en el otro campo, para que no se quede
+  // mostrando el número antiguo si el admin va a esa otra sección después.
+  ['slot-max-input', 'slot-max-input-cfg'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.value = max;
+  });
   const turnosLocal = getSlotTurnos();
   // Transacción real en vez de leer-modificar-guardar sin más — antes, si
   // otro dispositivo acababa de añadir/quitar un turno justo antes de este
