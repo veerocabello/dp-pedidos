@@ -1631,6 +1631,7 @@ function isQuitarBlocked(id) {
 }
 const BONIATO_IDS = new Set([17, 18, 19, 20, 21, 51]); // no llevan queso/gratinado como extra, solo quitar ingredientes
 const BONIATO_GOAT_ID = 20; // Boniato G.O.A.T. — el único con queso de cabra, va aparte en el stock
+const BONIATO_FRIES_ID = 17; // el único Boniato "vacío" (sin receta cerrada) — el único que admite ingredientes/salsas extra
 function parseBaseComponents(item) {
   if (item.components) return item.components;
   if (!item.desc) return [];
@@ -1843,6 +1844,11 @@ function renderExtrasBody(item) {
   // ingredientes o salsas sueltas encima de una receta ya cerrada. Nunca
   // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO).
   const soloGratinar = isQuitarBlocked(item.id) && soloGratinado;
+  // El resto de recetas de Boniato (Lotus, Bacon, G.O.A.T., Pistacchio,
+  // Pulled Pork) van ya cerradas — solo Boniato Fries es una base vacía
+  // donde sí tiene sentido añadir ingredientes/salsas sueltas encima,
+  // igual que en una patata normal.
+  const puedeAnadirExtras = !isBoniato || item.id === BONIATO_FRIES_ID;
   if (!isBoniato) {
     const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
     if (!yaLlevaQueso) {
@@ -1856,10 +1862,10 @@ function renderExtrasBody(item) {
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
   }
-  // Ingredientes/salsas extra: igual para Boniato que para el resto — un
-  // Boniato Fries también puede llevar pollo, bacon o una salsa extra
-  // encima, no solo quitar lo poco que trae de base.
-  if (!soloGratinar) {
+  // Ingredientes/salsas extra: para todas las patatas normales, y para
+  // Boniato solo en Boniato Fries (base vacía) — el resto de recetas de
+  // Boniato van ya cerradas.
+  if (puedeAnadirExtras && !soloGratinar) {
     html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
     sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
       const precio = priceOfIngExtra(ing);
