@@ -71,6 +71,10 @@
     <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
     <button type="button" class="btn-text" style="color:var(--amber-dark);margin-bottom:8px" onclick="openManualItemModal()">➕ Añadir gasto/cobro suelto</button>
+    <div class="paid-toggle-row" id="paid-toggle-row">
+      <button type="button" class="paid-toggle-btn paid-toggle-yes active" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ Pagado</button>
+      <button type="button" class="paid-toggle-btn paid-toggle-no" id="paid-btn-no" onclick="setOrderPaid(false)">❌ No pagado</button>
+    </div>
     <div class="payment-method-row" id="payment-method-row" style="display:flex">
       <button type="button" class="payment-method-btn active" id="pay-method-cash" onclick="setPaymentMethod('efectivo')">💵 Efectivo</button>
       <button type="button" class="payment-method-btn" id="pay-method-card" onclick="setPaymentMethod('tarjeta')">💳 Tarjeta</button>

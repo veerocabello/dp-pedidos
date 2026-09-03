@@ -253,13 +253,11 @@ let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQues
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
 let manualCart = {};   // key -> {key, name, price, qty} — cobros sueltos que no están en la carta
 let manualIdSeq = 0, manualItemEditKey = null;
-// Toda comanda cuenta como pagada desde el principio — antes había que
-// marcar "PAGADO"/"NO PAGADO" a mano en Cobrar, pero en la práctica el
-// cobro real se hace fuera de la app (al recoger, en mano), así que ese
-// aviso solo generaba descuadres cuando se olvidaba marcarlo. orderPaid se
-// deja tal cual (en vez de quitarlo del todo) porque sigue haciendo falta
-// para pedidos antiguos ya guardados como no pagados (ver
-// modifyHistorialOrder/payHistorialOrder, que restauran su estado real).
+// Por defecto toda comanda arranca como pagada (lo normal), pero en
+// Cobrar se puede marcar "NO PAGADO" a mano para los casos sueltos que sí
+// hace falta llevar aparte (fiado, pedido por teléfono que se cobra al
+// entregar...) — luego aparecen en el aviso de "pendiente de cobro" de
+// Hacer Caja y en el desplegable de "no pagados" del historial.
 let orderPaid = true;
 let paymentMethod = 'efectivo';
 // Pedido por teléfono recuperado de un historial antiguo que se guardó
@@ -269,6 +267,9 @@ let paymentMethod = 'efectivo';
 let pedidoACobrarSinImprimir = null;
 function setOrderPaid(v) {
   orderPaid = v;
+  const btnYes = document.getElementById('paid-btn-yes'), btnNo = document.getElementById('paid-btn-no');
+  if (btnYes) btnYes.classList.toggle('active', orderPaid);
+  if (btnNo) btnNo.classList.toggle('active', !orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
   const printBtn = document.getElementById('print-btn');
   if (printBtn) {
