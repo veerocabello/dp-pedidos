@@ -1198,6 +1198,61 @@ async function _imprimirUnCartelQRLocal(code) {
   await _ptEnviarBytes(new Uint8Array(d));
 }
 
+// Imprime el "Resumen del día" que se ve en el panel tras pulsar "Cerrar
+// el día" (activarFinDeNoche(), en admin-turnos-descuentos.js) — pedidos,
+// total recaudado y top productos. Lee window._ultimoResumenDia, que ese
+// mismo botón deja guardado justo antes de pintar el resumen en pantalla,
+// así no hace falta volver a pedir las estadísticas ni escapar nombres de
+// producto dentro de un atributo onclick.
+async function imprimirResumenDiaTermico() {
+  const r = window._ultimoResumenDia;
+  if (!r) {
+    alert('Todavía no hay un resumen del día que imprimir — pulsa antes "Cerrar el día".');
+    return;
+  }
+  const ESC = 0x1B;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const left = () => d.push(ESC, 0x61, 0x00);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  const linea = () => push('--------------------------------\n');
+  d.push(ESC, 0x40);
+  center();
+  big();
+  push('DULCE PATATA\n');
+  normal();
+  push('Resumen del dia\n');
+  push(r.fecha + '\n');
+  linea();
+  left();
+  bold(true);
+  push('Pedidos: ' + r.pedidos + '\n');
+  push('Total recaudado: ' + r.total + ' EUR\n');
+  bold(false);
+  if (r.topSorted && r.topSorted.length) {
+    linea();
+    push('Top productos:\n');
+    r.topSorted.forEach((e, i) => {
+      const medalla = i === 0 ? '1o' : i === 1 ? '2o' : '3o';
+      push(medalla + ' ' + e[0] + ' (' + e[1] + ')\n');
+    });
+  }
+  linea();
+  center();
+  push('\n\n');
+  const GS = 0x1D;
+  d.push(GS, 0x56, 0x42, 0x00);
+  try {
+    const ejecutar = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+    await ejecutar(() => _ptEnviarBytes(new Uint8Array(d)));
+  } catch (e) {
+    alert('⚠️ No se pudo imprimir el resumen: ' + e.message);
+  }
+}
+
 // ── AVISO DE PAPEL ──
 // Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
 // de papel). La interpretación exacta de los bits varía algo según el

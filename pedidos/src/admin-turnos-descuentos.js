@@ -281,10 +281,15 @@ async function activarFinDeNoche() {
   if (window.fb_resetDayCounter) window.fb_resetDayCounter().catch(() => {});
 
   // 5. Mostrar resumen
+  // window._ultimoResumenDia queda disponible para imprimirResumenDiaTermico()
+  // (impresora-termica.js) — así el botón de imprimir no tiene que volver a
+  // pedir las estadísticas ni escapar nombres de producto dentro de un
+  // atributo onclick, solo lee esta misma copia que ya se pintó en pantalla.
+  window._ultimoResumenDia = { fecha: todayKey, pedidos, total, topSorted };
   const resumenEl = document.getElementById('fin-noche-resumen');
   if (resumenEl) {
     resumenEl.style.display = 'block';
-    resumenEl.innerHTML = '<div style="font-size:15px;font-weight:900;margin-bottom:8px">📊 Resumen del día ' + todayKey + '</div>' + '<div>🧾 Pedidos: <strong>' + pedidos + '</strong></div>' + '<div>💶 Total recaudado: <strong>' + total + ' €</strong></div>' + (topSorted.length ? '<div style="margin-top:6px">🏆 Top productos:<br>' + topSorted.map((e, i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉') + ' ' + e[0] + ' (' + e[1] + ')').join('<br>') + '</div>' : '') + '<div style="margin-top:8px;font-size:11px;opacity:.7">Turnos reseteados · Pedidos pausados · Datos archivados ✅</div>';
+    resumenEl.innerHTML = '<div style="font-size:15px;font-weight:900;margin-bottom:8px">📊 Resumen del día ' + todayKey + '</div>' + '<div>🧾 Pedidos: <strong>' + pedidos + '</strong></div>' + '<div>💶 Total recaudado: <strong>' + total + ' €</strong></div>' + (topSorted.length ? '<div style="margin-top:6px">🏆 Top productos:<br>' + topSorted.map((e, i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉') + ' ' + e[0] + ' (' + e[1] + ')').join('<br>') + '</div>' : '') + '<div style="margin-top:8px;font-size:11px;opacity:.7">Turnos reseteados · Pedidos pausados · Datos archivados ✅</div>' + '<button onclick="imprimirResumenDiaTermico()" style="margin-top:10px;width:100%;padding:9px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ Imprimir resumen</button>';
   }
   logActivity('🌙 Fin de noche activado — ' + pedidos + ' pedidos · ' + total + ' €');
   showToast('local-toast');
