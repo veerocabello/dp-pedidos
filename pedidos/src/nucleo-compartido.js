@@ -3985,6 +3985,14 @@ function _aplicarMenuDesdeFirebase(data) {
       item.hidden = saved.hidden || false;
       item.soldout = saved.soldout || false;
       item.tags = Array.isArray(saved.tags) ? saved.tags : [];
+      // Antes se quedaban fuera de este merge — un visitante que nunca
+      // hubiera tenido un dpf_menu completo en su localStorage (es decir,
+      // prácticamente cualquier cliente en su propio móvil, a diferencia
+      // del navegador donde se usa el panel de admin) recibía los tags
+      // pero nunca la nota concreta ni el "se puede pedir sin" — el aviso
+      // de alérgeno se veía a medias sin que nada avisara del fallo.
+      item.tagNotes = (saved.tagNotes && typeof saved.tagNotes === 'object') ? saved.tagNotes : undefined;
+      item.ingredientesQuitables = !!saved.ingredientesQuitables;
     } else {
       // Producto nuevo que no existía en este dispositivo todavía — lo insertamos
       // junto a los de su misma categoría, no suelto al final
