@@ -1253,6 +1253,56 @@ async function imprimirResumenDiaTermico() {
   }
 }
 
+// Imprime el total generado y el nº de pedidos de HOY (pestaña "Hoy" del
+// panel — stat-count/stat-total, misma fuente que loadDayStats() en
+// admin-antispam-stats.js) en cualquier momento del día, sin depender de
+// haber pulsado "Cerrar el día" — a diferencia de imprimirResumenDiaTermico()
+// de arriba, que solo tiene datos después de cerrar.
+async function imprimirResumenHoyTermico() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  let stats = null;
+  if (window.fb_getStats) {
+    try { stats = await window.fb_getStats(todayKey); } catch (e) {}
+  }
+  if (!stats) {
+    try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) {}
+  }
+  if (!stats || stats.date !== todayKey) stats = { date: todayKey, count: 0, total: 0 };
+  const ESC = 0x1B;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const left = () => d.push(ESC, 0x61, 0x00);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  const linea = () => push('--------------------------------\n');
+  d.push(ESC, 0x40);
+  center();
+  big();
+  push('DULCE PATATA\n');
+  normal();
+  push('Pedidos de hoy\n');
+  push(todayKey + '\n');
+  linea();
+  left();
+  bold(true);
+  push('Pedidos: ' + (stats.count || 0) + '\n');
+  push('Total generado: ' + (stats.total || 0).toFixed(2).replace('.', ',') + ' EUR\n');
+  bold(false);
+  linea();
+  center();
+  push('\n\n');
+  const GS = 0x1D;
+  d.push(GS, 0x56, 0x42, 0x00);
+  try {
+    const ejecutar = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+    await ejecutar(() => _ptEnviarBytes(new Uint8Array(d)));
+  } catch (e) {
+    alert('⚠️ No se pudo imprimir el resumen: ' + e.message);
+  }
+}
+
 // ── AVISO DE PAPEL ──
 // Comando ESC/POS "DLE EOT 4" (transmisión de estado en tiempo real, sensor
 // de papel). La interpretación exacta de los bits varía algo según el
