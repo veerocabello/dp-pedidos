@@ -1204,13 +1204,11 @@ async function _imprimirUnCartelQRLocal(code) {
 // mismo botón deja guardado justo antes de pintar el resumen en pantalla,
 // así no hace falta volver a pedir las estadísticas ni escapar nombres de
 // producto dentro de un atributo onclick.
-async function imprimirResumenDiaTermico() {
-  const r = window._ultimoResumenDia;
-  if (!r) {
-    alert('Todavía no hay un resumen del día que imprimir — pulsa antes "Cerrar el día".');
-    return;
-  }
-  const ESC = 0x1B;
+// Helper común a los tres "resumen de pedidos" que se pueden imprimir
+// (fin de noche, hoy en vivo, un día del historial) — mismo formato de
+// ticket para los tres, solo cambian el subtítulo y los datos.
+async function _ptImprimirResumenPedidos(subtitulo, fecha, pedidos, total, topSorted) {
+  const ESC = 0x1B, GS = 0x1D;
   const d = [];
   const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
   const center = () => d.push(ESC, 0x61, 0x01);
@@ -1224,18 +1222,18 @@ async function imprimirResumenDiaTermico() {
   big();
   push('DULCE PATATA\n');
   normal();
-  push('Resumen del dia\n');
-  push(r.fecha + '\n');
+  push(subtitulo + '\n');
+  push(fecha + '\n');
   linea();
   left();
   bold(true);
-  push('Pedidos: ' + r.pedidos + '\n');
-  push('Total recaudado: ' + r.total + ' EUR\n');
+  push('Pedidos: ' + pedidos + '\n');
+  push('Total: ' + total + ' EUR\n');
   bold(false);
-  if (r.topSorted && r.topSorted.length) {
+  if (topSorted && topSorted.length) {
     linea();
     push('Top productos:\n');
-    r.topSorted.forEach((e, i) => {
+    topSorted.forEach((e, i) => {
       const medalla = i === 0 ? '1o' : i === 1 ? '2o' : '3o';
       push(medalla + ' ' + e[0] + ' (' + e[1] + ')\n');
     });
@@ -1243,7 +1241,6 @@ async function imprimirResumenDiaTermico() {
   linea();
   center();
   push('\n\n');
-  const GS = 0x1D;
   d.push(GS, 0x56, 0x42, 0x00);
   try {
     const ejecutar = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
@@ -1251,6 +1248,14 @@ async function imprimirResumenDiaTermico() {
   } catch (e) {
     alert('⚠️ No se pudo imprimir el resumen: ' + e.message);
   }
+}
+async function imprimirResumenDiaTermico() {
+  const r = window._ultimoResumenDia;
+  if (!r) {
+    alert('Todavía no hay un resumen del día que imprimir — pulsa antes "Cerrar el día".');
+    return;
+  }
+  await _ptImprimirResumenPedidos('Resumen del dia', r.fecha, r.pedidos, r.total, r.topSorted);
 }
 
 // Imprime el total generado y el nº de pedidos de HOY (pestaña "Hoy" del
@@ -1268,39 +1273,23 @@ async function imprimirResumenHoyTermico() {
     try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch (e) {}
   }
   if (!stats || stats.date !== todayKey) stats = { date: todayKey, count: 0, total: 0 };
-  const ESC = 0x1B;
-  const d = [];
-  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
-  const center = () => d.push(ESC, 0x61, 0x01);
-  const left = () => d.push(ESC, 0x61, 0x00);
-  const big = () => d.push(ESC, 0x21, 0x30);
-  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
-  const normal = () => d.push(ESC, 0x21, 0x00);
-  const linea = () => push('--------------------------------\n');
-  d.push(ESC, 0x40);
-  center();
-  big();
-  push('DULCE PATATA\n');
-  normal();
-  push('Pedidos de hoy\n');
-  push(todayKey + '\n');
-  linea();
-  left();
-  bold(true);
-  push('Pedidos: ' + (stats.count || 0) + '\n');
-  push('Total generado: ' + (stats.total || 0).toFixed(2).replace('.', ',') + ' EUR\n');
-  bold(false);
-  linea();
-  center();
-  push('\n\n');
-  const GS = 0x1D;
-  d.push(GS, 0x56, 0x42, 0x00);
-  try {
-    const ejecutar = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
-    await ejecutar(() => _ptEnviarBytes(new Uint8Array(d)));
-  } catch (e) {
-    alert('⚠️ No se pudo imprimir el resumen: ' + e.message);
+  const totalStr = (stats.total || 0).toFixed(2).replace('.', ',');
+  await _ptImprimirResumenPedidos('Pedidos de hoy', todayKey, stats.count || 0, totalStr);
+}
+
+// Imprime el resumen de UN día concreto del historial (Historial por días,
+// acceso bimba) — getHistorial() ya tiene la lista completa (ver
+// nucleo-compartido.js), aquí solo se busca el día pedido y se reutiliza
+// el mismo formato de ticket que arriba.
+async function imprimirResumenHistorialDiaTermico(fecha) {
+  const dia = getHistorial().find(d => d.date === fecha);
+  if (!dia) {
+    alert('No hay datos guardados de ese día.');
+    return;
   }
+  const dateLabel = new Date(fecha + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  const totalStr = (dia.total || 0).toFixed(2).replace('.', ',');
+  await _ptImprimirResumenPedidos('Resumen del dia', dateLabel, dia.count || 0, totalStr);
 }
 
 // ── AVISO DE PAPEL ──
