@@ -623,10 +623,20 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
-  .item-card:hover {
-    border-color: var(--amber);
-    box-shadow: 4px 4px 0 rgba(196,113,26,0.22);
-    transform: translateY(-1px);
+  /* @media (hover:hover) — sin esto, en móvil (sin ratón real) el primer
+     toque en la tarjeta solo "activa" este :hover en vez de disparar el
+     onclick de lo que se toque dentro (el icono de alérgeno, por ejemplo):
+     hacía falta tocar dos veces para que el aviso del alérgeno apareciera.
+     Es un comportamiento conocido de Safari/Chrome en pantallas táctiles
+     con elementos :hover — al limitar el hover a dispositivos que de
+     verdad tienen puntero (ratón), el toque en móvil vuelve a disparar el
+     onclick a la primera. */
+  @media (hover: hover) {
+    .item-card:hover {
+      border-color: var(--amber);
+      box-shadow: 4px 4px 0 rgba(196,113,26,0.22);
+      transform: translateY(-1px);
+    }
   }
   .item-card.in-cart {
     border-color: var(--amber);

@@ -119,25 +119,31 @@ Promise.all([
   console.log('✅ Construido: menu-default.json (' + sandbox.MENU.length + ' productos)');
 })();
 
-// index.php carga js/app.js y js/auth.js con un "?v=<timestamp>" fijo en
-// el propio HTML (a diferencia de js/app-admin.js, que ya se pide con
-// Date.now() calculado en el navegador — ver loadAdminShell() en
-// index.php, siempre fresco). Antes había que acordarse de subir ese
-// número a mano cada vez que cambiaba alguno de los dos archivos: si se
-// olvidaba, el navegador (o una caché del propio hosting) podía seguir
-// sirviendo la versión vieja aunque el archivo nuevo ya estuviera subido
-// — pasó de verdad: un botón nuevo del panel no respondía porque
+// index.php carga js/app.js, js/auth.js y css/style.min.css con un
+// "?v=<timestamp>" fijo en el propio HTML (a diferencia de js/app-admin.js,
+// que ya se pide con Date.now() calculado en el navegador — ver
+// loadAdminShell() en index.php, siempre fresco). Antes había que acordarse
+// de subir ese número a mano cada vez que cambiaba alguno de esos archivos:
+// si se olvidaba, el navegador (o una caché del propio hosting) podía
+// seguir sirviendo la versión vieja aunque el archivo nuevo ya estuviera
+// subido — pasó de verdad: un botón nuevo del panel no respondía porque
 // auth.js seguía en caché. Ahora se regenera solo en cada build.
+// style.min.css se añadió después de app.js/auth.js y durante un tiempo se
+// quedó fuera de este replace por descuido — con el Service Worker
+// cacheando /css/ por URL exacta (ver sw.js), un cambio de CSS sin subir
+// este número podía quedarse invisible indefinidamente para quien ya
+// hubiera visitado la web, aunque el archivo nuevo ya estuviera subido.
 (function actualizarVersionCache() {
   const indexPath = path.join(rootDir, 'index.php');
   const original = fs.readFileSync(indexPath, 'utf8');
   const v = Date.now();
   const actualizado = original
     .replace(/js\/app\.js\?v=\d+/, 'js/app.js?v=' + v)
-    .replace(/js\/auth\.js\?v=\d+/, 'js/auth.js?v=' + v);
+    .replace(/js\/auth\.js\?v=\d+/, 'js/auth.js?v=' + v)
+    .replace(/css\/style\.min\.css\?v=\d+/, 'css/style.min.css?v=' + v);
   if (actualizado !== original) {
     fs.writeFileSync(indexPath, actualizado);
-    console.log('✅ index.php: versión de caché de app.js/auth.js actualizada a ' + v);
+    console.log('✅ index.php: versión de caché de app.js/auth.js/style.min.css actualizada a ' + v);
   }
 })();
 
