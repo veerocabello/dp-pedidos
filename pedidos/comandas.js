@@ -229,11 +229,19 @@ const CUSTOMIZER_CONFIG = {
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
 // Algunas descripciones de patatas usan la forma corta del ingrediente
-// ("york", "kebab", "tronquitos") en vez del nombre completo de la lista
-// de precios ("Jamón York", "Carne Kebab", "Tronquitos de Mar") — sin este
-// alias, matchCustIngredientName no los reconocía y esos chips concretos
-// se quedaban sin opción de doble/triple aunque tuvieran precio de sobra.
-const CUST_INGREDIENT_ALIASES = { 'york': 'Jamón York', 'kebab': 'Carne Kebab', 'tronquitos': 'Tronquitos de Mar' };
+// ("york", "kebab", "tronquitos") o una frase distinta ("carne de kebab
+// pollo", "mozzarella" a secas) en vez del nombre completo de la lista de
+// precios ("Jamón York", "Carne Kebab", "Tronquitos de Mar", "Queso
+// Mozzarella") — sin este alias, matchCustIngredientName no los reconocía
+// y esos chips concretos se quedaban sin opción de doble/triple aunque
+// tuvieran precio de sobra (p.ej. Patata Kebab y Patata Pulled Pork).
+const CUST_INGREDIENT_ALIASES = {
+  'york': 'Jamón York',
+  'kebab': 'Carne Kebab',
+  'carne de kebab pollo': 'Carne Kebab',
+  'tronquitos': 'Tronquitos de Mar',
+  'mozzarella': 'Queso Mozzarella',
+};
 // "Doble" de un ingrediente (base o extra) solo se ofrece cuando hay un
 // precio de referencia con el que cobrarlo — si el componente no está en
 // la lista de ingredientes con precio (p.ej. "galletas Lotus" o "pulled
@@ -669,7 +677,7 @@ function getExtrasItemBaseSubtotal(e) {
 function getExtrasItemLabel(e) {
   const item = MENU.find(m => m.id == e.menuId);
   if (!item) return 'Producto desconocido';
-  if (e.cheddarCarne) return item.name + ' (' + e.cheddarCarne + ')';
+  if (e.cheddarCarne) return item.name + ' (' + (e.cheddarCarne === 'kebab' ? 'Carne Kebab' : 'Carne Picada') + ')';
   return item.name;
 }
 function getExtrasItemDetails(e) {
@@ -1491,10 +1499,14 @@ function renderCustChips() {
     return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
-    const sel = custSelIngredients.includes(n);
-    const extra = custSelExtraIngredients.includes(n);
-    const label = extra ? n + ' +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€' : n;
-    return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
+    const countIncluded = custSelIngredients.filter(x => x === n).length;
+    const countExtra = custSelExtraIngredients.filter(x => x === n).length;
+    const total = countIncluded + countExtra;
+    const mult = total >= 2;
+    const sel = total > 0;
+    const priceUnit = priceOfPick({ type: 'ing', name: n });
+    const label = mult ? n + ' x' + total + (countExtra > 0 ? ' +' + fmt(priceUnit * countExtra) + '€' : '') : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
 function toggleCustSauce(n) {
@@ -1514,16 +1526,24 @@ function toggleCustSauce(n) {
 // selección — el ingrediente de más se marca como "extra" y se cobra
 // aparte (como si se hubiera añadido en la patata normal), en vez de
 // dejar el chip deshabilitado sin forma de elegirlo.
+// Ciclo de toques: no elegido → elegido (1x) → doble (2x) → triple (3x) →
+// no elegido. Cada unidad (la primera o una de más al doblar/triplicar)
+// ocupa un hueco incluido mientras quede sitio en el límite gratis — solo
+// se cobra aparte la que ya no cabe, igual que si fuera un ingrediente
+// distinto más. Por eso doblar SÍ cuenta para el umbral de Al Gusto/Bomba:
+// dos unidades del mismo ingrediente gastan dos huecos de los 6/9.
 function toggleCustIng(n) {
   const cfg = CUSTOMIZER_CONFIG[custType];
-  const i = custSelIngredients.indexOf(n);
-  const iE = custSelExtraIngredients.indexOf(n);
-  if (i >= 0) custSelIngredients.splice(i, 1);
-  else if (iE >= 0) custSelExtraIngredients.splice(iE, 1);
-  else {
+  const countIncluded = custSelIngredients.filter(x => x === n).length;
+  const countExtra = custSelExtraIngredients.filter(x => x === n).length;
+  const total = countIncluded + countExtra;
+  if (total < MAX_ING_MULTIPLICIDAD) {
     const roomInLimit = (cfg.maxIngredients === null || custSelIngredients.length < cfg.maxIngredients) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelIngredients.push(n);
     else custSelExtraIngredients.push(n); // fuera del límite incluido → se cobra aparte
+  } else {
+    custSelIngredients = custSelIngredients.filter(x => x !== n);
+    custSelExtraIngredients = custSelExtraIngredients.filter(x => x !== n);
   }
   if (custHasQuesoIngredient() && custExtraQueso) {
     custExtraQueso = false;
@@ -1609,14 +1629,29 @@ function confirmCustomizer() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — CHEDDAR-BACON
    ══════════════════════════════════════════════════════════════ */
-let cheddarCarne = null, cheddarSalsasExtra = {}, cheddarEditKey = null;
+let cheddarCarne = null, cheddarCarneQty = 1, cheddarSalsasExtra = {}, cheddarEditKey = null;
+// Nombre "de catálogo" de la carne elegida — el que ya tiene precio de
+// sobra en EXTRAS_ING_PRECIO1, así se reutiliza dobleSurcharge() sin tener
+// que inventar un precio nuevo para "picada"/"kebab".
+function cheddarCarneCanonical() { return cheddarCarne === 'kebab' ? 'Carne Kebab' : cheddarCarne === 'picada' ? 'Carne Picada' : null; }
+function cheddarDobles() {
+  const name = cheddarCarneCanonical();
+  const out = [];
+  if (name) for (let i = 1; i < cheddarCarneQty; i++) out.push(name);
+  return out;
+}
 function openCheddarModal(editKey) {
   cheddarEditKey = editKey || null;
   const existing = cheddarEditKey ? extrasCart[cheddarEditKey] : null;
   cheddarCarne = existing ? existing.cheddarCarne : null;
+  cheddarCarneQty = 1;
+  if (existing && existing.cheddarCarne) {
+    const name = existing.cheddarCarne === 'kebab' ? 'Carne Kebab' : 'Carne Picada';
+    cheddarCarneQty = 1 + (existing.dobles || []).filter(d => d === name).length;
+  }
   cheddarSalsasExtra = {};
   if (existing) (existing.salsasExtra || []).forEach(s => cheddarSalsasExtra[s] = true);
-  ['picada', 'kebab'].forEach(k => document.getElementById('cheddar-check-' + k).classList.toggle('on', cheddarCarne === k));
+  renderCheddarCarneOptions();
   document.getElementById('cheddar-error').style.display = 'none';
   document.getElementById('cheddar-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
   renderCheddarSalsasExtra();
@@ -1624,10 +1659,29 @@ function openCheddarModal(editKey) {
   document.getElementById('cheddar-modal').classList.add('open');
 }
 function closeCheddarModal() { document.getElementById('cheddar-modal').classList.remove('open'); cheddarEditKey = null; }
+// Tocar la carne YA elegida cicla doble/triple (igual que el resto de
+// chips de ingrediente); tocar la otra la selecciona de cero (qty vuelve
+// a 1 — doblar tiene que decidirse otra vez para la nueva carne).
 function selectCheddarCarne(k) {
-  cheddarCarne = k;
-  ['picada', 'kebab'].forEach(x => document.getElementById('cheddar-check-' + x).classList.toggle('on', x === k));
+  if (cheddarCarne === k) {
+    cheddarCarneQty = cheddarCarneQty < MAX_ING_MULTIPLICIDAD ? cheddarCarneQty + 1 : 1;
+  } else {
+    cheddarCarne = k;
+    cheddarCarneQty = 1;
+  }
+  renderCheddarCarneOptions();
   document.getElementById('cheddar-error').style.display = 'none';
+  updateCheddarPrice();
+}
+function renderCheddarCarneOptions() {
+  const labels = { picada: 'Carne Picada', kebab: 'Carne Kebab' };
+  ['picada', 'kebab'].forEach(k => {
+    const sel = cheddarCarne === k;
+    const mult = sel && cheddarCarneQty >= 2;
+    document.getElementById('cheddar-check-' + k).classList.toggle('on', sel);
+    document.getElementById('cheddar-check-' + k).classList.toggle('doble', mult);
+    document.getElementById('cheddar-title-' + k).textContent = mult ? labels[k] + ' (x' + cheddarCarneQty + ')' : labels[k];
+  });
 }
 function renderCheddarSalsasExtra() {
   const el = document.getElementById('cheddar-salsas-list');
@@ -1649,7 +1703,7 @@ function toggleCheddarSalsa(s) {
 function updateCheddarPrice() {
   const item = MENU.find(m => m.id === CHEDDAR_ID);
   const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
-  document.getElementById('cheddar-price').textContent = fmt(item.price + extra) + ' €';
+  document.getElementById('cheddar-price').textContent = fmt(item.price + extra + dobleSurcharge(cheddarDobles())) + ' €';
 }
 function confirmCheddar() {
   if (!cheddarCarne) {
@@ -1658,14 +1712,15 @@ function confirmCheddar() {
   }
   const item = MENU.find(m => m.id === CHEDDAR_ID);
   const salsaList = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).map(([s]) => s).sort();
-  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (salsaList.length ? '_S' + salsaList.join('|') : '');
+  const dobles = cheddarDobles();
+  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (cheddarCarneQty > 1 ? '_x' + cheddarCarneQty : '') + (salsaList.length ? '_S' + salsaList.join('|') : '');
   let qtyToSet = 1;
   if (cheddarEditKey && extrasCart[cheddarEditKey]) {
     qtyToSet = extrasCart[cheddarEditKey].qty;
     delete extrasCart[cheddarEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: [], salsasExtra: salsaList, basePrice: item.price, cheddarCarne, key };
+  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: [], salsasExtra: salsaList, dobles, basePrice: item.price, cheddarCarne, key };
   const wasEdit = !!cheddarEditKey;
   closeCheddarModal();
   renderCart();

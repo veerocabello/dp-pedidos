@@ -825,8 +825,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* El modal de Cobrar es el único con tanto contenido apilado, así que
    encoge también su propio padding y el botón de abajo (sin tocar las
-   reglas genéricas .modal-box/.btn-print que usan el resto de modales). */
-#cobrar-modal .modal-box { padding: clamp(14px, 2.5vh, 26px); }
+   reglas genéricas .modal-box/.btn-print que usan el resto de modales).
+   También le da al modal-box casi toda la pantalla (en vez del 90vh
+   genérico con el hueco de 16px del overlay) — en pantallas bajas
+   (~600px de alto, típico de un táctil de mostrador) ese margen de
+   sobra era justo lo que faltaba para que apareciera scroll. */
+#cobrar-modal.modal-overlay { padding: 4px; }
+#cobrar-modal .modal-box { padding: clamp(14px, 2.5vh, 26px); max-height: 99vh; }
 #cobrar-modal .btn-print { padding: clamp(9px, 1.6vh, 15px); font-size: clamp(13px, 2vh, 16px); }
 
 .clear-link { display: block; text-align: center; margin: clamp(4px, 0.8vh, 8px) 0 0; }
