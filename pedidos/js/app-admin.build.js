@@ -5921,7 +5921,7 @@ function updateKitchenClock() {
     minute: '2-digit'
   });
 }
-function refreshKitchenGrid() {
+async function refreshKitchenGrid() {
   if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   const todayKey = new Date().toISOString().slice(0, 10);
   let stats;
@@ -5929,6 +5929,32 @@ function refreshKitchenGrid() {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
   } catch {
     stats = {};
+  }
+  // Antes esta función SOLO leía el localStorage de este dispositivo,
+  // confiando del todo en que el listener en tiempo real (fb_listenStats,
+  // en nucleo-compartido.js) siguiera vivo y lo mantuviera al día. En una
+  // tablet de cocina que lleva la pantalla abierta horas o días seguidos,
+  // esa conexión puede quedarse colgada sin que nada lo note (un corte de
+  // wifi puntual, el sistema suspendiendo la pestaña de fondo...) — y esta
+  // pantalla se quedaba mostrando pedidos parados o directamente vacía
+  // aunque el móvil y el PC (recién cargados) sí vieran los pedidos
+  // nuevos. Como esta función ya se llama sola cada 15s (ver
+  // openKitchenMode), aprovechamos ese mismo intervalo para refrescar
+  // también desde Firebase de verdad — se autocura sola sin depender de
+  // recargar la página a mano.
+  if (window.fb_getStats) {
+    try {
+      const fresh = await Promise.race([
+        window.fb_getStats(todayKey),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+      ]);
+      if (fresh) {
+        stats = fresh;
+        localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+      }
+    } catch (e) {
+      console.warn('[Cocina] no se pudo refrescar desde Firebase, usando caché local', e);
+    }
   }
   if (stats.date !== todayKey) stats = {
     date: todayKey,
