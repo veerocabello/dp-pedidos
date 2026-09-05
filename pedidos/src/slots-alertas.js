@@ -1,24 +1,3 @@
-// ── Alerta de slot casi lleno ─────────────────────────────
-const _slotAlertSent = {};
-async function _checkSlotAlmostFull(slotTime, count, max) {
-  if (!slotTime || !max) return;
-  const pct = Math.round((count / max) * 100);
-  if (pct < 80) return;
-  const key = slotTime + '_' + count;
-  if (_slotAlertSent[key]) return;
-  _slotAlertSent[key] = true;
-  try {
-    if (typeof emailjs === 'undefined') return;
-    emailjs.init('Euum_k_XJdrejjnKj');
-    await emailjs.send('service_bil4ri5', 'template_ee4f7sp', {
-      slot:  slotTime,
-      count: count,
-      max:   max,
-      pct:   pct
-    });
-  } catch(e) {}
-}
-
 async function closeAdmin() {
   _adminLoggedIn = false; window._adminLoggedIn = false;
   try { if (window.fb_unregisterSession) window.fb_unregisterSession(_SESSION_ID); } catch(e) {}
@@ -74,47 +53,43 @@ async function showTrustedBannerIfNeeded() {
     banner.style.display = 'none';
   }
 }
-function bimbaGenAdminToken() {
-  const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
-  localStorage.setItem(URL_TOKEN_KEY, token);
-  if (window.fb_saveUrlToken) window.fb_saveUrlToken(token).catch(() => {});
-  loadUrlTokenUI();
-  const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token admin generado';
-  t.style.display = 'block';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.display = 'none', 2000);
-}
-function bimbaCopyAdminUrl() {
-  const token = getUrlToken();
-  if (!token) {
-    bimbaGenAdminToken();
-    return;
-  }
-  const url = location.origin + location.pathname + '?key=' + token;
-  navigator.clipboard.writeText(url).catch(() => {
-    const a = document.createElement('textarea');
-    a.value = url;
-    document.body.appendChild(a);
-    a.select();
-    document.execCommand('copy');
-    document.body.removeChild(a);
-  });
-  const t = document.getElementById('bimba-url-toast');
-  t.textContent = '📋 URL admin copiada';
-  t.style.display = 'block';
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.style.display = 'none', 2000);
-}
 function bimbaGenBimbaToken() {
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   localStorage.setItem(BIMBA_TOKEN_KEY, token);
   if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(token).catch(() => {});
+  // El enlace bimba antes no caducaba nunca — una vez compartido (por
+  // WhatsApp, etc.) quedaba válido para siempre sin forma de revocarlo sin
+  // romperlo también para quien lo necesitaba de verdad. Ahora caduca a
+  // los 90 días; regenerarlo (este mismo botón) también renueva el plazo.
+  if (window.fb_saveBimbaTokenExpiry) window.fb_saveBimbaTokenExpiry(Date.now() + 90 * 24 * 60 * 60 * 1000).catch(() => {});
+  loadBimbaTokenUI();
   const t = document.getElementById('bimba-url-toast');
-  t.textContent = '✅ Token bimba generado';
+  t.textContent = '✅ Token bimba generado (válido 90 días)';
   t.style.display = 'block';
   clearTimeout(t._to);
   t._to = setTimeout(() => t.style.display = 'none', 2000);
+}
+function clearBimbaToken() {
+  if (!confirm('¿Eliminar el token bimba? El enlace ?bimba=TOKEN dejará de funcionar.')) return;
+  localStorage.removeItem(BIMBA_TOKEN_KEY);
+  if (window.fb_saveBimbaToken) window.fb_saveBimbaToken('').catch(() => {});
+  loadBimbaTokenUI();
+  logActivity('📱 Token bimba eliminado');
+}
+function loadBimbaTokenUI() {
+  const token = getBimbaToken();
+  const inp = document.getElementById('bimba-token-display');
+  const full = document.getElementById('bimba-token-full');
+  if (!inp) return;
+  inp.value = token || '';
+  if (full) {
+    if (token) {
+      const url = "".concat(location.origin).concat(location.pathname, "?bimba=").concat(token);
+      full.textContent = '🔗 ' + url;
+    } else {
+      full.textContent = 'Sin token activo';
+    }
+  }
 }
 function bimbaCopyBimbaUrl() {
   const token = getBimbaToken();
@@ -171,6 +146,13 @@ function copyUrlWithToken() {
 
 // ── EXPORTAR / IMPORTAR CONFIGURACIÓN ──────────────────────────────
 function exportarConfig() {
+  // NOTA DE SEGURIDAD: este backup se descarga como JSON en plano y suele
+  // acabar compartido sin pensarlo mucho (WhatsApp, email, carpeta
+  // sincronizada...). urlToken/bimbaToken dan acceso directo al panel sin
+  // contraseña (?key=/?bimba=) y adminPwd es el hash de la contraseña real
+  // — antes se incluían aquí. Si hace falta restaurarlos, se regeneran
+  // desde sus botones correspondientes en Ajustes, no hace falta que vivan
+  // en un fichero de backup.
   const backup = {
     version: 1,
     fecha: new Date().toISOString(),
@@ -180,13 +162,9 @@ function exportarConfig() {
     ordersOpen: localStorage.getItem(ORDERS_KEY) || 'true',
     ordersMsg: localStorage.getItem(ORDERS_MSG_KEY) || '',
     openLocal: localStorage.getItem(OPEN_KEY) || 'true',
-    urlToken: localStorage.getItem(URL_TOKEN_KEY) || '',
-    bimbaToken: localStorage.getItem(BIMBA_TOKEN_KEY) || '',
-    stockPwd: localStorage.getItem(STOCK_PWD_KEY) || '',
     slotTurnos: _lsGet(SLOT_TURNOS_KEY, null),
     slotMax: localStorage.getItem(SLOT_MAX_KEY) || '4',
     blockedCats: _lsGet(CAT_BLOCK_KEY, []),
-    adminPwd: localStorage.getItem(ADMIN_PWD_KEY) || '',
     empresa: localStorage.getItem(EMP_EMPRESA_KEY) || '',
     stockData: _lsGet(STOCK_DATA_KEY, null),
     cif: localStorage.getItem(EMP_CIF_KEY) || ''
@@ -242,18 +220,11 @@ function importarConfig(input) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
         if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(backup.openLocal === 'true' || backup.openLocal === true).catch(() => {});
       }
-      if (backup.urlToken) {
-        localStorage.setItem(URL_TOKEN_KEY, backup.urlToken);
-        if (window.fb_saveUrlToken) window.fb_saveUrlToken(backup.urlToken).catch(() => {});
-      }
-      if (backup.bimbaToken) {
-        localStorage.setItem(BIMBA_TOKEN_KEY, backup.bimbaToken);
-        if (window.fb_saveBimbaToken) window.fb_saveBimbaToken(backup.bimbaToken).catch(() => {});
-      }
-      if (backup.stockPwd) {
-        localStorage.setItem(STOCK_PWD_KEY, backup.stockPwd);
-        if (window.fb_saveStockPwd) window.fb_saveStockPwd(backup.stockPwd).catch(() => {});
-      }
+      // urlToken/bimbaToken/stockPwd/adminPwd ya NO se exportan (ver
+      // exportarConfig) y tampoco se restauran aquí aunque un backup
+      // antiguo (o un fichero manipulado a propósito) los incluya — así
+      // nadie puede colar un token de acceso propio haciendo pasar un
+      // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
         if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
@@ -277,10 +248,10 @@ function importarConfig(input) {
       if (backup.cif !== undefined) {
         localStorage.setItem(EMP_CIF_KEY, backup.cif);
       }
-      if (backup.adminPwd && isHex64(backup.adminPwd)) {
-        localStorage.setItem(ADMIN_PWD_KEY, backup.adminPwd);
-        if (window.fb_saveAdminPwd) window.fb_saveAdminPwd(backup.adminPwd).catch(() => {});
-      }
+      // adminPwd de un backup antiguo se ignora a propósito — el comentario
+      // de arriba ya decía que no se restauraba, y ahora además el sistema
+      // de "contraseña de administración" propio se ha quitado del todo
+      // (no protegía nada real, ver admin-turnos-descuentos.js).
 
       // Refrescar UI
       loadAdminConfig();
@@ -315,7 +286,6 @@ function loadUrlTokenUI() {
   }
 }
 let _adminFailedAttempts = 0;
-let _adminLockedUntil = 0;
 async function checkAdminPwd() {
   var _document$getElementB5;
   const email = (((_document$getElementB5 = document.getElementById('admin-email-input')) === null || _document$getElementB5 === void 0 ? void 0 : _document$getElementB5.value) || '').trim();
@@ -431,6 +401,7 @@ async function checkAdminPwd() {
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();

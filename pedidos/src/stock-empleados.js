@@ -1,6 +1,8 @@
 // ── STOCK SYSTEM ──
+// STOCK_DATA_KEY vive en nucleo-compartido.js (bundle de cliente) — init.js
+// cachea el listener de stock en tiempo real para cualquier visitante nada
+// más cargar, aunque solo lo USE el panel de admin.
 const STOCK_PWD_KEY = 'dpf_stock_pwd';
-const STOCK_DATA_KEY = 'dpf_stock_data';
 const STOCK_DEFAULTS = {
   congelados: ['Kebab', 'Carne picada', 'Tronquitos de mar', 'Gambas', 'York', 'Pulled pork', 'Bacon'],
   latas_salsas: ['Tomate frito', 'Aceitunas', 'Maíz', 'Zanahoria', 'Remolacha', 'Champiñones', 'Piña', 'Alioli', 'Mayonesa', 'Salsa rosa', 'Salsa de yogur', 'Salsa barbacoa', 'Salsa brava', 'Salsa ketchup', 'Salsa roquefort', 'Salsa miel mostaza', 'Cebolla crujiente', 'Nata Vegecrem'],
@@ -47,42 +49,55 @@ const STOCK_GROUP_LABELS = {
     if (changed) localStorage.setItem('dpf_stock_data', JSON.stringify(data));
   } catch (e) {}
 })();
-function getStockPwd() {
-  return localStorage.getItem(STOCK_PWD_KEY) || '';
-}
-function changeStockPwd() {
-  const n1 = document.getElementById('stock-pwd-new').value;
-  const n2 = document.getElementById('stock-pwd-rep').value;
-  const err = document.getElementById('stock-pwd-error');
-  err.textContent = '';
-  if (n1.length < 4) {
-    err.textContent = 'La clave debe tener al menos 4 caracteres';
-    return;
-  }
-  if (n1 !== n2) {
-    err.textContent = 'Las claves no coinciden';
-    return;
-  }
-  localStorage.setItem(STOCK_PWD_KEY, n1);
-  if (window.fb_saveStockPwd) window.fb_saveStockPwd(n1).catch(() => {});
-  document.getElementById('stock-pwd-new').value = '';
-  document.getElementById('stock-pwd-rep').value = '';
-  showToast('stock-pwd-toast');
-  logActivity('\uD83D\uDCE6 Clave de stock actualizada');
-}
 function getStockData() {
   try {
     const saved = JSON.parse(localStorage.getItem(STOCK_DATA_KEY) || 'null');
-    if (saved) return saved;
+    if (saved) {
+      // Base de partida para saveStockData() hasta que llegue el primer
+      // dato real del listener de Firebase (ver init.js) — mejor que nada
+      // si se edita justo al abrir la página, antes de que dé tiempo a
+      // sincronizar.
+      if (!window._stockDataSyncedSnapshot) window._stockDataSyncedSnapshot = saved;
+      return saved;
+    }
   } catch {}
   // First time: preload defaults
   const data = JSON.parse(JSON.stringify(STOCK_DEFAULTS));
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
   return data;
 }
+// Antes esto sobreescribía TODO config/stockData con la copia local
+// completa (fb_saveStockData = un set() sin más). Si dos empleados editaban
+// categorías distintas en tablets distintas casi a la vez, el que guardaba
+// último borraba en silencio los cambios del otro (cada guardado partía de
+// su propia copia local, que podía ya estar desactualizada). Ahora usa una
+// transacción real de Firebase: si el servidor tiene algo más reciente que
+// lo que este dispositivo tenía sincronizado, se combinan los dos cambios
+// grupo a grupo en vez de que uno pise al otro entero — solo se sobreescribe
+// de verdad el/los grupo(s) que este dispositivo tocó.
 function saveStockData(data) {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
-  if (window.fb_saveStockData) {
+  if (window.fb_transactJsonString) {
+    window._stockDataLocalWrite = Date.now();
+    const _antesDeEsteGuardado = window._stockDataSyncedSnapshot || {};
+    window.fb_transactJsonString('config/stockData', function (remoto) {
+      const base = remoto || {};
+      const grupos = new Set([...Object.keys(base), ...Object.keys(data)]);
+      const merged = {};
+      grupos.forEach(function (g) {
+        const tocadoAqui = JSON.stringify(data[g] || null) !== JSON.stringify(_antesDeEsteGuardado[g] || null);
+        merged[g] = tocadoAqui ? data[g] : base[g] !== undefined ? base[g] : data[g];
+      });
+      return merged;
+    }).then(function (finalData) {
+      if (finalData) {
+        window._stockDataSyncedSnapshot = finalData;
+        // Si el resultado final (combinado) trae algo de otro dispositivo
+        // que este todavía no tenía, refrescar también la copia local.
+        localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(finalData));
+      }
+    }).catch(function (e) { console.warn('[stock] fallo al guardar en Firebase:', e); });
+  } else if (window.fb_saveStockData) {
     window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }
@@ -284,21 +299,6 @@ function stockOverlayDrop(e) {
   saveStockData(data);
   renderStockItems();
 }
-function openStockFromAdmin() {
-  document.body.style.overflow = '';
-  window._stockFromAdmin = true;
-  window._adminWasLoggedIn = _adminLoggedIn;
-  document.getElementById('admin-overlay').classList.add('hidden-for-stock');
-  openStockOverlay();
-}
-function openStockInline() {
-  // Guardar sección activa para restaurarla al cerrar
-  const activeSection = document.querySelector('.admin-section.active');
-  window._stockPrevSection = activeSection ? activeSection.id.replace('admin-', '') : 'productos';
-  window._stockFromAdmin = true;
-  window._adminWasLoggedIn = _adminLoggedIn;
-  openStockOverlay();
-}
 function openStockConfigSecret() {
   // Open stock config (bimba secret)
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
@@ -370,11 +370,9 @@ function closeStockOverlay() {
     } catch (e) {}
     window._stockUnsubscribe = null;
   }
-  if (window._stockFromAdmin) {
-    window._stockFromAdmin = false;
-    _adminLoggedIn = window._adminWasLoggedIn || true;
-    // Simplemente reabrir el panel admin desde cero
-    openAdmin();
+  if (window._stockFromBimba) {
+    window._stockFromBimba = false;
+    if (typeof bimbaVolverAlPanel === 'function') bimbaVolverAlPanel();
   }
 }
 
@@ -511,7 +509,11 @@ function stockQty(i, delta) {
   if (!ing) return;
   const current = _stockSelections[ing];
   if (current === undefined) {
-    if (delta > 0) { _stockSelections[ing] = 0; }
+    // Antes ponía 0 en el primer toque de "+" — visualmente cambiaba de
+    // "–" a "0", pero al no ser >0 quedaba fuera del listado de reposición
+    // y de WhatsApp (que filtran >0), así que hacía falta pulsar dos veces.
+    // stockSetBote (abajo) ya hacía bien esto: primer toque = 1.
+    if (delta > 0) { _stockSelections[ing] = delta; }
     renderStockItems();
     return;
   }
@@ -519,17 +521,6 @@ function stockQty(i, delta) {
   if (next < 0) { delete _stockSelections[ing]; } else { _stockSelections[ing] = next; }
   renderStockItems();
 }
-function toggleStockItem(ing) {
-  _stockSelections[ing] = _stockSelections[ing] ? 0 : 1;
-  if (!_stockSelections[ing]) delete _stockSelections[ing];
-  renderStockItems();
-}
-function changeStockQty(ing, delta) {
-  const next = Math.max(0, (_stockSelections[ing] || 0) + delta);
-  if (next === 0) delete _stockSelections[ing];else _stockSelections[ing] = next;
-  renderStockItems();
-}
-
 // ── Unidad por ingrediente ──
 function stockSetUnit(ing, unit) {
   if (!window._stockUnits) window._stockUnits = {};
@@ -625,14 +616,43 @@ function getStockHistorial() {
     return [];
   }
 }
+// Antes esto subía siempre el array LOCAL completo con un set() plano
+// (fb_saveStockHistorial) — si dos tablets guardaban una reposición casi a
+// la vez, el segundo guardado sobreescribía en Firebase la lista que
+// acababa de subir el primero, perdiéndola entera (mismo patrón ya
+// arreglado para stockData). Ahora se usa una transacción real que AÑADE
+// esta entrada a la lista más fresca del servidor, en vez de sobreescribir
+// con la copia local — stock/historial guarda el array nativo de Firebase
+// (no como JSON-string), así que toca fb_transactNative, no
+// fb_transactJsonString.
+// Tope de listas guardadas — antes esto crecía para siempre (solo un
+// botón manual de "Borrar listas antiguas" que hay que acordarse de
+// pulsar), agravando con el tiempo el riesgo de la transacción de arriba
+// (payload cada vez más grande que volver a subir). Se queda con las 100
+// más recientes automáticamente; el botón manual sigue ahí para limpiar
+// antes si se quiere.
+const STOCK_HISTORIAL_MAX = 100;
 function saveToStockHistorial(ts, lines) {
+  const entrada = { ts, lines };
+  if (window.fb_transactNative) {
+    window._stockLocalWrite = Date.now();
+    window.fb_transactNative('stock/historial', function (remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : getStockHistorial();
+      arr.push(entrada);
+      return arr.length > STOCK_HISTORIAL_MAX ? arr.slice(arr.length - STOCK_HISTORIAL_MAX) : arr;
+    }).then(function (finalArr) {
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(Array.isArray(finalArr) ? finalArr : [entrada]));
+    }).catch(function (e) {
+      console.warn('Firebase stock historial error:', e);
+      const hist = getStockHistorial();
+      hist.push(entrada);
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
+    });
+    return;
+  }
   const hist = getStockHistorial();
-  hist.push({
-    ts,
-    lines
-  });
+  hist.push(entrada);
   localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(hist));
-
   // 🔥 Subir a Firebase — reintenta si aún no está listo
   function subirAFirebase(intentos) {
     if (window.fb_saveStockHistorial) {

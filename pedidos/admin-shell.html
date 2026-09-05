@@ -7,9 +7,14 @@
 <!-- KITCHEN MODE -->
 <div id="kitchen-mode">
   <div class="kitchen-header">
-    <div class="kitchen-title">🍳 Dulce Patata — Cocina <span id="kitchen-active-count" style="font-size:14px;background:var(--gold);color:var(--brown);border-radius:99px;padding:2px 12px;margin-left:8px;vertical-align:middle;font-family:'DM Sans',sans-serif;font-weight:700"></span></div>
+    <div class="kitchen-title">🍳 Dulce Patata — Cocina <span id="kitchen-active-count" style="font-size:14px;background:var(--gold);color:var(--brown);border-radius:99px;padding:2px 12px;margin-left:8px;vertical-align:middle;font-family:'DM Sans',sans-serif;font-weight:700"></span>
+      <div id="pt-debug-status-kitchen" style="font-size:11px;color:#8A8580;font-weight:400"></div>
+      <div id="kitchen-offline-badge" style="display:none;font-size:11px;font-weight:700;color:#f5b942;margin-top:2px">📴 Sin conexión — mostrando últimos pedidos vistos</div>
+    </div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div id="kitchen-clock" style="font-size:18px;font-weight:700;color:var(--white)"></div>
+      <button onclick="conectarImpresoraTermica()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">🔌 USB</button>
+      <button onclick="conectarImpresoraBluetooth()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">📶 Bluetooth</button>
       <button onclick="confirmarTodosListos()" style="background:#27ae60;border:none;color:var(--white);padding:8px 16px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✅ Todos listos</button>
       <button onclick="toggleKitchenTheme()" id="kitchen-theme-btn" style="background:#2a2a2a;border:1.5px solid #444;color:var(--gold);padding:8px 14px;border-radius:99px;font-size:16px;cursor:pointer">🌙</button>
       <button onclick="closeKitchenMode()" style="background:#2a2a2a;border:1.5px solid #444;color:var(--white);padding:8px 18px;border-radius:99px;font-size:13px;cursor:pointer;font-weight:700">✕ Salir</button>
@@ -19,6 +24,21 @@
   <div style="background:#141414;padding:10px 20px;border-bottom:1px solid #2a2a2a;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
     <span style="font-size:11px;color:#8A8580;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">🕐 Turnos</span>
     <div id="kitchen-slots" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div>
+  <!-- SIN PAPEL — cocina (banner grande, tan visible como el de activar audio) -->
+  <div class="pt-papel-aviso" data-show-display="flex" style="display:none;background:#e74c3c;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+    <span style="font-size:15px;font-weight:700;color:var(--white)">📄 ¡Queda poco papel! Cambia el rollo antes de que se corte un ticket</span>
+  </div>
+  <!-- IMPRESORA DESCONECTADA — cocina (banner grande, con sonido de aviso distinto al de "sin papel") -->
+  <div class="pt-desconexion-aviso" data-show-display="flex" style="display:none;background:#7a1a0e;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+    <span style="font-size:15px;font-weight:700;color:var(--white)">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</span>
+  </div>
+  <!-- COLA DE IMPRESIÓN PENDIENTE — cocina (se imprime sola al reconectar) -->
+  <div class="pt-cola-contador" data-show-display="flex" style="display:none;background:#3D1F0D;padding:10px 20px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:13px;font-weight:700;color:var(--gold)"></div>
+  <!-- PEDIDO NO GUARDADO EN ESTADÍSTICAS — el ticket sí existe, pero no llegó a "Pedidos en vivo" (banner grande, con sonido, igual de urgente que el de impresora desconectada) -->
+  <div class="pedido-perdido-aviso" data-show-display="flex" style="display:none;background:#7a1a0e;padding:14px 20px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <span class="pedido-perdido-aviso-texto" style="font-size:15px;font-weight:700;color:var(--white)">⚠️ Hay pedidos que no aparecieron aquí — revisa la pestaña Alertas</span>
+    <button onclick="showAdminSection('alertas', document.querySelector('[data-section=alertas]'))" style="padding:10px 18px;background:var(--white);color:#7a1a0e;border:none;border-radius:99px;font-size:13px;font-weight:900;cursor:pointer;font-family:'Playfair Display',serif;white-space:nowrap">Ver en Alertas</button>
   </div>
   <!-- AUDIO UNLOCK — cocina -->
   <div id="kitchen-audio-banner" style="background:var(--amber);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -100,6 +120,7 @@
           <button onclick="toggleSettingsDropdown()" title="Ajustes" style="background:none;border:none;font-size:22px;cursor:pointer;line-height:1;padding:2px 4px;border-radius:6px;transition:background .15s" onmouseenter="this.style.background='rgba(0,0,0,0.07)'" onmouseleave="this.style.background='none'">⚙️</button>
           <div id="settings-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--white);border:1.5px solid var(--warm);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,0.13);min-width:190px;z-index:999;overflow:hidden">
             <button onclick="closeSettingsDropdown();setTimeout(()=>showAdminSection('pedidos-config',null),50)" style="display:flex;align-items:center;width:100%;padding:13px 16px;background:none;border:none;border-bottom:1px solid var(--warm);font-size:14px;font-weight:600;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left" onmouseenter="this.style.background='var(--cream)'" onmouseleave="this.style.background='none'">🛡️ Configuración pedidos</button>
+            <button onclick="closeSettingsDropdown();openTicketConfigOverlay()" style="display:flex;align-items:center;width:100%;padding:13px 16px;background:none;border:none;border-bottom:1px solid var(--warm);font-size:14px;font-weight:600;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left" onmouseenter="this.style.background='var(--cream)'" onmouseleave="this.style.background='none'">🖨️ Configuración impresora</button>
             <button onclick="closeSettingsDropdown();secureLockTap()" style="display:flex;align-items:center;width:100%;padding:13px 16px;background:none;border:none;border-bottom:1px solid var(--warm);font-size:14px;font-weight:600;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left" onmouseenter="this.style.background='var(--cream)'" onmouseleave="this.style.background='none'">👤</button>
           </div>
         </div>
@@ -114,22 +135,29 @@
         <span>📱 <strong>Dispositivo de confianza</strong>: <span id="trusted-device-name-display" style="font-style:italic">–</span></span>
         <button onclick="removeTrustedDevice()" style="background:none;border:1.5px solid var(--brown);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif">Quitar</button>
       </div>
+      <div class="buscador-wrap">
+        <span class="buscador-icon">🔍</span>
+        <input type="text" id="buscador-admin-input" placeholder="Buscar… (producto, ingrediente, sección)" autocomplete="off">
+        <div class="buscador-results" id="buscador-admin-results"></div>
+      </div>
       <div class="admin-tabs">
         <button class="admin-tab active" data-section="productos" onclick="showAdminSection('productos', this)"><span class="admin-tab-icon">🍽️</span><span>Carta</span></button>
         <button class="admin-tab" data-section="local" onclick="showAdminSection('local', this)"><span class="admin-tab-icon">🏪</span><span>Local</span></button>
         <button class="admin-tab" data-section="pedidos" onclick="showAdminSection('pedidos', this)"><span class="admin-tab-icon">🔴</span><span>En vivo</span></button>
+        <!-- Comandas: herramienta aparte, offline (comandas.html), no un .admin-section — se abre en pestaña nueva -->
+        <button class="admin-tab" onclick="window.open('comandas.html', '_blank')"><span class="admin-tab-icon">🧾</span><span>Comandas</span></button>
         <button class="admin-tab" data-section="stats" onclick="showAdminSection('stats', this)"><span class="admin-tab-icon">📊</span><span>Hoy</span></button>
-        <button class="admin-tab" data-section="historial" onclick="showAdminSection('historial', this)"><span class="admin-tab-icon">📅</span><span>Historial</span></button>
-        <button class="admin-tab" onclick="showAdminSection('stock-admin', this); openStockInline()"><span class="admin-tab-icon">📦</span><span>Stock</span></button>
+        <button class="admin-tab" data-section="historial" onclick="showAdminSection('historial', this)"><span class="admin-tab-icon">👤</span><span>Clientes</span></button>
+        <!-- Stock movido al panel bimba (⚙️ con contraseña) — ver "Pedidos y stock" ahí -->
         <button class="admin-tab" data-section="fidelizacion" onclick="showAdminSection('fidelizacion', this); renderFidelizacionList()"><span class="admin-tab-icon">🎁</span><span>Fidelización</span></button>
+        <button class="admin-tab" data-section="alertas" onclick="showAdminSection('alertas', this)"><span class="admin-tab-icon">🔔</span><span>Alertas</span><span class="admin-tab-badge" id="alertas-tab-badge" style="display:none">0</span></button>
         <!-- Empleados movido a ⚙️ con contraseña bimba -->
       </div>
-        <input id="log-secret-input" placeholder="" oninput="checkLogSecret(this.value)" style="width:60px;opacity:0;position:absolute;pointer-events:none" tabindex="-1">
 
       <!-- PRODUCTOS -->
       <div class="admin-section" id="admin-productos">
         <!-- Backup/Restore toolbar -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
           <span style="font-size:12px;color:var(--muted);font-weight:600">💾 Backup carta:</span>
           <div style="display:flex;gap:10px">
             <button class="admin-save-btn" onclick="exportMenuJSON()" style="background:var(--brown);color:var(--cream);padding:7px 16px;font-size:12px">⬇️ Exportar JSON</button>
@@ -152,11 +180,12 @@
             </div>
             <div>
               <label class="admin-field-label">Categoría</label>
-              <select id="new-cat" style="width:100%">
+              <select id="new-cat" style="width:100%" onchange="newCatSelectChange(this)">
                 <option value="">-- Categoria --</option>
                 <option>Patatas</option><option>Boniato</option>
                 <option>Paninis</option><option>Cookies</option>
                 <option>Tartas</option><option>Bebidas</option>
+                <option value="__nueva__">+ Nueva categoría...</option>
               </select>
             </div>
           </div>
@@ -210,12 +239,77 @@
           <div class="stat-panel-head">🚦 Control de pedidos</div>
           <div style="padding:14px 16px">
             <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Pausa manual cuando haya saturación</div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
               <div style="flex:1;min-width:160px">
                 <input type="text" id="orders-pause-msg" placeholder="Mensaje para clientes (opcional)" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
               </div>
               <button class="admin-save-btn" onclick="savePauseMsg()">Aplicar</button>
             </div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Pausa exprés (se reabre sola)</div>
+            <div style="display:flex;gap:8px">
+              <button onclick="pausarExpres(15)" style="flex:1;padding:9px 0;background:var(--white);border:1.5px solid var(--brown);color:var(--brown);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer">⏸️ 15 min</button>
+              <button onclick="pausarExpres(30)" style="flex:1;padding:9px 0;background:var(--white);border:1.5px solid var(--brown);color:var(--brown);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer">⏸️ 30 min</button>
+            </div>
+            <div id="pausa-expres-estado-texto" style="font-size:11.5px;color:var(--muted);margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div class="stat-panel">
+          <div class="stat-panel-head">⏳ Aviso previo de saturación</div>
+          <div style="padding:14px 16px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Antes de llegar a la auto-pausa del todo, avisa al cliente (sin bloquear) de que va a tardar más, avisa a cocina con un sonido distinto, y empuja el selector de turno hacia horas más tarde.</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:12px;font-weight:700;color:var(--brown)">Activar aviso previo</span>
+              <button class="open-toggle" id="aviso-sat-toggle-btn" onclick="toggleAvisoSaturacionEnabled()">Cargando…</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Avisar a partir de</label>
+                <input type="number" min="1" step="1" id="aviso-sat-umbral" placeholder="8" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+              </div>
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Saltar turnos de</label>
+                <input type="number" min="0" step="5" id="aviso-sat-salto" placeholder="30" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+              </div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Minutos extra estimados por pedido en cola</label>
+              <input type="number" min="0" step="1" id="aviso-sat-minpp" placeholder="3" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Se usa para el aviso de "puede tardar X min más" en la pantalla de confirmación del cliente.</div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Mensaje para el cliente</label>
+              <input type="text" id="aviso-sat-msg" placeholder="⏳ Hay bastante ambiente ahora mismo, tu pedido tardará más de lo habitual." style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            </div>
+            <button class="admin-save-btn" onclick="guardarAvisoSaturacionConfig()" style="width:100%">Guardar</button>
+            <div class="admin-toast" id="aviso-sat-toast">✅ Configuración de aviso guardada</div>
+          </div>
+        </div>
+
+        <div class="stat-panel">
+          <div class="stat-panel-head">🔥 Auto-pausa por saturación</div>
+          <div style="padding:14px 16px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Si se acumulan demasiados pedidos sin marcar como "listo", la web se pausa sola (con aviso al cliente) y se reactiva sola en cuanto baje la cola — para no tener que estar pendiente en hora punta.</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:12px;font-weight:700;color:var(--brown)">Activar auto-pausa</span>
+              <button class="open-toggle" id="auto-pausa-toggle-btn" onclick="toggleAutoPausaEnabled()">Cargando…</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Pausar a partir de</label>
+                <input type="number" min="1" step="1" id="auto-pausa-umbral" placeholder="15" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+              </div>
+              <div style="display:flex;align-items:end">
+                <span style="font-size:11px;color:var(--muted);padding-bottom:8px">pedidos pendientes</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">Mensaje para el cliente</label>
+              <input type="text" id="auto-pausa-msg" placeholder="🔥 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos." style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            </div>
+            <button class="admin-save-btn" onclick="guardarAutoPausaConfig()" style="width:100%">Guardar</button>
+            <div class="admin-toast" id="auto-pausa-toast">✅ Configuración de auto-pausa guardada</div>
+            <div id="auto-pausa-estado-texto" style="font-size:11.5px;color:var(--muted);margin-top:10px"></div>
           </div>
         </div>
 
@@ -269,7 +363,9 @@
               <div style="text-align:center"><label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">🌙 Tardes hasta</label><input type="time" id="h-tar-close" value="23:45" style="width:80px;padding:5px 6px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none"></div>
             </div>
             <button class="admin-save-btn" onclick="saveHorario()">Guardar horario</button>
+            <button class="admin-save-btn" onclick="resetDiasMartDom()" style="background:var(--brown)">↩️ Resetear a Martes–Domingo</button>
             <div class="admin-toast" id="local-toast">✅ Horario actualizado</div>
+            <div id="dias-diagnostico" style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6"></div>
           </div>
         </div>
 
@@ -307,12 +403,8 @@
             <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:10px;border-top:1px solid var(--warm)">
               <span style="font-size:12px;font-weight:600;color:var(--muted)">Pedidos por turno</span>
               <input type="number" id="slot-max-input" min="1" max="20" value="4" style="width:60px;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
-              <span style="font-size:12px;font-weight:600;color:var(--muted)">Modificar hasta</span>
-              <input type="number" id="modify-window-input" min="1" max="60" value="5" style="width:60px;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
-              <span style="font-size:12px;color:var(--muted)">min</span>
-              <button class="admin-save-btn" onclick="saveSlotConfig();saveModifyWindow()">Guardar</button>
+              <button class="admin-save-btn" onclick="saveSlotConfig('slot-max-input')">Guardar</button>
               <div id="slot-config-toast" class="admin-toast" style="display:none">✅ Guardado</div>
-              <div id="modify-window-toast" class="admin-toast" style="display:none">✅ Guardado</div>
             </div>
           </div>
         </div>
@@ -344,6 +436,26 @@
           </div>
         </div>
 
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:14px;padding:14px 16px;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:3px">🔌 Sonido de impresora desconectada</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Distinto al de nuevo pedido, para no confundirlos</div>
+          <select id="sound-desconexion-type" style="width:100%;padding:7px 10px;margin-bottom:10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            <option value="ding">🔔 Ding suave</option>
+            <option value="campana">🎵 Campana triple</option>
+            <option value="caja">🛎️ Campana de caja</option>
+            <option value="chime">✨ Chime suave</option>
+            <option value="bip">📟 Bip electrónico</option>
+            <option value="doble">🔔🔔 Doble pitido</option>
+            <option value="coffeeshop">☕ Coffee shop</option>
+            <option value="urgente">🚨 Urgente</option>
+            <option value="none">🔇 Sin sonido</option>
+          </select>
+          <div style="display:flex;gap:8px">
+            <button class="admin-save-btn" onclick="testSoundDesconexion()" style="background:var(--brown);color:var(--cream)">▶️ Probar</button>
+            <button class="admin-save-btn" onclick="saveSoundDesconexionConfig()">💾 Guardar</button>
+          </div>
+        </div>
+
       </div>
 
       <!-- PEDIDOS EN VIVO -->
@@ -353,7 +465,16 @@
             <div id="live-dot" style="width:10px;height:10px;border-radius:50%;background:var(--brown);animation:pulse 1.5s infinite"></div>
             <span style="font-size:13px;font-weight:700;color:var(--brown)">Pedidos en tiempo real</span>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <div id="pt-debug-status" style="font-size:11px;color:var(--muted);width:100%;order:99"></div>
+          <div class="pt-papel-aviso" style="display:none;width:100%;order:98;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
+          <div class="pt-desconexion-aviso" style="display:none;width:100%;order:97;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
+          <div class="pedido-perdido-aviso" data-show-display="block" style="display:none;width:100%;order:95;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#7a1a0e;cursor:pointer" onclick="showAdminSection('alertas', document.querySelector('[data-section=alertas]'))">⚠️ Hay pedidos que no aparecieron aquí — revisa la pestaña Alertas</div>
+          <div class="pt-cola-contador" style="display:none;width:100%;order:96;background:#FDECD5;border:1.5px solid var(--amber);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
+          <div class="pt-cola-antigua-lista" style="display:none;width:100%;order:96"></div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+            <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
+            <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 USB</button>
+            <button class="admin-save-btn" onclick="conectarImpresoraBluetooth()" style="background:var(--brown);padding:8px 14px;font-size:13px">📶 Bluetooth</button>
             <button class="admin-save-btn" onclick="openKitchenMode()" style="background:var(--brown);padding:8px 18px;font-size:13px">🍳 Pantalla cocina</button>
             <button class="admin-save-btn" onclick="loadLiveOrders()" style="background:var(--brown);padding:8px 18px;font-size:13px">🔄 Actualizar</button>
             <button class="admin-save-btn" onclick="imprimirTodosLosActivos()" style="background:var(--brown);padding:8px 18px;font-size:13px">🖨️ Imprimir todos</button>
@@ -365,6 +486,11 @@
           <div style="padding:12px">
             <div id="live-slots-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr))"></div>
           </div>
+        </div>
+        <!-- Bloquear categorías enteras (ej. cerrar "Postres" de golpe en vez de producto a producto) -->
+        <div class="stat-panel">
+          <div class="stat-panel-head">🚫 Bloquear categorías</div>
+          <div style="padding:12px;display:flex;flex-wrap:wrap;gap:8px" id="cat-block-grid"></div>
         </div>
         <!-- Lista de pedidos en vivo -->
         <div id="live-orders-list" style="display:flex;flex-direction:column">
@@ -393,28 +519,55 @@
           </div>
         </div>
 
+        <div class="stat-panel">
+          <div class="stat-panel-head">🕐 Turnos — ocupación de hoy</div>
+          <div style="padding:12px">
+            <div id="admin-slots-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr))"></div>
+          </div>
+        </div>
+
         <button class="admin-save-btn" onclick="if(confirm('¿Borrar todas las estadísticas del día?')){resetDayStats();}" style="background:var(--brown);color:var(--cream)">🗑️ Resetear día</button>
 
         <button class="admin-save-btn" onclick="exportTodayCSV()" style="background:var(--brown);color:var(--cream);margin-left:8px">⬇️ Exportar CSV</button>
+        <button class="admin-save-btn" onclick="imprimirResumenHoyTermico()" style="background:var(--brown);color:var(--cream);margin-left:8px">🖨️ Imprimir resumen</button>
         <div class="stat-footnote">Las estadísticas se guardan en este navegador y se resetean automáticamente cada día a medianoche.</div>
 
       </div>
 
       <!-- HISTORIAL -->
       <div class="admin-section" id="admin-historial">
-        <!-- SUB-PESTAÑAS -->
-        <div style="display:flex;margin-bottom:16px;border-bottom:2px solid var(--warm);padding-bottom:0">
-          <button id="htab-dias" onclick="switchHistorialTab('dias')" style="padding:8px 16px;border:none;border-bottom:3px solid var(--brown);background:none;font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:-2px">📅 Por días</button>
-          <button id="htab-clientes" onclick="switchHistorialTab('clientes')" style="padding:8px 16px;border:none;border-bottom:3px solid transparent;background:none;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:-2px">👤 Lista de clientes</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap">
+          <div style="font-size:13px;font-weight:600;color:var(--brown)">Clientes de los últimos 30 días</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="cocultos-toggle-btn" onclick="toggleMostrarOcultosClientes()" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">🗑️ Ocultos (0)</button>
+            <button class="admin-save-btn" onclick="exportClientesCSV()" style="background:var(--brown);color:var(--cream)">⬇️ Exportar CSV</button>
+          </div>
         </div>
+        <!-- Buscador -->
+        <div style="position:relative;margin-bottom:12px">
+          <input type="text" id="clientes-search" placeholder="🔍 Buscar por teléfono, nombre o nº de pedido..." oninput="renderClientes()" style="width:100%;padding:9px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none;box-sizing:border-box">
+        </div>
+        <!-- Ordenación clientes -->
+        <div id="clientes-sort-row" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+          <button id="csort-btn-az" onclick="setClientesSort('az')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--brown);background:var(--brown);color:var(--cream);font-family:'DM Sans',sans-serif">🔤 A-Z</button>
+          <button id="csort-btn-pedidos" onclick="setClientesSort('pedidos')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">📦 Más pedidos</button>
+          <button id="csort-btn-gasto" onclick="setClientesSort('gasto')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">💶 Más gasto</button>
+          <button id="csort-btn-reciente" onclick="setClientesSort('reciente')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">🕐 Más reciente</button>
+        </div>
+        <!-- Stats rápidas -->
+        <div id="clientes-summary" class="stat-grid stat-grid--3" style="margin-bottom:14px"></div>
+        <!-- Lista clientes -->
+        <div id="clientes-list" style="display:flex;flex-direction:column"></div>
+      </div>
 
-        <!-- VISTA POR DÍAS -->
-        <div id="historial-tab-dias">
+      <!-- HISTORIAL POR DÍAS — acceso restringido (bimba): facturación diaria, no es para empleados -->
+      <div class="admin-section" id="admin-bimba-historial" style="display:none">
+        <button onclick="bimbaVolverAlPanel()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--warm);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:14px">← Volver</button>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap">
           <div style="font-size:13px;font-weight:600;color:var(--brown)">Últimos 30 días</div>
           <div style="display:flex;flex-wrap:wrap">
             <button class="admin-save-btn" onclick="exportHistorialCSV()" style="background:var(--brown);color:var(--cream);margin:2px 4px 2px 0">⬇️ CSV</button>
-            <button class="admin-save-btn" onclick="exportHistorialPDF()" style="background:var(--brown);color:var(--cream);margin:2px 4px 2px 0">📄 PDF</button>
+            <button class="admin-save-btn" onclick="exportHistorialPDF(this)" style="background:var(--brown);color:var(--cream);margin:2px 4px 2px 0">📄 PDF</button>
             <button class="admin-save-btn" onclick="exportHistorialEncrypted()" style="background:var(--brown);margin:2px 0 2px 0">🔐 Cifrado</button>
           </div>
         </div>
@@ -456,30 +609,6 @@
           <div id="historial-list" style="max-height:320px;overflow-y:auto;padding:4px 14px"></div>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-top:10px">El historial se guarda localmente en este dispositivo.</div>
-        </div>
-
-        <!-- VISTA CLIENTES -->
-        <div id="historial-tab-clientes" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap">
-            <div style="font-size:13px;font-weight:600;color:var(--brown)">Clientes de los últimos 30 días</div>
-            <button class="admin-save-btn" onclick="exportClientesCSV()" style="background:var(--brown);color:var(--cream)">⬇️ Exportar CSV</button>
-          </div>
-          <!-- Buscador -->
-          <div style="position:relative;margin-bottom:12px">
-            <input type="text" id="clientes-search" placeholder="🔍 Buscar por teléfono o nombre..." oninput="renderClientes()" style="width:100%;padding:9px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none;box-sizing:border-box">
-          </div>
-          <!-- Ordenación clientes -->
-          <div id="clientes-sort-row" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-            <button id="csort-btn-az" onclick="setClientesSort('az')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--brown);background:var(--brown);color:var(--cream);font-family:'DM Sans',sans-serif">🔤 A-Z</button>
-            <button id="csort-btn-pedidos" onclick="setClientesSort('pedidos')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">📦 Más pedidos</button>
-            <button id="csort-btn-gasto" onclick="setClientesSort('gasto')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">💶 Más gasto</button>
-            <button id="csort-btn-reciente" onclick="setClientesSort('reciente')" style="padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--warm);background:var(--white);color:var(--muted);font-family:'DM Sans',sans-serif">🕐 Más reciente</button>
-          </div>
-          <!-- Stats rápidas -->
-          <div id="clientes-summary" class="stat-grid stat-grid--3" style="margin-bottom:14px"></div>
-          <!-- Lista clientes -->
-          <div id="clientes-list" style="display:flex;flex-direction:column"></div>
-        </div>
       </div>
 
       <!-- MODAL DETALLE DÍA -->
@@ -495,23 +624,12 @@
       <div class="admin-section" id="admin-config">
         <button onclick="bimbaVolverAlPanel()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--warm);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:14px">← Volver</button>
         <div class="config-row"><label>Email del local</label><input type="email" id="cfg-email" placeholder="tutienda@gmail.com"></div>
-        <div class="config-row"><label>EmailJS Public Key</label><input type="text" id="cfg-pk" placeholder="TU_PUBLIC_KEY"></div>
-        <div class="config-row"><label>EmailJS Service ID</label><input type="text" id="cfg-svc" placeholder="TU_SERVICE_ID"></div>
-        <div class="config-row"><label>EmailJS Template ID</label><input type="text" id="cfg-tpl" placeholder="TU_TEMPLATE_ID"></div>
         <button class="config-save-btn" onclick="saveConfig()">Guardar configuración</button>
         <div class="admin-toast" id="cfg-toast">✅ Configuración guardada</div>
       </div>
 
       <div class="admin-section" id="admin-pwd">
         <button onclick="bimbaVolverAlPanel()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--warm);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:14px">← Volver</button>
-        <p style="font-size:14px;color:var(--muted);margin-bottom:16px">Cambia la contraseña del panel de administración.</p>
-        <div class="config-row"><label>Contraseña actual</label><input type="password" id="pwd-old" placeholder="••••••••"></div>
-        <div class="config-row"><label>Nueva contraseña</label><input type="password" id="pwd-new" placeholder="••••••••"></div>
-        <div class="config-row"><label>Repetir nueva</label><input type="password" id="pwd-rep" placeholder="••••••••"></div>
-        <button class="config-save-btn" onclick="changePwd()">Cambiar contraseña</button>
-        <div class="admin-toast" id="pwd-toast">✅ Contraseña cambiada</div>
-        <div class="admin-error" id="pwd-error"></div>
-
 
         <!-- URL TOKEN -->
         <div style="margin-top:24px;padding-top:20px;border-top:1.5px solid var(--warm)">
@@ -525,6 +643,20 @@
           </div>
           <div id="url-token-full" style="margin-top:8px;font-size:11px;color:var(--muted);word-break:break-all"></div>
           <div id="url-token-toast" style="display:none;background:var(--brown);color:var(--white);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;margin-top:8px">✅ URL copiada al portapapeles</div>
+        </div>
+
+        <!-- TOKEN BIMBA (acceso rápido del personal, sin contraseña) -->
+        <div style="margin-top:24px;padding-top:20px;border-top:1.5px solid var(--warm)">
+          <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">📱 Token de acceso bimba (personal)</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Genera un token secreto para el personal. Añade <code style="background:var(--warm);padding:1px 5px;border-radius:4px">?bimba=TOKEN</code> a la URL y se abre el acceso rápido, sin contraseña. Caduca solo a los 90 días.</p>
+          <div style="display:flex;align-items:center;flex-wrap:wrap">
+            <input type="text" id="bimba-token-display" readonly placeholder="Sin token generado" style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);outline:none">
+            <button class="admin-save-btn" onclick="bimbaGenBimbaToken()" style="padding:8px 14px;font-size:12px">🎲 Generar</button>
+            <button class="admin-save-btn" onclick="bimbaCopyBimbaUrl()" style="padding:8px 14px;font-size:12px;background:var(--brown)">📋 Copiar URL</button>
+            <button class="admin-save-btn" onclick="clearBimbaToken()" style="padding:8px 14px;font-size:12px;background:var(--brown)">🗑️ Eliminar</button>
+          </div>
+          <div id="bimba-token-full" style="margin-top:8px;font-size:11px;color:var(--muted);word-break:break-all"></div>
+          <div id="bimba-url-toast" style="display:none;background:var(--brown);color:var(--white);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;margin-top:8px"></div>
         </div>
 
         <!-- EXPORTAR / IMPORTAR CONFIG -->
@@ -585,7 +717,7 @@
       <!-- FIDELIZACIÓN (SELLO DIGITAL) -->
       <div class="admin-section" id="admin-fidelizacion" style="display:none">
         <div class="stat-panel-head" style="border-radius:12px;margin-bottom:16px">🎁 Sello digital — Fidelización</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Cada pedido con al menos 1 patata suma 1 sello. Al llegar a 10, el cliente puede elegir una patata gratis en su siguiente pedido.</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Cada pedido con al menos 1 patata y un mínimo de 5€ suma 1 sello. Al llegar a 10, el cliente puede elegir una patata gratis en su siguiente pedido.</div>
 
         <!-- SUB-PESTAÑAS -->
         <div style="display:flex;margin-bottom:16px;border-bottom:2px solid var(--warm);padding-bottom:0">
@@ -624,6 +756,71 @@
             <button class="admin-save-btn" onclick="guardarFidelizacionManual()">Guardar cambios</button>
           </div>
           <div class="admin-toast" id="fidel-toast">✅ Cliente actualizado</div>
+        </div>
+      </div>
+
+      <!-- MODAL DE AJUSTES RÁPIDOS DE FIDELIZACIÓN (⚙️ desde cada tarjeta) -->
+      <div id="fidel-ajustes-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:9999;background:rgba(61,31,13,0.7);padding:16px;align-items:center;justify-content:center">
+        <div style="background:var(--cream);border-radius:20px;width:100%;max-width:420px;padding:24px;max-height:90vh;overflow-y:auto">
+          <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:900;color:var(--brown);margin-bottom:4px">⚙️ Ajustar fidelización</div>
+          <div id="fidel-ajustes-cliente-info" style="font-size:13px;color:var(--muted);margin-bottom:16px"></div>
+          <input type="hidden" id="fidel-ajustes-phone">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Nombre del cliente</label>
+          <input type="text" id="fidel-ajustes-nombre" style="width:100%;padding:10px 12px;margin:4px 0 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Sellos del ciclo actual (0-9)</label>
+          <div style="font-size:11px;color:var(--muted);margin:2px 0 4px">Al llegar a 10 se reinicia solo a 0 y se suma 1 a "veces completado" — eso NO es un fallo, no hace falta corregirlo a mano.</div>
+          <input type="number" id="fidel-ajustes-sellos" min="0" max="9" style="width:100%;padding:10px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Premios pendientes de entregar</label>
+          <div style="font-size:11px;color:var(--muted);margin:2px 0 4px">Patatas gratis ya ganadas que todavía no se le han dado.</div>
+          <input type="number" id="fidel-ajustes-premios-pendientes" min="0" style="width:100%;padding:10px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <label style="font-size:12px;font-weight:700;color:var(--brown)">Veces que ha completado el ciclo (histórico)</label>
+          <div style="font-size:11px;color:var(--muted);margin:2px 0 4px">Total de patatas gratis ganadas desde siempre — nunca se resetea, solo sube.</div>
+          <input type="number" id="fidel-ajustes-veces-completado" min="0" style="width:100%;padding:10px 12px;margin-bottom:16px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box">
+
+          <div style="display:flex;gap:8px">
+            <button onclick="guardarFidelizacionAjustesModal()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+            <button onclick="cerrarFidelizacionAjustesModal()" style="flex:1;background:var(--warm);color:var(--brown);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-section" id="admin-alertas" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:10px 12px;margin-bottom:16px">
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:6px">🩺 Estado del sistema</div>
+            <div id="estado-sistema-list" style="display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:12px;color:var(--muted)">Comprobando…</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-left:10px">
+            <button onclick="comprobarEstadoSistema(true)" style="padding:7px 12px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🔄 Comprobar</button>
+            <button id="btn-comprobar-todo" onclick="comprobarTodoAntesDeAbrir()" style="padding:7px 12px;background:var(--amber-dark);color:var(--white);border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🖨️ Probar todo</button>
+          </div>
+        </div>
+
+        <div class="stat-panel-head" style="border-radius:12px;margin-bottom:6px">🔔 Alertas</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Pedidos que no se guardaron y precios que no cuadran con la carta — filtrado del registro de actividad.</div>
+        <div id="alertas-list" style="display:flex;flex-direction:column;gap:10px"></div>
+
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:12px;margin-top:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">⚠️ Sincronización de emergencia</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Si esta tablet/móvil estuvo sin internet un rato y acumuló pedidos que no llegaron a Firebase (aunque no sepas cuáles), esto los sube todos de golpe, fusionándolos con lo que ya haya sin borrar nada.</div>
+          <button class="admin-save-btn" onclick="emergencySyncFromLocal()" style="background:var(--amber-dark);color:var(--white)">📤 Subir pedidos de este dispositivo</button>
+        </div>
+
+        <div style="height:1.5px;background:var(--warm);margin:20px 0"></div>
+
+        <div onclick="toggleIncidenciasPanel()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px">
+          <span style="font-size:13px;font-weight:700;color:var(--brown)">🚩 Incidencias de clientes<span id="incidencias-count-header"></span></span>
+          <span id="incidencias-chevron" style="color:var(--amber-dark);font-size:14px;display:inline-block;transition:transform .2s">▾</span>
+        </div>
+        <div id="incidencias-panel-body" style="display:none;background:var(--white);border:1.5px solid var(--warm);border-top:none;border-radius:0 0 10px 10px;padding:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Formulario "¿Algún problema con tu pedido?" que rellenan los clientes desde el pie de la web.</div>
+          <div id="incidencias-list" style="display:flex;flex-direction:column;gap:10px"></div>
         </div>
       </div>
 
@@ -681,6 +878,27 @@
           <div class="admin-toast" id="fee-config-toast" style="display:none">✅ Guardado</div>
         </div>
 
+        <!-- DESCUENTO ESTUDIANTE/JUBILADO -->
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:16px;padding:16px;margin-bottom:12px">
+          <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">🪪 Descuento estudiante/jubilado</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:14px">El cliente lo marca al pedir; se avisa en el ticket y en cocina para comprobar el carné al cobrar.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <label style="font-size:13px;font-weight:600;color:var(--brown)">Activado</label>
+            <div id="student-discount-toggle" onclick="(function(){var en=localStorage.getItem('dpf_student_discount_enabled')==='true';saveStudentDiscountConfig(!en,getStudentDiscountPct());document.getElementById('student-discount-toggle').style.background=!en?'#27855a':'#ccc';document.getElementById('student-discount-toggle-dot').style.transform=!en?'translateX(20px)':'translateX(0)'})()" style="width:44px;height:24px;border-radius:99px;background:#ccc;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0">
+              <div id="student-discount-toggle-dot" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--white);transition:transform .2s"></div>
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Porcentaje de descuento</label>
+            <div style="display:flex;align-items:center;gap:4px">
+              <input type="number" id="cfg-student-discount-pct" min="1" max="100" step="1" value="10" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+              <span style="font-size:12px;color:var(--muted)">%</span>
+            </div>
+          </div>
+          <button onclick="(function(){var en=localStorage.getItem('dpf_student_discount_enabled')==='true';var pct=parseFloat(document.getElementById('cfg-student-discount-pct').value)||10;saveStudentDiscountConfig(en,pct);showToast('student-discount-toast')})()" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+          <div class="admin-toast" id="student-discount-toast" style="display:none">✅ Guardado</div>
+        </div>
+
         <!-- MÁXIMO POR TURNO -->
         <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:16px;padding:16px;margin-bottom:12px">
           <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">🔢 Máximo pedidos por turno</p>
@@ -689,8 +907,20 @@
             <input type="number" id="slot-max-input-cfg" min="1" max="20" step="1" value="4" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
             <span style="font-size:12px;color:var(--muted)">pedidos por franja</span>
           </div>
-          <button onclick="saveSlotConfig();showToast('slot-max-cfg-toast')" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+          <button onclick="saveSlotConfig('slot-max-input-cfg');showToast('slot-max-cfg-toast')" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
           <div class="admin-toast" id="slot-max-cfg-toast" style="display:none">✅ Guardado</div>
+        </div>
+
+        <!-- TIEMPO PARA MODIFICAR PEDIDO -->
+        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:16px;padding:16px;margin-bottom:12px">
+          <p style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:4px">⏱️ Tiempo para modificar pedido</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Cuánto tiempo, justo después de confirmar, puede el cliente pulsar "Modificar" o "Cancelar pedido" desde su propia pantalla.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <input type="number" id="modify-window-input" min="1" max="30" value="1" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">minutos</span>
+          </div>
+          <button onclick="saveModifyWindow()" style="padding:8px 18px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
+          <div class="admin-toast" id="modify-window-toast" style="display:none">✅ Guardado</div>
         </div>
 
         <!-- BLACKLIST -->
@@ -706,15 +936,6 @@
         </div>
       </div>
 
-      <div class="admin-section" id="admin-empleados">
-        <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <div style="font-size:14px;font-weight:700;color:var(--brown)">🟢 Trabajando ahora</div>
-            <button onclick="empRefrescar()" style="background:none;border:1.5px solid var(--warm);border-radius:8px;padding:4px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif">🔄 Refrescar</button>
-          </div>
-          <div id="emp-trabajando-ahora" style="font-size:13px;color:var(--muted)">Cargando...</div>
-        </div>
-      </div>
 
       <div class="admin-section" id="admin-stock-config">
         <!-- BANNER MIGRACIÓN FIREBASE -->
@@ -722,6 +943,12 @@
           <div style="font-weight:700;margin-bottom:6px">☁️ Sincronizar stock y pedidos con todos los dispositivos</div>
           <div style="margin-bottom:10px">Los datos actuales están solo en este dispositivo. Súbelos a Firebase para que tu socio los vea.</div>
           <button onclick="pp2MigrarAFirebase()" style="background:#e8a800;color:var(--white);border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">☁️ Subir a Firebase ahora</button>
+        </div>
+
+        <div class="buscador-wrap">
+          <span class="buscador-icon">🔍</span>
+          <input type="text" id="buscador-bimba-input" placeholder="Buscar… (empleado, código, premio, sección)" autocomplete="off">
+          <div class="buscador-results" id="buscador-bimba-results"></div>
         </div>
 
         <div class="sec-head">Equipo</div>
@@ -733,6 +960,24 @@
           </div>
         </div>
 
+        <div class="sec-head">Facturación</div>
+        <div class="row-group">
+          <div class="row" onclick="verHistorialDiasDesdeBimba()">
+            <span class="row-icon">📅</span>
+            <div class="row-text"><div class="row-title">Historial por días</div><div class="row-desc">Facturación diaria, exportar CSV/PDF</div></div>
+            <span class="row-chevron">›</span>
+          </div>
+        </div>
+
+        <div class="sec-head">Impresora</div>
+        <div class="row-group">
+          <div class="row" onclick="conectarImpresoraTermica()">
+            <span class="row-icon">🖨️</span>
+            <div class="row-text"><div class="row-title">Impresora térmica</div><div class="row-desc pt-conn-status" style="color:#991B1B">🔴 Impresora no conectada</div></div>
+            <span class="row-chevron">🔌</span>
+          </div>
+        </div>
+
         <div class="sec-head">Pedidos y stock</div>
         <div class="row-group">
           <div class="row" onclick="openPedidosProvOverlay()">
@@ -740,31 +985,37 @@
             <div class="row-text"><div class="row-title">Pedidos proveedores</div></div>
             <span class="row-chevron">›</span>
           </div>
-          <div class="row" onclick="openIngredientesStockOverlay()">
+          <div class="row" onclick="bimbaIrAStock()">
             <span class="row-icon">📦</span>
-            <div class="row-text"><div class="row-title">Ingredientes de stock</div><div class="row-desc">Define lo que pueden reponer los empleados</div></div>
+            <div class="row-text"><div class="row-title">Stock</div><div class="row-desc">Marcar existencias</div></div>
+            <span onclick="event.stopPropagation(); openIngredientesStockOverlay()" title="Ajustes — qué pueden reponer los empleados" style="font-size:17px;padding:4px;cursor:pointer;flex-shrink:0">⚙️</span>
             <span class="row-chevron">›</span>
           </div>
         </div>
 
         <div class="sec-head">Marketing</div>
         <div class="row-group">
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-promos-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)bimbaRenderPromos();})(this)">
+          <div id="mkt-row-promos" class="row" onclick="(function(btn){var c=document.getElementById('bimba-promos-body');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'bimba-promos-body');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){bimbaRenderPromos();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🔥</span>
             <div class="row-text"><div class="row-title">Promociones</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('dc-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';})(this)">
+          <div id="mkt-row-codigos" class="row" onclick="(function(btn){var c=document.getElementById('dc-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'dc-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
             <span class="row-icon">🎁</span>
             <div class="row-text"><div class="row-title">Códigos de descuento</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)renderRuletaAdmin();})(this)">
+          <div id="mkt-row-oferta-relampago" class="row" onclick="(function(btn){var c=document.getElementById('or-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'or-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){orPoblarSelectorProductos();orCambiarAlcance();_bimbaScrollAbierto(c);}})(this)">
+            <span class="row-icon">⚡</span>
+            <div class="row-text"><div class="row-title">Oferta relámpago</div></div>
+            <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
+          </div>
+          <div id="mkt-row-ruleta" class="row" onclick="(function(btn){var c=document.getElementById('ruleta-admin-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'ruleta-admin-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRuletaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎡</span>
             <div class="row-text"><div class="row-title">Ruleta de premios</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('rasca-admin-panel');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)renderRascaAdmin();})(this)">
+          <div id="mkt-row-rasca" class="row" onclick="(function(btn){var c=document.getElementById('rasca-admin-panel');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoMkt,'rasca-admin-panel');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){renderRascaAdmin();_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">🎫</span>
             <div class="row-text"><div class="row-title">Rasca y gana</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
@@ -795,6 +1046,7 @@
                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="bimba-promo-queso"> Tipo de queso</label>
                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="bimba-promo-gratinado"> Gratinado</label>
                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="bimba-promo-nota"> Nota del cliente</label>
+                <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;border-top:1px solid var(--warm);padding-top:8px;margin-top:2px"><input type="checkbox" id="bimba-promo-activa" checked> Activa (visible en la carta)</label>
               </div>
               <div style="display:flex;gap:8px">
                 <button onclick="bimbaGuardarPromo()" style="flex:1;padding:10px;background:var(--brown);color:var(--white);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Guardar</button>
@@ -810,10 +1062,50 @@
             <input id="dc-code" placeholder="Código (ej. VERANO10)" style="flex:2;min-width:120px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase">
             <input id="dc-pct" type="number" placeholder="%" min="1" max="100" style="width:60px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
             <input id="dc-uses" type="number" placeholder="Usos" min="1" style="width:70px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            <input id="dc-dias" type="number" placeholder="Días (opc.)" min="1" title="Días hasta que caduque solo — déjalo en blanco para que no caduque nunca" style="width:90px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
             <button onclick="dcCrear()" style="padding:8px 16px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">+ Crear</button>
           </div>
           <div id="dc-list" style="font-size:13px;color:var(--muted)">Cargando...</div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--warm)">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">¿Un cliente perdió su código de premio de la Ruleta o el Rasca? Búscalo por su teléfono.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <input id="dc-buscar-tel" type="tel" placeholder="Teléfono (9 dígitos)" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+              <button onclick="dcBuscarPorTelefono()" style="padding:8px 16px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Buscar</button>
+            </div>
+            <div id="dc-buscar-resultado" style="font-size:13px;color:var(--muted)"></div>
+          </div>
         </div><!-- /dc-panel -->
+
+        <div id="or-panel" style="display:none;margin-top:-2px;margin-bottom:16px;padding:14px;border:1.5px solid var(--warm);border-top:none;border-radius:0 0 14px 14px;background:var(--cream)">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Lánzala ya mismo para un día flojo — sobre todo el pedido, o solo sobre un producto para vaciar stock. Se cancela sola al acabar el tiempo.</div>
+          <div id="or-form">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <select id="or-alcance" onchange="orCambiarAlcance()" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+                <option value="total">Todo el pedido</option>
+                <option value="producto">Un producto concreto</option>
+              </select>
+              <input id="or-pct" type="number" placeholder="%" min="1" max="90" style="width:70px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            </div>
+            <div id="or-producto-group" style="display:none;margin-bottom:8px">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Puedes marcar varios.</div>
+              <div id="or-producto-lista" style="max-height:220px;overflow-y:auto;border:1.5px solid var(--warm);border-radius:8px;padding:8px 12px;background:var(--white)"></div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
+              <select id="or-duracion" onchange="orCambiarDuracion()" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+                <option value="30">30 minutos</option>
+                <option value="60" selected>1 hora</option>
+                <option value="120">2 horas</option>
+                <option value="custom">Personalizado…</option>
+              </select>
+              <input id="or-duracion-custom" type="number" placeholder="min" min="1" style="display:none;width:70px;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            </div>
+            <button onclick="orLanzar()" style="width:100%;padding:10px;background:#c0392b;color:var(--white);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🚀 Lanzar oferta ahora</button>
+          </div>
+          <div id="or-estado" style="display:none">
+            <div id="or-estado-texto" style="font-size:14px;font-weight:700;color:#c0392b;background:#fdf0ee;border:1.5px solid #c0392b;border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:center"></div>
+            <button onclick="orCancelar()" style="width:100%;padding:8px;background:#fff;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar oferta</button>
+          </div>
+        </div><!-- /or-panel -->
 
         <div id="ruleta-admin-panel" style="display:none;margin-top:-2px;margin-bottom:16px;padding:14px;border:1.5px solid var(--warm);border-top:none;border-radius:0 0 14px 14px;background:var(--cream)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:var(--white);border-radius:10px">
@@ -829,11 +1121,20 @@
 
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">El "peso" decide la probabilidad relativa de cada premio — no hace falta que sumen 100, se calcula solo. Cuanto más alto, más probable.</div>
 
+          <div id="ruleta-admin-hoy" style="font-size:12px;color:var(--brown);background:var(--white);border-radius:10px;padding:10px 12px;margin-bottom:10px"></div>
+
           <div id="ruleta-admin-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
 
           <button onclick="ruletaAdminAddPremio()" style="width:100%;padding:9px;background:var(--white);color:var(--brown);border:1.5px dashed var(--warm);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">+ Añadir premio</button>
 
+          <div style="margin-bottom:10px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Tope de premios con descuento al día (0 = sin tope)</label>
+            <input type="number" id="ruleta-admin-tope" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Al llegar al tope, la ruleta sigue funcionando pero solo puede tocar "sin premio" hasta el día siguiente.</div>
+          </div>
+
           <button onclick="ruletaAdminGuardar()" style="width:100%;padding:11px;background:var(--brown);color:var(--gold);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar cambios</button>
+          <div class="admin-toast" id="ruleta-config-toast" style="margin-top:8px">✅ Guardado</div>
         </div><!-- /ruleta-admin-panel -->
 
         <div id="rasca-admin-panel" style="display:none;margin-top:-2px;margin-bottom:16px;padding:14px;border:1.5px solid var(--warm);border-top:none;border-radius:0 0 14px 14px;background:var(--cream)">
@@ -850,50 +1151,39 @@
 
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">El "peso" decide la probabilidad relativa de cada premio — no hace falta que sumen 100, se calcula solo. Cuanto más alto, más probable. A diferencia de la ruleta, aquí no hay opción de "no ganar nada": el cliente siempre se lleva algo.</div>
 
+          <div id="rasca-admin-hoy" style="font-size:12px;color:var(--brown);background:var(--white);border-radius:10px;padding:10px 12px;margin-bottom:10px"></div>
+
           <div id="rasca-admin-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
 
           <button onclick="rascaAdminAddPremio()" style="width:100%;padding:9px;background:var(--white);color:var(--brown);border:1.5px dashed var(--warm);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">+ Añadir premio</button>
 
-          <button onclick="rascaAdminGuardar()" style="width:100%;padding:11px;background:var(--brown);color:var(--gold);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar cambios</button>
-        </div><!-- /rasca-admin-panel -->
+          <div style="margin-bottom:10px">
+            <label style="display:block;font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Tope de premios con descuento al día (0 = sin tope)</label>
+            <input type="number" id="rasca-admin-tope" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Al llegar al tope, el rasca sigue funcionando pero solo puede tocar "sin premio" hasta el día siguiente.</div>
+          </div>
 
-        <div class="sec-head">Finanzas</div>
-        <div class="row-group">
-          <div class="row" onclick="openMargenesOverlay()">
-            <span class="row-icon">💰</span>
-            <div class="row-text"><div class="row-title">Márgenes por producto</div></div>
-            <span class="row-chevron">›</span>
-          </div>
-          <div class="row" onclick="openCalculadoraOverlay()">
-            <span class="row-icon">🧮</span>
-            <div class="row-text"><div class="row-title">Calculadora de precios</div></div>
-            <span class="row-chevron">›</span>
-          </div>
-          <div class="row" onclick="openEquipoOverlay()">
-            <span class="row-icon">💶</span>
-            <div class="row-text"><div class="row-title">Equipo vs facturación</div></div>
-            <span class="row-chevron">›</span>
-          </div>
-          <div class="row" onclick="openEstrellasOverlay()">
-            <span class="row-icon">🎯</span>
-            <div class="row-text"><div class="row-title">Estrellas y perdedores</div></div>
-            <span class="row-chevron">›</span>
-          </div>
-        </div>
+          <button onclick="rascaAdminGuardar()" style="width:100%;padding:11px;background:var(--brown);color:var(--gold);border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">💾 Guardar cambios</button>
+          <div class="admin-toast" id="rasca-config-toast" style="margin-top:8px">✅ Guardado</div>
+        </div><!-- /rasca-admin-panel -->
 
         <div class="sec-head">Sistema</div>
         <div class="row-group">
-          <div class="row">
-            <span class="row-icon">📱</span>
-            <div class="row-text"><div class="row-title">Verificación por SMS</div></div>
-            <button id="bimba-btn-skip-sms" onclick="(function(){window._skipSmsVerification=!window._skipSmsVerification;var b=document.getElementById('bimba-btn-skip-sms');b.textContent=window._skipSmsVerification?'📵 Desactivado':'📱 Activado';b.style.background=window._skipSmsVerification?'var(--error)':'#27ae60';})()" style="background:#27ae60;color:var(--white);border:none;border-radius:99px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;flex-shrink:0">📱 Activado</button>
-          </div>
           <div class="row">
             <span class="row-icon">🌴</span>
             <div class="row-text"><div class="row-title">Modo vacaciones</div><div class="row-desc">Bloquea la web a los clientes</div></div>
             <button id="vacaciones-toggle-btn" onclick="toggleVacacionesModeAdmin()"
               style="border:none;border-radius:99px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;background:var(--warm);color:var(--muted);padding:7px 14px;white-space:nowrap;flex-shrink:0"
               onmouseenter="if(this.textContent.trim()==='Cargando…')loadVacacionesStatus()">
+              Cargando…
+            </button>
+          </div>
+          <div class="row">
+            <span class="row-icon">📵</span>
+            <div class="row-text"><div class="row-title">Verificación SMS obligatoria</div><div class="row-desc">Si la desactivas, cualquiera puede pedir sin confirmar su móvil</div></div>
+            <button id="sms-verificacion-toggle-btn" onclick="toggleSmsVerificacionActivaAdmin()"
+              style="border:none;border-radius:99px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;background:var(--warm);color:var(--muted);padding:7px 14px;white-space:nowrap;flex-shrink:0"
+              onmouseenter="if(this.textContent.trim()==='Cargando…')loadSmsVerificacionStatus()">
               Cargando…
             </button>
           </div>
@@ -918,11 +1208,6 @@
             <span class="row-chevron">›</span>
           </div>
         </div>
-      </div>
-
-
-      <div class="admin-section" id="admin-stock-admin">
-        <!-- Stock se abre en overlay, esta sección es solo placeholder -->
       </div>
 
 
@@ -971,6 +1256,8 @@
         <button onclick="bimbaVolverAlPanel()" style="display:flex;align-items:center;gap:6px;background:none;border:1.5px solid var(--warm);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:14px">← Volver</button>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px"><div style="font-family:'Anton',sans-serif;font-size:19px;color:var(--brown)">👥 Empleados</div><span style="font-size:11px;background:var(--brown);color:var(--cream);padding:3px 8px;border-radius:99px;font-weight:700">admin</span></div>
 
+        <div id="bimba-cierre-mes-banner" style="display:none"></div>
+
         <div class="stat-panel">
           <div class="stat-panel-head">🟢 Trabajando ahora</div>
           <div style="padding:14px">
@@ -984,12 +1271,12 @@
             <div class="row-text"><div class="row-title">Alertas de fichaje</div><div class="row-desc" id="bimba-alertas-desc"></div></div>
             <span class="row-chevron">›</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-emp-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';})(this)">
+          <div id="emp-row-lista" class="row" onclick="(function(btn){var c=document.getElementById('bimba-emp-body');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoEmp,'bimba-emp-body');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open)_bimbaScrollAbierto(c);})(this)">
             <span class="row-icon">👥</span>
             <div class="row-text"><div class="row-title">Lista de empleados</div><div class="row-desc">URL de fichaje, añadir, fichar manual</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
           </div>
-          <div class="row" onclick="(function(btn){var c=document.getElementById('bimba-hist-body');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){var m=document.getElementById('emp-hist-mes');if(m&&!m.value)m.value=new Date().toISOString().slice(0,7);}})(this)">
+          <div id="emp-row-hist" class="row" onclick="(function(btn){var c=document.getElementById('bimba-hist-body');var open=c.style.display!=='none';if(!open)_bimbaCerrarOtros(_bimbaGrupoEmp,'bimba-hist-body');c.style.display=open?'none':'block';btn.querySelector('.ba').style.transform=open?'rotate(0deg)':'rotate(180deg)';if(!open){var m=document.getElementById('emp-hist-mes');if(m&&!m.value)m.value=new Date().toISOString().slice(0,7);_bimbaScrollAbierto(c);}})(this)">
             <span class="row-icon">📋</span>
             <div class="row-text"><div class="row-title">Historial de fichajes</div></div>
             <span class="ba row-chevron" style="display:inline-block;transition:transform .2s">▾</span>
@@ -1023,7 +1310,11 @@
             <button onclick="empVerHistorial()" style="padding:8px 14px;background:var(--brown);color:var(--white);border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Ver</button>
           </div>
           <div id="emp-hist-resultado" style="margin-bottom:10px"></div>
-          <button onclick="empGenerarDocumento()" style="width:100%;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:8px">📄 Generar documento Word</button>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <button onclick="empGenerarDocumento()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📄 Word</button>
+            <button onclick="empExportarCSV()" style="flex:1;background:var(--white);color:var(--brown);border:1.5px solid var(--warm);border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📊 CSV / Excel</button>
+          </div>
+          <button onclick="empImportarWordModal()" style="width:100%;background:var(--white);color:var(--brown);border:1.5px dashed var(--warm);border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:8px">📥 Importar registro de jornada (Word)</button>
           <div style="border:1.5px solid var(--warm);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
             <div style="font-size:13px;font-weight:700;color:var(--brown);flex:1">🔄 Auto-refresco</div>
             <select id="emp-autorefresh-sel" onchange="empSetAutoRefresh(this.value)" style="padding:6px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none">
@@ -1033,7 +1324,7 @@
           <div id="bimba-registro-meses" style="display:flex;flex-direction:column;gap:8px"></div>
         </div><!-- /bimba-hist-body -->
 
-        <div style="display:flex;justify-content:center;padding:4px 0;margin-bottom:12px"><span onclick="(function(){var c=document.getElementById('bimba-tr-body-wrap');c.style.display=c.style.display==='none'?'block':'none';})()" style="font-size:14px;opacity:0.3;cursor:pointer">🥔</span></div>
+        <div style="display:flex;justify-content:center;padding:4px 0;margin-bottom:12px"><span onclick="(function(){var c=document.getElementById('bimba-tr-body-wrap');var open=c.style.display!=='none';c.style.display=open?'none':'block';if(!open)_bimbaScrollAbierto(c);})()" style="font-size:14px;opacity:0.3;cursor:pointer">🥔</span></div>
         <div id="bimba-tr-body-wrap" style="display:none;border:1.5px solid var(--warm);border-radius:12px;margin-bottom:12px;overflow:hidden">
           <div style="padding:12px 14px;border-bottom:1.5px solid var(--warm);display:flex;gap:8px;flex-wrap:wrap">
             <select id="bimba-tr-emp" style="flex:1;padding:8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none"><option value="">— Todos —</option></select>
@@ -1092,6 +1383,25 @@
           <div style="display:flex">
             <button onclick="document.getElementById('emp-borrar-fecha-modal').style.display='none'" style="flex:1;background:var(--warm);color:var(--brown);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
             <button onclick="empBorrarFechaConfirmar()" style="flex:1;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Borrar</button>
+          </div>
+        </div>
+      </div>
+<div id="emp-import-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:4000;background:rgba(61,31,13,0.7);padding:16px;overflow-y:auto">
+        <div style="background:var(--cream);border-radius:20px;width:100%;max-width:440px;padding:24px;margin:20px auto">
+          <div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:900;color:var(--brown);margin-bottom:6px">📥 Importar registro de jornada</div>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Para documentos Word con el formato "Registro diario de jornada de trabajo" (día a día, entrada/salida mañana y tarde).</p>
+          <div style="display:flex;flex-direction:column">
+            <label style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Empleado</label>
+            <select id="emp-import-emp" style="width:100%;padding:10px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none;margin-bottom:12px"></select>
+            <label style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:4px">Documento (.docx)</label>
+            <input type="file" id="emp-import-file" accept=".docx" style="margin-bottom:14px;font-size:13px">
+            <button onclick="empImportarAnalizar()" style="width:100%;background:var(--brown);color:var(--white);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">🔍 Analizar documento</button>
+            <div id="emp-import-preview" style="display:none;background:#fff;border:1.5px solid var(--warm);border-radius:10px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--text);line-height:1.6"></div>
+            <div id="emp-import-error" style="display:none;color:#c0392b;font-size:12px;font-weight:600;margin-bottom:10px"></div>
+            <div style="display:flex;gap:8px">
+              <button id="emp-import-confirmar-btn" onclick="empImportarConfirmar()" style="display:none;flex:1;background:#166534;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Confirmar importación</button>
+              <button onclick="document.getElementById('emp-import-modal').style.display='none'" style="flex:1;background:var(--warm);color:var(--brown);border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cerrar</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1338,162 +1648,6 @@
   </div>
 </div>
 
-<div id="margenes-overlay" class="admin-overlay" style="z-index:9999">
-  <div class="admin-modal" style="max-width:480px">
-    <button class="admin-close" onclick="closeMargenesOverlay()">✕</button>
-    <h2>💰 Márgenes por producto</h2>
-    <div class="admin-modal-body">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Pon el coste estimado de cada producto (ingredientes + envase). Se guarda solo. Los de margen más bajo salen marcados.</div>
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:700">Dentro de cada sección, ordenar por:</label>
-        <select id="margenes-orden" onchange="bimbaRenderMargenes()" style="width:100%;padding:7px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--white)">
-          <option value="margenPct" selected>Margen % (peor primero)</option>
-          <option value="margenEur">Margen € (peor primero)</option>
-          <option value="nombre">Nombre</option>
-        </select>
-      </div>
-      <div id="bimba-margenes-lista"></div>
-    </div>
-  </div>
-</div><!-- /margenes-overlay -->
-
-<div id="calculadora-overlay" class="admin-overlay" style="z-index:9999">
-  <div class="admin-modal" style="max-width:480px">
-    <button class="admin-close" onclick="closeCalculadoraOverlay()">✕</button>
-    <h2>🧮 Calculadora de precios</h2>
-    <div class="admin-modal-body">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Pon el coste de un producto y el margen que quieres ganar, y te digo a qué precio venderlo.</div>
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:700">Producto (opcional, para rellenar el coste si ya lo tenías puesto)</label>
-        <select id="calc-producto" onchange="bimbaCalcSeleccionarProducto()" style="width:100%;padding:9px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--brown)">
-          <option value="">— Elige un producto —</option>
-        </select>
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:700">Coste del producto</label>
-        <div style="display:flex;align-items:center;gap:6px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:9px 12px">
-          <input type="number" step="0.01" min="0" id="calc-coste" placeholder="0.00" oninput="bimbaCalcularPrecio()" style="border:none;outline:none;font-size:16px;font-weight:700;color:var(--brown);width:100%;font-family:'DM Sans',sans-serif;background:transparent">
-          <span style="font-size:13px;color:var(--muted);font-weight:700">€</span>
-        </div>
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:700">Margen que quieres ganar</label>
-        <div style="display:flex;align-items:center;gap:6px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:9px 12px">
-          <input type="number" step="1" min="0" max="95" id="calc-margen" value="65" oninput="bimbaCalcularPrecio()" style="border:none;outline:none;font-size:16px;font-weight:700;color:var(--brown);width:100%;font-family:'DM Sans',sans-serif;background:transparent">
-          <span style="font-size:13px;color:var(--muted);font-weight:700">%</span>
-        </div>
-      </div>
-      <div style="background:var(--brown);border-radius:14px;padding:18px;text-align:center;margin:14px 0 12px">
-        <div style="font-size:11px;color:rgba(255,248,238,0.6);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Precio de venta sugerido</div>
-        <div id="calc-precio" style="font-family:'Anton',sans-serif;font-size:34px;color:var(--gold);letter-spacing:0.02em">—</div>
-        <div id="calc-sub" style="font-size:12px;color:rgba(255,248,238,0.75);margin-top:4px"></div>
-      </div>
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;font-weight:700">Precios redondos cercanos</div>
-      <div id="calc-redondeos"></div>
-    </div>
-  </div>
-</div><!-- /calculadora-overlay -->
-
-<div id="equipo-overlay" class="admin-overlay" style="z-index:9999">
-  <div class="admin-modal" style="max-width:480px">
-    <button class="admin-close" onclick="closeEquipoOverlay()">✕</button>
-    <h2>💶 Equipo vs facturación</h2>
-    <div class="admin-modal-body">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Configura cómo cobra cada uno, elige el periodo, mete la facturación real y te digo qué % se lleva el personal.</div>
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Configuración del equipo</div>
-      <div id="config-empleados"></div>
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:16px 0 8px">Calcular periodo</div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <select id="equipo-periodo" onchange="bimbaEquipoPeriodoChange()" style="flex:1;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--brown)">
-          <option value="semana">Esta semana</option>
-          <option value="mes" selected>Este mes</option>
-          <option value="trimestre">Este trimestre</option>
-          <option value="anio">Este año</option>
-          <option value="3meses">Últimos 3 meses</option>
-          <option value="6meses">Últimos 6 meses</option>
-          <option value="personalizado">Fechas a mi gusto</option>
-        </select>
-      </div>
-      <div id="equipo-fechas-custom" style="display:none;gap:8px;margin-bottom:8px">
-        <input type="date" id="equipo-fecha-inicio" onchange="bimbaEquipoPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--brown)">
-        <input type="date" id="equipo-fecha-fin" onchange="bimbaEquipoPeriodoChange()" style="flex:1;padding:7px 8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--brown)">
-      </div>
-      <div id="equipo-rango-texto" style="font-size:11.5px;color:var(--muted);margin-bottom:14px"></div>
-      <div id="calc-empleados"></div>
-      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin:14px 0 8px">
-        <label style="font-size:12px;color:var(--muted);font-weight:700;flex:1">Facturación total del periodo</label>
-        <input type="number" step="10" id="equipo-facturacion" oninput="bimbaEquipoFacturacionChange()" style="width:100px;padding:6px 8px;border:1.5px solid var(--warm);border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:'DM Sans',sans-serif;color:var(--brown)">
-      </div>
-      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin-bottom:14px">
-        <label style="font-size:12px;color:var(--muted);font-weight:700;flex:1">Gastos del periodo (proveedores, alquiler, suministros...)</label>
-        <input type="number" step="10" id="equipo-gastos" oninput="bimbaEquipoFacturacionChange()" style="width:100px;padding:6px 8px;border:1.5px solid var(--warm);border-radius:6px;font-size:14px;font-weight:700;text-align:right;font-family:'DM Sans',sans-serif;color:var(--brown)">
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <div style="flex:1;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;text-align:center">
-          <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">Personal</div>
-          <div id="equipo-coste-total" style="font-size:15px;font-weight:800;color:var(--brown)">—</div>
-        </div>
-        <div style="flex:1;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;text-align:center">
-          <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">Gastos</div>
-          <div id="equipo-gastos-total" style="font-size:15px;font-weight:800;color:var(--brown)">—</div>
-        </div>
-        <div style="flex:1;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;text-align:center">
-          <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">Facturación</div>
-          <div id="equipo-facturacion-total" style="font-size:15px;font-weight:800;color:var(--brown)">—</div>
-        </div>
-      </div>
-      <div style="background:var(--brown);border-radius:14px;padding:16px;text-align:center;margin-bottom:10px">
-        <div style="font-size:11px;color:rgba(255,248,238,0.6);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Beneficio neto del periodo</div>
-        <div id="equipo-beneficio-neto" style="font-family:'Anton',sans-serif;font-size:30px;color:var(--gold);letter-spacing:0.02em">—</div>
-        <div id="equipo-beneficio-sub" style="font-size:11px;color:rgba(255,248,238,0.65);margin-top:4px"></div>
-      </div>
-      <div style="background:var(--brown);border-radius:14px;padding:18px;text-align:center;margin-bottom:6px">
-        <div id="equipo-resultado-pct" style="font-family:'Anton',sans-serif;font-size:38px;color:var(--gold);letter-spacing:0.02em">—</div>
-        <div id="equipo-resultado-estado" style="font-size:13px;font-weight:800;margin-top:2px"></div>
-        <div id="equipo-resultado-sub" style="font-size:11.5px;color:rgba(255,248,238,0.7);margin-top:6px;line-height:1.4"></div>
-      </div>
-    </div>
-  </div>
-</div><!-- /equipo-overlay -->
-
-<div id="estrellas-overlay" class="admin-overlay" style="z-index:9999">
-  <div class="admin-modal" style="max-width:480px">
-    <button class="admin-close" onclick="closeEstrellasOverlay()">✕</button>
-    <h2>🎯 Estrellas y perdedores</h2>
-    <div class="admin-modal-body">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Cruza el margen de cada producto con cuánto se vende, para ver qué cuidar y qué quitar de la carta.</div>
-
-      <div style="margin-bottom:14px">
-        <div onclick="bimbaToggleVentaManualForm()" style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 12px;cursor:pointer">
-          <span style="font-size:13px;font-weight:700;color:var(--brown)">➕ Añadir venta manual (tienda / delivery)</span>
-          <span id="venta-manual-chevron" style="color:var(--amber-dark);font-size:14px;display:inline-block;transition:transform .2s">▾</span>
-        </div>
-        <div id="venta-manual-form" style="display:none;background:var(--white);border:1.5px solid var(--warm);border-top:none;border-radius:0 0 10px 10px;padding:12px">
-          <div style="background:var(--brown);border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <label style="font-size:12px;color:rgba(255,248,238,0.7);font-weight:700">Fecha de estas ventas</label>
-            <input type="date" id="venta-manual-fecha" style="background:var(--white);border:none;border-radius:8px;padding:6px 10px;font-size:13px;font-family:'DM Sans',sans-serif;font-weight:700;color:var(--brown)">
-          </div>
-          <div id="venta-manual-lista"></div>
-          <div style="text-align:center;font-size:11.5px;color:var(--muted);text-decoration:underline;cursor:pointer;margin:10px 0 8px" onclick="bimbaLimpiarVentaManual()">Limpiar todo</div>
-          <button id="venta-manual-guardar-btn" onclick="bimbaGuardarVentasManualesCarta()" disabled style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;opacity:0.4">Guardar (0 productos)</button>
-          <div id="venta-manual-msg" style="font-size:11px;margin-top:8px;text-align:center"></div>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-bottom:6px">
-        <select id="estrellas-periodo" onchange="bimbaRenderEstrellas()" style="flex:1;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--brown)">
-          <option value="semana">Esta semana</option>
-          <option value="mes" selected>Este mes</option>
-          <option value="trimestre">Este trimestre</option>
-          <option value="anio">Este año</option>
-        </select>
-      </div>
-      <div id="estrellas-rango-texto" style="font-size:11.5px;color:var(--muted);margin-bottom:14px"></div>
-      <div id="estrellas-contenido"></div>
-    </div>
-  </div>
-</div><!-- /estrellas-overlay -->
-
 <div id="ingredientes-stock-overlay" class="admin-overlay" style="z-index:9999">
   <div class="admin-modal" style="max-width:480px">
     <button class="admin-close" onclick="closeIngredientesStockOverlay()">✕</button>
@@ -1538,7 +1692,7 @@
     <button class="admin-close" onclick="closeTicketConfigOverlay()">✕</button>
     <h2>🧾 Configuración del ticket</h2>
     <div class="admin-modal-body">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Esto cambia lo que se ve en el ticket en pantalla (y al imprimir desde aquí). Si imprimes con tu impresora térmica conectada por Node.js, esa parte tiene su propio texto y no se actualiza desde aquí — dime si quieres que también la haga configurable.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Esto cambia lo que se ve en el ticket en pantalla y también lo que se imprime en la impresora térmica.</p>
 
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Nombre del negocio</label>
       <input type="text" id="tc-nombre" placeholder="DULCE PATATA FOOD" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
@@ -1549,6 +1703,9 @@
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Teléfono</label>
       <input type="text" id="tc-telefono" placeholder="604 82 31 80" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
 
+      <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">NIF</label>
+      <input type="text" id="tc-nif" placeholder="77558832A" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
+
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Mensaje de despedida</label>
       <input type="text" id="tc-despedida" placeholder="¡Gracias por tu pedido! 🥔" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
 
@@ -1556,6 +1713,34 @@
       <input type="text" id="tc-texto-pago" placeholder="Pagar en caja" style="width:100%;padding:9px 12px;margin-bottom:16px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
 
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:6px 0 10px">Impresora térmica</div>
+
+      <div class="pt-papel-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #e74c3c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#c0392b">⚠️ Sin papel — cambia el rollo</div>
+      <div class="pt-desconexion-aviso" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#7a1a0e">🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</div>
+      <div class="pedido-perdido-aviso" data-show-display="block" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#7a1a0e;cursor:pointer" onclick="showAdminSection('alertas', document.querySelector('[data-section=alertas]'))">⚠️ Hay pedidos que no aparecieron aquí — revisa la pestaña Alertas</div>
+      <div class="pt-cola-contador" style="display:none;background:#FDECD5;border:1.5px solid var(--amber);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
+      <div class="pt-cola-antigua-lista" style="display:none;margin-bottom:12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:12px">
+        <span class="pt-conn-status" style="font-size:13px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <button onclick="conectarImpresoraTermica()" style="background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔌 Conectar por USB</button>
+          <button onclick="conectarImpresoraBluetooth()" style="background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📶 Conectar por Bluetooth</button>
+          <button onclick="imprimirTicketPrueba()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🧾 Probar</button>
+          <button onclick="imprimirPruebaModificaciones()" style="background:none;color:var(--brown);border:1.5px dashed var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✂️ Probar estilos de nota</button>
+          <button onclick="imprimirPruebaEstiloNotaCliente()" title="Imprime 3 tickets de prueba: nota arriba, nota abajo y nota en negro invertido" style="background:none;color:var(--brown);border:1.5px dashed var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🧪 Prueba</button>
+          <button onclick="reimprimirUltimoTicketTermico()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔁 Reimprimir último</button>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin:-6px 0 14px">Solo funciona en Chrome/Edge (ni Safari ni Firefox). Por USB necesitas adaptador OTG en la tablet; por Bluetooth solo tu impresora ya emparejada. Pulsa el botón del que uses una sola vez — luego imprimirá sola y se reconecta sola.</p>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:16px">
+        <div class="pt-papel-contador" style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px">🧻 Papel restante — calculando...</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <label style="font-size:11px;color:var(--muted)">Tickets aprox. por rollo nuevo:</label>
+          <input type="number" id="tc-papel-capacidad" min="1" step="1" onchange="guardarCapacidadRollo(this.value)" style="width:70px;padding:6px 8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+          <button onclick="_ptPapelNuevoRollo()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔄 Puse rollo nuevo</button>
+        </div>
+        <p style="font-size:10.5px;color:var(--muted);margin:8px 0 0">Es una estimación por número de tickets, no una medida exacta — ajusta el número si ves que se queda corto o largo comparado con la realidad.</p>
+      </div>
 
       <label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px">Ancho del papel</label>
       <select id="tc-ancho-papel" style="width:100%;padding:9px 12px;margin-bottom:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--text)">
@@ -1574,8 +1759,104 @@
         <input type="checkbox" id="tc-auto-imprimir" checked style="width:20px;height:20px;flex-shrink:0">
       </div>
 
+      <div onclick="(function(){var c=document.getElementById('tc-letra-grande');c.checked=!c.checked;document.getElementById('tc-letra-row').style.background=c.checked?'#fff':'var(--white)';})()" id="tc-letra-row" style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:16px;cursor:pointer">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">Letra más grande en el ticket</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Altura doble, mismo ancho — pruébalo y ajusta a tu gusto</div>
+        </div>
+        <input type="checkbox" id="tc-letra-grande" style="width:20px;height:20px;flex-shrink:0">
+      </div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">📱 Código QR al final del ticket</span>
+          <input type="checkbox" id="tc-qr-habilitado" style="width:20px;height:20px;flex-shrink:0">
+        </div>
+        <label style="display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:5px">Contenido (una URL o texto)</label>
+        <input type="text" id="tc-qr-contenido" placeholder="https://wa.me/34600000000 o tu web..." style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;box-sizing:border-box">
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Ideas: enlace de WhatsApp, tu web para repetir pedido, o el enlace de reseña de Google cuando lo tengas.</p>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Gastos fijos</div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">💶 Gastos de gestión</span>
+          <input type="checkbox" id="tc-fee-enabled" style="width:20px;height:20px;flex-shrink:0">
+        </div>
+        <div style="display:grid;grid-template-columns:80px 1fr;gap:8px">
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="tc-fee-amount" min="0" max="10" step="0.10" value="0.50" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">€</span>
+          </div>
+          <input type="text" id="tc-fee-label" value="Gastos de gestión online" maxlength="40" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;box-sizing:border-box">
+        </div>
+      </div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">💶 Otro gasto fijo</span>
+          <input type="checkbox" id="tc-fee2-enabled" style="width:20px;height:20px;flex-shrink:0">
+        </div>
+        <div style="display:grid;grid-template-columns:80px 1fr;gap:8px">
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="tc-fee2-amount" min="0" max="10" step="0.10" value="0.50" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">€</span>
+          </div>
+          <input type="text" id="tc-fee2-label" value="Otro gasto fijo" maxlength="40" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;box-sizing:border-box">
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Independiente del anterior — se enciende y se apaga por su cuenta.</p>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Descuentos</div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:var(--text)">🪪 Descuento estudiante/jubilado</span>
+          <input type="checkbox" id="tc-student-discount-enabled" style="width:20px;height:20px;flex-shrink:0">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="tc-student-discount-pct" min="0" max="100" step="1" value="10" style="width:70px;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+          <span style="font-size:12px;color:var(--muted)">% de descuento sobre los productos</span>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0">El cliente lo marca él mismo en el formulario — se pide carné en caja, si no lo presenta se cobra el precio normal.</p>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Pedidos desde el local</div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">🏪 Código "pedido desde el local"</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Cuando hay cola, dile este código a la gente para que pida desde el móvil sin Gastos de gestión y sin SMS (el "Otro gasto fijo" se sigue cobrando igual). <strong>Caduca solo cada día</strong> — vale hasta la medianoche, y si generas uno "🎲 Nuevo" de urgencia, el anterior deja de servir al instante.</p>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <input type="text" id="tc-local-fee-code" maxlength="8" placeholder="Sin código = desactivado" style="flex:1;padding:9px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-transform:uppercase">
+          <button onclick="generarCodigoLocalNuevo()" style="background:none;color:var(--brown);border:1.5px solid var(--brown);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">🎲 Nuevo</button>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <label for="tc-local-qr-copias" style="font-size:12px;color:var(--muted);white-space:nowrap">Copias a imprimir</label>
+          <input type="number" id="tc-local-qr-copias" min="1" max="10" step="1" value="1" style="width:56px;padding:7px 8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+        </div>
+        <button onclick="saveLocalFeeCode(document.getElementById('tc-local-fee-code').value);imprimirCartelQRLocal(document.getElementById('tc-local-qr-copias').value)" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨️ Guardar e imprimir cartel QR</button>
+        <div style="margin-top:14px;padding-top:14px;border-top:1.5px dashed var(--warm)">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">⏱️ Tiempo de espera entre tickets</div>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Si llegan varios pedidos seguidos hechos con este QR, esto reparte la hora que sale en el ticket para que no salgan todos "para ahora mismo" a la vez.</p>
+          <select id="tc-tienda-espera" onchange="saveTiendaEsperaMinutos(this.value)" style="width:100%;padding:9px 12px;border:1.5px solid var(--warm);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none">
+            <option value="0">Desactivado (hora real del pedido)</option>
+            <option value="15">15 minutos</option>
+            <option value="20">20 minutos</option>
+            <option value="25">25 minutos</option>
+          </select>
+        </div>
+      </div>
+
       <button onclick="bimbaGuardarTicketConfig()" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Guardar</button>
       <div id="tc-msg" style="font-size:12px;margin-top:8px;text-align:center"></div>
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin:20px 0 4px">
+        <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Trabajos de impresión de hoy</span>
+        <span id="tc-envios-resumen" style="font-size:11px;font-weight:700;color:var(--brown)"></span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Esto refleja si el ticket se envió de verdad a la impresora conectada a esta tablet/dispositivo (solo los de hoy, en este aparato). Si ves "Falló", comprueba que la impresora esté conectada (botón "Conectar impresora" más arriba).</div>
+      <div id="tc-envios-log" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
     </div>
   </div>
 </div><!-- /ticket-config-overlay -->

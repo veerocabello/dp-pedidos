@@ -1,0 +1,189 @@
+<?php
+// ═══════════════════════════════════════════════════════════
+//  RENDERIZADO DEL MENÚ EN EL PROPIO HTML (SEO)
+//
+//  Por qué existe: antes, la lista de productos (y sus datos
+//  estructurados) solo aparecía después de que el navegador ejecutara
+//  el JavaScript de la web — la mayoría de los buscadores actuales lo
+//  ejecutan sin problema, pero no todos (algunos rastreadores de IA,
+//  Bing en parte) esperan a que termine. Este archivo genera esa misma
+//  información ya escrita en el HTML que sale del servidor, antes de
+//  que se ejecute una sola línea de JavaScript.
+//
+//  Fuente de los datos: config/menu en Firebase (el menú real, con los
+//  cambios hechos desde el panel — el mismo nodo que ya lee el
+//  navegador, es de lectura pública). Se guarda ahí como un JSON
+//  "dentro de otro JSON" (jstr() en config.js lo mete como string), por
+//  eso hace falta json_decode() dos veces seguidas.
+//
+//  Si Firebase no responde (caída puntual, timeout) se usa la última
+//  copia en caché (menu-cache.json, aquí al lado, nunca se sube al
+//  repo) y si tampoco existe, se cae al menú "de fábrica"
+//  (menu-default.json, generado por scripts/build.js a partir de
+//  carta.js). Así una web estática nunca se puede quedar caída ni
+//  lenta por culpa de este archivo — en el peor de los casos, sale con
+//  el menú por defecto en vez del más actualizado.
+// ═══════════════════════════════════════════════════════════
+
+define('DPF_MENU_DATABASE_URL', 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app');
+define('DPF_MENU_CACHE_TTL', 300); // 5 minutos — no tiene sentido pedirle a Firebase el menú en cada visita
+
+// Devuelve el array de productos actual (ver prioridad arriba). Nunca
+// lanza una excepción: en el peor caso devuelve un array vacío.
+function dpf_menu_actual() {
+    $cacheFile = __DIR__ . '/menu-cache.json';
+
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < DPF_MENU_CACHE_TTL) {
+        $cacheado = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($cacheado) && count($cacheado)) return $cacheado;
+    }
+
+    // cURL, no file_get_contents() — igual que el resto de llamadas a
+    // Firebase de este proyecto (ver fbGetConEtag en guardar-pedido.php):
+    // no todos los hostings compartidos tienen activado allow_url_fopen,
+    // y esto ya está probado que funciona en el hosting real. Timeout
+    // corto a propósito: si Firebase tarda, esta página no puede quedarse
+    // esperando — mejor servir algo (caché vieja o el menú por defecto)
+    // que dejar a un visitante mirando una pantalla en blanco.
+    $respuesta = false;
+    $ch = curl_init(DPF_MENU_DATABASE_URL . '/config/menu.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+    $curlResult = curl_exec($ch);
+    if ($curlResult !== false && curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200) $respuesta = $curlResult;
+    curl_close($ch);
+    if ($respuesta !== false) {
+        // config/menu se guarda con jstr() (JSON.stringify) — el valor real
+        // en Firebase es un STRING que contiene JSON, no un array directo.
+        $valor = json_decode($respuesta, true);
+        if (is_string($valor)) $valor = json_decode($valor, true);
+        if (is_array($valor) && count($valor)) {
+            // LOCK_EX — igual que el resto de ficheros de estado del
+            // proyecto (csp-reports.log, el log de pedidos no guardados en
+            // guardar-pedido.php): sin esto, dos visitas casi a la vez que
+            // refrescan la caché a la par podían intercalar sus escrituras
+            // y dejar el JSON a medias. Impacto ya era mínimo (json_decode
+            // de un JSON corrupto da null y esta función ya cae al menú por
+            // defecto), pero el lock lo evita directamente.
+            @file_put_contents($cacheFile, json_encode($valor), LOCK_EX);
+            return $valor;
+        }
+    }
+
+    // Firebase no respondió o config/menu está vacío — caché vieja es
+    // mejor que nada (refleja el menú real, aunque no sea del todo actual).
+    if (file_exists($cacheFile)) {
+        $cacheado = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($cacheado) && count($cacheado)) return $cacheado;
+    }
+
+    $defaultFile = __DIR__ . '/menu-default.json';
+    if (file_exists($defaultFile)) {
+        $default = json_decode(file_get_contents($defaultFile), true);
+        if (is_array($default)) return $default;
+    }
+    return [];
+}
+
+// HTML estático que ve cualquier rastreador antes de que se ejecute
+// JavaScript — en un navegador normal, renderMenu() (carta.js) lo
+// sustituye por la versión interactiva a los pocos milisegundos de
+// cargar, así que no hace falta que tenga botones de añadir al carrito
+// ni nada interactivo, solo el contenido real: nombre, descripción y
+// precio de cada producto, agrupado por categoría igual que en la carta
+// de verdad.
+// Mismo catálogo que DIETARY_TAGS en carta.js — mantener los dos en sync
+// si se añade o cambia alguna etiqueta.
+const DPF_DIETARY_TAGS = [
+    'gluten'         => ['emoji' => '🌾', 'label' => 'Gluten', 'color' => '#E67E22', 'img' => 'img/alergenos/gluten.webp'],
+    'crustaceos'     => ['emoji' => '🦐', 'label' => 'Crustáceos', 'color' => '#2980B9', 'img' => 'img/alergenos/crustaceos.webp'],
+    'huevo'          => ['emoji' => '🥚', 'label' => 'Huevo', 'color' => '#F1A208', 'img' => 'img/alergenos/huevo.webp'],
+    'pescado'        => ['emoji' => '🐟', 'label' => 'Pescado', 'color' => '#1B4F72', 'img' => 'img/alergenos/pescado.webp'],
+    'cacahuetes'     => ['emoji' => '🥜', 'label' => 'Cacahuetes', 'color' => '#8B5A2B', 'img' => 'img/alergenos/cacahuetes.webp'],
+    'soja'           => ['emoji' => '🫘', 'label' => 'Soja', 'color' => '#27632A', 'img' => 'img/alergenos/soja.webp'],
+    'leche'          => ['emoji' => '🥛', 'label' => 'Lácteos', 'color' => '#5DADE2', 'img' => 'img/alergenos/leche.webp'],
+    'frutos_cascara' => ['emoji' => '🌰', 'label' => 'Frutos de cáscara', 'color' => '#C0392B', 'img' => 'img/alergenos/frutos_cascara.webp'],
+    'apio'           => ['emoji' => '🥬', 'label' => 'Apio', 'color' => '#58B368', 'img' => 'img/alergenos/apio.webp'],
+    'mostaza'        => ['emoji' => '🟡', 'label' => 'Mostaza', 'color' => '#D4AC0D', 'img' => 'img/alergenos/mostaza.webp'],
+    'sesamo'         => ['emoji' => '⚪', 'label' => 'Sésamo', 'color' => '#95A5A6', 'img' => 'img/alergenos/sesamo.webp'],
+    'sulfitos'       => ['emoji' => '🍷', 'label' => 'Sulfitos', 'color' => '#7D3C98', 'img' => 'img/alergenos/sulfitos.webp'],
+    'altramuces'     => ['emoji' => '🌱', 'label' => 'Altramuces', 'color' => '#B7950B', 'img' => 'img/alergenos/altramuces.webp'],
+    'moluscos'       => ['emoji' => '🐚', 'label' => 'Moluscos', 'color' => '#17A589', 'img' => 'img/alergenos/moluscos.webp'],
+];
+function dpf_menu_html($menu) {
+    $emojiMap = ['Patatas' => '🥔', 'Boniato' => '🍠', 'Paninis' => '🍕', 'Cookies' => '🍪', 'Tartas' => '🍰', 'Bebidas' => '🥤'];
+    $porCategoria = [];
+    foreach ($menu as $item) {
+        if (!empty($item['hidden'])) continue;
+        $cat = $item['cat'] ?? 'Otros';
+        if (!isset($porCategoria[$cat])) $porCategoria[$cat] = [];
+        $porCategoria[$cat][] = $item;
+    }
+    $html = '';
+    foreach ($porCategoria as $cat => $items) {
+        $emoji = $emojiMap[$cat] ?? '';
+        $html .= '<div class="menu-cat-sep"><div class="menu-cat-left"><h3 class="menu-cat-name">' . htmlspecialchars($emoji ? $emoji . ' ' . mb_strtoupper($cat) : mb_strtoupper($cat)) . '</h3></div></div>';
+        foreach ($items as $item) {
+            $precio = number_format((float)($item['price'] ?? 0), 2, ',', '');
+            $tagsHtml = '';
+            if (!empty($item['tags']) && is_array($item['tags'])) {
+                $chips = '';
+                foreach ($item['tags'] as $tid) {
+                    if (!isset(DPF_DIETARY_TAGS[$tid])) continue;
+                    $t = DPF_DIETARY_TAGS[$tid];
+                    $chips .= !empty($t['img'])
+                        ? '<img class="allergen-icon-img" src="' . htmlspecialchars($t['img']) . '" alt="" title="Contiene ' . htmlspecialchars($t['label']) . '">'
+                        : '<span class="allergen-icon" style="background:' . $t['color'] . '" title="Contiene ' . htmlspecialchars($t['label']) . '">' . $t['emoji'] . '</span>';
+                }
+                if ($chips) $tagsHtml = '<span class="item-tags">' . $chips . '</span>';
+            }
+            $html .= '<div class="item-card">'
+                . '<div class="item-info">'
+                . '<div class="item-name">' . htmlspecialchars($item['name'] ?? '') . $tagsHtml . '</div>'
+                . '<div class="item-desc">' . htmlspecialchars($item['desc'] ?? '') . '</div>'
+                . '</div>'
+                . '<div class="item-price">' . $precio . ' €</div>'
+                . '</div>';
+        }
+    }
+    return $html;
+}
+
+// Datos estructurados (schema.org Menu) — sustituye a la generación por
+// JavaScript que había antes (_generarMenuJsonLd en carta.js): mismo
+// formato, pero ya presente en el HTML que sirve el servidor.
+function dpf_menu_jsonld($menu) {
+    $porCategoria = [];
+    foreach ($menu as $item) {
+        if (!empty($item['hidden'])) continue;
+        $cat = $item['cat'] ?? 'Otros';
+        if (!isset($porCategoria[$cat])) $porCategoria[$cat] = [];
+        $porCategoria[$cat][] = $item;
+    }
+    $hasMenuSection = [];
+    foreach ($porCategoria as $cat => $items) {
+        $hasMenuItem = [];
+        foreach ($items as $item) {
+            $menuItem = [
+                '@type' => 'MenuItem',
+                'name' => $item['name'] ?? '',
+                'offers' => [
+                    '@type' => 'Offer',
+                    'price' => number_format((float)($item['price'] ?? 0), 2, '.', ''),
+                    'priceCurrency' => 'EUR',
+                ],
+            ];
+            if (!empty($item['desc'])) $menuItem['description'] = $item['desc'];
+            $hasMenuItem[] = $menuItem;
+        }
+        $hasMenuSection[] = ['@type' => 'MenuSection', 'name' => $cat, 'hasMenuItem' => $hasMenuItem];
+    }
+    $jsonLd = [
+        '@context' => 'https://schema.org',
+        '@type' => 'Menu',
+        'name' => 'Carta Dulce Patata Food',
+        'hasMenuSection' => $hasMenuSection,
+    ];
+    return '<script type="application/ld+json">' . json_encode($jsonLd, JSON_UNESCAPED_UNICODE) . '</script>';
+}

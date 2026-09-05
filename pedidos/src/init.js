@@ -1,3 +1,14 @@
+// Arranque que antes vivía en admin-turnos-descuentos.js — reubicado aquí
+// (bundle de cliente) al separar el bundle de admin, para que se siga
+// ejecutando para cualquier visitante, no solo cuando se abre el panel.
+// initCatBlocks() está en nucleo-compartido.js; renderPromos() en la
+// parte de admin-config.js que también se quedó ahí.
+initCatBlocks();
+initTabs();
+renderMenu();
+renderPromos();
+renderCart();
+
 // ── INIT ADMIN DATA ──
 loadSavedMenu();
 initTabs(); // re-renderizar pestañas con el menú guardado
@@ -107,26 +118,10 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     });
   }
 
-  // Carga inicial de datos críticos desde Firebase (empleados, fichajes, cats, slots)
+  // Carga inicial de datos críticos desde Firebase (cats, slots, etc.)
+  // NOTA DE SEGURIDAD: empleados y fichajes NO se cargan aquí — esta
+  // función corre para cualquier visitante. Ver _cargarDatosEmpleadosPrivados().
   function _cargarCriticosDesdeFirebase() {
-    if (window.fb_loadEmpleados) {
-      window.fb_loadEmpleados().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB31;
-          localStorage.setItem('dpf_empleados', JSON.stringify(arr));
-          if ((_document$getElementB31 = document.getElementById('admin-empleados')) !== null && _document$getElementB31 !== void 0 && _document$getElementB31.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadFichajes) {
-      window.fb_loadFichajes().then(arr => {
-        if (arr && arr.length) {
-          var _document$getElementB32;
-          localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-          if ((_document$getElementB32 = document.getElementById('admin-empleados')) !== null && _document$getElementB32 !== void 0 && _document$getElementB32.classList.contains('active')) empRenderAdmin();
-        }
-      }).catch(() => {});
-    }
     if (window.fb_loadBlockedCats) {
       window.fb_loadBlockedCats().then(cats => {
         if (cats) {
@@ -153,9 +148,15 @@ applyAutoDelete(); // auto-borrado del historial al cargar
     if (window.fb_loadActivityLog) {
       window.fb_loadActivityLog().then(log => {
         if (log && log.length) {
-          var _document$getElementB35;
           localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
-          if ((_document$getElementB35 = document.getElementById('admin-log')) !== null && _document$getElementB35 !== void 0 && _document$getElementB35.classList.contains('active')) renderActivityLog();
+          // La pestaña "📋 Actividad" (Accesos) muestra/oculta su panel con
+          // style.display, no con la clase .active del viejo patrón de
+          // secciones — antes esto comprobaba un id (#admin-log) que ya no
+          // existe (la sección "log" secreta se quitó, ver checkLogSecret),
+          // así que nunca llegaba a refrescar aunque la pestaña estuviera
+          // abierta cuando llegaban datos frescos de Firebase.
+          const activityPanel = document.getElementById('accesos-tab-actividad');
+          if (activityPanel && activityPanel.style.display === 'block' && typeof renderActivityLog === 'function') renderActivityLog();
         }
       }).catch(() => {});
     }
@@ -184,6 +185,16 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (!c) return;
         localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
         Object.assign(CONFIG, c);
+        // getModifyWindowMs() (antifraude.js) lee su propia clave suelta
+        // dpf_modify_window_mins, no CONFIG.modifyWindowMins — sin esto, el
+        // tiempo para modificar pedido que se guarda desde el panel admin
+        // (Configuración de pedidos) nunca llegaba a los dispositivos de
+        // los clientes: cada uno seguía usando el valor por defecto de su
+        // propio localStorage, aunque el ajuste sí se hubiera guardado bien
+        // en Firebase.
+        if (typeof c.modifyWindowMins === 'number' && c.modifyWindowMins >= 1 && c.modifyWindowMins <= 30) {
+          localStorage.setItem('dpf_modify_window_mins', c.modifyWindowMins);
+        }
         if ((_document$getElementB37 = document.getElementById('admin-local')) !== null && _document$getElementB37 !== void 0 && _document$getElementB37.classList.contains('active')) loadAdminConfig();
       }).catch(() => {});
     }
@@ -213,31 +224,26 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (inp) inp.value = msg;
       }).catch(() => {});
     }
-    // TOKENS DE ACCESO
-    if (window.fb_loadUrlToken) {
-      window.fb_loadUrlToken().then(t => {
-        if (t) {
-          localStorage.setItem(URL_TOKEN_KEY, t);
-          loadUrlTokenUI();
-        }
-      }).catch(() => {});
-    }
-    if (window.fb_loadBimbaToken) {
-      window.fb_loadBimbaToken().then(t => {
-        if (t) localStorage.setItem(BIMBA_TOKEN_KEY, t);
-      }).catch(() => {});
-    }
-    // CLAVE DE STOCK
-    if (window.fb_loadStockPwd) {
-      window.fb_loadStockPwd().then(pwd => {
-        if (pwd) localStorage.setItem(STOCK_PWD_KEY, pwd);
-      }).catch(() => {});
-    }
+    // NOTA DE SEGURIDAD: los tokens de acceso (config/urlToken,
+    // config/bimbaToken) y la clave de stock (config/stockPwd) NO se
+    // cargan aquí — esta función corre para cualquier visitante, y antes
+    // se descargaban a localStorage aunque nadie hubiera iniciado sesión,
+    // lo que permitía a cualquier cliente leer su propio localStorage y
+    // auto-concederse acceso por ?bimba=/?key=. Ver
+    // _cargarDatosEmpleadosPrivados() — la comprobación real de esos
+    // tokens ahora la hace el servidor (bimba-verify.php).
     // LISTA DE INGREDIENTES DE STOCK — listener en tiempo real
     if (window.fb_listenStockData) {
       window.fb_listenStockData(data => {
         var _document$getElementB38, _document$getElementB39;
         if (!data) return;
+        // Última copia confirmada por el servidor que este dispositivo ha
+        // visto — saveStockData() (stock-empleados.js) la usa como base
+        // para saber qué grupos ha tocado de verdad este dispositivo desde
+        // la última sincronización, al combinar con lo que haya en el
+        // servidor en ese momento (evita que dos empleados editando
+        // categorías distintas a la vez se pisen el trabajo).
+        window._stockDataSyncedSnapshot = data;
         // Ignorar eco de nuestro propio guardado (menos de 2s)
         if (window._stockDataLocalWrite && Date.now() - window._stockDataLocalWrite < 2000) return;
         localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
@@ -255,17 +261,52 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         empCargarEmpresaUI();
       }).catch(() => {});
     }
-    // CONTRASEÑA ADMIN (sincronizar hash entre dispositivos)
-    if (window.fb_loadAdminPwd) {
-      window.fb_loadAdminPwd().then(hash => {
-        if (hash && isHex64(hash)) localStorage.setItem(ADMIN_PWD_KEY, hash);
-      }).catch(() => {});
-    }
   }
   if (window._firebaseReady) {
     _cargarCriticosDesdeFirebase();
   } else {
     document.addEventListener('firebaseReady', _cargarCriticosDesdeFirebase);
+  }
+})();
+
+// ── AVISO DE PROBLEMA DE CONEXIÓN ────────────────────────────────────────────
+// _firebaseReady solo confirma que el SDK cargó al principio — si después
+// se cae la conexión real (wifi del local, Firebase caído, etc.), la web
+// seguía pareciendo normal pero con datos parados (turnos, config de
+// gastos, pedidos abiertos/cerrados...) sin ningún aviso. ".info/connected"
+// es la señal fiable de la conexión real en cada momento.
+(function _iniciarAvisoConexionFirebase() {
+  let _conexionPerdidaTimeout = null;
+  let _bannerConexionMostrado = false;
+  function _mostrarBannerConexion(mostrar) {
+    const banner = document.getElementById('firebase-conexion-banner');
+    if (!banner) return;
+    banner.style.display = mostrar ? 'block' : 'none';
+    _bannerConexionMostrado = mostrar;
+  }
+  function _iniciar() {
+    if (!window.fb_listenConnectionState) return;
+    window.fb_listenConnectionState(connected => {
+      if (connected) {
+        if (_conexionPerdidaTimeout) {
+          clearTimeout(_conexionPerdidaTimeout);
+          _conexionPerdidaTimeout = null;
+        }
+        if (_bannerConexionMostrado) _mostrarBannerConexion(false);
+      } else if (!_conexionPerdidaTimeout) {
+        // Margen de unos segundos antes de avisar — un corte breve al
+        // cambiar de wifi a datos móviles es normal y no debe alarmar.
+        _conexionPerdidaTimeout = setTimeout(() => {
+          _conexionPerdidaTimeout = null;
+          _mostrarBannerConexion(true);
+        }, 6000);
+      }
+    });
+  }
+  if (window._firebaseReady) {
+    _iniciar();
+  } else {
+    document.addEventListener('firebaseReady', _iniciar);
   }
 })();
 
@@ -395,23 +436,37 @@ async function smsVerifyCode() {
   }
 
   try {
-    const res = await fetch('/verify-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/verify-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: pendingPhone, code })
-    });
+    }, 8000);
     const data = await res.json();
-    if (data.verified) {
+    // El servidor ahora exige smsToken para aceptar el pedido (ver
+    // validarSmsToken en guardar-pedido.php) — sin guardarlo aquí,
+    // _finalizarPedido() lo mandaría vacío y el pedido se rechazaría
+    // aunque el código fuera correcto.
+    if (data.verified && data.smsToken && window._pendingOrderData) {
+      window._pendingOrderData.smsToken = data.smsToken;
       await _finalizarPedido();
+    } else if (data.verified) {
+      const errEl = document.getElementById('sms-error-msg');
+      if (errEl) { errEl.textContent = '❌ Error verificando el teléfono. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     } else {
       const errEl = document.getElementById('sms-error-msg');
-      if (errEl) { errEl.textContent = '❌ Código incorrecto. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+      if (errEl) { errEl.textContent = '❌ ' + (data.error || 'Código incorrecto') + '. Inténtalo de nuevo.'; errEl.style.display = 'block'; }
       if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
     }
   } catch (e) {
+    // Ya no se deja pasar el pedido si esto falla (antes sí, "por si
+    // acaso") — el servidor ahora exige el comprobante de verdad, así que
+    // dejarlo pasar aquí solo terminaría en un pedido rechazado más
+    // adelante con un mensaje más confuso. Mejor decirlo claro ya.
     console.warn('[SMS] verify error:', e);
-    // Fallback: si falla la verificación, dejar pasar igualmente
-    await _finalizarPedido();
+    const errEl = document.getElementById('sms-error-msg');
+    if (errEl) { errEl.textContent = '❌ No se pudo verificar el código (fallo de conexión). Inténtalo de nuevo.'; errEl.style.display = 'block'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Verificar'; }
   }
 }
 
@@ -419,11 +474,11 @@ async function smsResendCode() {
   if (!window._pendingOrderData) return;
   const phone = '+34' + window._pendingOrderData.phoneClean;
   try {
-    const res = await fetch('/send-code.php', {
+    const res = await (typeof _fetchConTimeout === 'function' ? _fetchConTimeout : fetch)('/send-code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone })
-    });
+    }, 8000);
     const data = await res.json();
     const errEl = document.getElementById('sms-error-msg');
     if (data.success) {
@@ -438,6 +493,19 @@ async function smsResendCode() {
 }
 
 function smsCancelVerify() {
+  // Si este pedido había reservado un turno de verdad en el servidor, se
+  // libera ya en vez de dejarlo "ocupado" hasta que caduque solo a los 12
+  // minutos — el cliente acaba de decir explícitamente que no sigue con
+  // este pedido. Best-effort: si falla (sin conexión ahora mismo), la
+  // caducidad automática del servidor sigue siendo la red de seguridad.
+  if (window._pendingOrderData && window._pendingOrderData.slotTime && typeof _fetchConTimeout === 'function') {
+    _fetchConTimeout('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: window._pendingOrderData.slotTime })
+    }, 6000).catch(() => {});
+  }
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
   window._pendingOrderData = null;
   const modal = document.getElementById('sms-verify-modal');
   if (modal) modal.style.display = 'none';
@@ -445,312 +513,106 @@ function smsCancelVerify() {
   if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pedido →'; }
 }
 
-
-// ── ALERTAS FICHAJE BIMBA ──────────────────────────────────
-
-// ── "TRABAJANDO AHORA" — tarjeta resumen en sección Empleados ──
-function _empEstadosFichajeHoy() {
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
-  var ahora = new Date();
-  var ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-
-  return empleados.map(function(emp) {
-    var suyos = fichajesHoy.filter(function(f) { return f.empId === emp.id; })
-      .sort(function(a, b) { return (a.horaReal || a.hora).localeCompare(b.horaReal || b.hora); });
-    var entradas = suyos.filter(function(f) { return f.tipo === 'entrada'; });
-    var salidas = suyos.filter(function(f) { return f.tipo === 'salida'; });
-    var ultimaEntrada = entradas.length ? entradas[entradas.length - 1] : null;
-    var ultimaSalida = salidas.length ? salidas[salidas.length - 1] : null;
-
-    var estado;
-    if (!entradas.length) {
-      estado = 'nada';
-    } else if (salidas.length) {
-      estado = 'salida';
-    } else {
-      var horaContratoSalida = emp.tarOut || emp.manOut || null;
-      if (horaContratoSalida) {
-        var parts = horaContratoSalida.split(':').map(Number);
-        var salidaMin = parts[0] * 60 + parts[1];
-        var diff = ahoraMin - salidaMin;
-        if (diff < -12 * 60) diff += 24 * 60;
-        estado = diff >= 60 ? 'olvido' : 'entrada';
-      } else {
-        estado = 'entrada';
-      }
-    }
-    return { emp: emp, estado: estado, entrada: ultimaEntrada, salida: ultimaSalida };
-  });
+// Si el cliente reservó un turno y luego recargó la página (o cerró la
+// pestaña) antes de terminar el pedido — con SMS a medias, o simplemente
+// se lo pensó mejor — window._pendingOrderData (solo en memoria) se pierde
+// sin más, así que ni smsCancelVerify() ni _finalizarPedido() llegan a
+// liberar la reserva: antes se quedaba "ocupada" hasta que caducaba sola a
+// los 12 minutos (ver SLOT_RESERVA_TTL_SEGUNDOS en guardar-pedido.php), sin
+// avisar a nadie de que en realidad estaba libre. La marca en localStorage
+// que deja submitOrder() al reservar sobrevive a la recarga — en cuanto la
+// web vuelve a abrirse, se detecta y se libera al instante en vez de
+// esperar la caducidad automática.
+function _liberarReservaSlotAbandonada() {
+  let marca;
+  try { marca = JSON.parse(localStorage.getItem('dpf_slot_reservado') || 'null'); } catch (e) { return; }
+  if (!marca || !marca.slotTime) return;
+  try { localStorage.removeItem('dpf_slot_reservado'); } catch (e) {}
+  // Margen igual al TTL del servidor — pasado eso ya se habrá podado sola,
+  // no hace falta ni intentarlo.
+  if (Date.now() - (marca.ts || 0) > 12 * 60 * 1000) return;
+  if (typeof _fetchConTimeout !== 'function') return;
+  _fetchConTimeout('guardar-pedido.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'liberarReservaSlot', slotTime: marca.slotTime })
+  }, 6000).catch(() => {});
 }
-function empRenderAdmin() {
-  var el = document.getElementById('emp-trabajando-ahora');
-  if (!el) return;
-  var estados = _empEstadosFichajeHoy();
-  if (!estados.length) {
-    el.innerHTML = '<div style="color:#8A6A4E">No hay empleados registrados</div>';
-    return;
-  }
-  var labels = {
-    entrada: { icon: '🟢', color: '#166534', texto: function(r) { return 'Trabajando desde las ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—'); } },
-    salida: { icon: '🔵', color: '#0C447C', texto: function(r) { return 'Fichó salida a las ' + (r.salida ? (r.salida.horaReal || r.salida.hora) : '—'); } },
-    olvido: { icon: '⚠️', color: '#9a3412', texto: function(r) { return 'Se olvidó fichar salida (entró ' + (r.entrada ? (r.entrada.horaReal || r.entrada.hora) : '—') + ')'; } },
-    nada: { icon: '❌', color: '#991b1b', texto: function() { return 'Todavía no ha fichado'; } }
-  };
-  el.innerHTML = estados.map(function(r) {
-    var l = labels[r.estado];
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F5E6C8">'
-      + '<span style="font-size:18px">' + l.icon + '</span>'
-      + '<div><div style="font-weight:700;color:#2A1506;font-size:13px">' + r.emp.nombre + '</div>'
-      + '<div style="font-size:12px;color:' + l.color + '">' + l.texto(r) + '</div></div>'
-      + '</div>';
-  }).join('');
-}
-function empRefrescar() {
-  var el = document.getElementById('emp-trabajando-ahora');
-  if (el) el.innerHTML = '<div style="color:#8A6A4E">Cargando...</div>';
-  var p1 = window.fb_loadEmpleados ? window.fb_loadEmpleados().then(function(arr) { if (arr) localStorage.setItem('dpf_empleados', JSON.stringify(arr)); }).catch(function() {}) : Promise.resolve();
-  var p2 = window.fb_loadFichajes ? window.fb_loadFichajes().then(function(arr) { if (arr) localStorage.setItem('dpf_fichajes', JSON.stringify(arr)); }).catch(function() {}) : Promise.resolve();
-  Promise.all([p1, p2]).then(empRenderAdmin);
-}
-function bimbaIrAFichajes() {
-  document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
-  var sec = document.getElementById('admin-bimba-fichajes');
-  if (sec) { sec.style.display = 'block'; sec.classList.add('active'); }
-  var bf = document.getElementById('bimba-footer-btns');
-  if (bf) bf.style.display = 'none';
+document.addEventListener('DOMContentLoaded', function () {
+  setTimeout(_liberarReservaSlotAbandonada, 1500);
+});
 
-  // Siempre pedir datos frescos de Firebase antes de renderizar
-  var lista = document.getElementById('bimba-fichaje-lista');
-  if (lista) lista.innerHTML = '<div style="font-size:13px;color:#8A6A4E;text-align:center;padding:16px">⏳ Cargando fichajes...</div>';
 
-  if (window.fb_loadFichajes) {
-    window.fb_loadFichajes().then(function(arr) {
-      if (arr && arr.length) localStorage.setItem('dpf_fichajes', JSON.stringify(arr));
-      bimbaRenderFichajeLista();
-    }).catch(function() {
-      bimbaRenderFichajeLista(); // Si falla Firebase, usa localStorage como fallback
-    });
-  } else {
-    bimbaRenderFichajeLista();
-  }
-}
-
-function bimbaActualizarContadorAlertas() {
-  var btn = document.getElementById('bimba-btn-alertas-fichaje');
+// ── Botón flotante "subir arriba" ── aparece solo tras un scroll notable
+// (con tantas categorías en la carta, bajar hasta el final y no tener
+// forma rápida de volver arriba era incómodo).
+(function () {
+  var btn = document.getElementById('back-to-top-fab');
   if (!btn) return;
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
-  var n = sinFichar.length;
-  var desc = document.getElementById('bimba-alertas-desc');
-  if (desc) desc.textContent = n > 0 ? n + ' sin fichar todavía' : 'Todo el equipo ha fichado';
-}
-
-function bimbaRenderFichajeLista() {
-  var lista = document.getElementById('bimba-fichaje-lista');
-  if (!lista) return;
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  if (!empleados.length) { lista.innerHTML = '<div style="font-size:13px;color:#8A6A4E">No hay empleados registrados</div>'; return; }
-
-  var today = new Date().toISOString().slice(0, 10);
-  var ahora = new Date();
-  var ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-
-  var html = '';
-  empleados.forEach(function(emp) {
-    var suyos = fichajesHoy.filter(function(f) { return f.empId === emp.id; })
-      .sort(function(a,b) { return (a.horaReal||a.hora).localeCompare(b.horaReal||b.hora); });
-    var entradas = suyos.filter(function(f) { return f.tipo === 'entrada'; });
-    var salidas  = suyos.filter(function(f) { return f.tipo === 'salida'; });
-    var ultimo   = suyos.length ? suyos[suyos.length-1] : null;
-
-    var estado; // 'entrada' | 'salida' | 'olvido' | 'nada'
-
-    if (!entradas.length) {
-      estado = 'nada';
-    } else if (salidas.length) {
-      estado = 'salida';
-    } else {
-      // Tiene entrada pero no salida — ¿lleva más de 1h desde hora de salida del contrato?
-      var horaContratoSalida = emp.tarOut || emp.manOut || null;
-      if (horaContratoSalida) {
-        var parts = horaContratoSalida.split(':').map(Number);
-        var salidaMin = parts[0] * 60 + parts[1];
-        // Manejar turno nocturno (salida al día siguiente)
-        var diff = ahoraMin - salidaMin;
-        if (diff < -12*60) diff += 24*60; // ajuste nocturno
-        estado = diff >= 60 ? 'olvido' : 'entrada';
-      } else {
-        estado = 'entrada';
-      }
-    }
-
-    var estilos = {
-      entrada: { bg:'#f0fdf4', border:'#1D9E75', icon:'🟢', textColor:'#166534', label:'Fichó entrada',     boton:false },
-      salida:  { bg:'#eff6ff', border:'#378ADD', icon:'🔵', textColor:'#0C447C', label:'Fichó salida',      boton:false },
-      olvido:  { bg:'#fff7ed', border:'#f97316', icon:'⚠️', textColor:'#9a3412', label:'Se olvidó fichar salida', boton:true },
-      nada:    { bg:'#fff1f2', border:'#E24B4A', icon:'❌', textColor:'#991b1b', label:'No ha fichado',     boton:true  }
-    };
-    var s = estilos[estado];
-
-    html += '<div style="background:' + s.bg + ';border-left:4px solid ' + s.border + ';border-radius:0 10px 10px 0;padding:10px 14px;display:flex;align-items:center;justify-content:space-between">' +
-      '<div style="display:flex;align-items:center;gap:12px">' +
-      '<span style="font-size:22px">' + s.icon + '</span>' +
-      '<div><div style="font-size:14px;font-weight:600;color:' + s.textColor + '">' + emp.nombre + '</div>' +
-      '<div style="font-size:12px;color:' + s.textColor + ';opacity:0.75">' + s.label + '</div></div></div>';
-    if (s.boton) {
-      html += '<button onclick="bimbaAvisarEmpleado(\'' + emp.id + '\',\'' + emp.nombre + '\',\'' + (emp.tel || '') + '\',\'' + estado + '\')" style="padding:5px 10px;background:transparent;color:' + s.textColor + ';border:1px solid ' + s.border + ';border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:DM Sans,sans-serif">📱 WhatsApp</button>';
-    }
-    html += '</div>';
-  });
-  lista.innerHTML = html;
-  bimbaActualizarContadorAlertas();
-}
-
-function bimbaAvisarEmpleado(id, nombre, tel, estado) {
-  var nombre1 = nombre.split(' ')[0];
-  if (tel) {
-    var telLimpio = tel.replace(/\D/g, '');
-    if (telLimpio.length === 9) telLimpio = '34' + telLimpio;
-    var msg = estado === 'olvido'
-      ? encodeURIComponent('Hola ' + nombre1 + ', no te olvides de fichar!')
-      : encodeURIComponent('Hola ' + nombre1 + ', recuerda fichar!');
-    window.open('https://wa.me/' + telLimpio + '?text=' + msg, '_blank');
-  } else {
-    showToast('bimba-fichaje-toast', '⚠️ ' + nombre1 + ' no tiene teléfono guardado');
+  var ticking = false;
+  function actualizar() {
+    if (window.scrollY > 600) btn.classList.add('visible');
+    else btn.classList.remove('visible');
+    ticking = false;
   }
-}
-
-function bimbaAvisarTodos() {
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
-  });
-  if (!sinFichar.length) { showToast('bimba-fichaje-toast', '✅ Todos han fichado'); return; }
-  bimbaAlertarTablet();
-  showToast('bimba-fichaje-toast', '🔔 Alerta enviada — ' + sinFichar.length + ' sin fichar');
-}
-
-function bimbaProbarAlertaTablet() {
-  try {
-    var ctx = new (window.AudioContext || window.webkitAudioContext)();
-    [0, 150, 300].forEach(function(delay) {
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = 'sine';
-      gain.gain.setValueAtTime(0.4, ctx.currentTime + delay/1000);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay/1000 + 0.3);
-      osc.start(ctx.currentTime + delay/1000);
-      osc.stop(ctx.currentTime + delay/1000 + 0.3);
-    });
-  } catch(e) {}
-}
-
-function bimbaAlertarTablet() {
-  // Guardar alerta en Firebase para que la tablet la detecte
-  bimbaProbarAlertaTablet();
-  if (firebase && firebase.database) {
-    firebase.database().ref('config/tabletAlert').set({ ts: Date.now(), tipo: 'fichaje' }).catch(function() {});
-  }
-}
-
-function bimbaGuardarFichajeMins() {
-  var mins = document.getElementById('bimba-fichaje-mins');
-  if (mins) {
-    localStorage.setItem('dpf_fichaje_alert_mins', mins.value);
-    showToast('bimba-fichaje-toast', '✅ Guardado: avisar a los ' + mins.value + ' min');
-  }
-}
-
-
-// ── LISTENER ALERTA TABLET ────────────────────────────────
-(function initTabletAlertListener() {
-  if (!window.firebase || !firebase.database) return;
-  var lastTs = 0;
-  firebase.database().ref('config/tabletAlert').on('value', function(sn) {
-    if (!sn.exists()) return;
-    var data = sn.val();
-    var ts = data.ts || 0;
-    if (ts <= lastTs) return;
-    lastTs = ts;
-    // Solo mostrar si llevamos más de 3 segundos en la página (evitar al cargar)
-    if (performance.now() < 3000) return;
-    // Solo mostrar si el admin está logueado
-    if (!window._adminLoggedIn) return;
-    // Solo mostrar si el admin está abierto pero NO en panel bimba
-    var _ao = document.getElementById('admin-overlay');
-    if (!_ao || !_ao.classList.contains('open')) return;
-    var _sc = document.getElementById('admin-stock-config');
-    if (_sc && _sc.classList.contains('active')) return;
-    _mostrarAlertaTablet(data);
-  });
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(actualizar);
+  }, { passive: true });
 })();
 
-function _mostrarAlertaTablet(data) {
-  // Sonido
-  try {
-    var ctx = new (window.AudioContext || window.webkitAudioContext)();
-    [0, 200, 400, 600].forEach(function(delay) {
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = 'sine';
-      gain.gain.setValueAtTime(0.5, ctx.currentTime + delay/1000);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay/1000 + 0.4);
-      osc.start(ctx.currentTime + delay/1000);
-      osc.stop(ctx.currentTime + delay/1000 + 0.4);
-    });
-  } catch(e) {}
-
-  // Construir lista de no fichados
-  var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
-  var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
-  if (!Array.isArray(fichajes)) fichajes = [];
-  var fichajesHoy = fichajes.filter(function(f) { return f.fecha === today; });
-  var sinFichar = empleados.filter(function(e) {
-    return !fichajesHoy.some(function(f) { return f.empId === e.id && f.tipo === 'entrada'; });
+// ── Ocultar el carrito/"repetir pedido" flotante al llegar al pie ──
+// Los dos son position:fixed pegados abajo del todo — en una web tan
+// corta como esta, al llegar al final de la página (FAQ, horario,
+// dirección...) no queda sitio debajo donde "flotar" sin tapar contenido
+// real, y el bloque fijo se quedaba encima del pie tapando lo último de
+// la página. Se desvanecen (opacity, no display — así no interfieren con
+// la lógica que ya decide cuál de los dos mostrar) en cuanto el pie entra
+// en la pantalla, y vuelven en cuanto se sube de nuevo.
+(function () {
+  var footer = document.querySelector('footer');
+  var cartFab = document.getElementById('cart-fab');
+  var repeatFab = document.getElementById('repeat-order-fab');
+  if (!footer || !window.IntersectionObserver || (!cartFab && !repeatFab)) return;
+  var obs = new IntersectionObserver(function (entries) {
+    var cerca = entries[0].isIntersecting;
+    if (cartFab) cartFab.classList.toggle('near-footer', cerca);
+    if (repeatFab) repeatFab.classList.toggle('near-footer', cerca);
   });
+  obs.observe(footer);
+})();
 
-  var listaHtml = sinFichar.length
-    ? sinFichar.map(function(e) {
-        return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff1f2;border-radius:10px;border:1.5px solid #fecdd3">' +
-          '<span style="font-size:16px">❌</span>' +
-          '<span style="font-size:14px;font-weight:600;color:#991b1b">' + e.nombre + '</span></div>';
-      }).join('')
-    : '<div style="font-size:13px;color:#8A6A4E">Sin datos de empleados en este dispositivo</div>';
+// ── Recordar nombre y teléfono entre visitas ──────────────────────
+// Se guardan (antifraude.js, justo tras confirmar un pedido) sin caducar,
+// y se rellenan solos aquí en la próxima visita — el cliente puede
+// editarlos igual si ha cambiado de número o quiere pedir para otra
+// persona. Solo se prellena el campo de escritorio: el del cajón móvil
+// lo recoge él solo la primera vez que se pinta (ver _syncCartDrawer en
+// carrito-checkout.js, que cae al valor de escritorio si el suyo propio
+// está vacío).
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    const nombreGuardado = localStorage.getItem('dpf_cliente_nombre');
+    const telGuardado = localStorage.getItem('dpf_cliente_telefono');
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    if (nombreGuardado && nameEl && !nameEl.value) nameEl.value = nombreGuardado;
+    if (telGuardado && phoneEl && !phoneEl.value) {
+      phoneEl.value = telGuardado;
+      if (typeof formatPhone === 'function') formatPhone(phoneEl);
+    }
+  } catch (e) {}
+});
 
-  // Crear overlay
-  var overlay = document.createElement('div');
-  overlay.id = 'tablet-alert-overlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center';
-  overlay.innerHTML =
-    '<div style="background:#fff;border-radius:16px;padding:2rem 2.5rem;text-align:center;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.3)">' +
-    '<div style="width:56px;height:56px;background:#fff1f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:28px">🔔</div>' +
-    '<div style="font-size:20px;font-weight:700;color:#3D1F0D;margin-bottom:8px">Alerta de fichaje</div>' +
-    '<div style="font-size:14px;color:#8A6A4E;margin-bottom:1.5rem">Hay empleados que no han fichado todavía</div>' +
-    '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:1.5rem">' + listaHtml + '</div>' +
-    '<button onclick="var o=document.getElementById(&quot;tablet-alert-overlay&quot;);if(o)o.remove()" style="width:100%;padding:12px;background:#3D1F0D;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Entendido</button>' +
-    '</div>';
-
-  document.body.appendChild(overlay);
+// ── Service Worker (PWA) ──────────────────────────────────────────
+// Habilita "Añadir a pantalla de inicio" y sirve css/js/img desde caché
+// para que cargue más rápido con conexión floja. Ver sw.js para el
+// detalle de qué se cachea (nunca HTML, PHP ni Firebase).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('[SW] No se pudo registrar:', err);
+    });
+  });
 }

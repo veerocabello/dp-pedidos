@@ -1,96 +1,17 @@
 // ── HISTORIAL MEJORADO ──
-// ── BANNER DEL DÍA ───────────────────────────────────────────────────────────
-const BANNER_KEY = 'dpf_banner_dia';
-function getBannerDia() {
-  try {
-    return JSON.parse(localStorage.getItem(BANNER_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-const BANNER_TIPOS = {
-  promo: {
-    bg: '#FFF8EE',
-    border: '#3D1F0D',
-    iconBg: '#3D1F0D',
-    labelColor: '#3D1F0D',
-    titleColor: '#3D1F0D',
-    subColor: '#8A6A4E',
-    label: 'Oferta del día',
-    emoji: '🎉'
-  },
-  aviso: {
-    bg: '#fff3cd',
-    border: '#3D1F0D',
-    iconBg: '#3D1F0D',
-    labelColor: '#b36a00',
-    titleColor: '#5a3e1b',
-    subColor: '#8a6530',
-    label: 'Aviso importante',
-    emoji: '⚠️'
-  },
-  urgente: {
-    bg: '#fdf0ee',
-    border: '#c0392b',
-    iconBg: '#c0392b',
-    labelColor: '#c0392b',
-    titleColor: '#7a1a0e',
-    subColor: '#a03020',
-    label: 'Urgente',
-    emoji: '🔴'
-  },
-  info: {
-    bg: '#e8f4fd',
-    border: '#2980b9',
-    iconBg: '#2980b9',
-    labelColor: '#2980b9',
-    titleColor: '#1a3a52',
-    subColor: '#2c5f7a',
-    label: 'Novedad',
-    emoji: '📢'
-  }
-};
-function _applyBannerDia(data) {
-  const el = document.getElementById('banner-dia');
-  const inner = document.getElementById('banner-dia-inner');
-  const iconEl = document.getElementById('banner-dia-icon');
-  const labelEl = document.getElementById('banner-dia-label');
-  const textEl = document.getElementById('banner-dia-text');
-  const subEl = document.getElementById('banner-dia-sub');
-  if (!el) return;
-  if (data && data.active && data.text) {
-    const tipo = BANNER_TIPOS[data.tipo || 'promo'];
-    el.style.display = 'block';
-    inner.style.background = tipo.bg;
-    inner.style.border = '2px solid ' + tipo.border;
-    iconEl.style.background = tipo.iconBg;
-    iconEl.textContent = tipo.emoji;
-    labelEl.textContent = tipo.label;
-    labelEl.style.color = tipo.labelColor;
-    textEl.textContent = data.text;
-    textEl.style.color = tipo.titleColor;
-    if (subEl) {
-      subEl.textContent = data.sub || '';
-      subEl.style.color = tipo.subColor;
-      subEl.style.display = data.sub ? 'block' : 'none';
-    }
-  } else {
-    el.style.display = 'none';
-  }
-}
-function _updateBannerToggleBtn(active) {
-  const btn = document.getElementById('banner-toggle-btn');
-  if (!btn) return;
-  btn.textContent = active ? '🟢 Banner activo' : '🔴 Banner inactivo';
-  btn.style.background = active ? '#27855a' : '#c0392b';
-  btn.style.color = '#fff';
-  btn.style.border = 'none';
-}
+// BANNER_KEY, BANNER_TIPOS, getBannerDia, _applyBannerDia,
+// _updateBannerToggleBtn y loadBannerDia viven en nucleo-compartido.js
+// (bundle de cliente) — el banner se pinta para cualquier visitante, no
+// solo para admin.
 async function toggleBannerDia() {
   const data = getBannerDia();
   data.active = !data.active;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(() => {});
+  // Antes el .catch() se quedaba vacío — si esta escritura fallaba, este
+  // dispositivo seguía mostrando el banner como guardado/activo, pero
+  // ningún otro dispositivo ni el sitio de cara al cliente (que lee de
+  // Firebase) lo recibía nunca, sin ningún aviso visible.
+  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _updateBannerToggleBtn(data.active);
   _applyBannerDia(data);
 }
@@ -104,106 +25,121 @@ async function saveBannerDia() {
   data.sub = sub;
   data.tipo = tipo;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(() => {});
+  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _applyBannerDia(data);
   showToast('banner-toast');
 }
-function loadBannerDia() {
-  // Mostrar estado local inmediatamente mientras carga Firebase
-  const localBanner = getBannerDia();
-  _updateBannerToggleBtn(localBanner.active);
-  if (window.fb_listenBannerDia) {
-    window.fb_listenBannerDia(data => {
-      if (data) localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-      const d = data || getBannerDia();
-      _applyBannerDia(d);
-      _updateBannerToggleBtn(d.active);
-      const input = document.getElementById('banner-dia-input');
-      const subIn = document.getElementById('banner-dia-sub-input');
-      const tipoIn = document.getElementById('banner-dia-tipo');
-      if (input && d.text) input.value = d.text;
-      if (subIn && d.sub) subIn.value = d.sub;
-      if (tipoIn && d.tipo) tipoIn.value = d.tipo;
-    });
-    return;
-  }
-  // Fallback: leer directamente de Firebase si el listener no está listo aún
-  if (window.firebase && window.firebase.database) {
-    try {
-      window.firebase.database().ref('config/bannerDia').once('value').then(sn => {
-        let data = null;
-        if (sn.exists()) {
-          try {
-            data = typeof sn.val() === 'string' ? JSON.parse(sn.val()) : sn.val();
-          } catch {}
-        }
-        if (data) localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-        _applyBannerDia(data || getBannerDia());
-      }).catch(() => _applyBannerDia(getBannerDia()));
-    } catch (e) {
-      _applyBannerDia(getBannerDia());
-    }
-    return;
-  }
-  // Último fallback: localStorage
-  _applyBannerDia(getBannerDia());
-  _updateBannerToggleBtn(getBannerDia().active);
-}
-
 // ── EXPORTAR PDF ─────────────────────────────────────────────────────────────
 
 function _pdfStyles() {
-  return "\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: Arial, sans-serif; color: #2A1506; background: #fff; }\n    .header { background: #3D1F0D; color: #FFF8EE; padding: 20px 28px; }\n    .header h1 { font-size: 22px; font-weight: 900; margin-bottom: 2px; }\n    .header p  { font-size: 12px; opacity: .7; }\n    .content { padding: 24px 28px; }\n    .order-card { border: 1.5px solid #F5E6C8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }\n    .order-num  { font-size: 18px; font-weight: 900; color: #3D1F0D; }\n    .order-meta { font-size: 12px; color: #8A6A4E; margin: 4px 0 10px; }\n    .order-items { font-size: 13px; color: #2A1506; border-top: 1px solid #F5E6C8; padding-top: 8px; }\n    .order-item { display: flex; justify-content: space-between; padding: 3px 0; }\n    .order-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #3D1F0D; border-top: 1.5px solid #F5E6C8; margin-top: 8px; padding-top: 8px; }\n    .summary { background: #FFF8EE; border: 1.5px solid #3D1F0D; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap; }\n    .summary-item { text-align: center; }\n    .summary-item .val { font-size: 24px; font-weight: 900; color: #3D1F0D; }\n    .summary-item .lbl { font-size: 11px; color: #8A6A4E; text-transform: uppercase; letter-spacing: .05em; }\n    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n  ";
+  return "\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body { font-family: Arial, sans-serif; color: #2A1506; background: #fff; }\n    .header { background: #3D1F0D; color: #FFF8EE; padding: 20px 28px; }\n    .header h1 { font-size: 22px; font-weight: 900; margin-bottom: 2px; }\n    .header p  { font-size: 12px; opacity: .7; }\n    .content { padding: 24px 28px; }\n    .order-card { border: 1.5px solid #F5E6C8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }\n    .order-num  { font-size: 18px; font-weight: 900; color: #3D1F0D; }\n    .order-meta { font-size: 12px; color: #8A6A4E; margin: 4px 0 10px; }\n    .order-items { font-size: 13px; color: #2A1506; border-top: 1px solid #F5E6C8; padding-top: 8px; }\n    .order-item { display: flex; justify-content: space-between; padding: 3px 0; }\n    .order-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #3D1F0D; border-top: 1.5px solid #F5E6C8; margin-top: 8px; padding-top: 8px; }\n    .summary { background: #FFF8EE; border: 1.5px solid #3D1F0D; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 24px; flex-wrap: wrap; }\n    .summary-item { text-align: center; }\n    .summary-item .val { font-size: 24px; font-weight: 900; color: #3D1F0D; }\n    .summary-item .lbl { font-size: 11px; color: #8A6A4E; text-transform: uppercase; letter-spacing: .05em; }\n    .ticket-box { border: 2px solid #3D1F0D; border-radius: 14px; padding: 24px; margin: 24px; }\n    .ticket-title { font-size: 13px; color: #8A6A4E; text-align:center; margin-bottom: 4px; }\n    .ticket-num { font-size: 36px; font-weight: 900; color: #3D1F0D; text-align:center; margin-bottom: 16px; }\n    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n  ";
 }
-function exportTicketPDF(num, name, time, total, slot, items, phone, notes) {
+// Convierte un fragmento de HTML en un PDF de verdad que se descarga solo
+// — antes, tanto exportTicketPDF() como exportHistorialPDF() abrian una
+// ventana nueva y llamaban a window.print(), que abre el dialogo de
+// impresion del navegador (habia que elegir "Guardar como PDF" a mano, y a
+// veces se manda directo a una impresora fisica en vez de guardarlo).
+// html2pdf.js (cargado por CDN en index.html/fichar-publico.html) genera
+// el archivo .pdf directamente, sin pasar por ningun dialogo de impresion.
+function _descargarHtmlComoPDF(bodyHtml, filename, btn) {
+  if (typeof html2pdf === 'undefined') {
+    alert('No se pudo generar el PDF (no cargó la librería). Comprueba tu conexión y recarga la página.');
+    return;
+  }
+  // Con el historial completo la captura puede tardar varios segundos —
+  // antes ningún botón se desactivaba ni avisaba "generando…" mientras
+  // tanto, así que un doble clic disparaba dos generaciones a la vez,
+  // insertando el contenido duplicado en la página (dos contenedores
+  // clonados a la vez, uno por cada llamada).
+  if (btn) {
+    if (btn.disabled) return;
+    btn.dataset.pdfTextoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generando…';
+  }
+  const restaurarBtn = () => {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.pdfTextoOriginal;
+      delete btn.dataset.pdfTextoOriginal;
+    }
+  };
+  const styleEl = document.createElement('style');
+  styleEl.textContent = _pdfStyles();
+  document.head.appendChild(styleEl);
+  // OJO — causa real del PDF en blanco, confirmada probándolo en un
+  // navegador real: si el contenedor lleva position:fixed o
+  // position:absolute, html2canvas (la parte de html2pdf.js que "fotografía"
+  // el HTML) le calcula 0px de alto al clonar el documento para capturarlo,
+  // aunque el navegador normal sí lo mida bien — y un lienzo de 0px de alto
+  // es un PDF en blanco. Quitando el position por completo (queda como un
+  // bloque normal, al final de la página) html2canvas lo mide y lo captura
+  // bien, comprobado con varias pruebas. Como ya no se puede tapar con
+  // z-index/posición, se añade y se quita tan rápido que en la práctica no
+  // se llega a ver.
+  const container = document.createElement('div');
+  container.style.cssText = 'background:#fff;width:210mm';
+  container.innerHTML = bodyHtml;
+  document.body.appendChild(container);
+  const limpiar = () => {
+    container.remove();
+    styleEl.remove();
+  };
+  // Un frame de margen para que el navegador termine de pintar el
+  // contenedor recién insertado antes de que html2canvas lo capture.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    html2pdf().from(container).set({
+      margin: 0,
+      filename,
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).save().then(() => { limpiar(); restaurarBtn(); }).catch((err) => {
+      limpiar();
+      restaurarBtn();
+      alert('⚠️ No se pudo generar el PDF: ' + (err && err.message || 'error desconocido'));
+    });
+  }));
+}
+function exportTicketPDF(num, name, time, total, slot, items, phone, notes, btn) {
   const fecha = new Date().toLocaleDateString('es-ES', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric'
   });
-  const itemsHtml = (items || []).map(it => "<div class=\"order-item\"><span>".concat(it.qty, "x ").concat(escapeHtml(it.name || ''), "</span><span>").concat((it.subtotal || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Ticket ".concat(escapeHtml(num || ''), "</title>\n  <style>").concat(_pdfStyles(), "\n    body { max-width: 400px; margin: 0 auto; }\n    .ticket-box { border: 2px solid #3D1F0D; border-radius: 14px; padding: 24px; margin: 24px; }\n    .ticket-title { font-size: 13px; color: #8A6A4E; text-align:center; margin-bottom: 4px; }\n    .ticket-num { font-size: 36px; font-weight: 900; color: #3D1F0D; text-align:center; margin-bottom: 16px; }\n  </style></head><body>\n  <div class=\"header\" style=\"text-align:center\">\n    <h1>\uD83E\uDD54 Dulce Patata Food</h1>\n    <p>").concat(fecha, "</p>\n  </div>\n  <div class=\"ticket-box\">\n    <div class=\"ticket-title\">N\xFAmero de pedido</div>\n    <div class=\"ticket-num\">").concat(escapeHtml(num || ''), "</div>\n    <div class=\"order-meta\" style=\"text-align:center;margin-bottom:14px\">\n      \uD83D\uDC64 ").concat(escapeHtml(name || '—'), "\n      ").concat(phone ? "&nbsp;\xB7&nbsp; \uD83D\uDCDE ".concat(escapeHtml(phone)) : '', "\n      ").concat(time ? "&nbsp;\xB7&nbsp; \uD83D\uDD50 ".concat(escapeHtml(time)) : '', "\n      ").concat(slot ? "<br>\uD83D\uDCE6 Recogida de patata a las ".concat(escapeHtml(slot), "h") : '', "\n    </div>\n    ").concat(itemsHtml ? "<div class=\"order-items\">".concat(itemsHtml, "<div class=\"order-total\"><span>Total a pagar</span><span>").concat(parseFloat(total).toFixed(2).replace('.', ','), " \u20AC</span></div></div>") : '', "\n    ").concat(notes ? "<div style=\"font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic\">\uD83D\uDCDD ".concat(escapeHtml(notes), "</div>") : '', "\n    <div style=\"text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E\">Paga en caja cuando recojas \uD83D\uDC9B</div>\n  </div>\n  </body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
-}
-function switchHistorialTab(tab) {
-  const diasBtn = document.getElementById('htab-dias');
-  const clientesBtn = document.getElementById('htab-clientes');
-  const diasView = document.getElementById('historial-tab-dias');
-  const clientesView = document.getElementById('historial-tab-clientes');
-  if (!diasBtn) return;
-  if (tab === 'dias') {
-    diasBtn.style.borderBottomColor = '#3D1F0D';
-    diasBtn.style.color = '#3D1F0D';
-    diasBtn.style.fontWeight = '700';
-    clientesBtn.style.borderBottomColor = 'transparent';
-    clientesBtn.style.color = '#8A6A4E';
-    clientesBtn.style.fontWeight = '600';
-    diasView.style.display = 'block';
-    clientesView.style.display = 'none';
-  } else {
-    clientesBtn.style.borderBottomColor = '#3D1F0D';
-    clientesBtn.style.color = '#3D1F0D';
-    clientesBtn.style.fontWeight = '700';
-    diasBtn.style.borderBottomColor = 'transparent';
-    diasBtn.style.color = '#8A6A4E';
-    diasBtn.style.fontWeight = '600';
-    diasView.style.display = 'none';
-    clientesView.style.display = 'block';
-    renderClientes();
-  }
+  const itemsHtml = (items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+  const body = `
+    <div class="header" style="text-align:center">
+      <h1>🥔 Dulce Patata Food</h1>
+      <p>${fecha}</p>
+    </div>
+    <div class="ticket-box">
+      <div class="ticket-title">Número de pedido</div>
+      <div class="ticket-num">${escapeHtml(num || '')}</div>
+      <div class="order-meta" style="text-align:center;margin-bottom:14px">
+        👤 ${escapeHtml(name || '—')}
+        ${phone ? `&nbsp;·&nbsp; 📞 ${escapeHtml(phone)}` : ''}
+        ${time ? `&nbsp;·&nbsp; 🕐 ${escapeHtml(time)}` : ''}
+        ${slot ? `<br>📦 Recogida de patata a las ${escapeHtml(slot)}h` : ''}
+      </div>
+      ${itemsHtml ? `<div class="order-items">${itemsHtml}<div class="order-total"><span>Total a pagar</span><span>${parseFloat(total).toFixed(2).replace('.', ',')} €</span></div></div>` : ''}
+      ${notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:10px;font-style:italic">📝 ${escapeHtml(notes)}</div>` : ''}
+      <div style="text-align:center;margin-top:16px;font-size:12px;color:#8A6A4E">Paga en caja cuando recojas 💛</div>
+    </div>`;
+  _descargarHtmlComoPDF(body, 'ticket-' + (num || 'pedido') + '.pdf', btn);
 }
 function _buildClientesMap() {
   const hist = getHistorial();
   const map = {}; // phone → { phone, names, count, total, lastDate, lastOrder, orders[] }
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
-      const phone = (o.phone || '').replace(/[\s\-().+]/g, '') || '—';
+      // Mismo criterio de normalización que la comprobación de lista negra
+      // más abajo (solo dígitos) — antes este agrupado quitaba solo
+      // espacios/guiones/paréntesis/puntos/+, así que un teléfono con algún
+      // otro carácter fuera de ese conjunto podía terminar en una clave
+      // distinta aquí que en la lista negra, partiendo en silencio a un
+      // mismo cliente real en varias filas.
+      const phone = (o.phone || '').replace(/\D/g, '') || '—';
       const name = o.name || '—';
       if (!map[phone]) map[phone] = {
         phone,
@@ -228,6 +164,42 @@ function _buildClientesMap() {
     });
   });
   return Object.values(map).sort((a, b) => b.count - a.count);
+}
+// Cargar clientes ocultos desde Firebase al abrir la pestaña Clientes —
+// mismo patrón que loadAntiSpamFromFirebase() con la blacklist, para que
+// ocultar un cliente en un dispositivo (p.ej. el PC) también se refleje en
+// los demás (p.ej. la tablet), en vez de quedarse solo en su localStorage.
+async function loadClientesOcultosFromFirebase() {
+  if (window.fb_loadClientesOcultos) {
+    try {
+      const oc = await window.fb_loadClientesOcultos();
+      if (oc) saveClientesOcultosLocal(oc);
+    } catch {}
+  }
+  renderClientes();
+}
+let _clientesMostrarOcultos = false;
+function toggleMostrarOcultosClientes() {
+  _clientesMostrarOcultos = !_clientesMostrarOcultos;
+  renderClientes();
+}
+// Ocultar un cliente de la lista "Clientes" — NO borra ningún pedido ni
+// dato del historial, solo deja de aparecer aquí. Reversible con
+// restaurarCliente().
+async function ocultarCliente(phone) {
+  if (!phone) return;
+  if (!confirm('¿Ocultar este cliente de la lista de Clientes?\n\nNo se borra ningún pedido — solo deja de aparecer aquí. Puedes recuperarlo luego con el botón "🗑️ Ocultos".')) return;
+  const list = getClientesOcultos();
+  if (!list.includes(phone)) list.push(phone);
+  saveClientesOcultosLocal(list);
+  if (window.fb_saveClientesOcultos) await window.fb_saveClientesOcultos(list).catch(() => {});
+  renderClientes();
+}
+async function restaurarCliente(phone) {
+  const list = getClientesOcultos().filter(p => p !== phone);
+  saveClientesOcultosLocal(list);
+  if (window.fb_saveClientesOcultos) await window.fb_saveClientesOcultos(list).catch(() => {});
+  renderClientes();
 }
 var _clientesSort = 'az';
 function setClientesSort(modo) {
@@ -254,9 +226,33 @@ function _nombreCanonico(c) {
 }
 function renderClientes() {
   var _document$getElementB29;
-  const clientes = _buildClientesMap();
+  const todos = _buildClientesMap();
+  const ocultos = getClientesOcultos();
+  const clientes = _clientesMostrarOcultos
+    ? todos.filter(c => ocultos.includes(c.phone))
+    : todos.filter(c => !ocultos.includes(c.phone));
+
+  const toggleBtn = document.getElementById('cocultos-toggle-btn');
+  if (toggleBtn) {
+    if (_clientesMostrarOcultos) {
+      toggleBtn.textContent = '👁️ Ver clientes (' + (todos.length - ocultos.length) + ')';
+      toggleBtn.style.background = 'var(--brown)';
+      toggleBtn.style.color = 'var(--cream)';
+      toggleBtn.style.borderColor = 'var(--brown)';
+    } else {
+      toggleBtn.textContent = '🗑️ Ocultos (' + ocultos.length + ')';
+      toggleBtn.style.background = 'var(--white)';
+      toggleBtn.style.color = 'var(--muted)';
+      toggleBtn.style.borderColor = 'var(--warm)';
+    }
+  }
+
   const q = (((_document$getElementB29 = document.getElementById('clientes-search')) === null || _document$getElementB29 === void 0 ? void 0 : _document$getElementB29.value) || '').trim().toLowerCase();
-  let filtered = q ? clientes.filter(c => c.phone.includes(q) || [...c.names].some(n => n.toLowerCase().includes(q))) : clientes.slice();
+  let filtered = q ? clientes.filter(c =>
+    c.phone.includes(q)
+    || [...c.names].some(n => n.toLowerCase().includes(q))
+    || c.orders.some(o => (o.num || '').toLowerCase().includes(q))
+  ) : clientes.slice();
 
   if (_clientesSort === 'gasto') {
     filtered.sort((a, b) => b.total - a.total);
@@ -295,6 +291,14 @@ function renderClientes() {
     return;
   }
 
+  // Se reinicia en cada render (no solo la primera vez) — antes se iba
+  // guardando cada pedido visto en este objeto global sin limpiarlo nunca,
+  // así que en una sesión larga de mostrador (muchas búsquedas, cambios de
+  // orden) iba acumulando entradas indefinidamente. Solo hace falta que
+  // contenga los pedidos de LA lista que se acaba de pintar — cualquier
+  // fila anterior ya no tiene su elemento en el DOM, así que tampoco puede
+  // llegar a usar una entrada vieja.
+  window._dpfPedidosMap = {};
   let _lastLetter = null;
   listEl.innerHTML = filtered.map(c => {
     const canonName = _nombreCanonico(c);
@@ -329,12 +333,13 @@ function renderClientes() {
     const waBtn = phoneClean
       ? '<a href="https://wa.me/34' + phoneClean + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;text-decoration:none;font-family:\'DM Sans\',sans-serif">\uD83D\uDCAC WhatsApp</a>'
       : '';
-    const actionBtns = (callBtn || waBtn)
-      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px" onclick="event.stopPropagation()">' + callBtn + waBtn + '</div>'
-      : '';
+    const phoneAttr = c.phone.replace(/'/g, "\\'");
+    const hideBtn = _clientesMostrarOcultos
+      ? '<button onclick="event.stopPropagation();restaurarCliente(\'' + phoneAttr + '\')" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩️ Restaurar</button>'
+      : '<button onclick="event.stopPropagation();ocultarCliente(\'' + phoneAttr + '\')" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #e74c3c;background:#fdf0ee;color:#c0392b;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Ocultar</button>';
+    const actionBtns = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px" onclick="event.stopPropagation()">' + callBtn + waBtn + hideBtn + '</div>';
     const phoneId = phoneClean || c.phone.replace(/\W/g, '');
 
-    if (!window._dpfPedidosMap) window._dpfPedidosMap = {};
     const ordersHtml = c.orders.slice().reverse().slice(0, 20).map((o) => {
       const mapKey = 'pm_' + phoneId + '_' + (o.num || '').replace(/\W/g, '');
       window._dpfPedidosMap[mapKey] = o;
@@ -456,7 +461,10 @@ function exportClientesCSV() {
   clientes.forEach(c => {
     rows.push([c.phone, [...c.names].join(' / '), c.count, c.total.toFixed(2).replace('.', ','), c.lastDate]);
   });
-  const csv = rows.map(r => r.map(v => "\"".concat(v, "\"")).join(',')).join('\n');
+  // _csvEscape (historial-export.js) dobla las comillas internas — sin
+  // esto, un nombre de cliente con una " cortaba la fila antes de tiempo y
+  // desplazaba las columnas siguientes al abrir el CSV en Excel/Sheets.
+  const csv = rows.map(r => r.map(v => "\"".concat(_csvEscape(v), "\"")).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], {
     type: 'text/csv;charset=utf-8;'
   });
@@ -467,8 +475,15 @@ function exportClientesCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
-function loadHistorial() {
-  // Cargar historial completo desde Firebase (fuente de verdad entre dispositivos)
+function loadHistorial(despues) {
+  // Cargar historial completo desde Firebase (fuente de verdad entre
+  // dispositivos) — sin esto, un dispositivo que nunca lo haya sincronizado
+  // antes (p.ej. la tablet de cocina, si solo se usó para pedidos en vivo)
+  // solo tiene lo que haya en su propio localStorage, que puede estar vacío
+  // aunque en otro dispositivo (el PC donde sí se ha abierto esta vista)
+  // haya historial de sobra — tanto la vista "Por días" como la lista de
+  // Clientes dependen de esto, por eso admite un callback opcional para
+  // repintar lo que corresponda en cada caso.
   if (window.fb_loadHistorial) {
     window.fb_loadHistorial(30).then(fbHist => {
       if (fbHist && fbHist.length > 0) {
@@ -476,12 +491,14 @@ function loadHistorial() {
         fbHist.forEach(d => saveToHistorial(d));
       }
       _renderHistorial();
-    }).catch(() => _renderHistorial());
+      if (despues) despues();
+    }).catch(() => { _renderHistorial(); if (despues) despues(); });
     // Mostrar localStorage mientras llega Firebase
-    if (getHistorial().length > 0) _renderHistorial();
+    if (getHistorial().length > 0) { _renderHistorial(); if (despues) despues(); }
     return;
   }
   _renderHistorial();
+  if (despues) despues();
 }
 function _renderHistorial() {
   const hist = getHistorial();
@@ -521,10 +538,10 @@ function _renderHistorial() {
       day: 'numeric',
       month: 'short'
     });
-    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "')\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n    </div>");
+    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "',this)\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n      <button onclick=\"imprimirResumenHistorialDiaTermico('").concat(d.date, "')\" style=\"background:var(--brown);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDA8\uFE0F Imprimir</button>\n    </div>");
   }).join('');
 }
-function exportDayPDFFromHistorial(date) {
+function exportDayPDFFromHistorial(date, btn) {
   const hist = getHistorial();
   const day = hist.find(d => d.date === date);
   if (!day || !day.orders || !day.orders.length) {
@@ -537,48 +554,37 @@ function exportDayPDFFromHistorial(date) {
     month: 'long',
     day: 'numeric'
   });
-  _exportDayDataPDF(day.orders, day.total, fecha, date);
+  _exportDayDataPDF(day.orders, day.total, fecha, date, btn);
 }
-async function exportDayPDF() {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats = null;
-  if (window.fb_getStats) {
-    try {
-      stats = await window.fb_getStats(todayKey);
-    } catch {}
-  }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {}
-  }
-  if (!stats || !stats.orders || !stats.orders.length) {
-    alert('No hay pedidos hoy para exportar');
-    return;
-  }
-  const fecha = new Date().toLocaleDateString('es-ES', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-  _exportDayDataPDF(stats.orders, stats.total, fecha, todayKey);
-}
-function _exportDayDataPDF(orders, total, fecha, dateKey) {
+function _exportDayDataPDF(orders, total, fecha, dateKey, btn) {
   const t = total || orders.reduce((a, o) => a + (o.total || 0), 0);
   const ordersHtml = orders.map(o => {
-    const itemsHtml = (o.items || []).map(it => "<div class=\"order-item\"><span>".concat(it.qty, "x ").concat(escapeHtml(it.name || ''), "</span><span>").concat((it.subtotal || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-    return "<div class=\"order-card\">\n      <div style=\"display:flex;justify-content:space-between;align-items:flex-start\">\n        <div>\n          <div class=\"order-num\">".concat(escapeHtml(o.num || ''), "</div>\n          <div class=\"order-meta\">\uD83D\uDC64 ").concat(escapeHtml(o.name || '—'), " &nbsp;\xB7&nbsp; \uD83D\uDD50 ").concat(escapeHtml(o.time || '—')).concat(o.slot ? " &nbsp;\xB7&nbsp; \uD83D\uDCE6 ".concat(escapeHtml(o.slot)) : '').concat(o.phone ? " &nbsp;\xB7&nbsp; \uD83D\uDCDE ".concat(escapeHtml(o.phone)) : '', "</div>\n        </div>\n        <div style=\"font-size:18px;font-weight:900;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</div>\n      </div>\n      ").concat(itemsHtml ? "<div class=\"order-items\">".concat(itemsHtml, "</div>") : '', "\n      ").concat(o.notes ? "<div style=\"font-size:12px;color:#8A6A4E;margin-top:6px;font-style:italic\">\uD83D\uDCDD ".concat(escapeHtml(o.notes), "</div>") : '', "\n    </div>");
+    const itemsHtml = (o.items || []).map(it => `<div class="order-item"><span>${it.qty}x ${escapeHtml(it.name || '')}</span><span>${(it.subtotal || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+    return `<div class="order-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="order-num">${escapeHtml(o.num || '')}</div>
+          <div class="order-meta">👤 ${escapeHtml(o.name || '—')} &nbsp;·&nbsp; 🕐 ${escapeHtml(o.time || '—')}${o.slot ? ` &nbsp;·&nbsp; 📦 ${escapeHtml(o.slot)}` : ''}${o.phone ? ` &nbsp;·&nbsp; 📞 ${escapeHtml(o.phone)}` : ''}</div>
+        </div>
+        <div style="font-size:18px;font-weight:900;color:#3D1F0D">${(o.total || 0).toFixed(2).replace('.', ',')} €</div>
+      </div>
+      ${itemsHtml ? `<div class="order-items">${itemsHtml}</div>` : ''}
+      ${o.notes ? `<div style="font-size:12px;color:#8A6A4E;margin-top:6px;font-style:italic">📝 ${escapeHtml(o.notes)}</div>` : ''}
+    </div>`;
   }).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Pedidos ".concat(dateKey, "</title>\n  <style>").concat(_pdfStyles(), "</style></head><body>\n  <div class=\"header\"><h1>\uD83E\uDD54 Dulce Patata Food</h1><p>Resumen de pedidos \xB7 ").concat(fecha, "</p></div>\n  <div class=\"content\">\n    <div class=\"summary\">\n      <div class=\"summary-item\"><div class=\"val\">").concat(orders.length, "</div><div class=\"lbl\">Pedidos</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(t.toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Total</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat((t / orders.length).toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Ticket medio</div></div>\n    </div>\n    ").concat(ordersHtml, "\n  </div></body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+  const body = `
+    <div class="header"><h1>🥔 Dulce Patata Food</h1><p>Resumen de pedidos · ${fecha}</p></div>
+    <div class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="val">${orders.length}</div><div class="lbl">Pedidos</div></div>
+        <div class="summary-item"><div class="val">${t.toFixed(2).replace('.', ',')} €</div><div class="lbl">Total</div></div>
+        <div class="summary-item"><div class="val">${(t / orders.length).toFixed(2).replace('.', ',')} €</div><div class="lbl">Ticket medio</div></div>
+      </div>
+      ${ordersHtml}
+    </div>`;
+  _descargarHtmlComoPDF(body, 'pedidos-' + dateKey + '.pdf', btn);
 }
-function exportHistorialPDF() {
+function exportHistorialPDF(btn) {
   const hist = getHistorial();
   if (!hist.length) {
     alert('No hay historial para exportar');
@@ -593,16 +599,27 @@ function exportHistorialPDF() {
       month: 'short',
       year: 'numeric'
     });
-    const ordersHtml = (d.orders || []).map(o => "<div class=\"order-item\" style=\"font-size:12px\"><span>".concat(escapeHtml(o.num || ''), " \xB7 ").concat(escapeHtml(o.name || '—'), " ").concat(o.time ? '· ' + escapeHtml(o.time) : '', "</span><span>").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span></div>")).join('');
-    return "<div class=\"order-card\">\n      <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">\n        <div class=\"order-num\" style=\"font-size:15px\">".concat(fecha, "</div>\n        <div style=\"font-size:14px;font-weight:700;color:#3D1F0D\">").concat(d.count, " pedidos \xB7 ").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</div>\n      </div>\n      ").concat(ordersHtml, "\n    </div>");
+    const ordersHtml = (d.orders || []).map(o => `<div class="order-item" style="font-size:12px"><span>${escapeHtml(o.num || '')} · ${escapeHtml(o.name || '—')} ${o.time ? '· ' + escapeHtml(o.time) : ''}</span><span>${(o.total || 0).toFixed(2).replace('.', ',')} €</span></div>`).join('');
+    return `<div class="order-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="order-num" style="font-size:15px">${fecha}</div>
+        <div style="font-size:14px;font-weight:700;color:#3D1F0D">${d.count} pedidos · ${d.total.toFixed(2).replace('.', ',')} €</div>
+      </div>
+      ${ordersHtml}
+    </div>`;
   }).join('');
-  const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Historial Dulce Patata</title>\n  <style>".concat(_pdfStyles(), "</style></head><body>\n  <div class=\"header\"><h1>\uD83E\uDD54 Dulce Patata Food</h1><p>Historial completo \xB7 ").concat(hist.length, " d\xEDas</p></div>\n  <div class=\"content\">\n    <div class=\"summary\">\n      <div class=\"summary-item\"><div class=\"val\">").concat(hist.length, "</div><div class=\"lbl\">D\xEDas</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalOrders, "</div><div class=\"lbl\">Pedidos</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalMoney.toFixed(2).replace('.', ','), " \u20AC</div><div class=\"lbl\">Total</div></div>\n      <div class=\"summary-item\"><div class=\"val\">").concat(totalOrders ? (totalMoney / totalOrders).toFixed(2).replace('.', ',') : '0,00', " \u20AC</div><div class=\"lbl\">Ticket medio</div></div>\n    </div>\n    ").concat(daysHtml, "\n  </div></body></html>");
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+  const body = `
+    <div class="header"><h1>🥔 Dulce Patata Food</h1><p>Historial completo · ${hist.length} días</p></div>
+    <div class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="val">${hist.length}</div><div class="lbl">Días</div></div>
+        <div class="summary-item"><div class="val">${totalOrders}</div><div class="lbl">Pedidos</div></div>
+        <div class="summary-item"><div class="val">${totalMoney.toFixed(2).replace('.', ',')} €</div><div class="lbl">Total</div></div>
+        <div class="summary-item"><div class="val">${totalOrders ? (totalMoney / totalOrders).toFixed(2).replace('.', ',') : '0,00'} €</div><div class="lbl">Ticket medio</div></div>
+      </div>
+      ${daysHtml}
+    </div>`;
+  _descargarHtmlComoPDF(body, 'historial-dulce-patata.pdf', btn);
 }
 function expandHistorialDay(date) {
   const hist = getHistorial();
@@ -629,12 +646,12 @@ function expandHistorialDay(date) {
       let _ref24 = _slicedToArray(_ref23, 2),
         name = _ref24[0],
         qty = _ref24[1];
-      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(name, "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
+      return "<div style=\"display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F5E6C8;font-size:13px\">\n        <span style=\"color:#2A1506;font-weight:500\">".concat(escapeHtml(name), "</span>\n        <span style=\"font-weight:700;color:#3D1F0D\">").concat(qty, " uds</span>\n      </div>");
     }).join('');
   }
   html += "<div style=\"font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px\">\uD83E\uDDFE Pedidos</div>";
   (day.orders || []).forEach(o => {
-    html += "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F5E6C8;font-size:13px;flex-wrap:wrap\">\n      <span style=\"font-weight:700;color:#3D1F0D\">".concat(escapeHtml(o.num), "</span>\n      <span style=\"flex:1;color:#2A1506\">").concat(escapeHtml(o.name), "</span>\n      ").concat(o.slot ? "<span style=\"background:rgba(244,196,48,0.08);color:#3D1F0D;font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px\">\uD83D\uDD50 ".concat(escapeHtml(o.slot), "</span>") : '', "\n      <span style=\"color:#8A6A4E;font-size:12px\">").concat(escapeHtml(o.time), "</span>\n      <span style=\"font-weight:700;color:#3D1F0D\">").concat(o.total.toFixed(2).replace('.', ','), " \u20AC</span>\n    </div>");
+    html += "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F5E6C8;font-size:13px;flex-wrap:wrap\">\n      <span style=\"font-weight:700;color:#3D1F0D\">".concat(escapeHtml(o.num), "</span>\n      <span style=\"flex:1;color:#2A1506\">").concat(escapeHtml(o.name), "</span>\n      ").concat(o.slot ? "<span style=\"background:rgba(244,196,48,0.08);color:#3D1F0D;font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px\">\uD83D\uDD50 ".concat(escapeHtml(o.slot), "</span>") : '', "\n      <span style=\"color:#8A6A4E;font-size:12px\">").concat(escapeHtml(o.time), "</span>\n      <span style=\"font-weight:700;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span>\n    </div>");
   });
   html += "<div style=\"text-align:right;margin-top:12px\"><button onclick=\"closeHistorialDayModal()\" style=\"background:#F5E6C8;border:none;border-radius:8px;padding:8px 20px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;color:#3D1F0D\">Cerrar</button></div>";
   const modal = document.getElementById('historial-day-modal');
@@ -693,47 +710,52 @@ function showAdminSection(id, btn) {
   _sec.style.display = 'block';
   if (btn) btn.classList.add('active');
   if (id === 'stats') loadDayStats();
-  if (id === 'historial') {
-    loadHistorial();
-    loadAutoDeleteUI();
-    applyAutoDelete();
-  }
+  // La pestaña "Historial" del panel normal solo muestra la lista de
+  // clientes ahora — el resumen por días (con la facturación) se movió al
+  // acceso restringido (ver abrirHistorialDiasBimba en admin-accesos.js),
+  // porque no es algo que necesite ver el personal.
+  // loadHistorial() sincroniza primero con Firebase (ver comentario en su
+  // definición) — sin esto, un dispositivo que nunca haya abierto el
+  // historial por días (p.ej. una tablet usada solo para pedidos en vivo)
+  // mostraría la lista de Clientes vacía, con solo lo que hubiera quedado
+  // en su localStorage local.
+  if (id === 'historial') { loadClientesOcultosFromFirebase(); loadHistorial(renderClientes); }
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
-    _alertPendingOrders = 0;
+    _resetPedidosPendientesAlerta();
     loadLiveOrdersWithLocalFirst();
     _lastKnownOrderCount = null;
     checkForNewOrders();
     clearUnseenOrders();
     loadCatBlockUI();
   }
-  if (id === 'log') renderActivityLog();
-  if (id === 'pwd') loadUrlTokenUI();
-  if (id === 'stock-config') {
-    loadStockAdminList();
-    setTimeout(pp2CheckFirebaseBanner, 500);
+  if (id === 'alertas') {
+    renderAlertas();
+    if (typeof renderIncidencias === 'function') renderIncidencias();
   }
   if (id === 'local') {
     loadSoundConfigUI();
-    updateForceSlotsBtn();
+    loadSoundDesconexionConfigUI();
     loadSlotTurnosUI();
-    loadFeeUI();
     loadModifyWindowInput();
-  }
-  if (id === 'accesos') {
-    renderAccesosLog();
-    renderActivityLog();
-  }
-  if (id === 'empleados') {
-    setTimeout(empRenderAdmin, 50);
-  }
-  if (id === 'local') {
+    if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();
+    if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI();
+    if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
     loadBannerDia();
   }
-  if (id === 'config') {
-    loadAntiSpamFromFirebase();
-  }
+  // Nota: 'pwd', 'stock-config', 'accesos' y 'empleados' NO se abren nunca
+  // a través de showAdminSection() — son secciones del acceso restringido
+  // "bimba" y cada una tiene hoy su propia función dedicada, que además ya
+  // hace su propia inicialización: bimbaIrAContrasena(), bimbaVolverAlPanel()
+  // (que además apunta a "stock-config", no "admin-empleados" — ese id ni
+  // siquiera existe ya, es "admin-bimba-empleados"), bimbaIrAAccesos() y
+  // bimbaIrAEmpleados() (todas en js/auth.js). El gesto secreto "log" (que
+  // sí usaba esta función, vía checkLogSecret) se quitó por completo:
+  // apuntaba a un id ("admin-log") que ya no existía, y la misma vista de
+  // actividad ya está disponible sin trucos en la pestaña "📋 Actividad"
+  // de Accesos. Si alguna vez hace falta reintroducir estos ids aquí, que
+  // sea a propósito, no por accidente.
   if (id === 'pedidos-config') {
     loadAntiSpamFromFirebase();
     // Inicializar cooldown y daily limit
@@ -757,6 +779,19 @@ function showAdminSection(id, btn) {
     // Inicializar slot max
     var slotMaxEl = document.getElementById('slot-max-input-cfg') || document.getElementById('slot-max-input');
     if (slotMaxEl) slotMaxEl.value = getSlotMax();
+    // Inicializar tiempo para modificar pedido
+    if (typeof loadModifyWindowInput === 'function') loadModifyWindowInput();
+    // Inicializar descuento estudiante/jubilado
+    if (typeof getStudentDiscountEnabled === 'function') {
+      var sdEn = getStudentDiscountEnabled();
+      var sdPct = getStudentDiscountPct();
+      var sdPctEl = document.getElementById('cfg-student-discount-pct');
+      var sdToggle = document.getElementById('student-discount-toggle');
+      var sdToggleDot = document.getElementById('student-discount-toggle-dot');
+      if (sdPctEl) sdPctEl.value = sdPct;
+      if (sdToggle) sdToggle.style.background = sdEn ? '#27855a' : '#ccc';
+      if (sdToggleDot) sdToggleDot.style.transform = sdEn ? 'translateX(20px)' : 'translateX(0)';
+    }
   }
 }
 async function renderActiveSessionsList() {
@@ -793,6 +828,16 @@ async function renderActiveSessionsList() {
 async function killSession(sid) {
   try {
     await firebase.database().ref('activeSessions/' + sid + '/killed').set(true);
+    // Si esa sesión ya no está conectada para pillar el aviso en directo,
+    // "killed" por sí solo no basta: el dispositivo seguiría entrando sin
+    // pedir contraseña la próxima vez gracias a "dispositivo de confianza".
+    // Por eso también se borra aquí su registro de confianza — así deja
+    // de valer de verdad, lo esté escuchando en ese momento o no.
+    try {
+      const snap = await firebase.database().ref('activeSessions/' + sid + '/deviceId').get();
+      const deviceId = snap.val();
+      if (deviceId) await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+    } catch (e) {}
     renderActiveSessionsList();
   } catch(e) {
     alert('Error al expulsar la sesión: ' + e.message);
@@ -812,7 +857,10 @@ async function killAllSessions() {
     );
     if (!ok) return;
     const updates = {};
-    otras.forEach(s => { updates['activeSessions/' + s.sid + '/killed'] = true; });
+    otras.forEach(s => {
+      updates['activeSessions/' + s.sid + '/killed'] = true;
+      if (s.deviceId) updates['config/trustedDevices/' + s.deviceId] = null; // revoca también la confianza, no solo la sesión en directo
+    });
     await firebase.database().ref().update(updates);
     logActivity('🚫 Expulsadas ' + otras.length + ' sesión' + (otras.length !== 1 ? 'es' : '') + ' a la vez');
     renderActiveSessionsList();

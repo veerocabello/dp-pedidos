@@ -1,5 +1,30 @@
 // ── IMPRIMIR TODOS + MARCA DE IMPRESO ────────────────────────────────────────
-const _printedOrders = new Set(); // IDs de pedidos ya impresos en esta sesión
+// Antes _printedOrders vivía solo en memoria de ESTE bundle cargado en ESTA
+// pestaña — recargar la página, o simplemente abrir una segunda pestaña/
+// tablet, hacía que todo volviera a mostrar "🖨️ Imprimir" aunque ya se
+// hubiera impreso, invitando a reimprimir de más. Ahora se guarda también
+// en localStorage (con fecha, para no arrastrar el número de un pedido de
+// ayer al de hoy con el mismo T####) y se sincroniza vía Firebase
+// (fb_setPrinted/fb_listenPrintedOrders, el listener vive en
+// nucleo-compartido.js porque este bundle admin puede no estar cargado
+// todavía cuando llega el primer snapshot) para que lo que imprime una
+// tablet lo vea también el resto.
+const PRINTED_ORDERS_KEY = 'dpf_printed_orders';
+const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
+(function _cargarPrintedOrdersLocal() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRINTED_ORDERS_KEY) || 'null');
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (saved && saved.date === todayKey && Array.isArray(saved.nums)) {
+      saved.nums.forEach(n => _printedOrders.add(n));
+    }
+  } catch (e) {}
+})();
+function _guardarPrintedOrdersLocal() {
+  try {
+    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: new Date().toISOString().slice(0, 10), nums: [..._printedOrders] }));
+  } catch (e) {}
+}
 
 async function imprimirTodosLosActivos() {
   const activos = (window._activosCache || []);
@@ -26,11 +51,26 @@ async function imprimirTodosLosActivos() {
   }
 }
 
-function _markAsImpreso(orderNum) {
+function _markAsImpreso(orderNum, _remoto) {
   _printedOrders.add(orderNum);
-  // Parar sonido al imprimir — equivale a haber visto el pedido
-  _alertPendingOrders = Math.max(0, (_alertPendingOrders || 1) - 1);
-  if (_alertPendingOrders === 0) stopAlertLoop();
+  _guardarPrintedOrdersLocal();
+  // _remoto=true significa que esta marca ya viene de Firebase (otra
+  // tablet lo imprimió) — no hace falta volver a escribirlo allí.
+  if (!_remoto && window.fb_setPrinted) window.fb_setPrinted(orderNum).catch(() => {});
+  // Parar sonido al imprimir — equivale a haber visto el pedido. Antes esto
+  // restaba 1 a mano de _alertPendingOrders, el contador suelto que ya se
+  // dejó de usar en pedidos-vivo-cocina.js (ver el comentario junto a
+  // _alertPendingOrderNumsSet ahí: un mismo pedido podía restar dos veces,
+  // o dos avisos casi seguidos podían pisarse el contador) — esta función
+  // se quedó sin actualizar en aquel cambio, así que reimprimir el MISMO
+  // pedido varias veces (el botón "🖨️ Impreso" se deja pulsable a
+  // propósito) seguía restando cada vez, pudiendo silenciar la alarma con
+  // pedidos reales aún sin atender. _marcarPedidoAtendido() usa el mismo
+  // Set por número de pedido que el resto de sitios que paran la alarma
+  // (setLiveStatus, markAllKitchenReady, cancelarPedidoAdmin) — no hace
+  // nada si ese pedido concreto ya no estaba pendiente, así que reimprimir
+  // de más deja de tener ningún efecto sobre el resto de la cola.
+  if (typeof _marcarPedidoAtendido === 'function') _marcarPedidoAtendido(orderNum);
   const btn = document.querySelector('[data-print-num="' + CSS.escape(orderNum) + '"]');
   if (btn) {
     btn.textContent = '🖨️ Impreso';
@@ -52,8 +92,13 @@ function saveTrustedExpiry() {
   const days = parseInt(document.getElementById('trusted-expiry-days')?.value || '30');
   if (isNaN(days) || days < 1) { alert('Introduce un número válido de días'); return; }
   localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
-  logActivity('🔐 Expiración de sesión configurada: ' + days + ' días');
-  alert('✅ Guardado. Se aplicará en el próximo inicio de sesión.');
+  // Antes esto solo vivía en localStorage de ESTE dispositivo — cambiarlo
+  // desde el móvil no se reflejaba al marcar de confianza el ordenador del
+  // local (cada uno usaba su propio valor, o el de por defecto), aunque el
+  // mensaje diera a entender que era un ajuste global. Ahora se sincroniza.
+  if (window.fb_saveTrustedDays) window.fb_saveTrustedDays(days).catch(function () {});
+  logActivity('🔐 Expiración de sesión configurada: ' + days + ' días (todos los dispositivos)');
+  alert('✅ Guardado. Se aplicará en el próximo inicio de sesión, en cualquier dispositivo.');
 }
 
 
@@ -64,37 +109,48 @@ function openEmpleadosWithBimba() {
   secureLockTap();
 }
 
-// ── DISPOSITIVO DE CONFIANZA ──
-// SEGURIDAD: el flag local es solo una preferencia de UX (saltar la pantalla de login).
-
-// ── Compartir pedido por WhatsApp ────────────────────────
-function shareOrderWhatsApp(orderNum, name, slotTime, items, total) {
-  let msg = '*Dulce Patata Food* — Pedido ' + orderNum + '\n';
-  msg += 'Nombre: ' + name + '\n';
-  if (slotTime) msg += 'Recogida a las: ' + slotTime + 'h\n';
-  msg += '\n*Productos:*\n';
-  if (items && items.length) {
-    items.forEach(function(it) { msg += '  ' + it.qty + 'x ' + it.name + ' — ' + it.price.toFixed(2).replace('.', ',') + ' €\n'; });
-  }
-  msg += '\n*Total: ' + total.toFixed(2).replace('.', ',') + ' €*';
-  msg += '\n\nVen a recogerlo y paga en caja';
-  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
-}
-
-// ── DISPOSITIVO DE CONFIANZA ─────────────────────────────────────────────────
-// El token almacenado es: sha256(uid_firebase + contraseña_hasheada)
-// Así, aunque alguien acceda al localStorage, el token solo es válido
-// para el UID concreto de esta sesión Firebase — no es un string genérico.
+// ── DISPOSITIVO DE CONFIANZA ──────────────────────────────────────────────────
+// El token de confianza es un secreto ALEATORIO generado en el momento de
+// marcar el dispositivo (no una fórmula a partir de datos que ya son
+// públicos o casi — antes era sha256(uid + hash de la contraseña), y el uid
+// y el hash por defecto están en el JS que se manda al navegador, así que
+// cualquiera que supiera el uid del admin podía calcular un token válido
+// sin haber iniciado sesión nunca). Solo se guarda su HASH en Firebase
+// (config/trustedDevices/<deviceId>), y la comprobación la hace el
+// servidor (bimba-verify.php) — así "Expulsar" desde el panel puede borrar
+// ese registro y el dispositivo pierde el acceso de verdad, no solo hasta
+// que recargue la página.
 const TRUSTED_KEY = 'dpf_trusted_device';
 const TRUSTED_NAME_KEY = 'dpf_trusted_device_name';
-const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // hash vinculado al UID
+const TRUSTED_TOKEN_KEY = 'dpf_trusted_token'; // secreto aleatorio, no derivado de nada público
 const TRUSTED_EXPIRY_KEY = 'dpf_trusted_expiry'; // timestamp de expiración
 const TRUSTED_DAYS_KEY = 'dpf_trusted_days'; // días configurados
+const DEVICE_ID_KEY = 'dpf_device_id'; // identificador estable de este dispositivo (no es secreto)
 
-async function _buildTrustedToken(uid) {
-  // Token = SHA-256(uid + ADMIN_PWD_DEFAULT_HASH) — usa la contraseña hasheada como sal
-  const raw = uid + (localStorage.getItem(ADMIN_PWD_KEY) || ADMIN_PWD_DEFAULT_HASH);
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+// Trae el valor real desde Firebase al abrir el panel en un dispositivo
+// nuevo (o que no lo tenía sincronizado todavía) — ver saveTrustedExpiry().
+function _cargarTrustedDaysDesdeFirebase() {
+  if (!window.fb_loadTrustedDays) return;
+  window.fb_loadTrustedDays().then(function (days) {
+    if (!days) return;
+    localStorage.setItem(TRUSTED_DAYS_KEY, String(days));
+    const input = document.getElementById('trusted-expiry-days');
+    if (input) input.value = String(days);
+  }).catch(function () {});
+}
+if (window._firebaseReady) _cargarTrustedDaysDesdeFirebase();
+else document.addEventListener('firebaseReady', _cargarTrustedDaysDesdeFirebase);
+
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = 'dev_' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -104,27 +160,29 @@ function getTrustedExpiryDays() {
 
 async function isTrustedDevice() {
   if (localStorage.getItem(TRUSTED_KEY) !== 'yes') return false;
-  // Comprobar expiración
+  // Comprobar expiración local primero (evita una llamada de red inútil)
   const expiry = parseInt(localStorage.getItem(TRUSTED_EXPIRY_KEY) || '0');
   if (expiry && Date.now() > expiry) {
-    // Sesión expirada — limpiar
-    localStorage.removeItem(TRUSTED_KEY);
-    localStorage.removeItem(TRUSTED_TOKEN_KEY);
-    localStorage.removeItem(TRUSTED_EXPIRY_KEY);
+    await setTrustedDevice(false);
     console.log('[trusted] sesión expirada');
     return false;
   }
-  // Requiere sesión Firebase activa con UID
-  const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
-  if (!user || !user.uid) return false;
-  // Verificar que el token almacenado corresponde al UID actual
-  const storedToken = localStorage.getItem(TRUSTED_TOKEN_KEY);
-  if (!storedToken) return false;
+  const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+  if (!token) return false;
+  // Comprobación real en el servidor: si el admin ha "expulsado" este
+  // dispositivo desde el panel, su registro ya no existe en Firebase y
+  // esto falla aunque el token siga guardado en este navegador.
   try {
-    const expected = await _buildTrustedToken(user.uid);
-    return storedToken === expected;
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'checkTrustedDevice', deviceId: getDeviceId(), token })
+    });
+    const data = await res.json();
+    if (!data.success) { await setTrustedDevice(false); return false; }
+    return true;
   } catch (e) {
-    return false;
+    return false; // red caída: por seguridad, pedir login en vez de asumir confianza
   }
 }
 
@@ -136,14 +194,51 @@ async function setTrustedDevice(val, name) {
   if (val) {
     const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
     if (!user || !user.uid) return; // no guardar si no hay sesión real
-    const token = await _buildTrustedToken(user.uid);
+    const token = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '_' + Math.random().toString(36).slice(2));
+    const tokenHash = await _sha256Hex(token);
+    const deviceId = getDeviceId();
     const days = getTrustedExpiryDays();
     const expiry = Date.now() + days * 24 * 60 * 60 * 1000;
+    // Escritura autenticada (ya hay sesión real de admin en este momento) —
+    // el servidor solo guarda el HASH, nunca el token en sí.
+    await firebase.database().ref('config/trustedDevices/' + deviceId).set({
+      tokenHash: tokenHash,
+      name: name || 'Sin nombre',
+      createdAt: Date.now(),
+    });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');
     localStorage.setItem(TRUSTED_TOKEN_KEY, token);
     localStorage.setItem(TRUSTED_EXPIRY_KEY, String(expiry));
   } else {
+    // Si hay sesión real, limpiar también el registro en Firebase
+    // directamente (más rápido, sin ir al servidor). Si NO hay sesión —el
+    // caso más habitual con diferencia: isTrustedDevice() llama aquí
+    // precisamente para decidir si hace falta pedir la contraseña, es
+    // decir, ANTES de haber iniciado sesión— esa escritura fallaba en
+    // silencio y el registro se quedaba huérfano en Firebase para
+    // siempre (el token local ya no serviría de nada, pero si alguna vez
+    // reaparece en localStorage — restaurado de una copia vieja, por
+    // ejemplo— isTrustedDevice() lo seguiría validando contra ese
+    // registro nunca borrado). Ahora, sin sesión, se pide el borrado a
+    // bimba-verify.php con la cuenta de servicio — usa el mismo token
+    // como prueba de propiedad que ya exige checkTrustedDevice, así que
+    // nadie puede borrar el registro de otro dispositivo solo adivinando
+    // su deviceId.
+    try {
+      const user = window.fb && window.fb.getAdminUser ? window.fb.getAdminUser() : null;
+      const deviceId = getDeviceId();
+      const token = localStorage.getItem(TRUSTED_TOKEN_KEY);
+      if (user && user.uid) {
+        await firebase.database().ref('config/trustedDevices/' + deviceId).remove();
+      } else if (token) {
+        await fetch('bimba-verify.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'removerDispositivoConfianza', deviceId, token })
+        }).catch(() => {});
+      }
+    } catch (e) {}
     localStorage.removeItem(TRUSTED_KEY);
     localStorage.removeItem(TRUSTED_NAME_KEY);
     localStorage.removeItem(TRUSTED_TOKEN_KEY);
@@ -151,359 +246,6 @@ async function setTrustedDevice(val, name) {
   }
 }
 
-// Audio context — needs user gesture to unlock
-let _audioCtxUnlocked = false;
-const AUDIO_PREF_KEY = 'dpf_audio_enabled';
-
-// ── ACTIVAR AUDIO DESDE PANEL ────────────────────────────────────────────────
-function activarAudioDesdePanel() {
-  unlockAudioContext();
-  localStorage.setItem(AUDIO_PREF_KEY, '1');
-  setTimeout(function() {
-    testNotificationSound();
-    _updateAudioBannerState();
-  }, 100);
-}
-
-function _updateAudioBannerState() {
-  const banner = document.getElementById('audio-unlock-banner');
-  const text = document.getElementById('audio-banner-text');
-  const btn = document.getElementById('audio-banner-btn');
-  if (!banner) return;
-  if (_audioCtxUnlocked) {
-    banner.style.background = '#FBEFD6';
-    banner.style.borderColor = '#F4C430';
-    if (text) { text.textContent = '🔊 Audio activado — recibirás alertas de nuevos pedidos'; text.style.color = '#3D1F0D'; }
-    if (btn) {
-      btn.textContent = '🔇 Desactivar';
-      btn.style.background = '#3D1F0D';
-      btn.style.color = '#F4C430';
-      btn.onclick = function() {
-        localStorage.removeItem(AUDIO_PREF_KEY);
-        _audioCtxUnlocked = false;
-        _updateAudioBannerState();
-      };
-    }
-  } else {
-    banner.style.background = '#fff3cd';
-    banner.style.borderColor = '#3D1F0D';
-    if (text) { text.textContent = '🔇 Audio desactivado — toca para activar las alertas sonoras'; text.style.color = '#5a3e1b'; }
-    if (btn) {
-      btn.textContent = '🔊 Activar audio';
-      btn.style.background = '#3D1F0D';
-      btn.onclick = activarAudioDesdePanel;
-    }
-  }
-}
-
-function unlockAudioContext() {
-  if (_audioCtxUnlocked) return;
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = ctx.createBuffer(1, 1, 22050);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
-    src.start(0);
-    ctx.resume().then(() => {
-      _audioCtxUnlocked = true;
-      localStorage.setItem(AUDIO_PREF_KEY, '1');
-    });
-  } catch (e) {}
-}
-async function openAdmin() {
-  // Cargar el HTML del admin de forma diferida si aún no está cargado
-  if (typeof loadAdminShell === 'function' && !window._adminShellLoaded) {
-    await new Promise(function(resolve) { loadAdminShell(resolve); });
-  }
-  // Asegurar que pointer-events está restaurado (por si stock lo dejó bloqueado)
-  const adminOverlay = document.getElementById('admin-overlay');
-  if (adminOverlay) adminOverlay.style.pointerEvents = '';
-  window._secretKeyBuf = '';
-  // Always reset to default section (Carta) so bimba config never bleeds through
-  document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-  const defaultSection = document.getElementById('admin-productos');
-  const defaultTab = document.querySelector('.admin-tab[onclick*="productos"]');
-  if (defaultSection) defaultSection.classList.add('active');
-  if (defaultTab) defaultTab.classList.add('active');
-  unlockAudioContext(); // desbloquear audio con el gesto del usuario
-  document.getElementById('admin-overlay').classList.add('open');
-  document.getElementById('admin-error').textContent = '';
-  document.getElementById('admin-pwd-input').value = '';
-  // Si el dispositivo es de confianza, saltar el login directamente
-  if (await isTrustedDevice()) {
-    _adminLoggedIn = true; window._adminLoggedIn = true;
-    document.getElementById('admin-login').style.display = 'none';
-    document.getElementById('admin-panel').style.display = 'block';
-    renderAdminProducts();
-    loadAdminConfig();
-    loadAdminHorario();
-    loadOpenStatus();
-    loadOrdersStatus();
-    showTrustedBannerIfNeeded();
-    setTimeout(_updateAudioBannerState, 200);
-    logActivity('📱 Acceso automático — dispositivo de confianza');
-  } else {
-    document.getElementById('admin-login').style.display = 'block';
-    document.getElementById('admin-panel').style.display = 'none';
-  }
-  // Mostrar banner de audio solo si no está desbloqueado
-  if (localStorage.getItem(AUDIO_PREF_KEY) === '1') unlockAudioContext();
-  const audioBanner = document.getElementById('audio-unlock-banner');
-  if (audioBanner) _updateAudioBannerState();
-  // Registrar sesión activa en Firebase
-  try {
-    if (window.fb_registerSession) {
-      const ua = navigator.userAgent;
-      let device = 'Dispositivo desconocido';
-      if (/iPhone/.test(ua)) device = 'iPhone · ' + (/Safari/.test(ua) ? 'Safari' : 'App');
-      else if (/iPad/.test(ua)) device = 'iPad · ' + (/Safari/.test(ua) ? 'Safari' : 'App');
-      else if (/Android/.test(ua)) device = 'Android · ' + (/Chrome/.test(ua) ? 'Chrome' : 'Navegador');
-      else if (/Mac/.test(ua)) device = 'Mac · ' + (/Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : 'Safari');
-      else if (/Windows/.test(ua)) device = 'Windows · ' + (/Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : 'Edge');
-      window._mySessionId = _SESSION_ID;
-      await window.fb_registerSession({
-        sid: _SESSION_ID,
-        device: device,
-        time: new Date().toLocaleString('es-ES'),
-        ts: Date.now(),
-        killed: false
-      });
-      // Si otro dispositivo nos expulsa desde "Sesiones activas", cerrar
-      // el panel aquí mismo en tiempo real, no solo cosméticamente en la lista.
-      if (window._myKillListenerUnsub) window._myKillListenerUnsub();
-      window._myKillListenerUnsub = firebase.database().ref('activeSessions/' + _SESSION_ID + '/killed').on('value', function (snap) {
-        if (snap.exists() && snap.val() === true) {
-          showAlert('Esta sesión ha sido cerrada desde otro dispositivo.');
-          setTimeout(async function () {
-            await setTrustedDevice(false);
-            closeAdmin();
-            location.reload();
-          }, 600);
-        }
-      });
-    }
-  } catch(e) {}
-}
-
-// ── ACCESO AL PANEL — TRIPLE TOQUE/CLICK EN LOGO ──
-(function () {
-  function initLogoTap() {
-    var tapCount = 0,
-      tapTimer = null,
-      lastTap = 0;
-    var logo = document.getElementById('logo-secret');
-    if (!logo) return;
-    function registerTap() {
-      var now = Date.now();
-      if (now - lastTap < 80) return;
-      lastTap = now;
-      tapCount++;
-      clearTimeout(tapTimer);
-      tapTimer = setTimeout(function () {
-        tapCount = 0;
-      }, 1400);
-      if (tapCount >= 3) {
-        tapCount = 0;
-        clearTimeout(tapTimer);
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('📱 Acceso por triple toque en logo');
-        openAdmin();
-      }
-    }
-    logo.addEventListener('touchstart', function (e) {
-      e.preventDefault();
-      registerTap();
-    }, {
-      passive: false
-    });
-    logo.addEventListener('click', function (e) {
-      registerTap();
-    });
-    logo.addEventListener('touchend', function (e) {
-      e.preventDefault();
-    }, {
-      passive: false
-    });
-    logo.addEventListener('click', function (e) {
-      if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
-      registerTap();
-    });
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initLogoTap);
-  } else {
-    initLogoTap();
-  }
-})();
-
-// ── ACCESO AL PANEL — 5 TOQUES EN "PANEL DE ADMINISTRACIÓN" ──
-(function () {
-  let bimbaCount = 0,
-    bimbaTimer = null;
-  function attachBimbaTitle() {
-    const el = document.getElementById('admin-title-secret');
-    if (!el) return;
-    function handleTap(e) {
-      e.preventDefault();
-      bimbaCount++;
-      clearTimeout(bimbaTimer);
-      bimbaTimer = setTimeout(() => {
-        bimbaCount = 0;
-      }, 1500);
-      if (bimbaCount >= 5) {
-        bimbaCount = 0;
-        clearTimeout(bimbaTimer);
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('📱 Acceso bimba por título');
-        secureLockTap();
-      }
-    }
-    el.addEventListener('touchend', handleTap, {
-      passive: false
-    });
-    el.addEventListener('click', function (e) {
-      if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
-      handleTap(e);
-    });
-  }
-
-  // Intentar al cargar; si el panel aún no existe, esperar al DOM
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attachBimbaTitle);
-  } else {
-    attachBimbaTitle();
-  }
-})();
-
-// ── ACCESO AL PANEL — ESQUINAS ──
-// Esquina inferior DERECHA: 5 toques → admin
-// Esquina inferior IZQUIERDA: 5 toques → bimba
-(function () {
-  let adminCount = 0,
-    adminTimer = null;
-  let bimbaCount = 0,
-    bimbaTimer = null;
-
-  // Zona de toque generosa: 80x80px en cada esquina
-  const ZONE = 80;
-  function handleCornerTouch(e) {
-    const t = e.changedTouches[0];
-    const fromRight = window.innerWidth - t.clientX;
-    const fromBottom = window.innerHeight - t.clientY;
-    const fromLeft = t.clientX;
-
-    // Esquina inferior DERECHA → admin
-    if (fromRight <= ZONE && fromBottom <= ZONE) {
-      e.preventDefault();
-      adminCount++;
-      clearTimeout(adminTimer);
-      adminTimer = setTimeout(() => {
-        adminCount = 0;
-      }, 1500);
-      if (adminCount >= 5) {
-        adminCount = 0;
-        clearTimeout(adminTimer);
-        setTimeout(_updateAudioBannerState, 200);
-    logActivity('📱 Acceso por esquina secreta');
-        openAdmin();
-      }
-      return;
-    }
-
-    // Esquina inferior IZQUIERDA → ya no se usa para bimba
-  }
-
-  // passive:false para poder hacer preventDefault y evitar gestos del sistema iOS
-  // También cancelamos touchstart en las esquinas para evitar que iOS salte al inicio
-  document.addEventListener('touchstart', function (e) {
-    const t = e.touches[0];
-    const fromRight = window.innerWidth - t.clientX;
-    const fromBottom = window.innerHeight - t.clientY;
-    // Solo esquina inferior derecha (admin) — solo cancela el toque si es exactamente en la zona
-    // passive:true para no bloquear el scroll en todo el documento
-    if (fromRight <= ZONE && fromBottom <= ZONE) {
-      e.preventDefault();
-    }
-  }, {
-    passive: true
-  });
-  document.addEventListener('touchend', handleCornerTouch, {
-    passive: false
-  });
-
-  // PC: 5 clicks en esquina inferior derecha → admin
-  document.addEventListener('click', function (e) {
-    if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
-    const fromRight = window.innerWidth - e.clientX;
-    const fromBottom = window.innerHeight - e.clientY;
-    if (fromRight > ZONE || fromBottom > ZONE) return;
-    adminCount++;
-    clearTimeout(adminTimer);
-    adminTimer = setTimeout(() => {
-      adminCount = 0;
-    }, 1500);
-    if (adminCount >= 5) {
-      adminCount = 0;
-      openAdmin();
-    }
-  });
-})();
-
-// ── ACCESO BIMBA POR CANDADO ────────────────────────────────────────────────
-// Contraseña almacenada como hash SHA-256 con sal — nunca en texto plano
-const _BIMBA_SALT = 'dpf_2026_x7q';
-const BIMBA_PWD_HASH = '94817839a2d2ae89cf3c0cd4afdf73526ab401525e7a2e557aadf7a8e4fcb4f8';
-async function hashBimbaPwd(pwd) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pwd + _BIMBA_SALT));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-function secureLockTap() {
-  document.getElementById('secure-pin-input').value = '';
-  document.getElementById('secure-pin-error').style.display = 'none';
-  document.getElementById('secure-pin-modal').style.display = 'block';
-  setTimeout(() => document.getElementById('secure-pin-input').focus(), 100);
-}
-function secureLockCerrar() {
-  document.getElementById('secure-pin-modal').style.display = 'none';
-}
-async function secureLockConfirm() {
-  const val = document.getElementById('secure-pin-input').value;
-  const hash = await hashBimbaPwd(val);
-  if (hash === BIMBA_PWD_HASH) {
-    document.getElementById('secure-pin-modal').style.display = 'none';
-    setTimeout(_updateAudioBannerState, 200);
-    _adminLoggedIn = true; window._adminLoggedIn = true;
-    if (window._bimbaTargetEmpleados) {
-      window._bimbaTargetEmpleados = false;
-      logActivity('👥 Acceso a empleados por bimba');
-      // Mostrar sección bimba-empleados directamente
-      document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
-      document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-      const _bimbaEmpSec = document.getElementById('admin-bimba-empleados');
-      if (_bimbaEmpSec) { _bimbaEmpSec.style.setProperty('display','block','important'); _bimbaEmpSec.classList.add('active'); }
-      setTimeout(function(){
-        if(typeof bimbaRenderEmpleados==='function') bimbaRenderEmpleados();
-      }, 100);
-      return;
-      showAdminSection('bimba-empleados', null);
-    } else {
-      logActivity('🔒 Acceso bimba por candado');
-      openStockConfigSecret();
-      setTimeout(dcCargar, 300);
-      setTimeout(function(){ if(typeof loadVacacionesStatus==='function') loadVacacionesStatus(); }, 400);
-    }
-    document.getElementById('admin-overlay').classList.add('open');
-    document.getElementById('admin-login').style.display = 'none';
-    document.getElementById('admin-panel').style.display = 'block';
-  } else {
-    document.getElementById('secure-pin-error').style.display = 'block';
-    document.getElementById('secure-pin-input').value = '';
-    document.getElementById('secure-pin-input').focus();
-  }
-}
 function toggleAdminPwdVisibility(btn) {
   const input = document.getElementById('admin-pwd-input');
   const eyeOpen = btn.querySelector('.eye-open');
@@ -521,4 +263,3 @@ function toggleAdminPwdVisibility(btn) {
   }
   input.focus();
 }
-

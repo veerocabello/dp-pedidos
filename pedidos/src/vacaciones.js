@@ -1,14 +1,6 @@
-
-// ── MODO VACACIONES ──
-function checkVacationMode() {
-  firebase.database().ref('config/vacacionesActivo').once('value').then(sn => {
-    const activo = sn.val() === true;
-    const screen = document.getElementById('vacation-screen');
-    if (screen) {
-      screen.style.display = activo ? 'flex' : 'none';
-    }
-  }).catch(() => {});
-}
+// ── MODO VACACIONES: parte de admin (activar/desactivar desde el panel) ──
+// checkVacationMode() (comprobación que ve cualquier visitante) vive ahora
+// en nucleo-compartido.js — ver el porqué ahí.
 window.toggleVacacionesMode = function(on) {
   return firebase.database().ref('config/vacacionesActivo').set(on).then(() => {
     const screen = document.getElementById('vacation-screen');
@@ -31,13 +23,42 @@ function loadVacacionesStatus() {
   }).catch(() => { btn.textContent = '⚠️ Error'; });
 }
 function toggleVacacionesModeAdmin() {
-  const btn = document.getElementById('vacaciones-toggle-btn');
   const nuevoEstado = !window._vacacionesActivo;
+  // Activar vacaciones bloquea el 100% de los pedidos entrantes al
+  // instante — a diferencia de otras acciones destructivas del mismo
+  // panel (borrar el registro de actividad, cerrar todas las sesiones),
+  // esto no pedía confirmación antes: un click sin querer no tenía ningún
+  // aviso previo, solo un mensaje informativo después de que ya estaba hecho.
+  if (nuevoEstado && !confirm('¿Activar el modo vacaciones? Se bloquean TODOS los pedidos entrantes al instante.')) return;
+  const btn = document.getElementById('vacaciones-toggle-btn');
   if (btn) btn.textContent = 'Cargando…';
   window.toggleVacacionesMode(nuevoEstado).then(() => {
     _renderVacacionesBtn(nuevoEstado);
     if (typeof logActivity === 'function') {
       logActivity(nuevoEstado ? '🌴 Modo vacaciones activado' : '🌴 Modo vacaciones desactivado');
+    }
+    if (nuevoEstado) {
+      // El bloqueo real de vacaciones ya lo hace el servidor en cada
+      // pedido (comprobarTiendaAbierta en guardar-pedido.php), pero
+      // "Pedidos"/"Abierto" pueden seguir mostrando su estado normal en el
+      // panel — dando a entender que la tienda sigue operativa cuando en
+      // realidad las vacaciones lo bloquean todo por detrás.
+      if (typeof showAlert === 'function') {
+        showAlert('Se bloquean todos los pedidos aunque "Pedidos"/"Abierto" sigan marcados como activos en el panel — no hace falta tocarlos aparte.', '🌴 Vacaciones activadas');
+      }
+    } else {
+      // Si "Pedidos" y/o "Abierto" ya estaban pausados por otro motivo
+      // antes de entrar en vacaciones (pausa manual o auto-pausa), eso no
+      // se restaura solo al desactivar vacaciones — antes solo se
+      // revisaba "Pedidos"; si el que se había pausado era "Abierto", el
+      // admin no recibía ningún aviso de que seguía apagado.
+      const pedidosPausados = typeof getOrdersOpen === 'function' && !getOrdersOpen();
+      const abiertoApagado = typeof OPEN_KEY !== 'undefined' && localStorage.getItem(OPEN_KEY) === 'false';
+      if ((pedidosPausados || abiertoApagado) && typeof showAlert === 'function') {
+        const cuales = [pedidosPausados ? '"Pedidos"' : null, abiertoApagado ? '"Abierto"' : null].filter(Boolean).join(' y ');
+        const verbo = pedidosPausados && abiertoApagado ? 'seguían' : 'seguía';
+        showAlert(cuales + ' ' + verbo + ' marcado como PAUSADO/CERRADO desde antes de las vacaciones. Revísalo en su pestaña si quieres volver a aceptar pedidos.', '🌴 Vacaciones desactivadas');
+      }
     }
   }).catch(() => { if (btn) btn.textContent = '⚠️ Error'; });
 }
@@ -45,80 +66,16 @@ function toggleVacacionesModeAdmin() {
 "use strict";
 const _SESSION_ID = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
-// Declaraciones globales para compatibilidad Safari 12
+// Declaraciones globales para compatibilidad Safari 12 (estado del panel de stock)
 var _stockSelections = {};
 var _stockUnits = {};
 var _stockChecks = {};
 var _stockNotas = {};
 var _stockLimpieza = {};
-function _slicedToArray(r, e) {
-  return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest();
-}
-function _nonIterableRest() {
-  throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.");
-}
-function _unsupportedIterableToArray(r, a) {
-  if (r) {
-    if ("string" == typeof r) return _arrayLikeToArray(r, a);
-    var t = {}.toString.call(r).slice(8, -1);
-    return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0;
-  }
-}
-function _arrayLikeToArray(r, a) {
-  (null == a || a > r.length) && (a = r.length);
-  for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e];
-  return n;
-}
-function _iterableToArrayLimit(r, l) {
-  var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"];
-  if (null != t) {
-    var e,
-      n,
-      i,
-      u,
-      a = [],
-      f = !0,
-      o = !1;
-    try {
-      if (i = (t = t.call(r)).next, 0 === l) {
-        if (Object(t) !== t) return;
-        f = !1;
-      } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0);
-    } catch (r) {
-      o = !0, n = r;
-    } finally {
-      try {
-        if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return;
-      } finally {
-        if (o) throw n;
-      }
-    }
-    return a;
-  }
-}
-function _arrayWithHoles(r) {
-  if (Array.isArray(r)) return r;
-}
-
-/* ── MODAL DE AVISO (reemplazo de alert() nativo) ──
-   Uso: showAlert('Mensaje aquí') en vez de alert('Mensaje aquí')
-   Opcionalmente: showAlert('Mensaje', 'Título personalizado') */
-function showAlert(msg, title) {
-  const modal = document.getElementById('alert-modal');
-  if (!modal) { window.alert(msg); return; }
-  document.getElementById('alert-title').textContent = title || 'Aviso';
-  document.getElementById('alert-msg').textContent = msg;
-  modal.classList.add('open');
-}
-function closeAlert() {
-  const modal = document.getElementById('alert-modal');
-  if (modal) modal.classList.remove('open');
-}
 
 /* ═══════════════════════════════════════════════════
-   DULCE PATATA — Lógica principal
+   DULCE PATATA — Lógica de administración
    ═══════════════════════════════════════════════════ */
 
 /* ── MANEJADOR DE ERRORES (desactivado en producción) ── */
 // window.onerror y unhandledrejection desactivados
-

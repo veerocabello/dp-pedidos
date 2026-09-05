@@ -1,6 +1,5 @@
 /* ── PEDIDOS PROVEEDORES v2 ── */
 // ── PEDIDOS PROVEEDORES v2 ──
-const PP_KEY = 'dpf_pp2';
 const PP_PROVS = [{
   id: 'ali',
   label: 'Ali'
@@ -577,14 +576,6 @@ const PP_ITEMS = [
   nombre: 'Galleta Digestive',
   qty: ''
 }];
-let _ppCurrentItem = null; // kept for legacy localStorage compat
-
-document.addEventListener('DOMContentLoaded', () => {
-  if (typeof migrateAdminPwdIfNeeded === 'function') migrateAdminPwdIfNeeded();else window._pendingMigrateAdmin = true;
-});
-document.addEventListener('firebaseReady', () => {
-  if (typeof migrateAdminPwdIfNeeded === 'function') migrateAdminPwdIfNeeded();
-});
 const _origOpenStock = window.openStockConfigSecret;
 window.openStockConfigSecret = function () {
   if (_origOpenStock) _origOpenStock();
@@ -605,6 +596,81 @@ let _pp2DeleteSel = new Set();
 let _pp2CurrentItem = null;
 let _pp2SearchQuery = '';
 
+// ── Guardado con merge real (evita que dos dispositivos editando pedidos a
+// proveedores casi a la vez se pisen el cambio entero) — antes cada
+// pp2Save*() hacía fb_savePP2() = un jset()/set() directo con la copia
+// local completa de ese nodo, sin transacción. Con el auto-guardado cada
+// 10s mientras el overlay está abierto (ver openPedidosProvOverlay) la
+// ventana de colisión era aún mayor: si dos personas tenían el overlay
+// abierto a la vez, el último guardado ganaba entero, borrando en silencio
+// los cambios del otro. Mismo patrón ya usado en saveStockData()
+// (stock-empleados.js) y saveMenu() (admin-config.js): se compara contra
+// la última copia sincronizada de ESTE dispositivo para saber qué se tocó
+// aquí de verdad, y solo eso se impone sobre lo que haya en el servidor —
+// el resto se respeta tal cual esté (puede traer cambios de otro
+// dispositivo). window._pp2SyncedSnapshots se resetea al abrir el overlay
+// (con lo que ya hay en localStorage) y se actualiza tras cada guardado y
+// cada vez que llega un cambio remoto — ver openPedidosProvOverlay().
+window._pp2SyncedSnapshots = window._pp2SyncedSnapshots || {};
+function pp2TransactSave(key, data) {
+  if (!window.fb_transactJsonString) {
+    if (window.fb_savePP2) window.fb_savePP2(key, data).catch(function (e) {
+      console.warn('[proveedores] fallo al guardar "' + key + '" en Firebase:', e);
+      if (typeof logActivity === 'function' && (!window._pp2LastFailAlert || Date.now() - window._pp2LastFailAlert > 120000)) {
+        window._pp2LastFailAlert = Date.now();
+        logActivity('⚠️ No se pudo guardar el pedido a proveedores en Firebase (sin conexión o sin permisos) — puede que solo exista en este dispositivo', { tipo: 'pp2_no_guardado' });
+      }
+    });
+    return;
+  }
+  const antes = window._pp2SyncedSnapshots[key];
+  window.fb_transactJsonString('pp2/' + key, function (remoto) {
+    // Objetos planos por id (state/provHab/minimos): se fusiona clave a
+    // clave — cada itemId que este dispositivo tocó desde la última
+    // sincronización gana con su valor local, el resto se respeta tal
+    // cual esté en el servidor.
+    if (data && typeof data === 'object' && !Array.isArray(data) && (!remoto || (typeof remoto === 'object' && !Array.isArray(remoto)))) {
+      const base = remoto || {};
+      const antesObj = antes || {};
+      const claves = new Set([...Object.keys(base), ...Object.keys(data)]);
+      const merged = {};
+      claves.forEach(function (k) {
+        const valorLocal = data[k] !== undefined ? data[k] : null;
+        const valorAntes = antesObj[k] !== undefined ? antesObj[k] : null;
+        const tocadaAqui = JSON.stringify(valorLocal) !== JSON.stringify(valorAntes);
+        merged[k] = (tocadaAqui || !(k in base)) ? data[k] : base[k];
+      });
+      return merged;
+    }
+    // Arrays (custom/hidden/historial/customProvs/order): no hay una
+    // "clave" con la que fusionar campo a campo, así que se aplica la
+    // regla más simple que sigue siendo real — si este dispositivo no ha
+    // cambiado nada desde la última sincronización, se respeta lo que
+    // haya en el servidor (puede venir de otro dispositivo); si sí ha
+    // cambiado, gana el cambio local.
+    if (remoto !== undefined && remoto !== null && JSON.stringify(data) === JSON.stringify(antes)) {
+      return remoto;
+    }
+    return data;
+  }).then(function (finalData) {
+    if (finalData !== null && finalData !== undefined) {
+      window._pp2SyncedSnapshots[key] = finalData;
+    }
+  }).catch(function (e) {
+    console.warn('[proveedores] fallo al guardar "' + key + '" en Firebase:', e);
+    // Antes el fallo solo quedaba en la consola — la pantalla seguía
+    // actuando como si se hubiera sincronizado entre dispositivos cuando
+    // puede que el cambio solo exista en ese móvil/tablet. Se avisa en
+    // Alertas, con un margen de 2min entre avisos para no inundar el log
+    // si se cae la conexión mientras el auto-guardado sigue reintentando
+    // cada 10s.
+    if (typeof logActivity === 'function' && (!window._pp2LastFailAlert || Date.now() - window._pp2LastFailAlert > 120000)) {
+      window._pp2LastFailAlert = Date.now();
+      logActivity('⚠️ No se pudo guardar el pedido a proveedores en Firebase (sin conexión o sin permisos) — puede que solo exista en este dispositivo', { tipo: 'pp2_no_guardado' });
+    }
+  });
+}
+
 // ── helpers ──────────────────────────────────────────────
 function pp2LoadState() {
   try {
@@ -617,7 +683,7 @@ function pp2SaveState(s) {
   localStorage.setItem(PP2_KEY, JSON.stringify(s));
   if (window.fb_savePP2) {
     window._pp2LocalWrite = Date.now();
-    window.fb_savePP2('state', s).catch(() => {});
+    pp2TransactSave('state', s);
   }
 }
 function pp2LoadCustom() {
@@ -629,7 +695,7 @@ function pp2LoadCustom() {
 }
 function pp2SaveCustom(a) {
   localStorage.setItem(PP2_CUSTOM_KEY, JSON.stringify(a));
-  if (window.fb_savePP2) window.fb_savePP2('custom', a).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('custom', a);
 }
 function pp2LoadHidden() {
   try {
@@ -640,7 +706,7 @@ function pp2LoadHidden() {
 }
 function pp2SaveHidden(a) {
   localStorage.setItem(PP2_HIDDEN_KEY, JSON.stringify(a));
-  if (window.fb_savePP2) window.fb_savePP2('hidden', a).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('hidden', a);
 }
 function pp2LoadProvHab() {
   try {
@@ -651,7 +717,7 @@ function pp2LoadProvHab() {
 }
 function pp2SaveProvHab(o) {
   localStorage.setItem(PP2_PROV_HAB_KEY, JSON.stringify(o));
-  if (window.fb_savePP2) window.fb_savePP2('provHab', o).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('provHab', o);
 }
 function pp2LoadMinimos() {
   try {
@@ -662,7 +728,7 @@ function pp2LoadMinimos() {
 }
 function pp2SaveMinimos(o) {
   localStorage.setItem(PP2_MIN_KEY, JSON.stringify(o));
-  if (window.fb_savePP2) window.fb_savePP2('minimos', o).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('minimos', o);
 }
 function pp2LoadHistorial() {
   try {
@@ -680,7 +746,7 @@ function pp2LoadCustomProvs() {
 }
 function pp2SaveCustomProvs(a) {
   localStorage.setItem(PP2_CUSTOM_PROV_KEY, JSON.stringify(a));
-  if (window.fb_savePP2) window.fb_savePP2('customProvs', a).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('customProvs', a);
 }
 function pp2AllProvs() {
   const custom = pp2LoadCustomProvs();
@@ -689,39 +755,90 @@ function pp2AllProvs() {
 function pp2AllItems() {
   return pp2AllItemsOrdered();
 }
-function pp2GetStockBadge(itemId, nombre) {
-  const minimos = pp2LoadMinimos();
+// Único punto de emparejamiento entre un producto de proveedores y una
+// línea del stock (dpf_stock_historial) — antes estaba copiado 3 veces con
+// la misma lógica (una de ellas, esta función, sin usar por nadie). El
+// emparejamiento por substring podía mostrar un stock incompleto: un
+// producto compuesto como "Cuajada tomates" empareja por substring tanto
+// con la línea de stock "Cuajada" como con "Tomates" (dos entradas
+// distintas del catálogo de stock), y antes se quedaba con la primera que
+// encontrara, mostrando esa cantidad como si fuera el stock completo del
+// producto — ignorando la otra mitad. Ahora: si hay una línea con nombre
+// EXACTO se usa esa directamente (inequívoca aunque otra línea distinta
+// también la contenga como substring); si no, se buscan coincidencias por
+// substring y solo se usa si hay una única línea distinta que encaje —
+// con más de una, es ambiguo y no se muestra ningún badge (mejor no
+// mostrar nada que un número incompleto con pinta de dato fiable).
+function pp2StockBadge(itemId, nombre, stockLastLines, minimos) {
   const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
-  try {
-    const hist = JSON.parse(localStorage.getItem('dpf_stock_historial') || '[]');
-    if (hist.length) {
-      const last = hist[hist.length - 1];
-      if (last.lines && last.lines.length) {
-        for (const line of last.lines) {
-          const text = typeof line === 'string' ? line : line.label || line.name || line.ing || '';
-          const colonIdx = text.indexOf(':');
-          if (colonIdx < 0) continue;
-          const lineName = text.slice(0, colonIdx).trim().toLowerCase();
-          const lineVal = text.slice(colonIdx + 1).trim();
-          const itemName = nombre.toLowerCase();
-          if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
-            const m = lineVal.match(/^(\d+)\s*(.*)/);
-            const qty = m ? parseInt(m[1]) : null;
-            const unit = m ? m[2] || '' : lineVal;
-            const bajo = min !== null && qty !== null ? qty <= min : qty !== null && qty <= 2;
-            return {
-              qty: qty !== null ? String(qty) : lineVal,
-              unit,
-              bajo,
-              min
-            };
-          }
-        }
-      }
+  const itemName = nombre.toLowerCase();
+  let exacta = null;
+  const parciales = [];
+  for (const line of stockLastLines) {
+    const text = typeof line === 'string' ? line : line.label || line.name || line.ing || '';
+    const colonIdx = text.indexOf(':');
+    if (colonIdx < 0) continue;
+    const lineName = text.slice(0, colonIdx).trim().toLowerCase();
+    const lineVal = text.slice(colonIdx + 1).trim();
+    if (lineName === itemName) {
+      exacta = lineVal;
+      break;
     }
-  } catch (e) {}
-  // No hay dato de stock pero puede haber mínimo configurado
-  return null;
+    if (itemName.includes(lineName) || lineName.includes(itemName)) {
+      if (!parciales.some(p => p.lineName === lineName)) parciales.push({ lineName, lineVal });
+    }
+  }
+  const lineVal = exacta !== null ? exacta : (parciales.length === 1 ? parciales[0].lineVal : null);
+  if (lineVal === null) return null;
+  // Ingredientes de limpieza (checklist, no por cantidad): el equipo los
+  // marca como "✅ … : HAY" / "❌ … : NO HAY" (stock-empleados.js). El
+  // regex de cantidad de abajo solo reconoce dígitos al principio del
+  // valor — "NO HAY" no empieza por dígito, así que qty se quedaba "sin
+  // dato" y el badge nunca se marcaba como bajo: un "Lejía → NO HAY" real
+  // se mostraba en verde con el texto literal "En tienda: NO HAY", justo
+  // lo contrario de lo que debía comunicar.
+  const upperVal = lineVal.toUpperCase();
+  if (upperVal === 'NO HAY' || upperVal === 'HAY') {
+    return { qty: upperVal, unit: '', bajo: upperVal === 'NO HAY', min: null };
+  }
+  const m = lineVal.match(/^(\d+)\s*(.*)/);
+  const qty = m ? parseInt(m[1]) : null;
+  const unit = m ? m[2] || '' : lineVal;
+  const bajo = min !== null && qty !== null ? qty <= min : qty !== null && qty <= 2;
+  return {
+    qty: qty !== null ? String(qty) : lineVal,
+    unit,
+    bajo,
+    min
+  };
+}
+
+// Adjunta los listeners de touch-drag (reordenar arrastrando en móvil) al
+// overlay — antes esto se hacía en código de nivel superior, con
+// document.getElementById('pedidos-prov-overlay') ejecutado en el instante
+// en que el bundle admin (js/app-admin.js) terminaba de cargar. El HTML del
+// panel (admin-shell.html, que contiene el propio overlay) y ese bundle se
+// piden en paralelo (ver loadAdminShell() en index.php) sin garantía de
+// cuál termina antes — si el bundle ganaba la carrera, el overlay todavía
+// no existía en el DOM, getElementById devolvía null, y los listeners de
+// touch-drag no se llegaban a adjuntar NUNCA en toda esa sesión (sin
+// ningún aviso ni forma de reintentar salvo recargar la página). Ahora se
+// adjuntan aquí, dentro de openPedidosProvOverlay(), que solo se puede
+// llamar una vez el overlay ya existe de verdad — con una marca en el
+// propio elemento para no duplicar los listeners si se abre más de una vez.
+function _pp2WireTouchDrag(overlayEl) {
+  if (!overlayEl || overlayEl.dataset.pp2TouchWired) return;
+  overlayEl.dataset.pp2TouchWired = '1';
+  overlayEl.addEventListener('touchstart', _pp2TouchStartHandler, {
+    passive: true
+  });
+  // touchmove necesita passive:false para poder llamar preventDefault durante drag
+  overlayEl.addEventListener('touchmove', _pp2TouchMoveHandler, {
+    passive: false
+  });
+  overlayEl.addEventListener('touchend', _pp2TouchEndHandler, {
+    passive: true
+  });
 }
 
 // ── overlay open/close ────────────────────────────────────
@@ -732,13 +849,28 @@ function openPedidosProvOverlay() {
   const _ov = document.getElementById('pedidos-prov-overlay');
   _ov.style.display = 'block';
   _ov.scrollTop = 0;
+  _pp2WireTouchDrag(_ov);
   document.body.style.overflow = 'hidden';
+  // Punto de partida para el merge de pp2TransactSave — lo que este
+  // dispositivo ya tiene sincronizado al abrir el overlay. Se actualiza de
+  // nuevo en cuanto llega el primer snapshot real del listener (más abajo)
+  // y tras cada guardado, así que esto es solo el arranque.
+  window._pp2SyncedSnapshots = {
+    state: pp2LoadState(),
+    custom: pp2LoadCustom(),
+    hidden: pp2LoadHidden(),
+    provHab: pp2LoadProvHab(),
+    minimos: pp2LoadMinimos(),
+    historial: pp2LoadHistorial(),
+    customProvs: pp2LoadCustomProvs(),
+    order: pp2LoadOrder()
+  };
   // Guardado automático en Firebase cada 10 segundos
   if (window._pp2AutoSaveInterval) clearInterval(window._pp2AutoSaveInterval);
   window._pp2AutoSaveInterval = setInterval(function() {
     const s = pp2LoadState();
     if (Object.keys(s).length > 0 && window.fb_savePP2) {
-      window.fb_savePP2('state', s).catch(() => {});
+      pp2TransactSave('state', s);
     }
   }, 10000);
   document.getElementById('pp2-delete-confirm-area').style.display = 'none';
@@ -781,7 +913,12 @@ function openPedidosProvOverlay() {
           window._pp2Unsubscribe();
         } catch (e) {}
       }
-      window._pp2Unsubscribe = window.fb_listenPP2(() => {
+      window._pp2Unsubscribe = window.fb_listenPP2((d) => {
+        // Refrescar el punto de partida del merge con lo último que
+        // confirma el servidor — así el próximo guardado de este
+        // dispositivo compara contra datos reales, no contra lo que había
+        // al abrir el overlay hace rato.
+        if (d && typeof d === 'object') Object.assign(window._pp2SyncedSnapshots, d);
         if (document.getElementById('pedidos-prov-overlay').style.display !== 'none') {
           if (window._pp2LocalWrite && Date.now() - window._pp2LocalWrite < 2000) return;
           clearTimeout(window._pp2FirebaseRenderTO);
@@ -837,30 +974,10 @@ function pp2Render() {
     }
   } catch (e) {}
 
-  // Función de badge con datos ya cargados (sin tocar localStorage)
+  // Función de badge con datos ya cargados (sin tocar localStorage) —
+  // usa el emparejamiento compartido pp2StockBadge() (ver arriba).
   function _stockBadge(itemId, nombre) {
-    const min = minimos[itemId] !== undefined ? parseInt(minimos[itemId]) : null;
-    for (const line of stockLastLines) {
-      const text = typeof line === 'string' ? line : line.label || line.name || line.ing || '';
-      const colonIdx = text.indexOf(':');
-      if (colonIdx < 0) continue;
-      const lineName = text.slice(0, colonIdx).trim().toLowerCase();
-      const lineVal = text.slice(colonIdx + 1).trim();
-      const itemName = nombre.toLowerCase();
-      if (lineName === itemName || itemName.includes(lineName) || lineName.includes(itemName)) {
-        const m = lineVal.match(/^(\d+)\s*(.*)/);
-        const qty = m ? parseInt(m[1]) : null;
-        const unit = m ? m[2] || '' : lineVal;
-        const bajo = min !== null && qty !== null ? qty <= min : qty !== null && qty <= 2;
-        return {
-          qty: qty !== null ? String(qty) : lineVal,
-          unit,
-          bajo,
-          min
-        };
-      }
-    }
-    return null;
+    return pp2StockBadge(itemId, nombre, stockLastLines, minimos);
   }
 
   // Filtro de búsqueda
@@ -948,31 +1065,9 @@ function pp2RenderRow(id) {
     if (histRow.length && histRow[histRow.length - 1] && histRow[histRow.length - 1].lines) stockLastLinesRow = histRow[histRow.length - 1].lines;
   } catch (e) {}
   const minimosCached = pp2LoadMinimos();
-  function _stockBadgeRow(itemId2, nombre2) {
-    const min2 = minimosCached[itemId2] !== undefined ? parseInt(minimosCached[itemId2]) : null;
-    for (const line of stockLastLinesRow) {
-      const text = typeof line === 'string' ? line : line.label || line.name || line.ing || '';
-      const colonIdx = text.indexOf(':');
-      if (colonIdx < 0) continue;
-      const lineName = text.slice(0, colonIdx).trim().toLowerCase();
-      const lineVal = text.slice(colonIdx + 1).trim();
-      const itemName2 = nombre2.toLowerCase();
-      if (lineName === itemName2 || itemName2.includes(lineName) || lineName.includes(itemName2)) {
-        const m = lineVal.match(/^(\d+)\s*(.*)/);
-        const qty2 = m ? parseInt(m[1]) : null;
-        const unit2 = m ? m[2] || '' : lineVal;
-        const bajo2 = min2 !== null && qty2 !== null ? qty2 <= min2 : qty2 !== null && qty2 <= 2;
-        return {
-          qty: qty2 !== null ? String(qty2) : lineVal,
-          unit: unit2,
-          bajo: bajo2,
-          min: min2
-        };
-      }
-    }
-    return null;
-  }
-  const stock = _stockBadgeRow(id, item.nombre);
+  // Emparejamiento compartido pp2StockBadge() (ver arriba) — antes era una
+  // tercera copia de la misma lógica.
+  const stock = pp2StockBadge(id, item.nombre, stockLastLinesRow, minimosCached);
   const hasQty = qty > 0;
 
   // Actualizar fondo y borde
@@ -1241,19 +1336,50 @@ function pp2NuevaSemana() {
 
 // ── historial de pedidos ──────────────────────────────────
 function pp2GuardarEnHistorial(nota) {
-  const hist = pp2LoadHistorial();
   const fecha = new Date().toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit'
   });
-  hist.push({
-    fecha,
-    nota
-  }); // más antiguo primero, más reciente al final
+  const entrada = { fecha, nota };
+  const hist = pp2LoadHistorial();
+  hist.push(entrada); // más antiguo primero, más reciente al final
   if (hist.length > 50) hist.shift(); // máximo 50 entradas
   localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(hist));
-  if (window.fb_savePP2) window.fb_savePP2('historial', hist).catch(() => {});
+  // El historial es un log — no vale el merge genérico de pp2TransactSave
+  // (que solo sabe "gana el local o gana el remoto entero"): si dos
+  // dispositivos guardan un pedido casi a la vez, con eso solo se quedaría
+  // la entrada del que escriba último, perdiendo en silencio la del otro.
+  // Aquí se añade la entrada nueva DENTRO de la propia transacción, sobre
+  // el array más reciente que tenga el servidor en cada reintento — así
+  // ambas entradas quedan, sea cual sea el orden real de guardado.
+  if (window.fb_transactJsonString) {
+    window.fb_transactJsonString('pp2/historial', function (remoto) {
+      const arr = Array.isArray(remoto) ? remoto.slice() : [];
+      arr.push(entrada);
+      if (arr.length > 50) arr.shift();
+      return arr;
+    }).then(function (finalData) {
+      if (finalData) {
+        window._pp2SyncedSnapshots.historial = finalData;
+        localStorage.setItem(PP2_HISTORIAL_KEY, JSON.stringify(finalData));
+      }
+    }).catch(function (e) {
+      console.warn('[proveedores] fallo al guardar "historial" en Firebase:', e);
+      if (typeof logActivity === 'function' && (!window._pp2LastFailAlert || Date.now() - window._pp2LastFailAlert > 120000)) {
+        window._pp2LastFailAlert = Date.now();
+        logActivity('⚠️ No se pudo guardar el pedido a proveedores en Firebase (sin conexión o sin permisos) — puede que solo exista en este dispositivo', { tipo: 'pp2_no_guardado' });
+      }
+    });
+  } else if (window.fb_savePP2) {
+    window.fb_savePP2('historial', hist).catch(function (e) {
+      console.warn('[proveedores] fallo al guardar "historial" en Firebase:', e);
+      if (typeof logActivity === 'function' && (!window._pp2LastFailAlert || Date.now() - window._pp2LastFailAlert > 120000)) {
+        window._pp2LastFailAlert = Date.now();
+        logActivity('⚠️ No se pudo guardar el pedido a proveedores en Firebase (sin conexión o sin permisos) — puede que solo exista en este dispositivo', { tipo: 'pp2_no_guardado' });
+      }
+    });
+  }
 }
 function pp2VerHistorial() {
   const hist = pp2LoadHistorial();
@@ -1388,30 +1514,39 @@ function pp2Save() {
 }
 
 // ── nota del pedido (agrupada por proveedor) ──────────────
+// Antes descartaba en silencio cualquier producto con cantidad pero sin
+// proveedor asignado (if (!s.prov) return;) — un pedido a mitad de rellenar
+// podía enviarse por WhatsApp incompleto sin que nadie se enterase. Ahora
+// agrupa esos productos bajo "SIN PROVEEDOR", igual que ya hacía pp2Save()
+// (el botón "💾 Guardar"), para que al menos se vean en la nota en vez de
+// desaparecer.
 function pp2BuildNota() {
   const state = pp2LoadState();
   const items = pp2AllItems();
+  const allProvs = pp2AllProvs();
   const byProv = {};
   items.forEach(item => {
     const s = state[item.id] || {};
-    if (!s.qty || s.qty <= 0 || !s.prov) return;
-    if (!byProv[s.prov]) byProv[s.prov] = [];
-    byProv[s.prov].push(item);
+    if (!s.qty || s.qty <= 0) return;
+    const prov = s.prov || '__sin__';
+    if (!byProv[prov]) byProv[prov] = [];
+    byProv[prov].push(item);
   });
   if (!Object.keys(byProv).length) return null;
   const sortedProvs = Object.keys(byProv).sort((a, b) => {
-    const la = (PP_PROVS.find(p => p.id === a) || {
+    if (a === '__sin__') return 1;
+    if (b === '__sin__') return -1;
+    const la = (allProvs.find(p => p.id === a) || {
       label: a
     }).label;
-    const lb = (PP_PROVS.find(p => p.id === b) || {
+    const lb = (allProvs.find(p => p.id === b) || {
       label: b
     }).label;
     return la.localeCompare(lb, 'es');
   });
   let txt = '🛒 PEDIDO\n';
   sortedProvs.forEach(provId => {
-    const allProvs = pp2AllProvs();
-    const provLabel = (allProvs.find(p => p.id === provId) || {
+    const provLabel = provId === '__sin__' ? 'SIN PROVEEDOR' : (allProvs.find(p => p.id === provId) || {
       label: provId
     }).label.toUpperCase();
     txt += '\n' + provLabel + ':\n';
@@ -1427,7 +1562,7 @@ function pp2BuildNota() {
 function pp2SaveToPad() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay cantidades para enviar');
     return;
   }
   document.getElementById('pp2-pad-text').value = txt;
@@ -1462,9 +1597,16 @@ function pp2PadWA() {
 function pp2ExportWA() {
   const txt = pp2BuildNota();
   if (!txt) {
-    alert('No hay productos con cantidad y proveedor asignado');
+    alert('No hay cantidades para enviar');
     return;
   }
+  // Antes solo el botón separado "💾 Guardar" (pp2Save) guardaba en el
+  // historial — este botón, el que de verdad envía el pedido por WhatsApp,
+  // nunca lo hacía. Si el flujo habitual era ir directo a WhatsApp sin
+  // pasar por "Guardar", ningún pedido quedaba registrado para "usar de
+  // base" en semanas futuras, aunque el propio historial vacío prometía
+  // justo eso.
+  pp2GuardarEnHistorial(txt);
   window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
 }
 
@@ -1479,7 +1621,7 @@ function pp2LoadOrder() {
 }
 function pp2SaveOrder(ids) {
   localStorage.setItem(PP2_ORDER_KEY, JSON.stringify(ids));
-  if (window.fb_savePP2) window.fb_savePP2('order', ids).catch(() => {});
+  if (window.fb_savePP2) pp2TransactSave('order', ids);
 }
 
 // Returns all items in persisted order, patching in any new items at the end
@@ -1598,20 +1740,9 @@ function _pp2TouchEndHandler(e) {
   if (best) _pp2ReorderItems(srcId, best.el.dataset.id);
 }
 
-// Adjuntar al overlay en vez de document — así no toca el scroll del resto de la página
-const _pp2Overlay = document.getElementById('pedidos-prov-overlay');
-if (_pp2Overlay) {
-  _pp2Overlay.addEventListener('touchstart', _pp2TouchStartHandler, {
-    passive: true
-  });
-  // touchmove necesita passive:false para poder llamar preventDefault durante drag
-  _pp2Overlay.addEventListener('touchmove', _pp2TouchMoveHandler, {
-    passive: false
-  });
-  _pp2Overlay.addEventListener('touchend', _pp2TouchEndHandler, {
-    passive: true
-  });
-}
+// Adjuntar los listeners de touch-drag al overlay (ver _pp2WireTouchDrag(),
+// llamado desde openPedidosProvOverlay() — no aquí arriba, ver el porqué en
+// el comentario de esa función).
 function _pp2ReorderItems(srcId, targetId) {
   const items = pp2AllItemsOrdered();
   const ids = items.map(i => i.id);

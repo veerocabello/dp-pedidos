@@ -117,12 +117,51 @@ function _initFirebase() {
     }, 200);
   }
 
+  // Diferencia entre el reloj de ESTE dispositivo y el reloj real del
+  // servidor de Firebase — nodo especial que Firebase mantiene solo para
+  // esto, no hace falta ningún endpoint propio. Se usa para que la cuenta
+  // atrás/precio de la oferta relámpago no dependa de que el reloj del
+  // móvil del cliente esté bien puesto (ver window._dpfServerTimeOffsetMs
+  // y _ahoraServidor() en carta.js).
+  window.fb_listenServerTimeOffset = function(cb) {
+    return db.ref('.info/serverTimeOffset').on('value', function(sn) { cb(sn.val() || 0); });
+  };
   var tK = function() { return new Date().toISOString().slice(0,10); };
   var jset = function(r,v) { return db.ref(r).set(v); };
   var jget = function(r) { return db.ref(r).once("value"); };
-  var jlisten = function(r,cb) { return db.ref(r).on("value",cb); };
+  var jlisten = function(r,cb,errCb) { return errCb ? db.ref(r).on("value",cb,errCb) : db.ref(r).on("value",cb); };
   var jparse = function(v) { try{return JSON.parse(v);}catch(e){return null;} };
   var jstr = function(v) { return JSON.stringify(v); };
+  // Escritura ATÓMICA de un nodo que guarda un objeto/array como STRING JSON
+  // (el mismo formato que jset/jget en toda la web). mutatorFn recibe el
+  // valor YA PARSEADO actual (o null si no existía) y debe devolver el
+  // nuevo valor a guardar. Usa una transacción real de Firebase: si dos
+  // dispositivos escriben casi a la vez, Firebase reintenta automáticamente
+  // con el dato más reciente en vez de que uno pise el cambio del otro.
+  window.fb_transactJsonString = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      var parsed = null;
+      if (typeof current === 'string') {
+        parsed = jparse(current);
+      } else if (current !== null && current !== undefined) {
+        parsed = current;
+      }
+      var updated = mutatorFn(parsed);
+      return jstr(updated);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? jparse(result.snapshot.val()) : null;
+  };
+  // Igual que fb_transactJsonString pero para nodos que guardan el objeto/
+  // array nativo de Firebase directamente (sin pasar por JSON.stringify),
+  // como pp2/*.
+  window.fb_transactNative = async function(path, mutatorFn) {
+    var result = await db.ref(path).transaction(function(current) {
+      return mutatorFn(current === undefined ? null : current);
+    });
+    if (!result.committed) return null;
+    return result.snapshot.exists() ? result.snapshot.val() : null;
+  };
   // SLOTS
   window.fb_incrementSlot = async function(s) { await db.ref("slots/"+tK()+"/"+s).transaction(function(v){return(v||0)+1;}); };
   window.fb_getSlotCount = async function(s) { var sn=await jget("slots/"+tK()+"/"+s); return sn.exists()?sn.val():0; };
@@ -132,14 +171,26 @@ function _initFirebase() {
   // STATS
   window.fb_saveStats = async function(st) { await jset("stats/"+st.date,st); };
   window.fb_getStats = async function(d) { var sn=await jget("stats/"+d); return sn.exists()?sn.val():null; };
-  window.fb_listenStats = function(d,cb) { return jlisten("stats/"+d,function(sn){cb(sn.exists()?sn.val():null);}); };
+  // errCb (opcional): antes un permission-denied o token caducado en este
+  // listener fallaba del todo en silencio — sin error en consola, sin aviso
+  // en pantalla — indistinguible de "todavía no ha llegado ningún pedido".
+  // Ver initFirebaseListeners() en nucleo-compartido.js, que ahora sí pasa
+  // uno y enciende un aviso bien visible cuando esto pasa.
+  window.fb_listenStats = function(d,cb,errCb) { return jlisten("stats/"+d,function(sn){cb(sn.exists()?sn.val():null);},errCb); };
   // ORDER STATUS
   window.fb_setOrderStatus = async function(n,st) { await jset("orderStatus/"+tK()+"/"+n.replace("#","").replace("T",""),st); };
   window.fb_saveTicket = async function(num, data) { await jset("tickets/"+tK()+"/"+num.replace("#","").replace("T",""), data); };
   window.fb_loadAllTicketDates = async function() { var sn=await jget("tickets"); return sn.exists()?Object.keys(sn.val()):[]; };
   window.fb_loadTicketsByDate = async function(fecha) { var sn=await jget("tickets/"+fecha); return sn.exists()?sn.val():null; };
   window.fb_getOrderStatuses = async function() { var sn=await jget("orderStatus/"+tK()); return sn.exists()?sn.val():{}; };
-  window.fb_listenOrderStatuses = function(cb) { return jlisten("orderStatus/"+tK(),function(sn){cb(sn.exists()?sn.val():{});}); };
+  window.fb_listenOrderStatuses = function(cb,errCb) { return jlisten("orderStatus/"+tK(),function(sn){cb(sn.exists()?sn.val():{});},errCb); };
+  // PEDIDOS YA IMPRESOS — nodo propio (no dentro de orderStatus, que guarda
+  // un string de estado por pedido, no un flag aparte) para que "🖨️
+  // Impreso" se sincronice entre pestañas/dispositivos igual que el resto
+  // del estado de cocina, en vez de vivir solo en memoria de cada tablet.
+  window.fb_setPrinted = async function(n) { await jset("printedOrders/"+tK()+"/"+n.replace("#","").replace("T",""),true); };
+  window.fb_getPrintedOrders = async function() { var sn=await jget("printedOrders/"+tK()); return sn.exists()?sn.val():{}; };
+  window.fb_listenPrintedOrders = function(cb) { return jlisten("printedOrders/"+tK(),function(sn){cb(sn.exists()?sn.val():{});}); };
   // OPEN
   window.fb_setOpen = async function(o) { await jset("config/open",o); };
   window.fb_listenOpen = function(cb) { return jlisten("config/open",function(sn){cb(sn.exists()?sn.val():true);}); };
@@ -160,6 +211,10 @@ function _initFirebase() {
   // ACTIVITY LOG
   window.fb_saveActivityLog = async function(l) { await jset("config/activityLog",jstr(l)); };
   window.fb_loadActivityLog = async function() { var sn=await jget("config/activityLog"); return sn.exists()?jparse(sn.val()):null; };
+  window.fb_listenActivityLog = function(cb) { return jlisten("config/activityLog",function(sn){cb(sn.exists()?jparse(sn.val()):null);}); };
+  // COLA DE IMPRESIÓN PENDIENTE (respaldo — vivía solo en localStorage)
+  window.fb_saveColaImpresion = async function(l) { await jset("config/colaImpresionPendiente",jstr(l)); };
+  window.fb_loadColaImpresion = async function() { var sn=await jget("config/colaImpresionPendiente"); return sn.exists()?jparse(sn.val()):null; };
   // AUTO-BORRADO
   window.fb_saveAutoDelete = async function(d) { await jset("config/autoDeleteDays",d); };
   window.fb_loadAutoDelete = async function() { var sn=await jget("config/autoDeleteDays"); return sn.exists()?sn.val():null; };
@@ -244,26 +299,56 @@ function _initFirebase() {
   // ORDERS
   window.fb_saveOrdersOpen = async function(o) { await jset("config/ordersOpen",o); };
   window.fb_loadOrdersOpen = async function() { var sn=await jget("config/ordersOpen"); return sn.exists()?sn.val():null; };
+  // En tiempo real (no solo al cargar la página) — para que si la
+  // auto-pausa por saturación cierra/reabre los pedidos, un cliente que ya
+  // tenga la web abierta lo vea al momento sin tener que recargar.
+  window.fb_listenOrdersOpen = function(cb) { return jlisten("config/ordersOpen", function(sn){ if(sn.exists()) cb(sn.val()); }); };
   window.fb_saveOrdersMsg = async function(m) { await jset("config/ordersMsg",m); };
   window.fb_loadOrdersMsg = async function() { var sn=await jget("config/ordersMsg"); return sn.exists()?sn.val():null; };
+  window.fb_listenOrdersMsg = function(cb) { return jlisten("config/ordersMsg", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // AUTO-PAUSA POR SATURACIÓN
+  window.fb_saveAutoPausaConfig = async function(enabled, umbral, msg) { await jset("config/autoPausaConfig", {enabled:enabled, umbral:umbral, msg:msg}); };
+  window.fb_listenAutoPausaConfig = function(cb) { return jlisten("config/autoPausaConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Estado compartido entre dispositivos: si la pausa actual la activó el
+  // propio sistema (para saber si puede reabrirla sola) y hasta cuándo no
+  // debe tocar nada tras un toggle manual del admin.
+  window.fb_saveAutoPausaEstado = async function(activa, cooldownUntil) { await jset("config/autoPausaEstado", {activa:activa, cooldownUntil:cooldownUntil||0}); };
+  window.fb_listenAutoPausaEstado = function(cb) { return jlisten("config/autoPausaEstado", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // AVISO SUAVE DE SATURACIÓN (previo a la auto-pausa)
+  window.fb_saveAvisoSaturacionConfig = async function(enabled, umbral, msg, minutosSalto, minPorPedido) { await jset("config/avisoSaturacionConfig", {enabled:enabled, umbral:umbral, msg:msg, minutosSalto:minutosSalto, minPorPedido:minPorPedido}); };
+  window.fb_listenAvisoSaturacionConfig = function(cb) { return jlisten("config/avisoSaturacionConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Estado PÚBLICO del aviso (activo/mensaje ahora mismo) — a diferencia de
+  // avisoSaturacionConfig (los umbrales, solo para admin), esto sí lo lee
+  // cualquier visitante anónimo para pintar el banner, porque solo una
+  // sesión de admin/cocina puede contar los pedidos pendientes de verdad
+  // (stats/ y orderStatus/ son de solo-admin) — el admin publica aquí el
+  // resultado ya calculado, nunca los datos en bruto.
+  window.fb_saveAvisoSaturacionEstado = async function(activo, msg) { await jset("config/avisoSaturacionEstado", {activo:activo, msg:msg||''}); };
+  window.fb_listenAvisoSaturacionEstado = function(cb) { return jlisten("config/avisoSaturacionEstado", function(sn){ cb(sn.exists()?sn.val():{activo:false,msg:''}); }); };
+  // PAUSA EXPRÉS (pausa temporal con cuenta atrás, independiente de la auto-pausa)
+  window.fb_savePausaExpresHasta = async function(ts) { await jset("config/pausaExpresHasta", ts||0); };
+  window.fb_listenPausaExpresHasta = function(cb) { return jlisten("config/pausaExpresHasta", function(sn){ cb(sn.exists()?sn.val():0); }); };
+  // OFERTA RELÁMPAGO (descuento por tiempo limitado, lanzada a mano desde el
+  // panel). null = sin oferta activa; "activa" se decide comparando el campo
+  // fin contra la hora actual (nunca un booleano aparte), así que cancelarla
+  // es simplemente borrar el nodo.
+  window.fb_saveOfertaRelampago = async function(oferta) { await jset("config/ofertaRelampago", oferta); };
+  window.fb_listenOfertaRelampago = function(cb) { return jlisten("config/ofertaRelampago", function(sn){ cb(sn.exists()?sn.val():null); }); };
   // TOKENS
   window.fb_saveUrlToken = async function(t) { await jset("config/urlToken",t); };
   window.fb_loadUrlToken = async function() { var sn=await jget("config/urlToken"); return sn.exists()?sn.val():null; };
   window.fb_saveBimbaToken = async function(t) { await jset("config/bimbaToken",t); };
   window.fb_loadBimbaToken = async function() { var sn=await jget("config/bimbaToken"); return sn.exists()?sn.val():null; };
+  window.fb_saveBimbaTokenExpiry = async function(ts) { await jset("config/bimbaTokenExpiry",ts); };
   // STOCK PWD
   window.fb_saveStockPwd = async function(h) { await jset("config/stockPwd",h); };
   window.fb_loadStockPwd = async function() { var sn=await jget("config/stockPwd"); return sn.exists()?sn.val():null; };
-  // ADMIN PWD
-  window.fb_saveAdminPwd = async function(h) { await jset("config/adminPwd",h); };
-  window.fb_loadAdminPwd = async function() { var sn=await jget("config/adminPwd"); return sn.exists()?sn.val():null; };
   // EMPRESA
   window.fb_saveEmpresa = async function(e,c) { await jset("config/empresa",jstr({empresa:e,cif:c})); };
   window.fb_loadEmpresa = async function() { var sn=await jget("config/empresa"); return sn.exists()?jparse(sn.val()):null; };
   // CÓDIGOS DE DESCUENTO
   window.fb_saveDiscount = async function(code, data) { await jset("discounts/" + code.toUpperCase(), data); };
   window.fb_loadDiscounts = async function() { var sn=await jget("discounts"); return sn.exists()?sn.val():{}; };
-  window.fb_getDiscount = async function(code) { var sn=await jget("discounts/"+code.toUpperCase()); return sn.exists()?sn.val():null; };
   window.fb_deleteDiscount = async function(code) { await jset("discounts/"+code.toUpperCase(), null); };
   window.fb_incrementDiscountUse = async function(code) {
     await firebase.database().ref("discounts/"+code.toUpperCase()+"/uses").transaction(function(v){ return (v||0)+1; });
@@ -276,6 +361,10 @@ function _initFirebase() {
     var sn = await jget("ruleta_giros/" + fecha);
     return sn.exists() ? sn.val() : {};
   };
+  window.fb_loadRascaGiros = async function(fecha) {
+    var sn = await jget("rasca_giros/" + fecha);
+    return sn.exists() ? sn.val() : {};
+  };
   window.fb_saveRuletaConfig = async function(config) {
     await jset("ruleta_config", config);
   };
@@ -283,6 +372,18 @@ function _initFirebase() {
     var sn = await jget("ruleta_config");
     return sn.exists() ? sn.val() : null;
   };
+  window.fb_listenRuletaConfig = function(cb) { return jlisten("ruleta_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // RASCA Y GANA — mismo formato que la ruleta (premios con peso)
+  window.fb_saveRascaConfig = async function(config) { await jset("rasca_config", config); };
+  window.fb_loadRascaConfig = async function() {
+    var sn = await jget("rasca_config");
+    return sn.exists() ? sn.val() : null;
+  };
+  window.fb_listenRascaConfig = function(cb) { return jlisten("rasca_config", function(sn){ cb(sn.exists()?sn.val():null); }); };
+  // JUEGO ACTIVO — qué juego (si alguno) ve el cliente en la carta
+  window.fb_saveJuegoActivo = async function(juego) { await jset("config/juegoActivo", juego); };
+  window.fb_loadJuegoActivo = async function() { var sn=await jget("config/juegoActivo"); return sn.exists()?sn.val():'ninguno'; };
+  window.fb_listenJuegoActivo = function(cb) { return jlisten("config/juegoActivo", function(sn){ cb(sn.exists()?sn.val():'ninguno'); }); };
   // LOGIN LOG (intentos de acceso al panel)
   window.fb_saveLoginLog = async function(entry) {
     var sid = entry.ts || Date.now();
@@ -322,9 +423,16 @@ function _initFirebase() {
   window.fb_saveBlacklist = async function(list) { await jset("config/blacklist", jstr(list)); };
   window.fb_loadBlacklist = async function() { var sn=await jget("config/blacklist"); return sn.exists()?jparse(sn.val()):null; };
   window.fb_listenBlacklist = function(cb) { return jlisten("config/blacklist",function(sn){if(sn.exists())cb(jparse(sn.val()));}); };
+  // CLIENTES OCULTOS (borrado manual de la lista "Clientes" del panel — no borra pedidos)
+  window.fb_saveClientesOcultos = async function(list) { await jset("config/clientesOcultos", jstr(list)); };
+  window.fb_loadClientesOcultos = async function() { var sn=await jget("config/clientesOcultos"); return sn.exists()?jparse(sn.val()):null; };
   // ANTISPAM CONFIG (cooldown + dailyLimit)
   window.fb_saveAntiSpamCfg = async function(cfg) { await jset("config/antiSpamCfg", jstr(cfg)); };
   window.fb_loadAntiSpamCfg = async function() { var sn=await jget("config/antiSpamCfg"); return sn.exists()?jparse(sn.val()):null; };
+  // ESTADO DE LA ÚLTIMA COPIA DE SEGURIDAD (lo escribe backup-firebase.php,
+  // fuera de public_html, con la cuenta de servicio tras cada ejecución del
+  // cron — aquí solo se lee para mostrarlo en el panel).
+  window.fb_loadBackupStatus = async function() { var sn=await jget("config/backupStatus"); return sn.exists()?sn.val():null; };
   // PHONE LOG (registro de pedidos por teléfono para cooldown)
   window.fb_logPhoneOrder = async function(phone, ts) {
     var todayKey = new Date().toISOString().slice(0,10);
@@ -344,6 +452,66 @@ function _initFirebase() {
   // FEE CONFIG
   window.fb_saveFeeConfig = async function(enabled, amount, label) { await jset("config/feeConfig", {enabled:enabled, amount:amount, label:label}); };
   window.fb_listenFeeConfig = function(cb) { return jlisten("config/feeConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  // Lectura directa de una sola vez — igual que fb_loadLocalFeeCode: el
+  // listener en tiempo real puede tardar en entregar su primer valor más
+  // de lo que tarda un cliente en rellenar el formulario y confirmar, y
+  // hasta entonces getFeeEnabled()/getFee2Enabled() devuelven el valor por
+  // defecto (desactivado) aunque estén activados de verdad.
+  window.fb_loadFeeConfig = async function() { var sn = await jget("config/feeConfig"); return sn.exists() ? sn.val() : null; };
+  // FEE2 CONFIG (segundo gasto fijo, independiente del anterior)
+  window.fb_saveFee2Config = async function(enabled, amount, label) { await jset("config/fee2Config", {enabled:enabled, amount:amount, label:label}); };
+  window.fb_saveStudentDiscountConfig = async function(enabled, pct) { await jset("config/studentDiscountConfig", {enabled:enabled, pct:pct}); };
+  window.fb_listenStudentDiscountConfig = function(cb) { return jlisten("config/studentDiscountConfig", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  window.fb_loadStudentDiscountConfig = async function() { var sn = await jget("config/studentDiscountConfig"); return sn.exists() ? sn.val() : null; };
+  window.fb_listenFee2Config = function(cb) { return jlisten("config/fee2Config", function(sn){ if(sn.exists()) cb(sn.val()); }); };
+  window.fb_loadFee2Config = async function() { var sn = await jget("config/fee2Config"); return sn.exists() ? sn.val() : null; };
+  // CÓDIGO "PEDIDO DESDE EL LOCAL" (quita los gastos de gestión y, si es de
+  // hoy, también salta el SMS — ver validarSmsToken/localCodeValido en
+  // guardar-pedido.php). Se guarda con la fecha del día en que se creó para
+  // que caduque solo a la mañana siguiente sin tener que borrarlo a mano —
+  // y como solo se guarda un código a la vez, generar uno nuevo de urgencia
+  // desde el mostrador invalida el anterior al instante, lo sobrescribe.
+  // Normaliza: si en Firebase quedó el formato antiguo (string suelto, de
+  // antes de que el código caducara cada día), se trata como código sin
+  // fecha — no coincidirá con el día de hoy, así que simplemente deja de
+  // aplicar hasta que se guarde de nuevo desde el panel (que ya escribe
+  // siempre el formato nuevo).
+  var _normLocalCode = function(v) {
+    if (v && typeof v === 'object') return { code: v.code || '', fecha: v.fecha || '' };
+    return { code: v || '', fecha: '' };
+  };
+  window.fb_saveLocalFeeCode = async function(code) { await jset("config/localFeeCode", { code: code, fecha: tK() }); };
+  window.fb_listenLocalFeeCode = function(cb) { return jlisten("config/localFeeCode", function(sn){ cb(sn.exists()?_normLocalCode(sn.val()):{code:"",fecha:""}); }); };
+  // Lectura directa de una sola vez — para cuando hace falta el valor YA
+  // (comprobar el ?local= del QR) y no se puede esperar a que el listener
+  // en tiempo real reciba su primer dato, que en una visita nueva/incógnito
+  // puede tardar más de lo que tarda el cliente en rellenar el formulario.
+  window.fb_loadLocalFeeCode = async function() { var sn = await jget("config/localFeeCode"); return sn.exists() ? _normLocalCode(sn.val()) : {code:"",fecha:""}; };
+  // TIEMPO DE ESPERA ENTRE TICKETS (pedidos hechos con QR desde tienda)
+  window.fb_saveTiendaEsperaMinutos = async function(min) { await jset("config/tiendaEsperaMinutos", min); };
+  window.fb_listenTiendaEsperaMinutos = function(cb) { return jlisten("config/tiendaEsperaMinutos", function(sn){ cb(sn.exists()?sn.val():0); }); };
+  // DÍAS DE EXPIRACIÓN DE "DISPOSITIVO DE CONFIANZA" — antes solo vivía en
+  // localStorage de cada dispositivo (cambiarlo desde el móvil no se
+  // reflejaba al marcar de confianza el ordenador del local).
+  window.fb_saveTrustedDays = async function(days) { await jset("config/trustedDeviceDays", days); };
+  window.fb_loadTrustedDays = async function() { var sn = await jget("config/trustedDeviceDays"); return sn.exists() ? sn.val() : null; };
+  // VERIFICACIÓN SMS OBLIGATORIA — interruptor de emergencia (Twilio caído,
+  // etc.). Si no hay valor guardado se trata como activada (true), que es
+  // el comportamiento de siempre — así una instalación que nunca lo toque
+  // sigue exigiendo el SMS como hasta ahora.
+  window.fb_saveSmsVerificacionActiva = async function(v) { await jset("config/smsVerificacionActiva", v); };
+  window.fb_listenSmsVerificacionActiva = function(cb) { return jlisten("config/smsVerificacionActiva", function(sn){ cb(sn.exists() ? sn.val() !== false : true); }); };
+  window.fb_loadSmsVerificacionActiva = async function() { var sn = await jget("config/smsVerificacionActiva"); return sn.exists() ? sn.val() !== false : true; };
+  // INCIDENCIAS DE CLIENTES (formulario Tally "¿Algún problema con tu pedido?",
+  // recibidas y guardadas por webhook-incidencia.php en el nodo "incidencias")
+  window.fb_listenIncidencias = function(cb) { return jlisten("incidencias", function(sn){ cb(sn.exists()?sn.val():{}); }); };
+  window.fb_setIncidenciaEstado = async function(key, estado) { await jset("incidencias/"+key+"/estado", estado); };
+  // ESTADO DE CONEXIÓN — ".info/connected" es la única señal fiable de que
+  // el cliente tiene una conexión REAL con Firebase en cada momento;
+  // _firebaseReady (más abajo) solo confirma que el SDK cargó al principio,
+  // no que los datos en tiempo real sigan llegando después.
+  window.fb_listenConnectionState = function(cb) { return db.ref(".info/connected").on("value", function(sn){ cb(sn.val() === true); }); };
+  window.fb_checkConnection = async function() { var sn = await db.ref(".info/connected").once("value"); return sn.val() === true; };
   // READY
   window._firebaseReady = true;
   document.dispatchEvent(new Event("firebaseReady"));

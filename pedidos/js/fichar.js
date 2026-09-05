@@ -6,9 +6,57 @@
    de empleados (DNI, teléfono, PIN) al navegador.
    ═══════════════════════════════════════════════════ */
 
+// Antes cada llamada al servidor (login, pedir el historial, registrar el
+// fichaje —incluida la firma manuscrita ya dibujada) era un único fetch
+// sin reintento: con el wifi compartido y a menudo saturado del
+// mostrador, un fallo puntual obligaba a repetir todo el proceso a mano,
+// incluida volver a dibujar la firma desde cero (se perdía el trazo ya
+// hecho). Este helper reintenta unas veces con espera creciente antes de
+// rendirse — solo entonces se le pide al empleado que lo intente de
+// nuevo él mismo.
+async function _ficharFetchConReintento(url, opciones, intentos) {
+  const esperas = [800, 2000, 4000];
+  let ultimoError = null;
+  for (let i = 0; i < (intentos || esperas.length + 1); i++) {
+    try {
+      return await fetch(url, opciones);
+    } catch (e) {
+      ultimoError = e;
+      if (i < esperas.length) await new Promise(r => setTimeout(r, esperas[i]));
+    }
+  }
+  throw ultimoError;
+}
+
 let _ficharPin = '';
 let _ficharEmpActivo = null; // { empId, nombre, manIn, manOut, tarIn, tarOut }
 let _ficharHistorialCache = [];
+
+// Antes el resumen de horas del mes (el que ve el propio empleado, aquí
+// abajo) usaba solo la PRIMERA entrada y la ÚLTIMA salida del día — con el
+// turno partido típico de este negocio (mañana + tarde), eso cuenta el
+// descanso de por medio como si fuera tiempo trabajado, así que el
+// empleado veía más horas de las reales. El panel de admin (js/auth.js,
+// _empCalcularHorasDia) ya tenía la cuenta correcta — se duplica aquí (en
+// vez de compartir el archivo) porque fichar.js está pensado a propósito
+// para funcionar solo, sin cargar el resto de la web ni el panel admin.
+function _ficharMinutosOrden(hora) {
+  const p = hora.split(':').map(Number);
+  return (p[0] < 6 ? p[0] + 24 : p[0]) * 60 + (p[1] || 0);
+}
+function _ficharCalcularHorasDia(fichs) {
+  const ordenados = fichs.slice().sort((a, b) => _ficharMinutosOrden(a.hora) - _ficharMinutosOrden(b.hora));
+  let totalMin = 0, entradaAbiertaMin = null;
+  ordenados.forEach(f => {
+    if (f.tipo === 'entrada') {
+      entradaAbiertaMin = _ficharMinutosOrden(f.hora);
+    } else if (f.tipo === 'salida' && entradaAbiertaMin !== null) {
+      totalMin += Math.max(0, _ficharMinutosOrden(f.hora) - entradaAbiertaMin);
+      entradaAbiertaMin = null;
+    }
+  });
+  return { totalMin };
+}
 
 function ficharMostrarOverlay() {
   document.getElementById('fichar-overlay').classList.add('open');
@@ -39,7 +87,7 @@ function ficharActualizarDots() {
 
 async function ficharPinOk() {
   try {
-    const res = await fetch('fichar-pin-check.php', {
+    const res = await _ficharFetchConReintento('fichar-pin-check.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'login', pin: _ficharPin })
@@ -52,6 +100,7 @@ async function ficharPinOk() {
       return;
     }
     _ficharEmpActivo = data;
+    _ficharReiniciarTimeoutInactividad();
     await ficharMostrarVista(data);
   } catch (e) {
     document.getElementById('fichar-pin-error').textContent = 'Error de conexión. Inténtalo de nuevo.';
@@ -75,10 +124,10 @@ async function ficharMostrarVista(emp) {
   // Pedir el historial de este empleado al servidor
   let fich = [];
   try {
-    const res = await fetch('fichar-pin-check.php', {
+    const res = await _ficharFetchConReintento('fichar-pin-check.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'historial', empId: emp.empId })
+      body: JSON.stringify({ action: 'historial', sessionToken: emp.sessionToken })
     });
     const data = await res.json();
     if (data.success) fich = data.fichajes || [];
@@ -97,19 +146,15 @@ async function ficharMostrarVista(emp) {
   const mes = hoy.toISOString().slice(0, 7);
   const porDia = {};
   fich.filter(f => f.fecha.startsWith(mes)).forEach(f => {
-    if (!porDia[f.fecha]) porDia[f.fecha] = { e: [], s: [] };
-    if (f.tipo === 'entrada') porDia[f.fecha].e.push(f.hora); else porDia[f.fecha].s.push(f.hora);
+    if (!porDia[f.fecha]) porDia[f.fecha] = [];
+    porDia[f.fecha].push(f);
   });
   let totalMin = 0, dias = new Set();
   Object.keys(porDia).forEach(fecha => {
-    const { e, s } = porDia[fecha];
-    if (e.length && s.length) {
+    const { totalMin: minDia } = _ficharCalcularHorasDia(porDia[fecha]);
+    if (minDia > 0) {
       dias.add(fecha);
-      const [eh, em] = e[0].split(':').map(Number);
-      const [sh, sm] = s[s.length - 1].split(':').map(Number);
-      let diff = sh * 60 + sm - (eh * 60 + em);
-      if (diff < 0) diff += 24 * 60;
-      totalMin += diff;
+      totalMin += minDia;
     }
   });
   const th = Math.floor(totalMin / 60), tm = totalMin % 60;
@@ -204,10 +249,10 @@ async function ficharRegistrar(tipo, firmaDataUrl) {
     return;
   }
   try {
-    const res = await fetch('fichar-pin-check.php', {
+    const res = await _ficharFetchConReintento('fichar-pin-check.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'registrar', empId: _ficharEmpActivo.empId, tipo, firma: firmaDataUrl || undefined })
+      body: JSON.stringify({ action: 'registrar', sessionToken: _ficharEmpActivo.sessionToken, tipo, firma: firmaDataUrl || undefined })
     });
     const data = await res.json();
     if (!data.success) {
@@ -226,12 +271,46 @@ async function ficharRegistrar(tipo, firmaDataUrl) {
   }
 }
 function ficharVolverEmp() {
-  ficharMostrarVista(_ficharEmpActivo);
+  // Antes esto volvía a la pantalla del propio empleado (para "fichar
+  // otra vez" en la misma sesión) — en una tablet compartida del
+  // mostrador eso significa que, tras registrar el fichaje, la tablet se
+  // queda "abierta" a nombre de ese empleado hasta que alguien se acuerde
+  // de pulsar el enlace de "Cambiar empleado". Si el siguiente en usarla
+  // no se da cuenta, ficha entrada/salida a nombre del anterior sin
+  // ningún aviso, falseando las horas de los dos. Ahora, tras un fichaje
+  // con éxito, se vuelve directo al PIN — quien quiera fichar de nuevo
+  // (o simplemente mirar su resumen) tiene que volver a identificarse.
+  ficharCerrarSesion();
 }
 function ficharCerrarSesion() {
   _ficharEmpActivo = null;
+  _ficharDetenerTimeoutInactividad();
   ficharIrVistaPIN();
 }
+
+// ── Cierre automático por inactividad ── Una vez pasado el PIN, la
+// pantalla del empleado (resumen de horas, historial) se queda abierta
+// sin más protección que acordarse de pulsar "Cambiar empleado" — en una
+// tablet compartida del mostrador, dejarla así de guardia es fácil.
+// Cualquier toque en la pantalla reinicia la cuenta atrás; si pasa
+// demasiado tiempo sin tocar nada, se vuelve sola al PIN.
+const FICHAR_TIMEOUT_INACTIVIDAD_MS = 45 * 1000;
+let _ficharTimeoutInactividad = null;
+function _ficharReiniciarTimeoutInactividad() {
+  _ficharDetenerTimeoutInactividad();
+  if (!_ficharEmpActivo) return;
+  _ficharTimeoutInactividad = setTimeout(function () {
+    if (_ficharEmpActivo) ficharCerrarSesion();
+  }, FICHAR_TIMEOUT_INACTIVIDAD_MS);
+}
+function _ficharDetenerTimeoutInactividad() {
+  if (_ficharTimeoutInactividad) { clearTimeout(_ficharTimeoutInactividad); _ficharTimeoutInactividad = null; }
+}
+['pointerdown', 'keydown'].forEach(function (ev) {
+  document.addEventListener(ev, function () {
+    if (_ficharEmpActivo) _ficharReiniciarTimeoutInactividad();
+  }, { passive: true });
+});
 
 // ── Comprobar el token del enlace (?fichar=...) contra el servidor ──
 (function () {

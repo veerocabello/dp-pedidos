@@ -3,6 +3,12 @@
 #    (fuera de public_html, no accesible por web).
 #    Ver twilio-config.php.
 
+# ── index.php es ahora la página real (antes index.html) — genera el
+#    menú y sus datos estructurados en el propio HTML, leyendo el menú
+#    real desde Firebase (ver menu-render.php), en vez de depender de
+#    que el navegador ejecute JavaScript para que un buscador lo vea.
+DirectoryIndex index.php index.html
+
 # ── Compresión (gzip/deflate) — reduce mucho el peso de JS/CSS/HTML al viajar ──
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain image/svg+xml
@@ -14,67 +20,82 @@
     Header set X-Content-Type-Options "nosniff"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(self), magnetometer=(), gyroscope=(), accelerometer=()"
 
-    # CSP activo (ya verificado en modo Report-Only sin romper nada)
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
-
-    # CSP DE PRUEBA (Report-Only, no bloquea nada) — igual que la de arriba pero SIN 'unsafe-eval'
-    # Objetivo: comprobar unos días si salta algún aviso de violación en la consola del navegador.
-    # Si no salta nada, se puede quitar 'unsafe-eval' de la cabecera activa de arriba.
-    Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.emailjs.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+    # CSP activo — sin 'unsafe-eval' (comprobado a fondo: revisión de todo el
+    # JS propio y de las librerías de terceros que se cargan self-hosted —
+    # Firebase, html2pdf/html2canvas/jsPDF — sin ningún eval()/new Function(),
+    # y prueba real generando un PDF con esta misma política aplicada, sin
+    # ningún aviso de violación). También se añaden los dominios de
+    # GoatCounter (la analítica del pie de la web: gc.zgo.at sirve el
+    # script, dulcepatata.goatcounter.com recibe la visita) — antes no
+    # estaban en la lista y se bloqueaban solos, sin que se notara en
+    # pantalla ni se contara ninguna visita.
+    #
+    # report-uri: manda aquí un aviso automático del navegador cada vez
+    # que bloquea algo por la CSP (ver csp-report.php) — así un script de
+    # terceros que cambie de dominio, una regla demasiado estricta para
+    # una librería nueva, o un intento real de inyección, deja rastro en
+    # csp-reports.log en vez de solo verse en la consola de quien lo sufre.
+    #
+    # 'unsafe-inline' en script-src (hallazgo de auditoría, Medio, revisado
+    # y ACEPTADO por ahora a propósito): protección de más para un futuro
+    # hipotético, no un agujero explotable hoy — toda la web usa
+    # onclick="..." directamente en el HTML (más de 500 en 25 archivos,
+    # muchos generados dinámicamente desde JS con el id/datos ya metidos
+    # dentro). Quitarlo exige sustituir TODOS esos manejadores por otro
+    # sistema (delegación de eventos + nonce por petición) sin poder
+    # probarlo en un navegador real conectado a Firebase antes de subirlo —
+    # riesgo real de romper algo en cocina/empleados/pedidos en silencio.
+    # Decisión de la dueña: dejarlo así por ahora, revisar en otro momento
+    # con tiempo y pruebas dedicadas, no metido en un lote junto a otros
+    # arreglos.
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.google.com https://*.firebasedatabase.app https://*.firebaseio.com https://js-de.sentry-cdn.com https://browser.sentry-cdn.com https://gc.zgo.at; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.sentry.io https://*.ingest.de.sentry.io https://browser.sentry-cdn.com https://api.ipify.org https://dulcepatata.goatcounter.com; frame-src https://www.google.com https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'; report-uri /csp-report.php"
 </IfModule>
 
 # ── Bloquear acceso directo a archivos PHP sensibles ──
-<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|\.htpasswd|\.htaccess|twilio-errores\.log)$">
+<FilesMatch "^(twilio-config\.php|tally-secreto\.php|bimba-config\.php|menu-render\.php|backup-firebase\.php|\.htpasswd|\.htaccess|twilio-errores\.log|csp-reports\.log|menu-cache\.json)$">
     Require all denied
 </FilesMatch>
 
-# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
+# ── Bloquear el código fuente sin construir y ficheros de desarrollo ──
+# El Service Worker sirve /src/ en producción (para cachearlo como
+# estático) — sin esto, con el Basic Auth ya quitado, quedaría público el
+# código sin minificar con comentarios que explican rutas de secretos,
+# umbrales antifraude y el resto de la arquitectura de seguridad.
 RewriteEngine On
+RewriteRule ^src/ - [F,L]
+RewriteRule ^scripts/ - [F,L]
+RewriteRule ^package\.json$ - [F,L]
+RewriteRule ^package-lock\.json$ - [F,L]
+
+# ── index.html ya no existe (sustituido por index.php) — si algún enlace
+#    viejo o marcador apunta directo a index.html, se redirige a la home
+#    de verdad en vez de servir dos URLs distintas con el mismo contenido.
+RewriteRule ^index\.html$ / [R=301,L]
+
+# ── Excepciones: estos PHP SÍ son accesibles públicamente ──
 RewriteRule ^send-code\.php$ - [L]
 RewriteRule ^verify-code\.php$ - [L]
 RewriteRule ^webhook-incidencia\.php$ - [L]
 RewriteRule ^bimba-verify\.php$ - [L]
 RewriteRule ^fichar-pin-check\.php$ - [L]
+RewriteRule ^csp-report\.php$ - [L]
+# estado-servidor.php: para que el monitor externo (UptimeRobot, etc.) pueda
+# comprobarlo sin toparse con nada — no expone nada sensible, solo si
+# Firebase/Twilio responden (ver el propio archivo, con su límite de
+# intentos aparte).
+RewriteRule ^estado-servidor\.php$ - [L]
 
-# ── Excepción TEMPORAL (solo mientras dura el Basic Auth): fichar-standalone.html
-#    es una página propia, solo con la pantalla de fichar (sin carta ni
-#    carrito detrás), accesible SIN contraseña mientras la web está cerrada,
-#    para que los empleados puedan fichar con su enlace (?fichar=TOKEN) sin
-#    conocer la contraseña de la web. Los archivos que esa página necesita
-#    (JS del fichaje, fichar-pin-check.php) se abren también SOLO cuando el
-#    navegador los pide con ese mismo enlace como "Referer".
-#    admin-shell.html NUNCA se salta, tiene su propia regla aparte.
-#
-#    IMPORTANTE — el día de la reapertura, quitar SOLO este bloque de
-#    SetEnvIf/RequireAny (deja de hacer nada útil sin Basic Auth de por
-#    medio) — pero fichar-standalone.html, js/fichar.js y
-#    fichar-pin-check.php se QUEDAN para siempre: no son un parche del
-#    Basic Auth, resuelven un problema de fondo (que el móvil de un
-#    empleado no tenga que leer la lista completa de compañeros para
-#    comprobar su propio PIN) que existe da igual si la web tiene
-#    contraseña o no.
-<IfModule mod_setenvif.c>
-    SetEnvIf Referer "fichar=" allow_fichar
-</IfModule>
-
-# admin-shell.html: siempre con contraseña, sin excepción de fichar
-<FilesMatch "^admin-shell\.html$">
+# admin-shell.html y comandas.html: siempre con contraseña — esto NO se
+# quita nunca, ni el día de la reapertura ni después. admin-shell.html es
+# la única puerta (junto con el login de Firebase Auth dentro de la propia
+# página) al panel de administración. comandas.html es la herramienta de
+# mostrador (cobra, hace caja, imprime) — tan sensible como el propio
+# panel aunque sea un archivo aparte, así que lleva la misma protección.
+<FilesMatch "^(admin-shell|comandas)\.html$">
     AuthType Basic
     AuthName "Zona privada"
     AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
     Require valid-user
-</FilesMatch>
-
-# ── Zona privada — se aplica a TODO excepto a la lista de archivos públicos ──
-# (cerrado temporalmente por obras — quitar este bloque el día de la reapertura, ver .htaccess preparado sin Basic Auth)
-<FilesMatch "^(?!(send-code\.php|verify-code\.php|webhook-incidencia\.php|bimba-verify\.php|fichar-pin-check\.php|manifest\.json|sw\.js|fichar-standalone\.html|admin-shell\.html)$).*$">
-    AuthType Basic
-    AuthName "Zona privada"
-    AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
-    <RequireAny>
-        Require valid-user
-        Require env allow_fichar
-    </RequireAny>
 </FilesMatch>

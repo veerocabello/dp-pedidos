@@ -1,0 +1,1291 @@
+<?php
+require_once __DIR__ . '/menu-render.php';
+$dpf_menu = dpf_menu_actual();
+$dpf_menu_html = dpf_menu_html($dpf_menu);
+$dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<!-- Sentry: captura errores reales de JavaScript en el navegador de clientes
+     de verdad (con traza completa) — lo más arriba posible para no perderse
+     errores tempranos. El dominio ya estaba permitido en la CSP desde que
+     se preparó, pero nunca se llegó a activar hasta ahora. -->
+<script src="https://js-de.sentry-cdn.com/65861694625070a6ae9c01293f5017e8.min.js" crossorigin="anonymous"></script>
+<script>
+  Sentry.onLoad(function () {
+    Sentry.init({ environment: 'cliente' });
+  });
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Dulce Patata Food — Pedidos Online en Granada</title>
+<meta name="description" content="Haz tu pedido online en Dulce Patata Food, Granada. Patatas rellenas artesanales con los mejores ingredientes. Recoge en tienda y paga al recoger.">
+<meta name="keywords" content="dulce patata, patatas rellenas, pedidos online, comida para llevar, patatas artesanales">
+<meta name="author" content="Dulce Patata Food">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://pedidos.dulcepatatafood.es/">
+
+<!-- Open Graph (WhatsApp, Facebook, LinkedIn) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://pedidos.dulcepatatafood.es/">
+<meta property="og:title" content="Dulce Patata Food — Pedidos Online en Granada">
+<meta property="og:description" content="Patatas rellenas artesanales en Granada. Haz tu pedido online y recoge en tienda.">
+<meta property="og:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
+<meta property="og:image:width" content="2027">
+<meta property="og:image:height" content="776">
+<meta property="og:image:alt" content="Dulce Patata Food — fachada y patatas rellenas">
+<meta property="og:locale" content="es_ES">
+<meta property="og:site_name" content="Dulce Patata Food">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Dulce Patata Food — Pedidos Online en Granada">
+<meta name="twitter:description" content="Patatas rellenas artesanales en Granada. Haz tu pedido online y recoge en tienda.">
+<meta name="twitter:image" content="https://pedidos.dulcepatatafood.es/img/hero-bg.jpg">
+<meta name="twitter:image:alt" content="Dulce Patata Food — fachada y patatas rellenas">
+
+<!-- Tema color navegador móvil -->
+<meta name="theme-color" content="#3D1F0D">
+<link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dulce Patata">
+  <link rel="apple-touch-icon" href="img/icon-192.png">
+  <!-- Tipografías alojadas en el propio servidor en vez de cargarlas desde
+       Google Fonts — antes esa carga se hacía en cuanto se abría la
+       página, antes de que el cliente decidiera nada en el aviso de
+       cookies y sin estar declarada en la política de privacidad (envía
+       la IP del visitante a Google). Ver css/fonts-local.css. -->
+  <link href="css/fonts-local.css?v=1787411102719" rel="stylesheet">
+<!-- La imagen del hero se carga por CSS (background-image), así que el
+     navegador no se entera de que existe hasta que termina de leer el CSS
+     — este preload se lo adelanta, para que empiece a bajar en paralelo
+     con el HTML en vez de después. Es la imagen más grande de la portada,
+     normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
+     contenido principal). -->
+<link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
+<link rel="stylesheet" href="css/style.min.css?v=1788610947611">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    "name": "Dulce Patata Food",
+    "description": "Patatas rellenas artesanales para recoger en tienda. Haz tu pedido online.",
+    "url": "https://pedidos.dulcepatatafood.es/",
+    "telephone": "+34604823180",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Carretera de Málaga 111",
+      "addressLocality": "Granada",
+      "addressRegion": "Andalucía",
+      "postalCode": "18015",
+      "addressCountry": "ES"
+    },
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": 37.176,
+      "longitude": -3.5986
+    },
+    "image": [
+      "https://pedidos.dulcepatatafood.es/img/hero-bg.jpg",
+      "https://pedidos.dulcepatatafood.es/img/logo.png"
+    ],
+    "hasMap": "https://maps.app.goo.gl/fUoVZdJDtByWcYq16",
+    "servesCuisine": ["Patatas rellenas", "Comida rápida artesanal"],
+    "priceRange": "€",
+    "openingHoursSpecification": [
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+        "opens": "10:00",
+        "closes": "13:45"
+      },
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+        "opens": "18:00",
+        "closes": "23:45"
+      }
+    ],
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.6",
+      "reviewCount": "512"
+    },
+    "hasMenu": "https://pedidos.dulcepatatafood.es/#carta",
+    "acceptsReservations": false,
+    "sameAs": [
+      "https://www.instagram.com/dulcepatata_food",
+      "https://www.tiktok.com/@dulcepatatafood",
+      "https://maps.app.goo.gl/fUoVZdJDtByWcYq16"
+    ],
+    "menu": "https://pedidos.dulcepatatafood.es/#carta"
+  }
+  </script>
+  <!-- Mismo texto que el acordeón de "Preguntas frecuentes" del footer —
+       si se cambia uno hay que cambiar el otro, Google exige que el
+       contenido del schema esté también visible en la página. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "¿Puedo pagar con tarjeta o solo en efectivo?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Con las dos: tarjeta o efectivo al recoger tu pedido en tienda."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Hacéis entrega a domicilio o solo recogida en tienda?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Esta web es solo para recoger en tienda. Si prefieres que te lo lleven a casa, puedes pedir por Glovo, Just Eat o Uber Eats — haz clic en sus logos al principio de la web."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Puedo personalizar mi patata con mis propias salsas e ingredientes?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sí, con la Patata Al Gusto eliges tú la salsa y los ingredientes."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Tenéis opciones vegetarianas?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sí, tenemos opciones vegetarianas en la carta."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿Los productos tienen información de alérgenos?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sí, tenemos la carta de alérgenos disponible en el propio local."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "¿A partir de qué hora hay patatas recién asadas?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A partir de las 19:30h."
+        }
+      }
+    ]
+  }
+  </script>
+  <?= $dpf_menu_jsonld ?>
+</head>
+<body>
+
+<div id="vacation-screen" style="display:none;position:fixed;inset:0;z-index:99000;background:#2B1712;flex-direction:column;font-family:'DM Sans',sans-serif;">
+  <div style="background:var(--brown);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+    <div id="logo-secret-vacaciones" style="font-family:'Anton',sans-serif;font-size:22px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;cursor:default;user-select:none">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
+    <div style="background:rgba(244,196,48,0.15);border:1px solid rgba(244,196,48,0.3);color:var(--gold);font-size:11px;font-weight:700;padding:5px 12px;border-radius:99px;letter-spacing:0.05em;text-transform:uppercase">🌴 Vacaciones</div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center;">
+    <div style="font-size:64px;margin-bottom:12px;line-height:1">🌴</div>
+    <div style="font-family:'Anton',sans-serif;font-size:36px;color:var(--cream);letter-spacing:0.04em;text-transform:uppercase;line-height:1.0;margin-bottom:4px">Estamos de</div>
+    <div style="font-family:'Anton',sans-serif;font-size:36px;color:var(--gold);letter-spacing:0.04em;text-transform:uppercase;line-height:1.0;margin-bottom:10px">vacaciones</div>
+    <div style="font-family:'Caveat',cursive;font-size:26px;color:var(--gold);font-weight:700;margin-bottom:6px">1 — 31 de agosto</div>
+    <div style="font-family:'Caveat',cursive;font-size:18px;color:rgba(255,248,238,0.55);margin-bottom:28px">volvemos el 1 de septiembre ✨</div>
+    <div style="width:80px;height:1.5px;background:rgba(244,196,48,0.3);margin:0 auto 28px;border-radius:2px"></div>
+    <a href="https://www.instagram.com/dulcepatatafood" target="_blank" rel="noopener"
+      style="display:inline-flex;align-items:center;gap:10px;background:rgba(244,196,48,0.1);border:1.5px solid rgba(244,196,48,0.35);color:var(--gold);padding:12px 22px;border-radius:12px;font-size:14px;font-weight:700;text-decoration:none">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+      Síguenos para saber cuándo volvemos
+    </a>
+    <div style="font-size:12px;color:rgba(255,248,238,0.35);margin-top:12px;letter-spacing:0.05em">@dulcepatatafood</div>
+    <div onclick="this.dataset.t=(+new Date-this.dataset.s>2000?this.dataset.c=0:+this.dataset.c||0)+1;this.dataset.s=+new Date;if(this.dataset.t>=3){document.getElementById('vacation-screen').style.display='none';}" style="margin-top:40px;color:rgba(255,248,238,0.08);font-size:11px;cursor:default;user-select:none">v1.0</div>
+  </div>
+</div>
+
+<div id="_err_banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:var(--error);color:var(--white);font-size:12px;padding:8px 12px;font-family:monospace;word-break:break-all;max-height:40vh;overflow-y:auto"></div>
+
+<header>
+  <div class="header-inner">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <picture>
+        <source srcset="img/logo.webp" type="image/webp">
+        <img src="img/logo.png" alt="Dulce Patata Food" style="height:52px;width:auto;display:block;">
+      </picture>
+      <div class="logo" id="logo-secret" style="cursor:default;user-select:none;font-family:Anton,sans-serif;letter-spacing:0.05em;text-transform:uppercase">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
+    </div>
+    <div class="header-badge">🥔 Paga en tienda</div>
+  </div>
+</header>
+
+<div class="hero" style="background:var(--text);background-image:radial-gradient(rgba(250,240,221,0.045) 1.3px, transparent 1.3px),radial-gradient(120% 90% at 88% -10%, rgba(244,196,48,0.13), transparent 55%);background-size:24px 24px,100% 100%;padding:48px 32px">
+<div style="display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap;text-align:left;max-width:1280px;margin:0 auto">
+
+  <div style="flex:1;min-width:280px;max-width:520px">
+    <div class="hero-pill" style="display:inline-flex;align-items:center;gap:9px;margin-bottom:28px;padding:8px 16px;background:rgba(54,194,106,0.16);border:1px solid rgba(54,194,106,0.45);border-radius:999px;color:#9ff0bf;font-size:14px;font-weight:800;font-family:'DM Sans',sans-serif">
+      <div class="dot" style="width:9px;height:9px;border-radius:50%;background:#36C26A;box-shadow:0 0 0 4px rgba(54,194,106,0.2)"></div>
+      <span id="hero-status-text">Cerrado ahora</span>
+    </div>
+    <h1 style="font-family:'Anton',sans-serif;font-size:48px;line-height:1.25;letter-spacing:0.02em;text-transform:uppercase;margin:0;color:var(--cream)">Haz tu pedido<br><span style="color:var(--gold)">y recógelo listo</span> <span class="emoji-acc">🥔</span></h1>
+    <p style="font-size:17px;color:#D9C9A8;margin:16px 0 0;font-weight:500;max-width:420px;font-family:'DM Sans',sans-serif">Elige, confirma y paga cuando llegues al local.</p>
+  </div>
+
+  <div style="flex:none;width:380px;max-width:100%">
+    <div class="pickup-card">
+      <div class="pickup-icon">
+        <picture>
+          <source srcset="img/pin-mapa-dulce-patata.webp" type="image/webp">
+          <img src="img/pin-mapa-dulce-patata.png" alt="Ubicación de Dulce Patata Food en el mapa">
+        </picture>
+      </div>
+      <div class="pickup-text">
+        <div class="pickup-title">Web solo para recogida en tienda</div>
+        <div class="pickup-sub">efectivo o tarjeta, tú decides en caja</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:#B89968;font-weight:800;margin:22px 0 12px;font-family:'DM Sans',sans-serif">🛵 Para pedir a domicilio, haz click aquí</div>
+
+    <div style="display:flex;gap:8px">
+      <a href="https://www.ubereats.com/store-browse-uuid/4e4a46d0-fa08-4c28-a348-55aa2c9a10b2?diningMode=DELIVERY" target="_blank" rel="noopener"
+        style="flex:1;display:flex;align-items:center;justify-content:center;background:#05C167;border-radius:10px;height:42px;text-decoration:none">
+        <span style="font-family:'DM Sans',sans-serif;font-weight:900;font-size:18px;color:#000;letter-spacing:-0.02em">Uber <span style="font-weight:700">Eats</span></span>
+      </a>
+      <a href="https://www.just-eat.es/restaurants-dulce-patata-granada/menu#pre-order" target="_blank" rel="noopener"
+        style="flex:1;display:flex;align-items:center;justify-content:center;background:#FF8000;border-radius:10px;height:42px;text-decoration:none;overflow:visible">
+        <svg width="89" height="60" style="transform:translateY(3px)" viewBox="-7.19 -26.38 168.95 114.18" xmlns="http://www.w3.org/2000/svg"><path d="m18.184.838a2.235 2.235 0 0 1 2.483 0 53.87 53.87 0 0 1 5.498 3.962s.476.33.489-.229a8.72 8.72 0 0 1 .127-2.158.984.984 0 0 1 .914-.635s2.159.108 3.53.292a1.34 1.34 0 0 1 1.156 1.187s.882 5.88 1.08 8c0 0 .17 1.08 1.733 2.908 0 0 3.174 4.445 3.543 5.295 0 0 .736 1.537-.851 1.746 0 0-2.896.292-3.175.356a.724.724 0 0 0 -.635.787s-.152 10.229-.901 15.143c0 0-.197 1.95-1.27 1.905 0 0-2.978-.095-3.67-.076 0 0-.298 0-.254-.4 0 0 1.517-15.95.489-24.013 0 0-.045-1.041-.838-1.27 0 0-.724-.292-1.416.635a25.302 25.302 0 0 0 -4.711 14.394s-.083 2.54.305 3.174c0 0 .24.445 1.473.546l1.561.21s.286 0 .26.38c0 0-.355 4.68-.456 5.512-.007.19-.045.376-.115.552 0 0-.057.159-.546.14 0 0-6.882-.05-7.657 0 0 0-.324 0-.393-.171-.07-.172-.477-6.039-.464-6.87a.414.414 0 0 1 .241-.407 4.139 4.139 0 0 0 1.905-3.04c.084-.89.096-1.783.038-2.674 0 0 .254-8.971.318-10.413 0 0 .05-.489-.585-.577a.592.592 0 0 0 -.711.438v.05c0 .051-.444 5.918-.362 8.254 0 0 .153 1.53-.907 1.562 0 0-1.029.153-1.08-1.123 0 0 .076-5.753.33-8.597a.635.635 0 0 0 -.565-.635.633.633 0 0 0 -.71.514.106.106 0 0 0 0 .05s-.445 5.506-.363 8.414c0 0 .127 1.41-.997 1.358 0 0-.94.108-.99-1.143 0 0 .254-7.879.324-8.488a.635.635 0 0 0 -.565-.597h-.064a.636.636 0 0 0 -.68.527.271.271 0 0 0 0 .057s-.418 9.422-.361 12.19c0 0-.038 2.845 2.063 4 0 0 .311.178.318.451 0 0 .235 4.997.45 6.61 0 0 .077.387-.266.387l-5.289.146a1.088 1.088 0 0 1 -1.08-1.029 118.401 118.401 0 0 1 -.977-15.968.813.813 0 0 0 -.635-.87s-2.705-.247-3.359-.412a1.124 1.124 0 0 1 -.686-1.658 54.422 54.422 0 0 1 17.957-18.679zm37.245 14.8h-5.22c-1.688 0-1.688 0-2.044 1.975-.355 1.974-.35 2.044 1.2 2.044h3.105l-1.765 10.089c-.426 2.254-1.41 3.81-4.445 4.724-.774.21-.984.489-.984.844.054.568.223 1.119.495 1.62.49 1.2.775 1.415 1.194 1.415a8.01 8.01 0 0 0 1.486-.286c4.298-1.409 6.063-4.723 6.768-8.673l1.975-11.352c.349-2.4.349-2.4-1.765-2.4m17.701 0c-2.114 0-2.114 0-2.4 1.765l-1.524 9.168c-.425 2.68-1.13 4.229-3.74 4.229-2.609 0-3.453-1.55-3.028-3.95l1.48-8.742c.425-2.47.349-2.47-1.835-2.47-2.185 0-2.185 0-2.47 1.695l-1.55 9.169c-.914 5.219 2.33 8.457 6.915 8.457 5.143 0 7.752-2.324 8.597-7.822l1.555-9.099c.35-2.4.21-2.4-1.974-2.4m9.631 15.022c1.696-.07 2.61-.844 2.61-1.619 0-.99-1.2-1.34-2.82-1.835-3.174-.99-6.063-2.114-6.063-5.498 0-4.02 3.315-6.21 7.473-6.21a49.87 49.87 0 0 1 5.01.216c1.124.14 1.41.49 1.054 2.254-.356 1.765-.775 1.905-1.759 1.835-1.2-.07-2.755-.216-4.584-.216-2.114 0-2.75.781-2.75 1.486 0 .914.845 1.41 2.82 1.975 3.663 1.054 6.063 2.54 6.063 5.714 0 3.74-2.749 5.924-7.193 6.063a35.31 35.31 0 0 1 -6.35-.349c-1.415-.216-1.485-.216-1.13-2.26.35-1.829.35-1.975 1.69-1.829 1.963.248 3.944.341 5.923.28m23.067-15.029h-11.918c-1.689 0-1.689 0-2.044 2.05-.356 2.052-.28 2.045 1.2 2.045h3.88l-2.191 12.648c-.42 2.463-.35 2.463 1.835 2.463 2.044 0 2.114 0 2.4-1.758l2.253-13.334h3.74c1.69 0 1.69 0 2.045-2.044.355-2.045.349-2.05-1.2-2.05m21.015 4.025c1.69 0 1.69 0 2.045-2.045.355-2.044.35-2.044-1.2-2.044h-8.533c-3.035 0-2.96 0-3.454 3.035l-2.184 12.761c-.566 3.315-.496 3.315 2.54 3.315h8.323c1.765 0 1.689 0 2.044-1.975.356-1.974.35-2.044-1.2-2.044h-7.2l.566-3.67h5.993c1.626 0 1.626 0 1.905-1.905.28-1.905.28-1.974-1.905-1.974h-5.289l.565-3.46zm9.01 6.749 2.75-6.064c.215-.495.215-.495.564-.495.35 0 .356 0 .426.565l.844 5.994zm7.473-8.464c-.419-2.4-.419-2.4-3.81-2.4-3.174 0-3.104 0-4.088 1.975l-7.124 14.882c-1.06 2.115-.845 2.324 1.759 2.324 2.05 0 2.05 0 2.895-1.905l1.124-2.54h6.914l.35 2.54c.285 1.905.355 1.905 2.4 1.905 2.33 0 2.539-.14 2.113-2.47l-2.533-14.31zm16.87-2.33h-11.987c-1.696 0-1.696 0-2.045 2.05-.35 2.052-.286 2.045 1.194 2.045h3.88l-2.185 12.648c-.425 2.463-.356 2.463 1.835 2.463 2.044 0 2.114 0 2.394-1.758l2.26-13.334h3.733c1.695 0 1.695 0 2.045-2.044.349-2.045.425-2.05-1.124-2.05" fill="var(--white)" fill-rule="nonzero"/></svg>
+      </a>
+      <a href="https://glovoapp.com/es/es/granada/stores/dulce-patata-food-granada" target="_blank" rel="noopener"
+        style="flex:1;display:flex;align-items:center;justify-content:center;background:#FFC244;border-radius:10px;height:42px;text-decoration:none">
+        <svg width="62" height="20" style="transform:translateY(-3px)" viewBox=".06 .127 147.592 47.611" xmlns="http://www.w3.org/2000/svg"><path d="m.06 31.102v-.092c0-9.057 7.04-16.727 16.946-16.727 4.929 0 8.214 1.154 11.219 3.28a2.866 2.866 0 0 1 1.174 2.31c0 1.526-1.267 2.82-2.864 2.82-.751 0-1.314-.324-1.784-.648-2.112-1.524-4.412-2.542-7.98-2.542-6.055 0-10.655 5.223-10.655 11.414v.093c0 6.654 4.459 11.552 11.172 11.552 3.098 0 5.914-.97 7.933-2.449v-6.053h-6.478c-1.409 0-2.581-1.062-2.581-2.448 0-1.387 1.172-2.496 2.581-2.496h9.154c1.642 0 2.91 1.248 2.91 2.866v8.64c0 1.617-.657 2.773-2.018 3.604-2.817 1.849-6.76 3.512-11.688 3.512-10.282-.001-17.041-7.208-17.041-16.636zm35.924-15.11c0-1.525 1.22-2.773 2.815-2.773 1.597 0 2.864 1.248 2.864 2.773v28.65c0 1.571-1.268 2.772-2.864 2.772-1.548 0-2.815-1.2-2.815-2.773v-28.65zm10.079 19.131v-.094c0-6.977 5.632-12.753 13.237-12.753 7.604 0 13.191 5.684 13.191 12.662v.091c0 6.933-5.633 12.709-13.285 12.709-7.558 0-13.143-5.684-13.143-12.615zm20.748 0v-.094c0-4.296-3.146-7.854-7.605-7.854-4.554 0-7.464 3.512-7.464 7.763v.091c0 4.252 3.145 7.81 7.558 7.81 4.6 0 7.51-3.512 7.51-7.716zm19.861 12.522h-.282c-1.548 0-2.582-.97-3.238-2.45l-8.26-18.622c-.142-.416-.33-.876-.33-1.386 0-1.386 1.267-2.68 2.816-2.68 1.548 0 2.346.878 2.816 2.034l6.384 16.172 6.478-16.264c.423-.971 1.173-1.942 2.676-1.942 1.549 0 2.769 1.156 2.769 2.68 0 .51-.187 1.064-.327 1.34l-8.262 18.669c-.66 1.432-1.69 2.45-3.24 2.45zm13.9-12.522v-.094c0-6.977 5.633-12.753 13.24-12.753 7.602 0 13.189 5.684 13.189 12.662v.091c0 6.933-5.633 12.709-13.285 12.709-7.557 0-13.144-5.684-13.144-12.615zm20.75 0v-.094c0-4.296-3.146-7.854-7.606-7.854-4.553 0-7.463 3.512-7.463 7.763v.091c0 4.252 3.144 7.81 7.558 7.81 4.599 0 7.51-3.512 7.51-7.716zm15.177-34.996c-6.15 0-11.153 4.927-11.153 10.98 0 2.306.728 4.52 2.103 6.402l.297.405 5.806 8.067s.709 1.14 2.254 1.14h1.387c1.546 0 2.252-1.14 2.252-1.14l5.808-8.067.294-.405a10.787 10.787 0 0 0 2.105-6.402c0-6.053-5.003-10.98-11.153-10.98zm4.59 14.222-.309.426-4.28 5.947-4.274-5.935-.314-.431a5.475 5.475 0 0 1 -1.074-3.249c0-3.073 2.54-5.573 5.66-5.573 3.122 0 5.661 2.5 5.661 5.573 0 1.165-.37 2.286-1.07 3.242zm-7.727 17.725v-.022c0-1.64 1.323-2.999 3.11-2.999 1.789 0 3.101 1.336 3.101 2.977v.022c0 1.628-1.324 2.986-3.122 2.986-1.775 0-3.09-1.335-3.09-2.964z" fill="#00a082" fill-rule="evenodd"/></svg>
+      </a>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<style>
+  @media (max-width: 720px) {
+    .hero { flex-direction: column; text-align: center !important; padding: 36px 20px !important; }
+    .hero h1 { font-size: 36px !important; text-align: left; display: inline-block; }
+    .hero p { text-align: center; margin-left: auto; margin-right: auto; max-width: none !important; font-size: 14px !important; white-space: nowrap; }
+    .hero > div:first-child { flex-direction: column; }
+    .hero > div:first-child > div:first-child { text-align: center; }
+    .pickup-title { font-size: 15.5px !important; }
+  }
+</style>
+
+<style>
+  .pickup-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 22px;
+    border-radius: var(--radius);
+    background: var(--cream);
+    color: var(--text);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+    overflow: visible;
+  }
+  .pickup-icon { width: 58px; height: 58px; flex: none; position: relative; }
+  .pickup-icon img {
+    position: absolute;
+    width: 130px; height: 130px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    object-fit: contain;
+  }
+  .pickup-text { flex: 1; text-align: left; }
+  .pickup-title {
+    font-family: 'Anton', sans-serif;
+    font-size: 17px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    line-height: 1.1;
+  }
+  .pickup-sub {
+    font-family: 'Caveat', cursive;
+    font-size: 17px;
+    color: #8a5a10;
+    line-height: 1;
+    margin-top: 3px;
+    font-weight: 700;
+  }
+</style>
+
+<!-- AVISO DE PROBLEMA DE CONEXIÓN (Firebase caído/inaccesible) — position:fixed
+     y z-index por encima de --z-fullscreen (3000) y de cualquier otro overlay
+     conocido (el mayor hasta ahora, 9999, en .fly-ghost): si no, este aviso
+     quedaba tapado del todo detrás de Modo Cocina (#kitchen-mode, fullscreen)
+     u otros overlays a pantalla completa — justo la pantalla donde más
+     falta hace notar que los pedidos han dejado de sincronizarse. -->
+<div id="firebase-conexion-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
+  ⚠️ Problema de conexión ahora mismo. Si tu pedido no se confirma, recarga la página o avísanos en el mostrador.
+</div>
+
+<!-- AVISO DE PERMISO/SESIÓN FALLIDA — distinto del de arriba: esto NO es
+     que se haya caído la conexión (".info/connected" puede seguir en true,
+     el socket funciona), sino que Firebase ha rechazado la lectura de
+     pedidos/estados (sesión de admin caducada o datos de la pestaña
+     corruptos) — un caso que antes fallaba en total silencio, sin ningún
+     error visible en pantalla, solo detectable abriendo la consola del
+     navegador. Solo aparece en dispositivos con sesión de admin. -->
+<div id="firebase-permiso-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
+  🔒 No se pueden leer los pedidos en este dispositivo (sesión caducada o datos corruptos). Cierra sesión de admin y vuelve a entrar — si sigue igual, borra los datos del sitio en este navegador.
+</div>
+
+<!-- BANNER PEDIDOS CERRADOS -->
+<div id="orders-closed-banner" style="display:none; background:var(--brown); color:var(--cream); text-align:center; padding:18px 24px;">
+  <div style="font-size:22px; margin-bottom:6px">🔒</div>
+  <div id="orders-closed-msg" style="font-family:'Oswald',sans-serif; font-size:18px; font-weight:900; margin-bottom:4px"></div>
+</div>
+
+<!-- AVISO SUAVE DE SATURACIÓN (no bloquea, solo informa) -->
+<div id="aviso-saturacion-banner" style="display:none; background:#FFF7ED; color:#92400e; text-align:center; padding:12px 20px; border-bottom:1.5px solid #FCD34D; font-size:13.5px; font-weight:700"></div>
+
+<!-- OFERTA RELÁMPAGO (descuento por tiempo limitado, lanzada a mano desde el panel) -->
+<div id="oferta-relampago-banner" style="display:none; background:#c0392b; color:#fff; text-align:center; padding:12px 20px; border-bottom:1.5px solid #7a1a0e; font-size:13.5px; font-weight:700"></div>
+
+<!-- BANNER DEL DÍA -->
+<div id="banner-dia" style="display:none;padding:16px 20px;background:var(--cream)">
+  <div id="banner-dia-inner" style="max-width:600px;margin:0 auto;border-radius:20px;padding:22px 28px;display:flex;align-items:center">
+    <div id="banner-dia-icon" style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0"></div>
+    <div style="flex:1;min-width:0">
+      <div id="banner-dia-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px"></div>
+      <div id="banner-dia-text" style="font-size:17px;font-weight:500;line-height:1.3"></div>
+      <div id="banner-dia-sub" style="font-size:13px;margin-top:4px"></div>
+    </div>
+  </div>
+</div>
+
+<main>
+  <!-- LEFT: MENU -->
+  <div id="carta">
+    <div id="mobile-top" style="display:none">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
+    <div id="busy-mode-banner" style="display:none;background:#FFFBE9;border:1.5px solid #F0C040;border-radius:12px;padding:12px 16px;margin-bottom:14px;align-items:center;gap:10px">
+      <span style="font-size:22px">🔥</span>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--brown)">Hoy tenemos muchos pedidos</div>
+        <div style="font-size:12px;color:var(--muted)">Los pedidos pueden tardar un poco más de lo normal — gracias por la paciencia 💛 🥔</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h2 class="section-title" style="margin-top:0;margin-bottom:0;flex:none">Carta</h2>
+      <input type="search" id="menu-search-input" placeholder="🔍 Buscar en la carta…" autocomplete="off" oninput="filterMenuBySearch(this.value)"
+        style="flex:1;min-width:0;padding:9px 14px;border:1.5px solid var(--gold);border-radius:99px;font-size:13.5px;font-family:'DM Sans',sans-serif;color:var(--brown);background:var(--white);box-sizing:border-box;outline:none">
+    </div>
+    <div style="text-align:right;margin-bottom:12px">
+      <a href="https://wa.me/?text=Mira%20la%20carta%20de%20Dulce%20Patata%20Food%20y%20haz%20tu%20pedido%3A%20https%3A%2F%2Fdulcepatatafood.es%2F" target="_blank" rel="noopener" class="wa-bubble">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2m0 1.67a8.2 8.2 0 0 1 5.83 2.42 8.19 8.19 0 0 1 2.41 5.82c0 4.55-3.7 8.24-8.25 8.24a8.2 8.2 0 0 1-4.17-1.14l-.3-.17-3.12.82.83-3.04-.2-.32a8.2 8.2 0 0 1-1.26-4.39c0-4.55 3.7-8.24 8.23-8.24m-4.53 4.7c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.03s.87 2.36.99 2.52c.12.16 1.7 2.72 4.2 3.71 2.08.82 2.5.66 2.95.62.45-.04 1.46-.6 1.66-1.17.2-.58.2-1.08.14-1.18-.06-.1-.22-.16-.46-.28-.24-.12-1.46-.72-1.68-.8-.23-.09-.39-.13-.56.13-.16.24-.64.8-.78.97-.15.16-.29.18-.53.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.35-1.67-.14-.24-.02-.37.11-.5.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.56-1.35-.77-1.85-.2-.48-.4-.42-.56-.43z"/></svg>
+        Compartir carta
+      </a>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <p id="allergen-hint">💡 Toca un icono de alérgeno para ver si se puede pedir sin él</p>
+    <div id="promos-container"></div>
+    <div class="menu-grid" id="menu-grid"><?= $dpf_menu_html ?></div>
+    <p id="menu-search-empty" style="display:none;text-align:center;color:var(--muted);font-size:13.5px;padding:20px 0">Sin resultados para tu búsqueda</p>
+  </div>
+
+  <!-- RIGHT: ORDER PANEL -->
+  <div>
+    <div class="order-panel">
+      <div class="cart-title">
+        Tu pedido
+        <span class="cart-count" id="cart-count">0</span>
+      </div>
+      <div class="order-panel-inner">
+
+      <!-- AVISO FRANJA TARDÍA -->
+      <div id="late-slot-warning" style="display:none; background:var(--white)3cd; border:2px solid var(--amber); border-radius:12px; padding:14px 16px; margin-bottom:14px;">
+        <div style="font-size:22px; margin-bottom:6px">⏱️</div>
+        <div style="font-family:'Oswald',sans-serif; font-size:17px; font-weight:900; color:var(--brown); margin-bottom:6px">Aviso: franja con poco margen</div>
+        <div style="font-size:14px; color:#5a3e1b; line-height:1.6">
+          Los pedidos realizados <strong>durante los últimos 15 minutos</strong> de la franja seleccionada tienen un tiempo estimado de preparación de <strong style="font-size:16px">15–20 minutos</strong>. Es posible que tu pedido no esté listo exactamente a la hora indicada.
+        </div>
+      </div>
+
+      <div id="cart-body">
+        <div class="cart-empty">
+          <div class="cart-empty-icon">🥔</div>
+          <div class="cart-empty-title">Tu carrito está en ayunas</div>
+          <div class="cart-empty-sub">dale algo de comer, anda...</div>
+        </div>
+      </div>
+
+      <div id="cart-fee-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:var(--muted);">
+        <span id="cart-fee-label">Gastos de gestión online</span>
+        <span id="cart-fee-amount">0,50 €</span>
+      </div>
+      <div id="cart-fee2-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:var(--muted);">
+        <span id="cart-fee2-label">Otro gasto fijo</span>
+        <span id="cart-fee2-amount">0,50 €</span>
+      </div>
+      <div id="local-fee-code-row" style="display:none;padding:4px 0 8px">
+        <a href="#" onclick="event.preventDefault();var b=document.getElementById('local-fee-code-box');b.style.display=b.style.display==='none'?'flex':'none';" style="font-size:11.5px;color:var(--muted);text-decoration:underline">¿Estás pidiendo desde el local?</a>
+        <div id="local-fee-code-box" style="display:none;gap:6px;margin-top:6px;align-items:center">
+          <input id="local-fee-code-input" type="text" maxlength="8" placeholder="Código" oninput="this.value=this.value.toUpperCase();comprobarCodigoLocal()" style="flex:1;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none">
+        </div>
+        <div id="local-fee-code-feedback" style="font-size:11.5px;margin-top:4px"></div>
+      </div>
+      <div id="cart-discount-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span id="cart-discount-label">Descuento</span>
+        <span id="cart-discount-amount">-0,00 €</span>
+      </div>
+      <div id="discount-conflict-notice" style="display:none;font-size:11px;color:var(--muted);font-style:italic;padding:2px 0 4px"></div>
+      <div id="cart-student-discount-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span id="cart-student-discount-label">🪪 Estudiante/jubilado</span>
+        <span id="cart-student-discount-amount">-0,00 €</span>
+      </div>
+      <div id="cart-fidelizacion-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span>🎁 Patata gratis (fidelización)</span>
+        <span id="cart-fidelizacion-amount">-0,00 €</span>
+      </div>
+      <div id="cart-oferta-relampago-row" style="display:none;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#27855a;font-weight:700">
+        <span id="cart-oferta-relampago-label">⚡ Oferta relámpago</span>
+        <span id="cart-oferta-relampago-amount">-0,00 €</span>
+      </div>
+      <div id="cart-savings-badge" style="display:none;margin:2px 0 4px;">
+        <span class="cart-savings-pill">🎉 <span id="cart-savings-amount">¡Ahorras 0,00 €!</span></span>
+      </div>
+      <div id="cart-total-row" style="display:none" class="cart-total">
+        <span>Total</span>
+        <span id="cart-total">0,00 €</span>
+      </div>
+
+      <!-- CARRITO BLOQUEADO (cerrado) -->
+      <div id="cart-locked-msg" style="display:none; margin-top:14px; background:var(--brown); border-radius:12px; padding:20px 16px; text-align:center;">
+        <div style="font-size:32px; margin-bottom:8px">🔒</div>
+        <div style="font-family:'Oswald',sans-serif; font-size:17px; font-weight:900; color:var(--cream); margin-bottom:6px">Pedidos cerrados</div>
+        <div style="font-size:13px; color:rgba(255,248,238,0.7); line-height:1.5" id="cart-locked-detail"></div>
+      </div>
+
+      <div id="order-form" style="display:none">
+        <!-- Honeypot anti-bots: campo invisible para humanos, los bots lo rellenan -->
+        <div style="position:absolute;left:-9999px;top:-9999px;opacity:0;pointer-events:none;tab-index:-1" aria-hidden="true">
+          <input type="text" id="hp-website" name="website" tabindex="-1" autocomplete="off" placeholder="Leave empty">
+        </div>
+        <div class="form-group">
+          <label>Tu nombre y apellido *</label>
+          <input type="text" id="customer-name" placeholder="" maxlength="60" autocomplete="name" required>
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="tel" id="customer-phone" placeholder="" maxlength="11" autocomplete="tel" inputmode="tel" oninput="formatPhone(this)">
+          <div id="customer-phone-feedback" style="font-size:11.5px;margin-top:4px;display:none"></div>
+          <div style="background:var(--white);border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:8px">
+            <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--warm)">📱</div>
+            <p style="font-size:12px;font-weight:700;color:var(--brown);margin:0">Se verificará tu número por SMS</p>
+            <p style="font-size:11.5px;color:var(--muted);margin:2px 0 0">Solo para confirmar el pedido</p>
+            <p style="font-size:11.5px;color:var(--muted);margin:1px 0 0">🔒 No lo compartimos con nadie</p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notas del pedido</label>
+          <textarea id="customer-notes" placeholder="" maxlength="300" oninput="_actualizarContadorNotas('customer-notes','notes-char-count')"></textarea>
+          <div id="notes-char-count" style="text-align:right;font-size:11px;color:var(--muted);margin-top:2px">300 caracteres restantes</div>
+        </div>
+
+        <!-- HORA DE RECOGIDA (solo visible si el pedido incluye patatas en horario 19:30-23:30) -->
+        <!-- Campo código de descuento -->
+        <div style="background:var(--white);border:1px solid rgba(61,31,13,.10);border-radius:12px;padding:11px 13px 11px 44px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:16px">
+          <div style="position:absolute;left:11px;top:11px;width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;background:var(--warm)">🏷️</div>
+          <label style="font-size:11px;font-weight:700;color:var(--brown);letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px">Código de descuento (opcional)</label>
+          <div style="display:flex;gap:8px">
+            <input id="discount-input" type="text" placeholder="" style="flex:1;padding:9px 12px;border:1px solid rgba(61,31,13,.10);border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;text-transform:uppercase;outline:none;background:var(--white)" oninput="this.value=this.value.toUpperCase()">
+            <button type="button" onclick="dcAplicar(document.getElementById('discount-input').value)" style="padding:9px 14px;background:var(--brown);color:var(--white);border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aplicar</button>
+          </div>
+          <div id="discount-feedback" style="font-size:12px;margin-top:6px;min-height:18px"></div>
+        </div>
+
+        <!-- Descuento estudiante/jubilado -->
+        <div id="student-discount-row" style="display:none;margin-bottom:16px">
+          <div id="student-discount-box" style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:11px 14px;transition:border-color .18s">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="student-discount-checkbox" onchange="renderCart()" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--brown)">
+              <span style="font-size:13px;color:var(--brown);font-weight:600">🪪 Soy estudiante o jubilado</span>
+            </label>
+            <div id="student-discount-warn" style="display:none;font-size:12px;color:var(--muted);line-height:1.45;margin-top:8px;padding-left:28px">⚠️ Se pedirá el carné en el mostrador.<br><b style="color:var(--amber-dark)">Si no se presenta, el descuento no se aplicará</b> y se cobrará el precio normal.</div>
+          </div>
+        </div>
+
+        <div id="slot-picker-group" style="display:none; margin-top:14px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">🕐 Hora de recogida *</label>
+          <p style="font-size:12px;color:var(--muted);margin:2px 0 12px">Los pedidos se preparan por turnos. Elige tu hora de recogida:</p>
+          <div id="slot-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"></div>
+          <div id="slot-error" style="display:none;font-size:12px;color:var(--error);margin-top:6px;font-weight:600">⚠️ Elige una hora de recogida</div>
+        </div>
+
+        <div id="submit-btn-reminder" style="display:none;border-radius:10px;padding:8px 12px;background:#FFF3CD;border:1.5px solid #D9A441;margin-bottom:10px;font-size:11.5px;font-weight:700;color:#5a3e1b">🎁 No olvides tu patata gratis antes de confirmar</div>
+        <button class="submit-btn" id="submit-btn" onclick="submitOrder()">
+          Confirmar pedido →
+        </button>
+        <div id="orders-blocked-msg" style="display:none; background:var(--white)3cd; border:1.5px solid var(--amber); border-radius:8px; padding:12px; text-align:center; margin-top:12px;">
+          <div style="font-size:18px; margin-bottom:4px">⏸️</div>
+          <div style="font-size:14px; font-weight:600; color:var(--brown);">Pedidos pausados</div>
+          <div style="font-size:13px; color:var(--muted); margin-top:2px" id="orders-blocked-detail">Estamos al límite de capacidad. Vuelve en unos minutos.</div>
+        </div>
+        <p style="font-size:11px; color:var(--muted); text-align:center; margin-top:8px">
+          Pagas en caja cuando recojas 🙌
+        </p>
+      </div>
+    </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div id="success-screen">
+      <div class="success-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12 L10 18 L20 6"/></svg></div>
+      <div class="success-title">¡Pedido confirmado!</div>
+      <div class="success-rule"></div>
+      <div class="success-sub">Te esperamos en el local</div>
+
+      <!-- Bloque número + nombre -->
+      <div style="background:var(--brown);border-radius:16px;padding:18px 24px;margin-bottom:16px;display:inline-block;min-width:200px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:4px;background:var(--gold)"></div>
+        <div style="font-family:'Oswald',sans-serif;font-size:11px;color:rgba(244,196,48,0.85);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Tu número de pedido</div>
+        <div onclick="copiarTexto(document.getElementById('order-num-display').textContent, '✅ Número copiado')" title="Toca para copiar" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <div id="order-num-display" style="font-size:42px;font-weight:400;color:var(--gold);letter-spacing:.02em;font-family:'Anton',sans-serif;text-transform:uppercase">#0000</div>
+          <span style="font-size:16px;opacity:.65">📋</span>
+        </div>
+        <div id="success-customer-info" style="font-size:16px;font-weight:700;color:var(--cream);margin-top:8px">👤 <span id="success-customer-name">–</span></div>
+      </div>
+
+      <!-- Slot de recogida -->
+      <div id="success-slot-info" style="display:none;background:var(--brown);border-radius:14px;padding:14px 20px;margin-bottom:16px;align-items:center;justify-content:center;gap:12px">
+        <span style="font-size:24px">🕐</span>
+        <div style="text-align:left">
+          <div style="font-family:'Oswald',sans-serif;font-size:11px;color:rgba(244,196,48,0.85);font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px">Recogida a las</div>
+          <div style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:700;color:var(--cream)"><span id="success-slot-time"></span> h</div>
+        </div>
+      </div>
+
+      <!-- Estimación de espera según la cola actual (oculto si no hay saturación) -->
+      <div id="success-tiempo-estimado" style="display:none;background:#FFF7ED;border:1.5px solid #FCD34D;border-radius:12px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#92400e;font-weight:600"></div>
+
+      <!-- Avisos de la pantalla de éxito (ocultos por defecto, JS los muestra si aplica) -->
+      <div id="success-sms-warning" style="display:none;background:var(--white)3cd;border:1.5px solid #D9A441;border-radius:12px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#5a3e1b;font-weight:600">
+        ⚠️ No pudimos verificar tu número por SMS, pero tu pedido se ha registrado igualmente. Si algo falla, te avisamos en el mostrador con tu número de pedido.
+      </div>
+      <div id="success-save-warning" style="display:none;background:#fdf0ee;border:1.5px solid var(--error);border-radius:12px;padding:12px 16px;margin-bottom:16px;text-align:left;font-size:13px;color:#7a1a0e;font-weight:600">
+        ⚠️ Hubo un problema de conexión al guardar tu pedido. Por favor, <b>haz una captura de esta pantalla</b> y muéstrala en el mostrador al recogerlo, por si no nos llega.
+      </div>
+
+      <!-- Resumen de ítems -->
+      <div class="success-summary" id="success-items-list"></div>
+
+      <p style="font-family:'Oswald',sans-serif;color:var(--muted);font-size:13px;margin-bottom:18px">Ven a recogerlo y paga en caja 💛</p>
+
+      <!-- Temporizador de modificación/cancelación -->
+      <div id="order-modify-zone" style="margin-bottom:16px">
+        <div id="order-modify-timer" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:10px"></div>
+        <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
+          <button onclick="modificarPedido()" id="btn-modificar-pedido"
+            style="padding:11px 20px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
+            ✏️ Modificar pedido
+          </button>
+          <button onclick="cancelarPedido()" id="btn-cancelar-pedido"
+            style="padding:11px 20px;background:#fdf0ee;color:var(--error);border:1.5px solid var(--error);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
+            ❌ Cancelar pedido
+          </button>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:4px">
+        <button onclick="shareOrderWhatsApp(currentOrderNum,currentOrderName,currentOrderSlot,currentOrderItems,currentOrderTotal)"
+          id="btn-whatsapp-share"
+          style="padding:11px 20px;background:#25D366;color:var(--white);border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer">
+          💬 Compartir por WhatsApp
+        </button>
+        <button class="new-order-btn" id="btn-hacer-otro-pedido" onclick="resetOrder()">Hacer otro pedido</button>
+      </div>
+    </div>
+  </div>
+<!-- ── CARRITO STICKY (solo móvil) ── -->
+<button id="cart-fab" class="hidden" onclick="openCartDrawer()">
+  <span>🥔 Ver pedido</span>
+  <span id="cart-fab-total" style="white-space:nowrap">0,00 €</span>
+  <span id="cart-fab-count">0</span>
+</button>
+
+<!-- ── REPETIR ÚLTIMO PEDIDO (solo móvil, solo si el carrito está vacío) ── -->
+<button id="repeat-order-fab" class="hidden" onclick="repetirUltimoPedido()">
+  🔁 Repetir tu último pedido
+</button>
+
+<button id="juego-fab" class="hidden" onclick="abrirJuegoActivo()" aria-label="Jugar y ganar un premio">
+  <span id="juego-fab-icon">🎡</span>
+  <span class="juego-fab-dot"></span>
+</button>
+
+<button id="back-to-top-fab" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Subir arriba">↑</button>
+
+<!-- ── DRAWER CARRITO ── -->
+<div id="cart-drawer-overlay" onclick="closeCartDrawer()"></div>
+<div id="cart-drawer">
+  <div id="cart-drawer-handle"></div>
+  <div id="cart-drawer-title">
+    Tu pedido
+    <button id="cart-drawer-close" onclick="closeCartDrawer()">✕</button>
+  </div>
+  <div id="cart-drawer-body"></div>
+</div>
+
+</main>
+
+<footer style="background:var(--cream);padding:32px 20px 24px;text-align:center;border-top:1px solid rgba(61,31,13,0.08);">
+
+  <!-- Tarjeta horario -->
+  <div style="background:#2B1712;border-radius:14px;padding:24px 20px;max-width:380px;margin:0 auto 14px;text-align:center;">
+    <h2 style="font-family:'Anton',sans-serif;font-size:20px;color:var(--gold);letter-spacing:0.06em;margin:0 0 14px;">🕐 MARTES A DOMINGO</h2>
+    <div style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:rgba(245,230,200,0.8);letter-spacing:0.03em;margin-bottom:6px;">MAÑANAS · 10:00 – 13:45H</div>
+    <div style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:rgba(245,230,200,0.8);letter-spacing:0.03em;margin-bottom:0;">TARDES · 18:00 – 23:45H</div>
+    <div style="height:1px;background:rgba(244,196,48,0.2);margin:14px 0;"></div>
+    <div style="font-family:'Caveat',cursive;font-size:18px;font-weight:600;color:var(--gold);" id="footer-patatas">🥔 patatas desde las 19:30h</div>
+  </div>
+
+  <!-- Dirección -->
+  <div style="background:#2B1712;border-radius:14px;padding:16px 20px;max-width:380px;margin:0 auto 20px;text-align:center;">
+    <h2 style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin:0 0 4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</h2>
+    <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">Frente al Supermercado Dani</div>
+    <a href="https://www.google.com/maps/dir/?api=1&destination=Carretera%20de%20M%C3%A1laga%20111%2C%2018015%20Granada" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:8px 18px;border-radius:99px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif;">📍 Cómo llegar</a>
+  </div>
+
+  <!-- Botones redes + teléfono -->
+  <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;">
+    <a href="tel:+34604823180" style="display:inline-flex;align-items:center;gap:6px;background:var(--brown);color:var(--cream);text-decoration:none;padding:10px 18px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;">📞 604 82 31 80</a>
+    <a href="https://instagram.com/dulcepatata_food" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:var(--white);text-decoration:none;padding:10px 18px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg> @dulcepatata_food</a>
+    <a href="https://tiktok.com/@dulcepatatafood" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#010101;color:var(--white);text-decoration:none;padding:10px 18px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;"><svg width="15" height="15" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.79 1.53V6.77a4.85 4.85 0 01-1.02-.08z"/></svg> @dulcepatatafood</a>
+  </div>
+
+  <!-- Reseña -->
+  <div style="display:flex;justify-content:center;margin-bottom:20px;">
+    <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#4285F4;color:#FFFFFF;text-decoration:none;padding:10px 22px;border-radius:99px;font-size:13px;font-weight:700;font-family:'DM Sans',sans-serif;">⭐ Déjanos una reseña</a>
+  </div>
+
+  <!-- Formulario de incidencias -->
+  <div style="display:flex;justify-content:center;margin-bottom:20px;">
+    <a href="https://tally.so/r/zxvMMq" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--brown);text-decoration:none;padding:9px 18px;border-radius:99px;border:1.5px solid var(--brown);font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;">🚩 ¿Algún problema con tu pedido?</a>
+  </div>
+
+  <!-- Sobre nosotros — párrafo de texto real (no interfaz ni datos
+       estructurados) para que Google tenga contenido en prosa de la página,
+       no solo el schema. Plegado igual que el FAQ, para no añadirle peso
+       visual a quien ya sabe lo que quiere pedir. -->
+  <details style="max-width:380px;margin:0 auto 14px;text-align:left;">
+    <summary style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;cursor:pointer;text-align:center;">🥔 SOBRE NOSOTROS</summary>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.6;font-family:'DM Sans',sans-serif;">Dulce Patata Food es un local de comida artesanal en Granada, especializado en patatas asadas. También tenemos boniato fries, paninis, cookies, tartas y bebidas. Haz tu pedido en esta web y recógelo en tienda, en Carretera de Málaga 111 (frente al Supermercado Dani), pagando al recoger con tarjeta o efectivo. Si prefieres que te lo llevemos a casa, pide por Glovo, Just Eat o Uber Eats.</p>
+  </details>
+
+  <!-- Preguntas frecuentes — <details> nativo: cerrado por defecto, cada
+       pregunta ocupa una sola línea hasta que se abre, así no le añade
+       peso visual a la página. El texto de cada pregunta/respuesta tiene
+       que coincidir con el FAQPage del <head> (Google exige que el
+       contenido del schema esté también visible en la página). -->
+  <details style="max-width:380px;margin:0 auto 20px;text-align:left;">
+    <summary style="font-family:'Anton',sans-serif;font-size:13px;color:var(--brown);letter-spacing:0.05em;cursor:pointer;text-align:center;">❓ PREGUNTAS FRECUENTES</summary>
+    <div style="margin-top:10px;">
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Puedo pagar con tarjeta o solo en efectivo?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Con las dos: tarjeta o efectivo al recoger tu pedido en tienda.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Hacéis entrega a domicilio o solo recogida en tienda?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Esta web es solo para recoger en tienda. Si prefieres que te lo lleven a casa, puedes pedir por Glovo, Just Eat o Uber Eats — haz clic en sus logos al principio de la web.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Puedo personalizar mi patata con mis propias salsas e ingredientes?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Sí, con la Patata Al Gusto eliges tú la salsa y los ingredientes.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Tenéis opciones vegetarianas?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Sí, tenemos opciones vegetarianas en la carta.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:6px;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿Los productos tienen información de alérgenos?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">Sí, tenemos la carta de alérgenos disponible en el propio local.</p>
+    </details>
+    <details style="background:var(--white);border:1px solid rgba(61,31,13,0.10);border-radius:10px;padding:10px 14px;margin-bottom:0;font-family:'DM Sans',sans-serif;">
+      <summary style="font-size:13px;font-weight:700;color:var(--brown);cursor:pointer;">¿A partir de qué hora hay patatas recién asadas?</summary>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;">A partir de las 19:30h.</p>
+    </details>
+    </div>
+  </details>
+
+  <!-- Copyright -->
+  <div style="font-size:11px;color:rgba(138,106,78,0.4);">© Dulce Patata Food &nbsp;·&nbsp;
+    <button onclick="document.getElementById('privacy-modal').style.display='flex'" style="background:none;border:none;color:rgba(138,106,78,0.4);font-size:11px;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif;padding:0;">Política de privacidad</button>
+  </div>
+
+  <!-- ID legacy para JS -->
+  <span id="footer-horario" style="display:none;">🕐 Martes a domingo · Mañanas 10:00–13:45 · Tardes 18:00–23:45</span>
+
+</footer>
+
+<!-- MODAL PIN ACCESO RESTRINGIDO -->
+<div id="secure-pin-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:5000;background:rgba(61,31,13,0.75);padding:20px">
+  <div style="background:var(--white);border-radius:20px;padding:28px 24px;width:100%;max-width:320px;text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🔒</div>
+    <div style="font-family:'Oswald',sans-serif;font-size:18px;font-weight:900;color:var(--brown);margin-bottom:20px">Acceso restringido</div>
+    <input type="password" id="secure-pin-input" placeholder="Contraseña"
+      style="width:100%;padding:12px;border:1.5px solid var(--warm);border-radius:10px;font-size:16px;font-family:'DM Sans',sans-serif;text-align:center;outline:none;margin-bottom:10px;box-sizing:border-box"
+      onkeydown="if(event.key==='Enter')secureLockConfirm()">
+    <div id="secure-pin-error" style="display:none;color:var(--error);font-size:12px;font-weight:600;margin-bottom:10px">Contraseña incorrecta</div>
+    <div style="display:flex">
+      <button onclick="secureLockCerrar()" style="flex:1;padding:12px;background:var(--warm);color:var(--brown);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+      <button onclick="secureLockConfirm()" style="flex:1;padding:12px;background:var(--brown);color:var(--white);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Entrar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- CONFIRM MODAL (usado por cliente y admin) -->
+<div id="confirm-modal">
+  <div class="confirm-box">
+    <h3 id="confirm-title">¿Confirmar?</h3>
+    <p id="confirm-msg"></p>
+    <div class="confirm-btns">
+      <button class="admin-save-btn" id="confirm-ok-btn" style="background:var(--error)">Eliminar</button>
+      <button class="admin-save-btn" onclick="closeConfirm()" style="background:var(--muted)">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- OVERLAY DE CARGA — bloquea toda la pantalla mientras se procesa el pedido -->
+<div id="loading-overlay" style="display:none">
+  <div class="loading-spinner"></div>
+  <div class="loading-overlay-text">Enviando tu pedido…</div>
+</div>
+
+<!-- ALERT MODAL (usado por cliente y admin) -->
+<div id="alert-modal">
+  <div class="confirm-box">
+    <h3 id="alert-title">Aviso</h3>
+    <p id="alert-msg"></p>
+    <div class="confirm-btns">
+      <button class="admin-save-btn" onclick="closeAlert()" style="background:var(--brown)">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<!-- RULETA DE PREMIOS -->
+<div id="ruleta-modal">
+  <div class="ruleta-box">
+    <button class="ruleta-close" onclick="closeRuleta()" aria-label="Cerrar">✕</button>
+
+    <div id="ruleta-intro">
+      <div class="ruleta-title">🎡 ¡Gira y gana!</div>
+      <p class="ruleta-sub">Una vuelta gratis al día. A ver qué te toca hoy 👇</p>
+
+      <div class="juego-tel-group">
+        <input type="tel" id="ruleta-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+        <div class="juego-tel-error" id="ruleta-tel-error">Introduce un teléfono válido de 9 dígitos</div>
+      </div>
+
+      <div class="ruleta-wheel-wrap">
+        <div class="ruleta-pointer">▼</div>
+        <canvas id="ruleta-canvas" width="280" height="280"></canvas>
+      </div>
+
+      <button class="ruleta-spin-btn" id="ruleta-spin-btn" onclick="girarRuleta()">Girar la ruleta</button>
+    </div>
+
+    <div id="ruleta-resultado" style="display:none">
+      <div class="ruleta-resultado-emoji premio-emoji" id="ruleta-resultado-emoji">🎉</div>
+      <div class="ruleta-resultado-titulo premio-titulo" id="ruleta-resultado-titulo">¡Enhorabuena!</div>
+      <p class="ruleta-resultado-desc" id="ruleta-resultado-desc"></p>
+      <button class="ruleta-spin-btn" id="ruleta-aplicar-btn" onclick="aplicarPremioRuleta()">Ver mi pedido</button>
+      <button class="ruleta-cerrar-btn" onclick="closeRuleta()">Seguir mirando la carta</button>
+    </div>
+
+    <div id="ruleta-ya-jugaste" style="display:none">
+      <div class="ruleta-resultado-emoji">😅</div>
+      <div class="ruleta-resultado-titulo">Ya has girado hoy</div>
+      <p class="ruleta-resultado-desc">Vuelve mañana para otra oportunidad 🎡</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:4px">¿Ganaste un premio y ya no ves el código (cambiaste de móvil, borraste datos del navegador...)? Llámanos al <a href="tel:+34604823180" style="color:inherit;font-weight:700">604 82 31 80</a> y te lo miramos.</p>
+      <button class="ruleta-cerrar-btn" onclick="closeRuleta()">Vale, a pedir</button>
+    </div>
+  </div>
+</div>
+
+<!-- RASCA Y GANA -->
+<div id="rasca-modal">
+  <div class="rasca-box">
+    <button class="rasca-close" onclick="closeRasca()" aria-label="Cerrar">✕</button>
+
+    <div id="rasca-intro">
+      <div class="rasca-title">🎫 ¡Rasca y gana!</div>
+      <p class="rasca-sub">Rasca la tarjeta con el dedo o el ratón y descubre tu premio 👇</p>
+
+      <div id="rasca-tel-paso">
+        <div class="juego-tel-group">
+          <input type="tel" id="rasca-telefono" placeholder="Tu teléfono (9 dígitos)" maxlength="11" oninput="formatPhone(this)">
+          <div class="juego-tel-error" id="rasca-tel-error">Introduce un teléfono válido de 9 dígitos</div>
+        </div>
+        <button class="ruleta-spin-btn" id="rasca-empezar-btn" onclick="empezarRasca()">Destapar mi tarjeta</button>
+      </div>
+
+      <div id="rasca-tarjeta-paso" style="display:none">
+        <div class="rasca-card-wrap">
+          <div class="rasca-premio-debajo">
+            <div class="rasca-premio-emoji" id="rasca-premio-emoji"></div>
+            <div class="rasca-premio-texto" id="rasca-premio-texto"></div>
+          </div>
+          <canvas id="rasca-canvas" width="260" height="150"></canvas>
+        </div>
+        <p class="rasca-hint">Rasca al menos la mitad de la tarjeta</p>
+      </div>
+    </div>
+
+    <div id="rasca-resultado" style="display:none">
+      <div class="rasca-resultado-emoji premio-emoji" id="rasca-resultado-emoji">🎉</div>
+      <div class="rasca-resultado-titulo premio-titulo" id="rasca-resultado-titulo">¡Enhorabuena!</div>
+      <p class="rasca-resultado-desc" id="rasca-resultado-desc"></p>
+      <button class="rasca-aplicar-btn" id="rasca-aplicar-btn" onclick="aplicarPremioRasca()">Ver mi pedido</button>
+      <button class="rasca-cerrar-btn" onclick="closeRasca()">Seguir mirando la carta</button>
+    </div>
+
+    <div id="rasca-ya-jugaste" style="display:none">
+      <div class="rasca-resultado-emoji">😅</div>
+      <div class="rasca-resultado-titulo">Ya rascaste hoy</div>
+      <p class="rasca-resultado-desc">Vuelve mañana para otra tarjeta 🎫</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:4px">¿Ganaste un premio y ya no ves el código (cambiaste de móvil, borraste datos del navegador...)? Llámanos al <a href="tel:+34604823180" style="color:inherit;font-weight:700">604 82 31 80</a> y te lo miramos.</p>
+      <button class="rasca-cerrar-btn solid" onclick="closeRasca()">Vale, a pedir</button>
+    </div>
+  </div>
+</div>
+
+<!-- PANTALLA DE FICHAJE (empleados) -->
+<div id="fichar-overlay">
+  <div style="width:100%;max-width:380px;padding:32px 24px;text-align:center;box-sizing:border-box;overflow-x:hidden">
+    <div style="font-family:'Oswald',sans-serif;font-size:20px;font-weight:900;color:var(--brown);margin-bottom:32px">Dulce Patata Food</div>
+    <div id="fichar-pin-view">
+      <div style="font-size:16px;font-weight:600;color:var(--brown);margin-bottom:8px">Introduce tu PIN</div>
+      <div id="fichar-pin-dots" style="display:flex;justify-content:center;margin-bottom:24px">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,72px);justify-content:center;margin-bottom:12px">
+        <button class="fichar-pin-btn" onclick="ficharPin('1')">1</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('2')">2</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('3')">3</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('4')">4</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('5')">5</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('6')">6</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('7')">7</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('8')">8</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('9')">9</button>
+        <button class="fichar-pin-btn" onclick="ficharPinBorrar()" style="font-size:16px">⌫</button>
+        <button class="fichar-pin-btn" onclick="ficharPin('0')">0</button>
+        <button class="fichar-pin-btn" onclick="ficharPinOk()" style="background:var(--brown);color:var(--white);border-color:var(--brown);font-size:14px">OK</button>
+      </div>
+      <div id="fichar-pin-error" style="display:none;color:var(--error);font-size:13px;font-weight:600;margin-top:8px">PIN incorrecto</div>
+    </div>
+    <div id="fichar-firma-view" style="display:none">
+      <div id="fichar-firma-saludo" style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:6px"></div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:18px">Primera entrada del día — firma para el registro de jornada</div>
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:14px;padding:10px;margin-bottom:14px">
+        <canvas id="fichar-firma-canvas" width="320" height="160" style="width:100%;height:160px;touch-action:none;border:1.5px dashed var(--warm);border-radius:10px;background:#FFFDF8;display:block"></canvas>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <button onclick="ficharFirmaBorrar()" style="flex:1;padding:12px;background:var(--cream);border:1.5px solid var(--amber);color:var(--amber-dark);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Borrar</button>
+        <button onclick="ficharFirmaConfirmar()" style="flex:2;padding:12px;background:var(--brown);color:var(--white);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✓ Confirmar firma</button>
+      </div>
+      <div id="fichar-firma-error" style="display:none;color:var(--error);font-size:12px;font-weight:600;margin-bottom:8px">Por favor, firma antes de continuar.</div>
+      <button onclick="ficharCerrarSesion()" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;text-decoration:underline">Cambiar empleado</button>
+    </div>
+    <div id="fichar-emp-view" style="display:none">
+      <div id="fichar-emp-saludo" style="font-size:22px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:4px"></div>
+      <div id="fichar-fecha-hoy" style="font-size:13px;color:var(--amber-dark);font-weight:600;margin-bottom:4px"></div>
+      <div id="fichar-emp-estado" style="font-size:14px;color:var(--muted);margin-bottom:28px"></div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px">
+        <button id="fichar-btn-entrada" onclick="if(!ficharMostrarFirmaSiHaceFalta('entrada'))ficharRegistrar('entrada')" style="width:100%;padding:18px;background:#27855a;color:var(--white);border:none;border-radius:14px;font-size:18px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🟢 Registrar entrada</button>
+        <button id="fichar-btn-salida" onclick="ficharRegistrar('salida')" style="width:100%;padding:18px;background:var(--error);color:var(--white);border:none;border-radius:14px;font-size:18px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔴 Registrar salida</button>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:16px;margin-bottom:16px;text-align:left">
+        <div style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:10px">📊 Este mes</div>
+        <div id="fichar-resumen-mes" style="font-size:13px;color:var(--text);line-height:1.8"></div>
+      </div>
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:16px;text-align:left">
+        <div style="font-size:13px;font-weight:700;color:var(--brown);margin-bottom:10px">🕐 Últimos fichajes</div>
+        <div id="fichar-historial-reciente" style="font-size:12px;color:var(--text);line-height:1.9"></div>
+      </div>
+      <!-- FICHAR MANUAL -->
+      <div id="fichar-manual-panel" style="display:none;background:var(--cream);border:1.5px solid var(--amber);border-radius:12px;padding:16px;margin-top:20px;text-align:left;box-sizing:border-box;width:100%">
+        <div style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:12px">✏️ Registrar fichaje manual</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">FECHA</label>
+            <input type="date" id="fichar-manual-fecha" style="width:100%;padding:12px;border:1.5px solid var(--warm);border-radius:8px;font-size:16px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none;box-sizing:border-box">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">HORA</label>
+            <input type="time" id="fichar-manual-hora" style="width:100%;padding:12px;border:1.5px solid var(--warm);border-radius:8px;font-size:16px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);outline:none;box-sizing:border-box">
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="ficharManualRegistrar('entrada')" style="flex:1;padding:14px;background:#27855a;color:var(--white);border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🟢 Entrada</button>
+            <button onclick="ficharManualRegistrar('salida')" style="flex:1;padding:14px;background:var(--error);color:var(--white);border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🔴 Salida</button>
+          </div>
+        </div>
+        <div id="fichar-manual-msg" style="font-size:13px;color:#27855a;display:none;font-weight:600;padding:8px;background:#e8f8ed;border-radius:8px"></div>
+      </div>
+      <button onclick="document.getElementById('fichar-manual-panel').style.display=document.getElementById('fichar-manual-panel').style.display==='none'?'block':'none'" style="margin-top:16px;background:var(--cream);border:1.5px solid var(--amber);border-radius:8px;padding:8px 16px;color:var(--amber-dark);font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%">✏️ ¿Olvidaste fichar? Registrar manualmente</button>
+      <button onclick="ficharCerrarSesion()" style="margin-top:10px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;text-decoration:underline">Cambiar empleado</button>
+    </div>
+    <div id="fichar-ok-view" style="display:none">
+      <div id="fichar-ok-icon" style="font-size:64px;margin-bottom:16px"></div>
+      <div id="fichar-ok-msg" style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px"></div>
+      <div id="fichar-ok-hora" style="font-size:16px;color:var(--muted);margin-bottom:32px"></div>
+      <button onclick="ficharVolverEmp()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Volver</button>
+    </div>
+  </div>
+</div>
+
+<!-- CHEDDAR-BACON SELECTOR MODAL -->
+<div id="cheddar-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:2600;background:rgba(61,31,13,0.65);padding:16px">
+  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:400px;padding:24px;position:relative;margin:auto">
+    <button onclick="closeCheddarModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">&#x2715;</button>
+    <div style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:900;color:var(--brown);margin-bottom:4px">Patata Cheddar-Bacon 🆕</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Salsa queso cheddar · caramelo de bacon · queso mozzarella gratinado</div>
+    <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">&#x1F356; Elige la carne *</div>
+    <div style="display:flex;flex-direction:column;margin-bottom:20px">
+      <label style="display:flex;align-items:center;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:12px 14px;cursor:pointer" id="cheddar-opt-picada" onclick="selectCheddarCarne('picada')">
+        <div id="cheddar-check-picada" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);flex-shrink:0;transition:all .15s"></div>
+        <div><div style="font-weight:700;font-size:15px;color:var(--text)">Carne Picada</div></div>
+      </label>
+      <label style="display:flex;align-items:center;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:12px 14px;cursor:pointer" id="cheddar-opt-kebab" onclick="selectCheddarCarne('kebab')">
+        <div id="cheddar-check-kebab" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);flex-shrink:0;transition:all .15s"></div>
+        <div><div style="font-weight:700;font-size:15px;color:var(--text)">Carne Kebab</div></div>
+      </label>
+    </div>
+    <div id="cheddar-error" style="display:none;font-size:12px;color:var(--error);font-weight:600;margin-bottom:10px">&#x26A0;&#xFE0F; Elige la carne para continuar</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:900;color:var(--amber-dark)">8,50 &#x20AC;</div>
+      <button onclick="confirmCheddar()" style="padding:12px 28px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;cursor:pointer" onmouseover="this.style.background='var(--amber-dark)'" onmouseout="this.style.background='var(--brown)'">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- BONIATO BACON — SELECTOR DE SALSA -->
+<div id="boniato-bacon-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:2600;background:rgba(61,31,13,0.65);align-items:center;justify-content:center;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:400px;padding:24px;position:relative;margin:auto;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+    <button onclick="closeBoniatoBaconModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">&#x2715;</button>
+    <div style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:900;color:var(--brown);margin-bottom:4px">Boniato Bacon</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Salsa a elegir · bacon · queso mozzarella</div>
+    <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">&#x1F35B; Elige la salsa *</div>
+    <div id="boniato-bacon-sauces" style="display:flex;flex-direction:column;margin-bottom:20px"></div>
+    <div id="boniato-bacon-error" style="display:none;font-size:12px;color:var(--error);font-weight:600;margin-bottom:10px">&#x26A0;&#xFE0F; Elige la salsa para continuar</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:900;color:var(--amber-dark)">5,50 &#x20AC;</div>
+      <button onclick="confirmBoniatoBacon()" style="padding:12px 28px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;cursor:pointer" onmouseover="this.style.background='var(--amber-dark)'" onmouseout="this.style.background='var(--brown)'">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- CUSTOMIZER MODAL -->
+<div id="customizer-modal" onclick="if(event.target===this)closeCustomizer()">
+  <div class="customizer-box">
+    <button class="customizer-close" onclick="closeCustomizer()">&#x2715;</button>
+    <div class="customizer-title" id="cust-title">Patata Al Gusto</div>
+    <div class="customizer-subtitle" id="cust-subtitle">Elige 1 salsa y 6 ingredientes</div>
+    <div id="cust-sauce-progress" class="customizer-progress" style="margin-top:2px">
+      <span id="cust-sauce-label" style="white-space:nowrap;font-weight:600;min-width:90px">Salsas: 0/1</span>
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="cust-sauce-bar" style="--pct:0"></div></div>
+    </div>
+    <div class="customizer-section-label">Salsas <span class="customizer-badge" id="cust-sauce-badge">0/1</span></div>
+    <div class="chip-grid" id="cust-sauces"></div>
+    <div id="cust-ing-progress" class="customizer-progress" style="margin-top:14px">
+      <span id="cust-ing-label" style="white-space:nowrap;font-weight:600;min-width:120px">Ingredientes: 0/6</span>
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="cust-ing-bar" style="--pct:0"></div></div>
+    </div>
+    <div class="customizer-section-label">Ingredientes <span class="customizer-badge" id="cust-ing-badge">0/6</span></div>
+    <div class="chip-grid" id="cust-ingredients"></div>
+    <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px;display:flex;flex-direction:column">
+      <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Extras opcionales</div>
+      <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-queso-label" onclick="toggleCustExtra('queso')">
+        <div><div style="font-weight:700;font-size:14px;color:var(--text)">&#x1F9C0; Queso mozzarella</div><div style="font-size:12px;color:var(--muted)">+1,00 &#x20AC;</div></div>
+        <div id="cust-extra-check-queso" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></div>
+      </label>
+      <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-gratinado-label" onclick="toggleCustExtra('gratinado')">
+        <div><div style="font-weight:700;font-size:14px;color:var(--text)">&#x1F525; Gratinado</div><div style="font-size:12px;color:var(--muted)">+0,50 &#x20AC;</div></div>
+        <div id="cust-extra-check-gratinado" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></div>
+      </label>
+    </div>
+    <div class="customizer-footer">
+      <div class="customizer-price" id="cust-price">7,90 &#x20AC;</div>
+      <button class="customizer-confirm-btn" id="cust-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
+    </div>
+    <div id="cust-error" style="display:none;font-size:12px;color:var(--error);font-weight:600;margin-top:10px;text-align:center"></div>
+  </div>
+</div>
+
+<!-- EXTRAS MODAL -->
+<div id="extras-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:2600;background:rgba(61,31,13,0.65);padding:16px;overflow-y:auto">
+  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:420px;padding:24px;position:relative;max-height:90vh;overflow-y:auto;margin:auto">
+    <button onclick="closeExtrasModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">&#x2715;</button>
+    <div style="font-family:'Oswald',sans-serif;font-size:19px;font-weight:900;color:var(--brown);margin-bottom:4px" id="extras-title">Patata Simple</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:18px" id="extras-base-price">3,00 €</div>
+    <div id="extras-options" style="display:flex;flex-direction:column;margin-bottom:20px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div style="font-family:'Oswald',sans-serif;font-size:22px;font-weight:900;color:var(--amber-dark)" id="extras-total-price">3,00 €</div>
+      <button onclick="confirmExtras()" style="padding:12px 28px;background:var(--brown);color:var(--cream);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;cursor:pointer" onmouseover="this.style.background='var(--amber-dark)'" onmouseout="this.style.background='var(--brown)'">&#x2192; Añadir al pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ADMIN SHELL (carga diferida - solo cuando se abre el panel) ── -->
+<div id="admin-shell-container"></div>
+
+<!-- ── BANNER COOKIES ── -->
+<div id="cookies-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:99990;background:var(--brown);color:var(--cream);padding:16px 20px;box-shadow:0 -4px 20px rgba(0,0,0,0.3)">
+  <div style="max-width:680px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div style="flex:1;min-width:220px;font-size:13px;line-height:1.5;font-family:'DM Sans',sans-serif">
+      🍪 Esta web guarda tu pedido y preferencias en tu dispositivo. No usamos cookies de rastreo ni publicidad.
+      <button onclick="document.getElementById('privacy-modal').style.display='flex'" style="background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif;padding:0">Más información</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <button onclick="cookiesAceptar()" style="padding:10px 22px;background:var(--gold);color:var(--brown);border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Aceptar</button>
+      <button onclick="cookiesAceptar()" style="padding:10px 22px;background:transparent;color:var(--cream);border:1.5px solid rgba(255,248,238,0.4);border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Rechazar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL POLÍTICA DE PRIVACIDAD ── -->
+<div id="privacy-modal" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;z-index:99995;background:rgba(61,31,13,0.75);padding:20px;align-items:center;justify-content:center">
+  <div style="background:var(--cream);border-radius:20px;width:100%;max-width:540px;max-height:88vh;overflow-y:auto;padding:28px 24px;position:relative">
+    <button onclick="document.getElementById('privacy-modal').style.display='none'" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)">✕</button>
+    <h2 style="font-family:'Oswald',sans-serif;font-size:20px;font-weight:900;color:var(--brown);margin-bottom:4px">Política de privacidad</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Última actualización: agosto 2026</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">1. Responsable del tratamiento</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px"><strong>Dulce Patata Food</strong><br>NIF/CIF: 77558832A<br>Dirección: Carretera de Málaga 111, Granada<br>Teléfono: 604 82 31 80<br>Contacto: a través del teléfono indicado</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">2. Datos que recogemos</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Al realizar un pedido recogemos tu <strong>nombre</strong> y <strong>número de teléfono</strong>. Las notas del pedido (alergias, preferencias) son opcionales. Si juegas a la ruleta o al rasca de premios, también recogemos el <strong>número de teléfono</strong> que introduzcas, aunque no llegues a hacer un pedido. Si se produce un error técnico en la web, se puede recoger también información técnica del dispositivo (navegador, sistema operativo) para poder solucionarlo — nunca tu nombre ni tu teléfono junto con ese error.</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">3. Finalidad y base legal</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Usamos tus datos exclusivamente para <strong>gestionar tu pedido</strong>, <strong>contactarte si surge algún problema</strong> con él, y para el <strong>programa de fidelización</strong> si participas en él. La base legal es la ejecución del contrato (art. 6.1.b RGPD).</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">4. Conservación</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los pedidos se conservan mientras sea necesario para la gestión del negocio (atención de incidencias, fidelización, contabilidad) y no se eliminan de forma automática pasado un plazo fijo; puedes solicitar su supresión en cualquier momento (ver "Tus derechos" más abajo). Las copias de seguridad técnicas internas se conservan un máximo de 30 días, tras los cuales se eliminan automáticamente.</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">5. Destinatarios</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Los datos se almacenan en <strong>Google Firebase</strong> (Google Ireland Ltd., UE). Tu número de teléfono se envía también a <strong>Twilio</strong> (Twilio Inc., EEUU) para verificarlo por SMS al confirmar un pedido. Usamos <strong>GoatCounter</strong> para estadísticas de visitas de forma anónima (sin cookies de rastreo) y <strong>Sentry</strong> para detectar errores técnicos de la web (sin tu nombre ni tu teléfono asociados). No cedemos datos a terceros para fines comerciales.</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">6. Tus derechos</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:16px">Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición y portabilidad contactando por teléfono al <strong>604 82 31 80</strong>. También puedes reclamar ante la <a href="https://www.aepd.es" target="_blank" style="color:var(--brown);text-decoration:underline">Agencia Española de Protección de Datos (aepd.es)</a>.</p>
+    <h3 style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:6px">7. Almacenamiento local</h3>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:20px">Esta web usa <em>localStorage</em> del navegador para recordar tu carrito y preferencias de sesión. No son cookies de rastreo ni se comparten con terceros.</p>
+    <button onclick="cookiesAceptar();document.getElementById('privacy-modal').style.display='none'" style="width:100%;padding:12px;background:var(--brown);color:var(--cream);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Entendido</button>
+  </div>
+</div>
+
+<script>
+  (function() {
+    if (!localStorage.getItem('dpf_cookies_ok')) {
+      document.getElementById('cookies-banner').style.display = 'block';
+    }
+  })();
+  function cookiesAceptar() {
+    localStorage.setItem('dpf_cookies_ok', '1');
+    document.getElementById('cookies-banner').style.display = 'none';
+  }
+</script>
+
+<!-- Scripts -->
+<!-- defer: el navegador descarga todos estos en paralelo, pero los ejecuta
+     siempre en este orden exacto — sustituye al cargador manual secuencial
+     que había antes (uno esperaba a que el anterior terminara del todo).
+     NOTA: app.js es el bundle de NÚCLEO generado por `node scripts/build.js`
+     (nucleo-compartido.js + carta.js + carrito-checkout.js + antifraude.js +
+     init.js) — todo lo que necesita cualquier visitante. El panel de admin
+     (16 módulos más) vive aparte en js/app-admin.js y se carga diferido,
+     solo cuando alguien de verdad abre el panel (ver loadAdminShell más
+     abajo) — así un cliente que solo viene a pedir patatas nunca lo
+     descarga. Las constantes (HORARIO_KEY, MENU_KEY...) de los módulos de
+     un mismo bundle NO se comparten si se cargan como etiquetas <script>
+     sueltas, solo funcionan juntas dentro del mismo archivo unido — por eso
+     nucleo-compartido.js va siempre primero dentro de app.js, y por lo que
+     app-admin.js tiene que cargarse DESPUÉS de app.js (ambos son <script>
+     clásicos de la misma página, así que comparten el mismo ámbito global:
+     app-admin.js puede usar sin problema las funciones/consts de app.js
+     una vez este ya se ha ejecutado). -->
+<script src="js/libs.js" defer></script>
+<script src="js/firebase-auth-compat.js" defer></script>
+<script src="js/config.js?v=1787443449421" defer></script>
+<script src="js/app.js?v=1788610947611" defer></script>
+<script src="js/auth.js?v=1788610947611" defer></script>
+<script>
+  // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
+  // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
+  // las dos antes de dar el panel por "listo" — loadAdminShell(callback)
+  // es el punto único de entrada que usa el resto del código (openAdmin,
+  // secureLockConfirm, checkUrlToken...) y solo llama a callback cuando
+  // ambas han terminado, para que ninguna función "de admin de verdad"
+  // (isTrustedDevice, dcCargar, empRenderAdmin...) se llame antes de que
+  // exista todavía.
+  window._adminShellLoaded = false; // true solo cuando HTML + JS del admin están listos del todo
+  var _adminHtmlLoaded = false;
+  var _adminHtmlPromise = null;
+  var _adminBundleLoaded = false;
+  var _adminBundlePromise = null;
+
+  function _loadAdminHtml(callback) {
+    if (_adminHtmlLoaded) { if (callback) callback(); return; }
+    if (!_adminHtmlPromise) {
+      _adminHtmlPromise = fetch('admin-shell.html?v=' + Date.now(), {cache: 'no-store'})
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          document.getElementById('admin-shell-container').innerHTML = html;
+          _adminHtmlLoaded = true;
+          // Fix: mover modales de empleados fuera de admin-stock-config
+          ['emp-modal','emp-manual-modal','emp-borrar-fecha-modal','emp-import-modal'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el && el.parentElement && el.parentElement.id === 'admin-stock-config') {
+              document.body.appendChild(el);
+            }
+          });
+        })
+        .catch(function(e) {
+          console.error('[admin-shell] Error cargando el HTML:', e);
+          // No dejar la promesa fallida en caché: la próxima vez que se
+          // intente abrir el panel, que vuelva a intentar la descarga en
+          // vez de repetir para siempre el mismo fallo ya resuelto.
+          _adminHtmlPromise = null;
+        });
+    }
+    _adminHtmlPromise.then(function() { if (callback) callback(); });
+  }
+
+  function _loadAdminBundle(callback) {
+    if (_adminBundleLoaded) { if (callback) callback(); return; }
+    if (!_adminBundlePromise) {
+      _adminBundlePromise = new Promise(function(resolve) {
+        var s = document.createElement('script');
+        s.src = 'js/app-admin.js?v=' + Date.now();
+        s.onload = function() { _adminBundleLoaded = true; resolve(); };
+        // Si falla la descarga (red caída, etc.) no dejamos la promesa
+        // colgada para siempre — se resuelve igual, y las funciones de
+        // admin simplemente seguirán sin existir por ahora (los guardas
+        // typeof === 'function' repartidos por el núcleo ya cubren ese
+        // caso) — pero SÍ se limpia la promesa en caché, para que el
+        // siguiente intento de abrir el panel vuelva a descargar el bundle
+        // en vez de quedarse con este mismo fallo resuelto para siempre
+        // (antes, un único fallo dejaba el panel roto hasta recargar la
+        // página entera a mano).
+        s.onerror = function(e) {
+          console.error('[admin-bundle] Error cargando js/app-admin.js:', e);
+          s.remove();
+          _adminBundlePromise = null;
+          resolve();
+        };
+        document.body.appendChild(s);
+      });
+    }
+    _adminBundlePromise.then(function() { if (callback) callback(); });
+  }
+
+  function loadAdminShell(callback) {
+    Promise.all([
+      new Promise(function(resolve) { _loadAdminHtml(resolve); }),
+      new Promise(function(resolve) { _loadAdminBundle(resolve); })
+    ]).then(function() {
+      // Solo se marca "listo del todo" si las dos piezas cargaron de
+      // verdad — si alguna falló, se deja en false a propósito para que la
+      // próxima vez que alguien intente abrir el panel (openAdmin) se
+      // vuelva a intentar la descarga, en vez de darlo por cargado con
+      // funciones de admin que en realidad no existen.
+      window._adminShellLoaded = _adminHtmlLoaded && _adminBundleLoaded;
+      if (window._adminShellLoaded) document.dispatchEvent(new Event('adminShellLoaded'));
+      if (callback) callback();
+    });
+  }
+
+  // (Antes, aquí se precargaba admin-shell.html en segundo plano a los 2
+  // segundos para cada visitante, para que el candado/triple-tap de acceso
+  // respondiera al instante. Se quita: admin-shell.html lleva contraseña
+  // (Basic Auth) desde el .htaccess, y esa descarga en segundo plano
+  // recibía un 401 con WWW-Authenticate — el navegador muestra el diálogo
+  // nativo de usuario/contraseña para CUALQUIER petición 401 con esa
+  // cabecera, la pida quien la pida y se vea o no en pantalla, así que
+  // salía ese aviso de contraseña a todos los clientes 2 segundos después
+  // de entrar, aunque la página en sí cargara bien detrás. Ahora
+  // admin-shell.html se descarga solo cuando de verdad se abre el panel
+  // (ver loadAdminShell arriba) — un pelín más lento para quien lo abre,
+  // pero sin el aviso de contraseña de fondo para el resto.)
+</script>
+
+<script>
+// Fix: hero-status y order-form incorrectos
+setInterval(function() {
+  if (typeof getOrdersOpen === 'undefined' || typeof isTodayOpen === 'undefined' || typeof isOutsideHours === 'undefined') return;
+  try {
+    var isOpen = getOrdersOpen() && isTodayOpen() && !isOutsideHours();
+    if (!isOpen) return;
+    // Respetar cierre manual del admin
+    if (localStorage.getItem('dpf_open_manual_override')) return;
+    // Solo mostrar "Abierto ahora" si estamos en una sesión activa (no entre turnos)
+    try {
+      var _h = JSON.parse(localStorage.getItem('dpf_horario') || '{}');
+      if (_h.manOpen) {
+        var _now = new Date();
+        var _nowMin = _now.getHours() * 60 + _now.getMinutes();
+        if (_now.getHours() < 6) _nowMin += 1440;
+        var _sessions = [{open: getMinutes(_h.manOpen), close: getMinutes(_h.manClose, true)}, {open: getMinutes(_h.tarOpen), close: getMinutes(_h.tarClose, true)}].filter(function(s) { return s.open !== null && s.close !== null; });
+        var _inSession = _sessions.some(function(s) { return _nowMin >= s.open && _nowMin < s.close; });
+        if (!_inSession) return;
+      }
+    } catch(e) {}
+    var st = document.getElementById('hero-status-text');
+    var dot = document.querySelector('.dot');
+    var form = document.getElementById('order-form');
+    var banner = document.getElementById('orders-closed-banner');
+    var locked = document.getElementById('cart-locked-msg');
+    if (st && (st.textContent.startsWith('Abrimos a las') || st.textContent === 'Cerrado ahora' || st.textContent === 'Cerrado hoy')) {
+      st.textContent = 'Abierto ahora';
+      if (dot) dot.style.background = '#27ae60';
+    }
+    if (banner && banner.style.display !== 'none') return;
+    if (locked && locked.style.display !== 'none') return;
+    if (form && form.style.display === 'none') {
+      var _cartVacio = true;
+      try {
+        _cartVacio = (typeof cart === 'undefined' || Object.keys(cart).length === 0)
+          && (typeof custCart === 'undefined' || Object.keys(custCart).length === 0)
+          && (typeof extrasCart === 'undefined' || Object.keys(extrasCart).length === 0);
+      } catch(e) {}
+      if (!_cartVacio) form.style.display = 'block';
+    }
+  } catch(e) {}
+}, 300);
+</script>
+<div id="printable-area"></div>
+
+<!-- MODAL VERIFICACIÓN SMS -->
+<div id="sms-verify-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.6);align-items:center;justify-content:center">
+  <div style="background:var(--white);border-radius:20px;padding:32px 24px;max-width:340px;width:90%;text-align:center;font-family:'DM Sans',sans-serif">
+    <div style="font-size:40px;margin-bottom:12px">📱</div>
+    <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">Verifica tu teléfono</div>
+    <div id="sms-verify-text" style="font-size:14px;color:var(--muted);margin-bottom:24px">Te hemos enviado un código de 4 dígitos al número indicado.</div>
+    <div style="display:flex;justify-content:center;gap:10px;margin-bottom:20px">
+      <input id="sms-code-1" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="smsCodeInput(this,1)" onkeydown="smsCodeKey(event,1)">
+      <input id="sms-code-2" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="smsCodeInput(this,2)" onkeydown="smsCodeKey(event,2)">
+      <input id="sms-code-3" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="smsCodeInput(this,3)" onkeydown="smsCodeKey(event,3)">
+      <input id="sms-code-4" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="smsCodeInput(this,4)" onkeydown="smsCodeKey(event,4)">
+    </div>
+    <div id="sms-error-msg" style="display:none;color:var(--error);font-size:13px;font-weight:600;margin-bottom:12px"></div>
+    <button id="sms-verify-btn" onclick="smsVerifyCode()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">✅ Verificar</button>
+    <button onclick="smsResendCode()" style="width:100%;padding:10px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">🔄 Reenviar código</button>
+    <button onclick="smsCancelVerify()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+  </div>
+</div>
+<!-- Generación de PDF real (historial/tickets en el panel de admin) -->
+<script src="js/html2pdf.bundle.min.js?v=1785893700000" defer></script>
+<!-- Analítica (GoatCounter — sin cookies, sin banner de consentimiento) -->
+<script data-goatcounter="https://dulcepatata.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>
