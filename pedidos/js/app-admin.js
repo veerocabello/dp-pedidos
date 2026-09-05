@@ -220,7 +220,10 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),r(),l(),s("PEDIDO "+e.orderNum+`
 `),d(),s((e.time||"")+`
 `),s(`------------------------------------------------
-`),c(),(e.items||[]).forEach(g=>{const v=_ptEncodeStr(g.name||"").split(" + "),b=v[0].toUpperCase(),u=v.slice(1),f=g.extras||[],m=(g.subtotal||0).toFixed(2)+" EUR",y=o.anchoPapel===58?32:48,h=g.qty+"x ",S=y-h.length-b.length-m.length;S>=0?s(h+b+" ".repeat(S)+m+`
+`),e.notes&&(r(),p(!0),l(),s(`*** NOTA CLIENTE ***
+`),d(),c(),p(!0),s(e.notes+`
+`),p(!1),r(),s(`------------------------------------------------
+`)),c(),(e.items||[]).forEach(g=>{const v=_ptEncodeStr(g.name||"").split(" + "),b=v[0].toUpperCase(),u=v.slice(1),f=g.extras||[],m=(g.subtotal||0).toFixed(2)+" EUR",y=o.anchoPapel===58?32:48,h=g.qty+"x ",S=y-h.length-b.length-m.length;S>=0?s(h+b+" ".repeat(S)+m+`
 `):(s(h+b.substring(0,y-h.length)+`
 `),s(" ".repeat(Math.max(0,y-m.length))+m+`
 `)),u.forEach(x=>{const w=x.replace(/\s*\+\s*([\d]+[,.]?[\d]*)\s*€/," (+$1 EUR)").trim(),_=w.indexOf(" (+"),E=(_>=0?w.slice(0,_):w).toUpperCase(),A=_>=0?w.slice(_).toUpperCase():"";p(!0),s("     - "),i.push(n,45,2),s(_ptEncodeStr(E)),i.push(n,45,0),s(_ptEncodeStr(A)+`
@@ -237,10 +240,7 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),p(!1),s(`------------------------------------------------
 `)),r(),l(),s((e.total||0).toFixed(2)+` EUR
 `),d(),s(o.textoPago+`
-`),e.notes&&(s(`------------------------------------------------
-`),r(),p(!0),l(),s(`*** NOTA CLIENTE ***
-`),d(),c(),p(!0),s(e.notes+`
-`),p(!1)),r(),s(`------------------------------------------------
+`),r(),s(`------------------------------------------------
 `),s(o.despedida+`
 `),o.qrHabilitado&&o.qrContenido&&(s(`
 `),_ptPushQR(i,a,o.qrContenido,6)),s(`

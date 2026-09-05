@@ -6681,6 +6681,24 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   push((ticket.time || '') + '\n');
   push('------------------------------------------------\n');
 
+  // Nota del cliente — arriba, justo debajo de la cabecera (pedido a mano
+  // por la dueña tras probar en papel real las 3 opciones): es lo primero
+  // que se lee, antes de tocar ningún producto del pedido, en vez de ir
+  // al final junto al total como antes.
+  if (ticket.notes) {
+    center();
+    bold(true);
+    big();
+    push('*** NOTA CLIENTE ***\n');
+    normal();
+    left();
+    bold(true);
+    push(ticket.notes + '\n');
+    bold(false);
+    center();
+    push('------------------------------------------------\n');
+  }
+
   // Productos
   left();
   (ticket.items || []).forEach(item => {
@@ -6807,19 +6825,6 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   push((ticket.total || 0).toFixed(2) + ' EUR\n');
   normal();
   push(tc.textoPago + '\n');
-
-  if (ticket.notes) {
-    push('------------------------------------------------\n');
-    center();
-    bold(true);
-    big();
-    push('*** NOTA CLIENTE ***\n');
-    normal();
-    left();
-    bold(true);
-    push(ticket.notes + '\n');
-    bold(false);
-  }
 
   center();
   push('------------------------------------------------\n');

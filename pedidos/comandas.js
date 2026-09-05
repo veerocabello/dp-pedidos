@@ -2370,6 +2370,14 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(order.time), align: 'center' });
   if (order.pickupTime) B.push({ text: foldAccents('RECOGIDA: ' + order.pickupTime), align: 'center', big: true });
   B.push({ text: divider, align: 'center' });
+  // Nota del cliente arriba, justo debajo de la cabecera — es lo primero
+  // que se lee, antes de tocar ningún producto, en vez de ir al final
+  // junto al total (decidido tras probar en papel real las 3 opciones).
+  if (order.notes) {
+    B.push({ text: '*** NOTA CLIENTE ***', align: 'center', big: true, notesHeader: true });
+    B.push({ text: foldAccents(order.notes), align: 'left', notesText: true });
+    B.push({ text: divider, align: 'center' });
+  }
   order.items.forEach(it => {
     formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineStart: line.underlineStart, underlineLen: line.underlineLen }));
   });
@@ -2380,11 +2388,6 @@ function buildTicketBlocks(order) {
     B.push({ text: '(' + (order.paymentMethod === 'tarjeta' ? 'Tarjeta' : 'Efectivo') + ')', align: 'center' });
   }
   B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
-  if (order.notes) {
-    B.push({ text: divider, align: 'left' });
-    B.push({ text: '*** NOTA CLIENTE ***', align: 'center', big: true, notesHeader: true });
-    B.push({ text: foldAccents(order.notes), align: 'left', notesText: true });
-  }
   B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents(cfg.despedida), align: 'center' });
   B.push({ text: 'IVA incluido 10%', align: 'center' });
