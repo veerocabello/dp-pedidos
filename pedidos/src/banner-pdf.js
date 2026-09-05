@@ -248,7 +248,11 @@ function renderClientes() {
   }
 
   const q = (((_document$getElementB29 = document.getElementById('clientes-search')) === null || _document$getElementB29 === void 0 ? void 0 : _document$getElementB29.value) || '').trim().toLowerCase();
-  let filtered = q ? clientes.filter(c => c.phone.includes(q) || [...c.names].some(n => n.toLowerCase().includes(q))) : clientes.slice();
+  let filtered = q ? clientes.filter(c =>
+    c.phone.includes(q)
+    || [...c.names].some(n => n.toLowerCase().includes(q))
+    || c.orders.some(o => (o.num || '').toLowerCase().includes(q))
+  ) : clientes.slice();
 
   if (_clientesSort === 'gasto') {
     filtered.sort((a, b) => b.total - a.total);
