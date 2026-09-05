@@ -870,18 +870,93 @@ function _ptColaAgregar(ticket) {
   if (!ticket || !ticket.orderNum) return;
   const cola = _ptColaCargar();
   if (cola.some(t => t.orderNum === ticket.orderNum)) return;
-  cola.push(ticket);
+  // Se marca con el día (Europe/Madrid) en que se encoló — así, si la
+  // impresora sigue desconectada al día siguiente, _ptColaProcesar() sabe
+  // que ese ticket ya NO es de hoy y no lo reimprime solo sin más (ver
+  // el porqué justo ahí abajo).
+  cola.push(Object.assign({}, ticket, {
+    _colaFecha: typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : null
+  }));
   _ptColaGuardar(cola);
 }
 function _ptColaQuitar(orderNum) {
   _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
 }
 function _ptColaActualizarUI() {
-  const n = _ptColaCargar().length;
+  const cola = _ptColaCargar();
+  const hoy = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : null;
+  const deOtroDia = cola.filter(t => !hoy || t._colaFecha !== hoy);
+  const deHoy = cola.length - deOtroDia.length;
+  const n = cola.length;
   document.querySelectorAll('.pt-cola-contador').forEach(el => {
     el.style.display = n > 0 ? (el.dataset.showDisplay || 'block') : 'none';
-    el.textContent = '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
+    el.textContent = deOtroDia.length
+      ? '⚠️ ' + deOtroDia.length + (deOtroDia.length === 1 ? ' pedido pendiente es de OTRO DÍA' : ' pedidos pendientes son de OTRO DÍA') + ' — no se imprime' + (deOtroDia.length === 1 ? '' : 'n') + ' solo' + (deOtroDia.length === 1 ? '' : 's') + (deHoy ? ' (' + deHoy + ' de hoy sí, al reconectar)' : '') + '. Revísalos en Impresora térmica.'
+      : '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
   });
+  _ptColaAntiguaRenderUI(deOtroDia);
+}
+// Fila con "Imprimir igualmente"/"Descartar" para cada pedido pendiente
+// que NO es de hoy — nunca se reimprimen solos al reconectar (ver
+// _ptColaProcesar), así que aquí es donde se decide a mano qué hacer con
+// cada uno en vez de que se queden invisibles en la cola para siempre.
+function _ptColaAntiguaRenderUI(deOtroDia) {
+  const el = document.getElementById('pt-cola-antigua-lista');
+  if (!el) return;
+  if (!deOtroDia.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = '<div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ Pendientes de otro día — no se imprimen solos, decide con cada uno:</div>' +
+    deOtroDia.map(t => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fdf0ee;border:1.5px solid #c0392b;border-radius:8px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-size:12.5px;font-weight:700;color:#7a1a0e">#${escapeHtml(t.orderNum)} · ${escapeHtml(t.name || '')} · ${escapeHtml(t._colaFecha || 'fecha desconocida')}</span>
+        <div style="display:flex;gap:6px">
+          <button onclick="_ptColaImprimirAntiguo('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:#3D1F0D;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨️ Imprimir igualmente</button>
+          <button onclick="_ptColaDescartar('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🗑️ Descartar</button>
+        </div>
+      </div>`).join('');
+}
+// Aviso corto y autocontenido (mismo estilo que _ptBuildAnulacionBytes) que
+// se imprime justo antes del ticket real al forzar "Imprimir igualmente" —
+// para que en cocina no lo confundan con un pedido de hoy recién llegado.
+function _ptBuildAvisoOtroDiaBytes(orderNum, fecha) {
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('OJO\n');
+  push('PEDIDO DE OTRO DIA\n');
+  normal();
+  push('------------------------------------------------\n');
+  push('Pedido ' + orderNum + '\n');
+  push('Era del ' + (fecha || 'dia desconocido') + '\n');
+  push('NO es un pedido de hoy.\n');
+  push('Revisa si sigue haciendo\n');
+  push('falta prepararlo.\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  return new Uint8Array(d);
+}
+async function _ptColaImprimirAntiguo(orderNum) {
+  const ticket = _ptColaCargar().find(t => t.orderNum === orderNum);
+  if (!ticket) return;
+  const _ptEjecutar = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  try {
+    await _ptEjecutar(() => _ptEnviarBytes(_ptBuildAvisoOtroDiaBytes(orderNum, ticket._colaFecha)));
+    await _ptEjecutar(() => imprimirTicketTermico(ticket));
+    _ptColaQuitar(orderNum);
+  } catch (e) {
+    alert('⚠️ ' + e.message);
+  }
+}
+function _ptColaDescartar(orderNum) {
+  if (!confirm('¿Descartar este pedido pendiente sin imprimirlo? No se imprimirá ni ahora ni al reconectar.')) return;
+  _ptColaQuitar(orderNum);
 }
 document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
 // Recupera, al cargar la página, los tickets que este (u otro) dispositivo
@@ -920,7 +995,14 @@ async function _ptColaProcesar() {
   _ptColaProcesando = true;
   try {
     const cola = _ptColaCargar();
+    const hoy = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : null;
     for (const ticket of cola) {
+      // Pedidos de un día anterior (impresora desconectada desde ayer, por
+      // ejemplo): NO se reimprimen solos al reconectar — en cocina los
+      // verían salir por la térmica y los prepararían como si fueran de
+      // hoy. Se quedan en la cola para decidir a mano en "Imprimir
+      // térmica" (ver _ptColaAntiguaRenderUI / _ptColaImprimirAntiguo).
+      if (!hoy || ticket._colaFecha !== hoy) continue;
       try {
         await _ptEnFila(() => imprimirTicketTermico(ticket));
         _ptColaQuitar(ticket.orderNum);
