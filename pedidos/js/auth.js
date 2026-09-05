@@ -243,6 +243,7 @@ function empToggleBaja(id) {
   const idx = all.findIndex(e => e.id === id);
   if (idx < 0) return;
   all[idx].deBaja = !all[idx].deBaja;
+  all[idx].fechaBaja = all[idx].deBaja ? new Date().toISOString().slice(0, 10) : null;
   empSaveAll(all);
   empRenderLista();
   if (typeof bimbaRenderEmpleados === 'function') bimbaRenderEmpleados();
@@ -1540,6 +1541,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── PANEL BIMBA: EMPLEADOS ─────────────────────────────────────────────────
 
+// El panel de archivados se pliega/despliega sin perder el estado al
+// re-renderizar la lista (cada fichaje o edición vuelve a llamar a
+// bimbaRenderEmpleados(), que reconstruye el innerHTML entero).
+let _bimbaArchivoEmpAbierto = false;
+function bimbaToggleArchivoEmpleados() {
+  _bimbaArchivoEmpAbierto = !_bimbaArchivoEmpAbierto;
+  const panel = document.getElementById('bimba-emp-archivo-panel');
+  const chevron = document.getElementById('bimba-emp-archivo-chevron');
+  if (panel) panel.style.display = _bimbaArchivoEmpAbierto ? 'flex' : 'none';
+  if (chevron) chevron.style.transform = _bimbaArchivoEmpAbierto ? 'rotate(180deg)' : 'rotate(0deg)';
+}
+function _bimbaFmtFechaBaja(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T12:00:00');
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+// Ver el historial de fichajes de un empleado archivado — abre el
+// desplegable "Historial de fichajes" del panel bimba con el filtro ya
+// puesto en ese empleado y todos los meses (no solo el actual), ya que es
+// justo lo que hace falta poder sacar ante una inspección.
+function empVerFichajesArchivado(id) {
+  const panel = document.getElementById('bimba-hist-body');
+  const fila = document.getElementById('emp-row-hist');
+  if (panel) {
+    const abierto = panel.style.display !== 'none';
+    if (!abierto) _bimbaCerrarOtros(_bimbaGrupoEmp, 'bimba-hist-body');
+    panel.style.display = 'block';
+    const chevron = fila && fila.querySelector('.ba');
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  }
+  const sel = document.getElementById('emp-hist-select');
+  if (sel) sel.value = id;
+  const mesEl = document.getElementById('emp-hist-mes');
+  if (mesEl) mesEl.value = '';
+  if (typeof empVerHistorial === 'function') empVerHistorial();
+  if (panel) _bimbaScrollAbierto(panel);
+}
 function bimbaRenderEmpleados() {
   const emps = empLoadAll();
 
@@ -1558,23 +1597,52 @@ function bimbaRenderEmpleados() {
       : '<span style="color:#8A6A4E;font-size:13px">Nadie trabajando ahora mismo</span>';
   }
 
-  // Lista empleados en bimba
+  // Lista empleados en bimba — separada en activos y archivados (de baja):
+  // antes los de baja se quedaban mezclados en la misma lista con una
+  // etiqueta, y eso no bastaba — se querían fuera de la vista normal del
+  // equipo, en un archivo aparte que se abre solo si hace falta.
   const listaEl = document.getElementById('bimba-emp-lista');
   if (listaEl) {
     const DN = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-    listaEl.innerHTML = emps.map(e => `
-      <div id="emp-row-${e.id}" style="background:${e.deBaja ? '#FDECD5' : '#fff'};border:1.5px solid ${e.deBaja ? '#E8943A' : '#F5E6C8'};border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    const activos = emps.filter(e => !e.deBaja);
+    const archivados = emps.filter(e => e.deBaja);
+    listaEl.innerHTML = activos.map(e => `
+      <div id="emp-row-${e.id}" style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <div style="flex:1;min-width:160px">
-          <div style="font-size:14px;font-weight:700;color:#3D1F0D">${e.nombre}${e.deBaja ? ' <span style="font-size:11px;font-weight:700;color:#C2711A">🛌 DE BAJA</span>' : ''}</div>
+          <div style="font-size:14px;font-weight:700;color:#3D1F0D">${e.nombre}</div>
           <div style="font-size:11px;color:#8A6A4E;margin-top:2px">DNI: ${e.dni ? e.dni.replace(/./g,(c,i,s)=>i<3||i>=s.length-2?c:'*') : '—'} · PIN: ••••</div>
           <div style="font-size:11px;color:#8A6A4E">${(e.dias||[]).map(d=>DN[d]).join(', ')||'—'}${e.tarIn?' · Tarde: '+e.tarIn+'–'+e.tarOut:''}${e.manIn?' · Mañana: '+e.manIn+'–'+e.manOut:''}</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button onclick="empToggleBaja('${e.id}')" title="${e.deBaja ? 'Reactivar' : 'Dar de baja (deja de fichar; sus fichajes no se borran)'}" style="padding:6px 12px;background:${e.deBaja ? '#166534' : '#FDECD5'};color:${e.deBaja ? '#fff' : '#C2711A'};border:1.5px solid ${e.deBaja ? '#166534' : '#E8943A'};border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">${e.deBaja ? '✅' : '🛌'}</button>
+          <button onclick="empToggleBaja('${e.id}')" title="Dar de baja (deja de fichar; sus fichajes no se borran)" style="padding:6px 12px;background:#FDECD5;color:#C2711A;border:1.5px solid #E8943A;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🛌</button>
           <button onclick="empEditarModal('${e.id}')" style="padding:6px 12px;background:#FDECD5;color:#C2711A;border:1.5px solid #E8943A;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✏️</button>
           <button onclick="empEliminar('${e.id}')" style="padding:6px 12px;background:#fdf0ee;color:#c0392b;border:1.5px solid #c0392b;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🗑️</button>
         </div>
-      </div>`).join('');
+      </div>`).join('')
+      + (archivados.length ? `
+      <div id="bimba-emp-archivo-toggle" onclick="bimbaToggleArchivoEmpleados()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1.5px dashed #F5E6C8;border-radius:10px;padding:10px 12px;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="width:28px;height:28px;border-radius:50%;background:#F5E6C8;color:#8A6A4E;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🗄️</span>
+          <div>
+            <div style="font-size:13.5px;font-weight:700;color:#3D1F0D">Antiguos empleados (${archivados.length})</div>
+            <div style="font-size:11px;color:#8A6A4E">Ya no fichan · su historial se conserva</div>
+          </div>
+        </div>
+        <span id="bimba-emp-archivo-chevron" style="font-size:13px;color:#8A6A4E;transition:transform .2s;transform:${_bimbaArchivoEmpAbierto ? 'rotate(180deg)' : 'rotate(0deg)'}">▾</span>
+      </div>
+      <div id="bimba-emp-archivo-panel" style="display:${_bimbaArchivoEmpAbierto ? 'flex' : 'none'};flex-direction:column;gap:8px">
+        ${archivados.map(e => `
+        <div id="emp-row-${e.id}" style="background:#FFF8EE;border:1.5px dashed #E8943A;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;opacity:.92">
+          <div style="flex:1;min-width:160px">
+            <div style="font-size:14px;font-weight:700;color:#8A6A4E">${e.nombre} <span style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#8A6A4E;background:#F5E6C8;border-radius:99px;padding:2px 8px;margin-left:4px">Archivado</span></div>
+            <div style="font-size:11px;color:#8A6A4E;margin-top:2px">DNI: ${e.dni ? e.dni.replace(/./g,(c,i,s)=>i<3||i>=s.length-2?c:'*') : '—'} · Baja el ${_bimbaFmtFechaBaja(e.fechaBaja)}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button onclick="empVerFichajesArchivado('${e.id}')" style="padding:6px 12px;background:#3D1F0D;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">📄 Documento</button>
+            <button onclick="empToggleBaja('${e.id}')" style="padding:6px 12px;background:#166534;color:#fff;border:1.5px solid #166534;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">✅ Reactivar</button>
+          </div>
+        </div>`).join('')}
+      </div>` : '');
   }
 
   // URL fichaje
