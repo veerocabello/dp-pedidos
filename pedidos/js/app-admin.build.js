@@ -7468,31 +7468,39 @@ function _ptColaActualizarUI() {
       ? '⚠️ ' + deOtroDia.length + (deOtroDia.length === 1 ? ' pedido pendiente es de OTRO DÍA' : ' pedidos pendientes son de OTRO DÍA') + ' — no se imprime' + (deOtroDia.length === 1 ? '' : 'n') + ' solo' + (deOtroDia.length === 1 ? '' : 's') + (deHoy ? ' (' + deHoy + ' de hoy sí, al reconectar)' : '') + '. Revísalos en Impresora térmica.'
       : '🕓 ' + n + (n === 1 ? ' ticket pendiente de imprimir' : ' tickets pendientes de imprimir') + ' — se imprimirá' + (n === 1 ? '' : 'n') + ' solo' + (n === 1 ? '' : 's') + ' al reconectar';
   });
-  _ptColaAntiguaRenderUI(deOtroDia);
+  _ptColaListaRenderUI(cola, hoy);
 }
-// Fila con "Imprimir igualmente"/"Descartar" para cada pedido pendiente
-// que NO es de hoy — nunca se reimprimen solos al reconectar (ver
-// _ptColaProcesar), así que aquí es donde se decide a mano qué hacer con
-// cada uno en vez de que se queden invisibles en la cola para siempre.
+// Lista con "Imprimir ahora"/"Descartar" para CADA pedido pendiente, sea
+// de hoy o de otro día — antes solo se podían ver/gestionar aquí los de
+// otro día, y los de hoy se quedaban invisibles hasta que se imprimieran
+// solos o dejaran de ser "de hoy". Los de otro día se destacan aparte
+// (nunca se reimprimen solos al reconectar, ver _ptColaProcesar); los de
+// hoy sí, pero se pueden igualmente ver y descartar desde aquí a mano.
 // Hay varias .pt-cola-antigua-lista en la página (En vivo, Impresora
 // térmica...) — se rellenan todas igual, para poder verlas y actuar desde
 // donde sea que se vea el aviso, sin tener que ir a buscar otra pestaña.
-function _ptColaAntiguaRenderUI(deOtroDia) {
+function _ptColaListaRenderUI(cola, hoy) {
   const els = document.querySelectorAll('.pt-cola-antigua-lista');
   if (!els.length) return;
-  if (!deOtroDia.length) {
+  if (!cola.length) {
     els.forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
     return;
   }
-  const html = '<div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ Pendientes de otro día — no se imprimen solos, decide con cada uno:</div>' +
-    deOtroDia.map(t => `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fdf0ee;border:1.5px solid #c0392b;border-radius:8px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap">
-        <span style="font-size:12.5px;font-weight:700;color:#7a1a0e">#${escapeHtml(t.orderNum)} · ${escapeHtml(t.name || '')} · ${escapeHtml(t._colaFecha || 'fecha desconocida')}</span>
+  const html = '<div style="font-size:12px;font-weight:700;color:#8A6A4E;margin-bottom:8px">Pedidos pendientes de imprimir:</div>' +
+    cola.map(t => {
+      const esDeHoy = hoy && t._colaFecha === hoy;
+      const color = esDeHoy ? '#C2711A' : '#7a1a0e';
+      const fondo = esDeHoy ? '#FDECD5' : '#fdf0ee';
+      const borde = esDeHoy ? '#E8943A' : '#c0392b';
+      return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:${fondo};border:1.5px solid ${borde};border-radius:8px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-size:12.5px;font-weight:700;color:${color}">#${escapeHtml(t.orderNum)} · ${escapeHtml(t.name || '')} · ${esDeHoy ? 'hoy, se imprimirá sola al reconectar' : escapeHtml(t._colaFecha || 'fecha desconocida')}</span>
         <div style="display:flex;gap:6px">
-          <button onclick="_ptColaImprimirAntiguo('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:#3D1F0D;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨️ Imprimir igualmente</button>
-          <button onclick="_ptColaDescartar('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🗑️ Descartar</button>
+          <button onclick="_ptColaImprimirAntiguo('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:#3D1F0D;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨️ ${esDeHoy ? 'Imprimir ahora' : 'Imprimir igualmente'}</button>
+          <button onclick="_ptColaDescartar('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:none;color:${borde};border:1.5px solid ${borde};border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🗑️ Descartar</button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   els.forEach(el => { el.style.display = 'block'; el.innerHTML = html; });
 }
 // Aviso corto y autocontenido (mismo estilo que _ptBuildAnulacionBytes) que
@@ -7525,9 +7533,13 @@ function _ptBuildAvisoOtroDiaBytes(orderNum, fecha) {
 async function _ptColaImprimirAntiguo(orderNum) {
   const ticket = _ptColaCargar().find(t => t.orderNum === orderNum);
   if (!ticket) return;
+  const hoy = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : null;
+  const esDeOtroDia = !hoy || ticket._colaFecha !== hoy;
   const _ptEjecutar = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
   try {
-    await _ptEjecutar(() => _ptEnviarBytes(_ptBuildAvisoOtroDiaBytes(orderNum, ticket._colaFecha)));
+    if (esDeOtroDia) {
+      await _ptEjecutar(() => _ptEnviarBytes(_ptBuildAvisoOtroDiaBytes(orderNum, ticket._colaFecha)));
+    }
     await _ptEjecutar(() => imprimirTicketTermico(ticket));
     _ptColaQuitar(orderNum);
   } catch (e) {
@@ -7581,7 +7593,7 @@ async function _ptColaProcesar() {
       // ejemplo): NO se reimprimen solos al reconectar — en cocina los
       // verían salir por la térmica y los prepararían como si fueran de
       // hoy. Se quedan en la cola para decidir a mano en "Imprimir
-      // térmica" (ver _ptColaAntiguaRenderUI / _ptColaImprimirAntiguo).
+      // térmica" (ver _ptColaListaRenderUI / _ptColaImprimirAntiguo).
       if (!hoy || ticket._colaFecha !== hoy) continue;
       try {
         await _ptEnFila(() => imprimirTicketTermico(ticket));
