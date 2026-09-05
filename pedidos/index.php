@@ -67,7 +67,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1788598646903">
+<link rel="stylesheet" href="css/style.min.css?v=1788607899054">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -324,8 +324,13 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   }
 </style>
 
-<!-- AVISO DE PROBLEMA DE CONEXIÓN (Firebase caído/inaccesible) -->
-<div id="firebase-conexion-banner" style="display:none; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
+<!-- AVISO DE PROBLEMA DE CONEXIÓN (Firebase caído/inaccesible) — position:fixed
+     y z-index por encima de --z-fullscreen (3000) y de cualquier otro overlay
+     conocido (el mayor hasta ahora, 9999, en .fly-ghost): si no, este aviso
+     quedaba tapado del todo detrás de Modo Cocina (#kitchen-mode, fullscreen)
+     u otros overlays a pantalla completa — justo la pantalla donde más
+     falta hace notar que los pedidos han dejado de sincronizarse. -->
+<div id="firebase-conexion-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
   ⚠️ Problema de conexión ahora mismo. Si tu pedido no se confirma, recarga la página o avísanos en el mostrador.
 </div>
 
@@ -1100,8 +1105,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787443449421" defer></script>
-<script src="js/app.js?v=1788598646903" defer></script>
-<script src="js/auth.js?v=1788598646903" defer></script>
+<script src="js/app.js?v=1788607899054" defer></script>
+<script src="js/auth.js?v=1788607899054" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar

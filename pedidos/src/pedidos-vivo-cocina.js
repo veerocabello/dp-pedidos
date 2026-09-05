@@ -363,6 +363,11 @@ function openKitchenMode() {
   clearUnseenOrders();
   refreshKitchenGrid();
   updateKitchenClock();
+  // Por si algo llama a openKitchenMode() dos veces seguidas sin pasar por
+  // closeKitchenMode() (p.ej. un doble toque) — sin esto se quedaban dos
+  // intervalos corriendo a la vez, duplicando las lecturas a Firebase cada
+  // 15s sin que sirviera de nada.
+  if (_kitchenInterval) clearInterval(_kitchenInterval);
   _kitchenInterval = setInterval(() => {
     refreshKitchenGrid();
     updateKitchenClock();
