@@ -238,7 +238,7 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `)),r(),l(),s((e.total||0).toFixed(2)+` EUR
 `),d(),s(o.textoPago+`
 `),e.notes&&(s(`------------------------------------------------
-`),r(),u(!0),l(),s(`*** NOTA DEL CLIENTE ***
+`),r(),u(!0),l(),s(`*** NOTA CLIENTE ***
 `),d(),c(),u(!0),s(e.notes+`
 `),u(!1)),r(),s(`------------------------------------------------
 `),s(o.despedida+`

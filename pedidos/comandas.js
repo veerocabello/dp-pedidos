@@ -2382,7 +2382,7 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
   if (order.notes) {
     B.push({ text: divider, align: 'left' });
-    B.push({ text: '*** NOTA DEL CLIENTE ***', align: 'center', big: true, notesHeader: true });
+    B.push({ text: '*** NOTA CLIENTE ***', align: 'center', big: true, notesHeader: true });
     B.push({ text: foldAccents(order.notes), align: 'left', notesText: true });
   }
   B.push({ text: divider, align: 'center' });

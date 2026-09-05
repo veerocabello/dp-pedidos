@@ -253,7 +253,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     center();
     bold(true);
     big();
-    push('*** NOTA DEL CLIENTE ***\n');
+    push('*** NOTA CLIENTE ***\n');
     normal();
     left();
     bold(true);
