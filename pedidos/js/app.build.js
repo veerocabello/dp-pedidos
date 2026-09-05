@@ -3441,8 +3441,16 @@ function scheduleSlotMidnightReset() {
 // conexión puede seguir funcionando perfectamente y aun así esta lectura
 // en concreto estar denegada.
 function _avisarFalloPermisoPedidos(activo) {
+  // stats/ y orderStatus/ solo son legibles para las cuentas de admin (ver
+  // ops/firebase-rules.json) — CUALQUIER cliente pidiendo, sin sesión de
+  // admin, recibe permission-denied aquí como algo normal y esperado, no
+  // como un fallo. Sin este filtro, el aviso salía para todo el mundo en
+  // la web pública, y en un dispositivo recién deslogueado (como la
+  // tablet justo después de borrar sus datos) tapaba el propio formulario
+  // de acceso de admin con un z-index más alto — nadie podía ni entrar.
+  const mostrar = activo && _adminLoggedIn;
   document.querySelectorAll('#firebase-permiso-banner').forEach(el => {
-    el.style.display = activo ? 'block' : 'none';
+    el.style.display = mostrar ? 'block' : 'none';
   });
 }
 
