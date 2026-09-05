@@ -3949,6 +3949,19 @@ function initFirebaseListeners() {
       if ((_document$getElementB20 = document.getElementById('admin-local')) !== null && _document$getElementB20 !== void 0 && _document$getElementB20.classList.contains('active')) loadSlotTurnosUI();
       loadOrdersStatus();
       checkAutoCloseWarning();
+      // La cuadrícula "TURNOS DE PATATAS" de la pestaña En vivo (y la de
+      // Modo Cocina) también se calculan a partir de esta config — antes NO
+      // se repintaban aquí. Si este listener tardaba en llegar (dispositivo
+      // recién logueado, datos del sitio recién borrados...) y mientras
+      // tanto algo ya había pintado esa cuadrícula con el turno por defecto
+      // (DEFAULT_TURNOS, más corto que el real), se quedaba así — menos
+      // turnos y menos horas de las que hay de verdad — hasta el próximo
+      // pedido nuevo o un "Actualizar" manual, en vez de corregirse sola en
+      // cuanto llegara la config real.
+      const _adminPedidosEl = document.getElementById('admin-pedidos');
+      if (_adminPedidosEl && _adminPedidosEl.classList.contains('active')) loadLiveOrders();
+      const _kitchenModeSlotsEl = document.getElementById('kitchen-mode');
+      if (_kitchenModeSlotsEl && _kitchenModeSlotsEl.classList.contains('open')) refreshKitchenGrid();
     });
   }
 
