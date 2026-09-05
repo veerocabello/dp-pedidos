@@ -249,10 +249,16 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
   push(tc.textoPago + '\n');
 
   if (ticket.notes) {
-    left();
     push('------------------------------------------------\n');
-    bold(true); push('NOTAS: '); bold(false);
+    center();
+    bold(true);
+    big();
+    push('*** NOTA DEL CLIENTE ***\n');
+    normal();
+    left();
+    bold(true);
     push(ticket.notes + '\n');
+    bold(false);
   }
 
   center();

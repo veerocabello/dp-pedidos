@@ -2382,7 +2382,8 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
   if (order.notes) {
     B.push({ text: divider, align: 'left' });
-    B.push({ text: 'NOTAS: ' + foldAccents(order.notes), align: 'left', notesLabel: true });
+    B.push({ text: '*** NOTA DEL CLIENTE ***', align: 'center', big: true, notesHeader: true });
+    B.push({ text: foldAccents(order.notes), align: 'left', notesText: true });
   }
   B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents(cfg.despedida), align: 'center' });
@@ -2401,9 +2402,12 @@ function blocksToPreviewHTML(blocks) {
       html += '<div style="text-align:center;margin-bottom:2px"><img src="img/logo.png" alt="" style="width:110px;height:110px;object-fit:contain"></div>';
       return;
     }
-    if (b.notesLabel) {
-      const idx = b.text.indexOf(': ') + 2;
-      html += '<div style="text-align:' + b.align + '"><b>' + escapeHtml(b.text.slice(0, idx)) + '</b>' + escapeHtml(b.text.slice(idx)) + '</div>';
+    if (b.notesHeader) {
+      html += '<div style="text-align:center;font-weight:900;font-size:1.3em;margin-top:4px">' + escapeHtml(b.text) + '</div>';
+      return;
+    }
+    if (b.notesText) {
+      html += '<div style="text-align:left;font-weight:700;font-size:1.05em;white-space:pre-wrap;border:1.5px dashed #3D1F0D;border-radius:6px;padding:4px 8px;margin:2px 0 4px">' + escapeHtml(b.text) + '</div>';
       return;
     }
     let style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
@@ -2503,9 +2507,8 @@ function blocksToEscPosBytes(blocks) {
     if (blk.logo) { b.logo(); return; }
     blk.align === 'center' ? b.center() : b.left();
     blk.big ? b.big() : b.normal();
-    if (blk.notesLabel) {
-      const idx = blk.text.indexOf(': ') + 2;
-      b.bold(true); b.text(blk.text.slice(0, idx)); b.bold(false); b.text(blk.text.slice(idx));
+    if (blk.notesHeader || blk.notesText) {
+      b.bold(true); b.text(blk.text); b.bold(false);
     } else if (blk.underlineLen) {
       // Solo se subraya el nombre del extra (underlineStart..+underlineLen)
       // — ni el "  - " de delante, ni los espacios de relleno, ni el

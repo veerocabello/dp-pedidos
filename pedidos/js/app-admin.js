@@ -237,9 +237,10 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),u(!1),s(`------------------------------------------------
 `)),r(),l(),s((e.total||0).toFixed(2)+` EUR
 `),d(),s(o.textoPago+`
-`),e.notes&&(c(),s(`------------------------------------------------
-`),u(!0),s("NOTAS: "),u(!1),s(e.notes+`
-`)),r(),s(`------------------------------------------------
+`),e.notes&&(s(`------------------------------------------------
+`),r(),u(!0),l(),s(`*** NOTA DEL CLIENTE ***
+`),d(),c(),u(!0),s(e.notes+`
+`),u(!1)),r(),s(`------------------------------------------------
 `),s(o.despedida+`
 `),o.qrHabilitado&&o.qrContenido&&(s(`
 `),_ptPushQR(i,a,o.qrContenido,6)),s(`
