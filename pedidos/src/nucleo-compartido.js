@@ -3432,6 +3432,20 @@ function scheduleSlotMidnightReset() {
   }, msToMidnight);
 }
 
+// Antes, si Firebase rechazaba la lectura de stats/orderStatus (sesión de
+// admin caducada, datos de la pestaña corruptos...) el listener fallaba
+// del todo en silencio: sin error en pantalla, sin nada en consola salvo
+// que alguien abriera las herramientas de desarrollador — indistinguible
+// de "todavía no ha llegado ningún pedido". Este aviso es DISTINTO del de
+// conexión (#firebase-conexion-banner, basado en .info/connected): la
+// conexión puede seguir funcionando perfectamente y aun así esta lectura
+// en concreto estar denegada.
+function _avisarFalloPermisoPedidos(activo) {
+  document.querySelectorAll('#firebase-permiso-banner').forEach(el => {
+    el.style.display = activo ? 'block' : 'none';
+  });
+}
+
 // ══════════════════════════════════════════
 //  FIREBASE REALTIME LISTENERS
 // ══════════════════════════════════════════
@@ -3620,6 +3634,7 @@ function initFirebaseListeners() {
       }
     } catch (e) {}
     window.fb_listenStats(todayKey, stats => {
+      _avisarFalloPermisoPedidos(false);
       var _document$getElementB11, _document$getElementB12;
       if (!stats) return;
       const newCount = stats.count || 0;
@@ -3728,6 +3743,9 @@ function initFirebaseListeners() {
       if (_kitchenModeEl && _kitchenModeEl.classList.contains('open')) {
         refreshKitchenGrid();
       }
+    }, err => {
+      console.error('[DPF] fb_listenStats: lectura de pedidos rechazada', err);
+      _avisarFalloPermisoPedidos(true);
     });
   }
 
@@ -3735,6 +3753,7 @@ function initFirebaseListeners() {
   if (window.fb_listenOrderStatuses) {
     let _prevOrderStatuses = null; // null hasta el primer snapshot: evita avisar de cancelaciones ya existentes al abrir
     window.fb_listenOrderStatuses(statuses => {
+      _avisarFalloPermisoPedidos(false);
       var _document$getElementB15, _document$getElementB16;
       const nuevos = statuses || {};
 
@@ -3780,6 +3799,9 @@ function initFirebaseListeners() {
       if ((_document$getElementB16 = document.getElementById('kitchen-mode')) !== null && _document$getElementB16 !== void 0 && _document$getElementB16.classList.contains('open')) {
         refreshKitchenGrid();
       }
+    }, err => {
+      console.error('[DPF] fb_listenOrderStatuses: lectura rechazada', err);
+      _avisarFalloPermisoPedidos(true);
     });
   }
 

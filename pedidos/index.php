@@ -67,7 +67,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1788607899054">
+<link rel="stylesheet" href="css/style.min.css?v=1788610352126">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -332,6 +332,17 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      falta hace notar que los pedidos han dejado de sincronizarse. -->
 <div id="firebase-conexion-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
   ⚠️ Problema de conexión ahora mismo. Si tu pedido no se confirma, recarga la página o avísanos en el mostrador.
+</div>
+
+<!-- AVISO DE PERMISO/SESIÓN FALLIDA — distinto del de arriba: esto NO es
+     que se haya caído la conexión (".info/connected" puede seguir en true,
+     el socket funciona), sino que Firebase ha rechazado la lectura de
+     pedidos/estados (sesión de admin caducada o datos de la pestaña
+     corruptos) — un caso que antes fallaba en total silencio, sin ningún
+     error visible en pantalla, solo detectable abriendo la consola del
+     navegador. Solo aparece en dispositivos con sesión de admin. -->
+<div id="firebase-permiso-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000; background:#7a1a0e; color:#fff; text-align:center; padding:12px 20px; font-size:13.5px; font-weight:700;">
+  🔒 No se pueden leer los pedidos en este dispositivo (sesión caducada o datos corruptos). Cierra sesión de admin y vuelve a entrar — si sigue igual, borra los datos del sitio en este navegador.
 </div>
 
 <!-- BANNER PEDIDOS CERRADOS -->
@@ -1105,8 +1116,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1787443449421" defer></script>
-<script src="js/app.js?v=1788607899054" defer></script>
-<script src="js/auth.js?v=1788607899054" defer></script>
+<script src="js/app.js?v=1788610352126" defer></script>
+<script src="js/auth.js?v=1788610352126" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar

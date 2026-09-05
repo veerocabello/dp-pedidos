@@ -129,7 +129,7 @@ function _initFirebase() {
   var tK = function() { return new Date().toISOString().slice(0,10); };
   var jset = function(r,v) { return db.ref(r).set(v); };
   var jget = function(r) { return db.ref(r).once("value"); };
-  var jlisten = function(r,cb) { return db.ref(r).on("value",cb); };
+  var jlisten = function(r,cb,errCb) { return errCb ? db.ref(r).on("value",cb,errCb) : db.ref(r).on("value",cb); };
   var jparse = function(v) { try{return JSON.parse(v);}catch(e){return null;} };
   var jstr = function(v) { return JSON.stringify(v); };
   // Escritura ATÓMICA de un nodo que guarda un objeto/array como STRING JSON
@@ -171,14 +171,19 @@ function _initFirebase() {
   // STATS
   window.fb_saveStats = async function(st) { await jset("stats/"+st.date,st); };
   window.fb_getStats = async function(d) { var sn=await jget("stats/"+d); return sn.exists()?sn.val():null; };
-  window.fb_listenStats = function(d,cb) { return jlisten("stats/"+d,function(sn){cb(sn.exists()?sn.val():null);}); };
+  // errCb (opcional): antes un permission-denied o token caducado en este
+  // listener fallaba del todo en silencio — sin error en consola, sin aviso
+  // en pantalla — indistinguible de "todavía no ha llegado ningún pedido".
+  // Ver initFirebaseListeners() en nucleo-compartido.js, que ahora sí pasa
+  // uno y enciende un aviso bien visible cuando esto pasa.
+  window.fb_listenStats = function(d,cb,errCb) { return jlisten("stats/"+d,function(sn){cb(sn.exists()?sn.val():null);},errCb); };
   // ORDER STATUS
   window.fb_setOrderStatus = async function(n,st) { await jset("orderStatus/"+tK()+"/"+n.replace("#","").replace("T",""),st); };
   window.fb_saveTicket = async function(num, data) { await jset("tickets/"+tK()+"/"+num.replace("#","").replace("T",""), data); };
   window.fb_loadAllTicketDates = async function() { var sn=await jget("tickets"); return sn.exists()?Object.keys(sn.val()):[]; };
   window.fb_loadTicketsByDate = async function(fecha) { var sn=await jget("tickets/"+fecha); return sn.exists()?sn.val():null; };
   window.fb_getOrderStatuses = async function() { var sn=await jget("orderStatus/"+tK()); return sn.exists()?sn.val():{}; };
-  window.fb_listenOrderStatuses = function(cb) { return jlisten("orderStatus/"+tK(),function(sn){cb(sn.exists()?sn.val():{});}); };
+  window.fb_listenOrderStatuses = function(cb,errCb) { return jlisten("orderStatus/"+tK(),function(sn){cb(sn.exists()?sn.val():{});},errCb); };
   // PEDIDOS YA IMPRESOS — nodo propio (no dentro de orderStatus, que guarda
   // un string de estado por pedido, no un flag aparte) para que "🖨️
   // Impreso" se sincronice entre pestañas/dispositivos igual que el resto
