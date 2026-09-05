@@ -138,6 +138,10 @@ function _empEstadoActual(emp, fichajes, today) {
 // aparecía en la alerta de tablet.
 function _empSinFichar(empleados, fichajes, today) {
   return empleados.filter(function (e) {
+    // Un empleado de baja no puede fichar (el PIN se rechaza en el
+    // servidor) — no tiene sentido avisar de que "no ha fichado" a
+    // alguien que ya no trabaja aquí.
+    if (e.deBaja) return false;
     var r = _empEstadoActual(e, fichajes, today);
     return r.estado === 'nada' || r.estado === 'olvido';
   });
@@ -191,6 +195,9 @@ function bimbaRenderFichajeLista() {
 
   var html = '';
   empleados.forEach(function(emp) {
+    // Un empleado archivado (de baja) no debe aparecer en la lista diaria
+    // de fichajes — ya no ficha, y es justo lo que se pidió al archivarlo.
+    if (emp.deBaja) return;
     // Mismo cálculo que "Trabajando ahora" (_empEstadoActual) — mira TODO
     // el historial, no solo hoy (para no perder de vista un olvido de un
     // día anterior), y adivina a qué turno pertenece la entrada abierta

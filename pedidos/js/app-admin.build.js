@@ -3553,61 +3553,6 @@ function saveMenu() {
     return false;
   });
 }
-// Botón temporal "💰 Aplicar precios nuevos" — subida de precios pactada
-// con la dueña (agosto 2026), aplicada de una vez a los productos ya
-// existentes en vez de editar 23 productos uno a uno a mano en el panel.
-// Igual que marcarPatatasAlergenosQuitables(): SOLO toca el campo price
-// de los productos listados (por id) y deja todo lo demás intacto — nombre,
-// descripción, oculto/agotado, orden, etiquetas... — así no hay riesgo de
-// deshacer alguna personalización ya hecha desde el panel. Al Gusto/Bomba
-// (ids 15/16) sí están en esta lista — es el precio que se ve en su
-// tarjeta de la carta antes de abrir el personalizador — pero el precio
-// que de verdad se cobra al construirlas vive aparte, en CUSTOMIZER_CONFIG
-// (ver src/antifraude.js), ya actualizado a mano ahí.
-function aplicarPreciosNuevosAgosto2026() {
-  const NUEVOS_PRECIOS = {
-    2: 6.40, 3: 6.40, 4: 6.80, 5: 6.80, 6: 6.80, 7: 6.90, 8: 6.90,
-    9: 7.20, 10: 7.40, 12: 7.50, 13: 7.50, 14: 7.50, 15: 7.90, 16: 9.40,
-    41: 1.30, 42: 1.40, 44: 2.00, 45: 2.00, 46: 2.00, 47: 1.50, 48: 2.40, 49: 2.70,
-  };
-  let cambiados = 0;
-  const sinCambio = [];
-  MENU.forEach(item => {
-    if (!Object.prototype.hasOwnProperty.call(NUEVOS_PRECIOS, item.id)) return;
-    if (item.price === NUEVOS_PRECIOS[item.id]) { sinCambio.push(item.name); return; }
-    item.price = NUEVOS_PRECIOS[item.id];
-    cambiados++;
-  });
-  saveMenu();
-  renderMenu();
-  renderAdminProducts();
-  const msg = cambiados
-    ? 'Precios actualizados: ' + cambiados + ' producto(s) cambiados.' + (sinCambio.length ? ' Ya estaban al día: ' + sinCambio.join(', ') + '.' : '')
-    : 'Ya estaba todo al día — ningún precio ha cambiado.';
-  if (typeof showAlert === 'function') showAlert(msg, 'Precios nuevos');
-}
-// Subida de precio de las 7 Cookies (+1€, de 2,99€ a 3,99€) — mismo patrón
-// que aplicarPreciosNuevosAgosto2026() de arriba: un botón de un solo uso
-// en vez de editar 7 productos a mano, solo toca price, deja todo lo demás
-// (nombre, descripción, orden...) intacto.
-function aplicarPrecioCookiesNuevo() {
-  const NUEVOS_PRECIOS = { 27: 3.99, 28: 3.99, 29: 3.99, 30: 3.99, 31: 3.99, 32: 3.99, 33: 3.99 };
-  let cambiados = 0;
-  const sinCambio = [];
-  MENU.forEach(item => {
-    if (!Object.prototype.hasOwnProperty.call(NUEVOS_PRECIOS, item.id)) return;
-    if (item.price === NUEVOS_PRECIOS[item.id]) { sinCambio.push(item.name); return; }
-    item.price = NUEVOS_PRECIOS[item.id];
-    cambiados++;
-  });
-  saveMenu();
-  renderMenu();
-  renderAdminProducts();
-  const msg = cambiados
-    ? 'Precios actualizados: ' + cambiados + ' cookie(s) a 3,99€.' + (sinCambio.length ? ' Ya estaban al día: ' + sinCambio.join(', ') + '.' : '')
-    : 'Ya estaba todo al día — ningún precio ha cambiado.';
-  if (typeof showAlert === 'function') showAlert(msg, 'Precio de Cookies');
-}
 function renderAdminProducts() {
   const cats = [...new Set(MENU.map(i => i.cat))];
   const emojiMapAdmin = {"Patatas":"🥔","Boniato":"🍠","Paninis":"🍕","Cookies":"🍪","Tartas":"🍰","Bebidas":"🥤"};
@@ -11340,6 +11285,10 @@ function _empEstadoActual(emp, fichajes, today) {
 // aparecía en la alerta de tablet.
 function _empSinFichar(empleados, fichajes, today) {
   return empleados.filter(function (e) {
+    // Un empleado de baja no puede fichar (el PIN se rechaza en el
+    // servidor) — no tiene sentido avisar de que "no ha fichado" a
+    // alguien que ya no trabaja aquí.
+    if (e.deBaja) return false;
     var r = _empEstadoActual(e, fichajes, today);
     return r.estado === 'nada' || r.estado === 'olvido';
   });
@@ -11393,6 +11342,9 @@ function bimbaRenderFichajeLista() {
 
   var html = '';
   empleados.forEach(function(emp) {
+    // Un empleado archivado (de baja) no debe aparecer en la lista diaria
+    // de fichajes — ya no ficha, y es justo lo que se pidió al archivarlo.
+    if (emp.deBaja) return;
     // Mismo cálculo que "Trabajando ahora" (_empEstadoActual) — mira TODO
     // el historial, no solo hoy (para no perder de vista un olvido de un
     // día anterior), y adivina a qué turno pertenece la entrada abierta
