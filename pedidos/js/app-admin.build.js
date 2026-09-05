@@ -4899,8 +4899,19 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
     // _autoImprimirPedido más abajo).
     const _ptEjecutarReintento = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
     await _ptEjecutarReintento(() => imprimirTicketTermico(ticketData));
-    if (typeof _markAsImpreso === 'function') _markAsImpreso(order.num);
-    if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(order.num, true);
+    // ticketData.orderNum, no order.num — order es null en el camino que
+    // pide el ticket a guardar-pedido.php (pedido de otro dispositivo o de
+    // un día anterior, justo el caso más típico de un reintento desde
+    // Alertas). Usar order.num ahí reventaba con un TypeError DESPUÉS de
+    // que el ticket ya hubiera salido bien por la térmica: el aviso
+    // mostraba "no se pudo imprimir" con el pedido ya impreso, y ni se
+    // marcaba como resuelto ni se quitaba de la cola pendiente.
+    if (typeof _markAsImpreso === 'function') _markAsImpreso(ticketData.orderNum);
+    if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticketData.orderNum, true);
+    // Si este pedido seguía en la cola de impresión pendiente, sacarlo —
+    // si no, se queda "pendiente" para siempre aunque ya se imprimió aquí,
+    // y se podría volver a imprimir por duplicado al reconectar.
+    if (typeof _ptColaQuitar === 'function') _ptColaQuitar(ticketData.orderNum);
     resolverAlerta(ts);
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '🖨️ Reintentar impresión'; }
@@ -5371,6 +5382,12 @@ function doPrint() {
   _ptEjecutarImpresion(() => _imprimirConReintentos(ticketData, 3, 1500)).then(() => {
     _markAsImpreso(orderNum);
     _registrarEnvioTicket(orderNum, true);
+    // Si este pedido ya estaba en la cola de pendientes (por un fallo
+    // anterior) y ahora se ha impreso bien por esta vía, hay que sacarlo
+    // de la cola — si no, se queda "pendiente" para siempre aunque ya
+    // salió por la térmica, y encima se podría reimprimir por duplicado
+    // al reconectar.
+    if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
   }).catch(e => {
     console.warn('[Impresora] error al imprimir tras varios intentos', e);
     _registrarEnvioTicket(orderNum, false);
@@ -7457,12 +7474,17 @@ function _ptColaActualizarUI() {
 // que NO es de hoy — nunca se reimprimen solos al reconectar (ver
 // _ptColaProcesar), así que aquí es donde se decide a mano qué hacer con
 // cada uno en vez de que se queden invisibles en la cola para siempre.
+// Hay varias .pt-cola-antigua-lista en la página (En vivo, Impresora
+// térmica...) — se rellenan todas igual, para poder verlas y actuar desde
+// donde sea que se vea el aviso, sin tener que ir a buscar otra pestaña.
 function _ptColaAntiguaRenderUI(deOtroDia) {
-  const el = document.getElementById('pt-cola-antigua-lista');
-  if (!el) return;
-  if (!deOtroDia.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.innerHTML = '<div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ Pendientes de otro día — no se imprimen solos, decide con cada uno:</div>' +
+  const els = document.querySelectorAll('.pt-cola-antigua-lista');
+  if (!els.length) return;
+  if (!deOtroDia.length) {
+    els.forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
+    return;
+  }
+  const html = '<div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ Pendientes de otro día — no se imprimen solos, decide con cada uno:</div>' +
     deOtroDia.map(t => `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fdf0ee;border:1.5px solid #c0392b;border-radius:8px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap">
         <span style="font-size:12.5px;font-weight:700;color:#7a1a0e">#${escapeHtml(t.orderNum)} · ${escapeHtml(t.name || '')} · ${escapeHtml(t._colaFecha || 'fecha desconocida')}</span>
@@ -7471,6 +7493,7 @@ function _ptColaAntiguaRenderUI(deOtroDia) {
           <button onclick="_ptColaDescartar('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🗑️ Descartar</button>
         </div>
       </div>`).join('');
+  els.forEach(el => { el.style.display = 'block'; el.innerHTML = html; });
 }
 // Aviso corto y autocontenido (mismo estilo que _ptBuildAnulacionBytes) que
 // se imprime justo antes del ticket real al forzar "Imprimir igualmente" —

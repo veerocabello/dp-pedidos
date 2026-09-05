@@ -278,8 +278,19 @@ async function reintentarImpresionTicket(ts, orderNum, fecha) {
     // _autoImprimirPedido más abajo).
     const _ptEjecutarReintento = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
     await _ptEjecutarReintento(() => imprimirTicketTermico(ticketData));
-    if (typeof _markAsImpreso === 'function') _markAsImpreso(order.num);
-    if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(order.num, true);
+    // ticketData.orderNum, no order.num — order es null en el camino que
+    // pide el ticket a guardar-pedido.php (pedido de otro dispositivo o de
+    // un día anterior, justo el caso más típico de un reintento desde
+    // Alertas). Usar order.num ahí reventaba con un TypeError DESPUÉS de
+    // que el ticket ya hubiera salido bien por la térmica: el aviso
+    // mostraba "no se pudo imprimir" con el pedido ya impreso, y ni se
+    // marcaba como resuelto ni se quitaba de la cola pendiente.
+    if (typeof _markAsImpreso === 'function') _markAsImpreso(ticketData.orderNum);
+    if (typeof _registrarEnvioTicket === 'function') _registrarEnvioTicket(ticketData.orderNum, true);
+    // Si este pedido seguía en la cola de impresión pendiente, sacarlo —
+    // si no, se queda "pendiente" para siempre aunque ya se imprimió aquí,
+    // y se podría volver a imprimir por duplicado al reconectar.
+    if (typeof _ptColaQuitar === 'function') _ptColaQuitar(ticketData.orderNum);
     resolverAlerta(ts);
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '🖨️ Reintentar impresión'; }
@@ -750,6 +761,12 @@ function doPrint() {
   _ptEjecutarImpresion(() => _imprimirConReintentos(ticketData, 3, 1500)).then(() => {
     _markAsImpreso(orderNum);
     _registrarEnvioTicket(orderNum, true);
+    // Si este pedido ya estaba en la cola de pendientes (por un fallo
+    // anterior) y ahora se ha impreso bien por esta vía, hay que sacarlo
+    // de la cola — si no, se queda "pendiente" para siempre aunque ya
+    // salió por la térmica, y encima se podría reimprimir por duplicado
+    // al reconectar.
+    if (typeof _ptColaQuitar === 'function') _ptColaQuitar(orderNum);
   }).catch(e => {
     console.warn('[Impresora] error al imprimir tras varios intentos', e);
     _registrarEnvioTicket(orderNum, false);

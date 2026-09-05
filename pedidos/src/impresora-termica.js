@@ -900,12 +900,17 @@ function _ptColaActualizarUI() {
 // que NO es de hoy — nunca se reimprimen solos al reconectar (ver
 // _ptColaProcesar), así que aquí es donde se decide a mano qué hacer con
 // cada uno en vez de que se queden invisibles en la cola para siempre.
+// Hay varias .pt-cola-antigua-lista en la página (En vivo, Impresora
+// térmica...) — se rellenan todas igual, para poder verlas y actuar desde
+// donde sea que se vea el aviso, sin tener que ir a buscar otra pestaña.
 function _ptColaAntiguaRenderUI(deOtroDia) {
-  const el = document.getElementById('pt-cola-antigua-lista');
-  if (!el) return;
-  if (!deOtroDia.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.innerHTML = '<div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ Pendientes de otro día — no se imprimen solos, decide con cada uno:</div>' +
+  const els = document.querySelectorAll('.pt-cola-antigua-lista');
+  if (!els.length) return;
+  if (!deOtroDia.length) {
+    els.forEach(el => { el.innerHTML = ''; el.style.display = 'none'; });
+    return;
+  }
+  const html = '<div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ Pendientes de otro día — no se imprimen solos, decide con cada uno:</div>' +
     deOtroDia.map(t => `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fdf0ee;border:1.5px solid #c0392b;border-radius:8px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap">
         <span style="font-size:12.5px;font-weight:700;color:#7a1a0e">#${escapeHtml(t.orderNum)} · ${escapeHtml(t.name || '')} · ${escapeHtml(t._colaFecha || 'fecha desconocida')}</span>
@@ -914,6 +919,7 @@ function _ptColaAntiguaRenderUI(deOtroDia) {
           <button onclick="_ptColaDescartar('${escapeAttr(t.orderNum)}')" style="padding:5px 10px;background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🗑️ Descartar</button>
         </div>
       </div>`).join('');
+  els.forEach(el => { el.style.display = 'block'; el.innerHTML = html; });
 }
 // Aviso corto y autocontenido (mismo estilo que _ptBuildAnulacionBytes) que
 // se imprime justo antes del ticket real al forzar "Imprimir igualmente" —
