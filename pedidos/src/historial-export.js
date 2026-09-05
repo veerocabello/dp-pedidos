@@ -804,12 +804,22 @@ async function _reclamarImpresionAuto(orderNum) {
   // mapa pequeño y aparte.
   const todayKey = new Date().toISOString().slice(0, 10);
   try {
-    const resultado = await window.fb_transactJsonString('config/impresionesAutoClaim/' + todayKey, current => {
-      const mapa = (current && typeof current === 'object') ? current : {};
-      if (mapa[orderNum]) return undefined; // ya reclamado por otro dispositivo: abortar sin escribir
-      mapa[orderNum] = Date.now();
-      return mapa;
-    });
+    // Límite de tiempo, no solo captura de errores: una transacción de
+    // Firebase que nunca llega a resolverse ni a rechazar (una sesión de
+    // admin en mal estado, por ejemplo) dejaba este await colgado para
+    // siempre — _autoImprimirPedido() nunca se llegaba a llamar, y como no
+    // había ni error ni rechazo, tampoco saltaba ningún aviso: el pedido se
+    // quedaba sin imprimir en silencio total, indistinguible de "todavía no
+    // ha llegado ningún pedido".
+    const resultado = await Promise.race([
+      window.fb_transactJsonString('config/impresionesAutoClaim/' + todayKey, current => {
+        const mapa = (current && typeof current === 'object') ? current : {};
+        if (mapa[orderNum]) return undefined; // ya reclamado por otro dispositivo: abortar sin escribir
+        mapa[orderNum] = Date.now();
+        return mapa;
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout reclamando impresión')), 4000))
+    ]);
     return !!(resultado && resultado[orderNum]);
   } catch (e) {
     console.warn('[impresora] no se pudo reclamar la impresión automática, se imprime igual', e);
