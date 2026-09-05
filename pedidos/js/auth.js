@@ -1945,6 +1945,20 @@ function bimbaIrAEmpleados() {
   bimbaRenderEmpleados();
 }
 
+// "Historial por días" (facturación diaria) — la fila del menú bimba
+// llamaba a esta función desde siempre, pero nunca llegó a existir: un
+// clic en esa fila no hacía nada (ReferenceError en la consola), así que
+// la sección era del todo inalcanzable aunque su HTML llevara meses en
+// admin-shell.html. Sigue el mismo patrón que el resto de bimbaIrA*() de
+// aquí arriba.
+function verHistorialDiasDesdeBimba() {
+  document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  const s = document.getElementById('admin-bimba-historial');
+  if (s) { s.style.setProperty('display','block','important'); s.classList.add('active'); }
+  if (typeof loadHistorial === 'function') loadHistorial();
+}
+
 function bimbaVolverAlPanel() {
   document.querySelectorAll('.admin-section').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
