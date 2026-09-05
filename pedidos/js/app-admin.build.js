@@ -7651,37 +7651,70 @@ async function imprimirPruebaModificaciones() {
   }
 }
 
-// Pedido de prueba GRANDE, con el pipeline REAL (imprimirTicketTermico →
-// _ptBuildTicketBytes, el mismo que usa cualquier pedido de verdad) — para
-// ver el estilo E (negrita+subrayado, ver item.modText en _ptBuildTicketBytes)
-// dentro de un ticket largo de verdad, con varios productos, y no solo en
-// la prueba corta de arriba. item.modText es un campo nuevo, pero solo lo
-// rellena este botón — ningún pedido real lo manda todavía, así que no hay
-// ningún cambio de comportamiento para los tickets normales.
-async function imprimirPruebaPedidoGrande() {
-  const items = [
-    { name: 'Patata Ranchera', qty: 1, subtotal: 6.50 },
-    { name: 'Patata Carnivora', qty: 1, subtotal: 6.40, modText: 'SIN QUESO' },
-    { name: 'Patata Philadelphia', qty: 1, subtotal: 6.40 },
-    { name: 'Patata 4 Quesos', qty: 1, subtotal: 5.90, modText: 'SIN ROQUEFORT, DOBLE GOUDA' },
-    { name: 'Boniato Fries', qty: 2, subtotal: 9.00 },
-    { name: 'Panini Jamon York y Queso', qty: 1, subtotal: 5.50, modText: 'SIN QUESO' },
-    { name: 'Crumbl Cookie Oreo', qty: 2, subtotal: 5.98 },
-    { name: 'Patata Al Gusto', qty: 1, subtotal: 6.90 }
+// Imprime 3 tickets cortos de prueba, uno por cada forma posible de
+// resaltar la nota del cliente (arriba del pedido, abajo junto al total,
+// y en negro invertido) — para decidir en papel real cuál queda mejor,
+// sin necesidad de tocar el pipeline real (_ptBuildTicketBytes) todavía.
+// Autocontenida igual que imprimirPruebaModificaciones de arriba: se
+// puede borrar entera el día que ya se haya decidido el estilo definitivo.
+async function imprimirPruebaEstiloNotaCliente() {
+  const tc = getTicketConfig();
+  const ESC = 0x1B, GS = 0x1D;
+  const nota = 'Sin cebolla porfa, alergia a frutos secos';
+
+  function buildBytes(variante, etiqueta) {
+    const d = [];
+    const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+    const center = () => d.push(ESC, 0x61, 0x01);
+    const left = () => d.push(ESC, 0x61, 0x00);
+    const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+    const big = () => d.push(ESC, 0x21, 0x30);
+    const normal = () => d.push(ESC, 0x21, 0x00);
+    const invert = on => d.push(GS, 0x42, on ? 0x01 : 0x00);
+    const linea = () => push('------------------------------------------------\n');
+
+    const notaBlock = () => {
+      if (variante === 'negro') invert(true);
+      center(); bold(true); big();
+      push('*** NOTA CLIENTE ***\n');
+      normal(); left(); bold(true);
+      push(nota + '\n');
+      bold(false);
+      if (variante === 'negro') invert(false);
+    };
+
+    d.push(ESC, 0x40);
+    center();
+    big(); push(tc.nombre + '\n'); normal();
+    push('PRUEBA - NOTA ' + etiqueta + '\n');
+    linea();
+    left();
+    if (variante === 'arriba') { notaBlock(); linea(); }
+    push('1x Patata Kebab                7,50 EUR\n');
+    push('1x Cookie Lotus                3,99 EUR\n');
+    linea();
+    center();
+    big(); push('11,49 EUR\n'); normal();
+    push(tc.textoPago + '\n');
+    if (variante !== 'arriba') { linea(); notaBlock(); }
+    linea();
+    push(tc.despedida + '\n');
+    push('(ticket de prueba, no es un pedido real)\n');
+    push('\n\n');
+    d.push(GS, 0x56, 0x42, 0x00);
+    return new Uint8Array(d);
+  }
+
+  const variantes = [
+    ['arriba', 'ARRIBA'],
+    ['abajo', 'ABAJO'],
+    ['negro', 'NEGRO INVERTIDO']
   ];
-  const total = items.reduce((s, it) => s + it.subtotal, 0);
   const _ptEjecutarPrueba = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
   try {
-    await _ptEjecutarPrueba(() => imprimirTicketTermico({
-      orderNum: 'PRUEBA-GRANDE',
-      name: 'Pedido de prueba grande',
-      phone: '600000000',
-      notes: 'Este es un ticket de prueba con estilo E en 3 productos',
-      slotTime: '20:30',
-      items: items,
-      total: total,
-      time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-    }));
+    for (const [variante, etiqueta] of variantes) {
+      await _ptEjecutarPrueba(() => _ptEnviarBytes(buildBytes(variante, etiqueta)));
+    }
   } catch (e) {
     alert('⚠️ ' + e.message);
   }
