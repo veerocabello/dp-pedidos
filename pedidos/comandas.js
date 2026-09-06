@@ -136,6 +136,11 @@ const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
+// Carbonara y Boloñesa llevan la mezcla ya preparada (no se puede quitar
+// ni cambiar), pero SÍ se puede añadir algo más encima — igual que
+// cualquier otra patata. El resto de "solo gratinar" (4 Quesos, Ranchera,
+// Philadelphia, Granollers, Pulled Pork) se queda igual.
+const EXTRAS_ANADIR_AUNQUE_PREPARADA = new Set([4, 5]);
 // Todos los ingredientes extra cuestan lo mismo (antes había dos precios
 // distintos, 1€/0,70€ según el ingrediente); estas dos listas se
 // conservan solo para agrupar/ordenar el desplegable, ya no para el precio.
@@ -1903,11 +1908,13 @@ function renderExtrasBody(item) {
   } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
-  // Las patatas con la mezcla ya preparada (Carbonara, Boloñesa, 4 Quesos)
-  // no admiten nada más que gratinarlas — no tiene sentido añadir
+  // Las patatas con la mezcla ya preparada (4 Quesos y similares) no
+  // admiten nada más que gratinarlas — no tiene sentido añadir
   // ingredientes o salsas sueltas encima de una receta ya cerrada. Nunca
-  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO).
-  const soloGratinar = isQuitarBlocked(item.id) && soloGratinado;
+  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO). Carbonara y
+  // Boloñesa son la excepción: no se puede tocar su mezcla, pero sí
+  // añadir algo más encima (ver EXTRAS_ANADIR_AUNQUE_PREPARADA).
+  const soloGratinar = isQuitarBlocked(item.id) && soloGratinado && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id);
   // El resto de recetas de Boniato (Lotus, Bacon, G.O.A.T., Pistacchio,
   // Pulled Pork) van ya cerradas — solo Boniato Fries es una base vacía
   // donde sí tiene sentido añadir ingredientes/salsas sueltas encima,
