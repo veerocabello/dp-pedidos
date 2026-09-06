@@ -218,9 +218,40 @@ function _initFirebase() {
   window.fb_saveActivityLog = async function(l) { await jset("config/activityLog",jstr(l)); };
   window.fb_loadActivityLog = async function() { var sn=await jget("config/activityLog"); return sn.exists()?jparse(sn.val()):null; };
   window.fb_listenActivityLog = function(cb) { return jlisten("config/activityLog",function(sn){cb(sn.exists()?jparse(sn.val()):null);}); };
-  // COLA DE IMPRESIÓN PENDIENTE (respaldo — vivía solo en localStorage)
-  window.fb_saveColaImpresion = async function(l) { await jset("config/colaImpresionPendiente",jstr(l)); };
-  window.fb_loadColaImpresion = async function() { var sn=await jget("config/colaImpresionPendiente"); return sn.exists()?jparse(sn.val()):null; };
+  // COLA DE IMPRESIÓN PENDIENTE (respaldo — vivía solo en localStorage).
+  // Guardado como OBJETO por número de pedido (no un array completo que se
+  // sobrescribe entero) y con transacción atómica por ticket — antes, cada
+  // dispositivo guardaba aquí SU lista local completa cada vez que cambiaba
+  // algo; si dos dispositivos tenían copias locales distintas (uno acababa
+  // de imprimir y quitar un ticket, el otro todavía lo tenía pendiente sin
+  // tocar), el que guardaba después pisaba entero el nodo y resucitaba
+  // tickets ya impresos y quitados en el otro dispositivo. Con un ticket
+  // por clave y transacción, imprimir/quitar en un dispositivo borra SOLO
+  // esa clave y no puede deshacer lo que haya hecho otro.
+  window.fb_colaImpresionAgregar = async function(ticket) {
+    if (!ticket || !ticket.orderNum) return;
+    await window.fb_transactJsonString("config/colaImpresionPendiente", function(cur) {
+      var obj = cur || {};
+      obj[ticket.orderNum] = ticket;
+      return obj;
+    });
+  };
+  window.fb_colaImpresionQuitar = async function(orderNum) {
+    if (!orderNum) return;
+    await window.fb_transactJsonString("config/colaImpresionPendiente", function(cur) {
+      var obj = cur || {};
+      delete obj[orderNum];
+      return obj;
+    });
+  };
+  window.fb_loadColaImpresion = async function() {
+    var sn = await jget("config/colaImpresionPendiente");
+    if (!sn.exists()) return null;
+    var obj = jparse(sn.val());
+    if (!obj || typeof obj !== 'object') return null;
+    var lista = Object.values(obj);
+    return lista.length ? lista : null;
+  };
   // AUTO-BORRADO
   window.fb_saveAutoDelete = async function(d) { await jset("config/autoDeleteDays",d); };
   window.fb_loadAutoDelete = async function() { var sn=await jget("config/autoDeleteDays"); return sn.exists()?sn.val():null; };

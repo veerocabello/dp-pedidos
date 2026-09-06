@@ -7454,18 +7454,6 @@ function _ptColaCargar() {
 function _ptColaGuardar(cola) {
   try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
   _ptColaActualizarUI();
-  // Respaldo en Firebase — antes esta cola vivía SOLO en el localStorage de
-  // este dispositivo: si la pestaña se cerraba o el dispositivo se
-  // reiniciaba con tickets pendientes de reimprimir (impresora sin papel o
-  // desconectada), se perdían de la cola sin que nadie en cocina se
-  // enterara — el pedido seguía existiendo, pero había que darse cuenta a
-  // mano mirando "Nuevos". Solo si hay sesión de admin activa, igual que el
-  // resto de guardados de este tipo (evita permission_denied en intentos
-  // de login). Ver _ptColaRestaurarDesdeFirebase() más abajo, que recupera
-  // esto al volver a cargar la página.
-  if (window.fb_saveColaImpresion && window.fb_getAdminUser && window.fb_getAdminUser()) {
-    window.fb_saveColaImpresion(cola).catch(() => {});
-  }
 }
 function _ptColaAgregar(ticket) {
   if (!ticket || !ticket.orderNum) return;
@@ -7475,13 +7463,32 @@ function _ptColaAgregar(ticket) {
   // impresora sigue desconectada al día siguiente, _ptColaProcesar() sabe
   // que ese ticket ya NO es de hoy y no lo reimprime solo sin más (ver
   // el porqué justo ahí abajo).
-  cola.push(Object.assign({}, ticket, {
+  const ticketConFecha = Object.assign({}, ticket, {
     _colaFecha: typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : null
-  }));
+  });
+  cola.push(ticketConFecha);
   _ptColaGuardar(cola);
+  // Respaldo en Firebase — antes esta cola vivía SOLO en el localStorage de
+  // este dispositivo: si la pestaña se cerraba o el dispositivo se
+  // reiniciaba con tickets pendientes de reimprimir (impresora sin papel o
+  // desconectada), se perdían de la cola sin que nadie en cocina se
+  // enterara. Se guarda SOLO este ticket (transacción atómica por número de
+  // pedido, ver fb_colaImpresionAgregar/Quitar en config.js) — nunca la
+  // lista completa de este dispositivo, para que dos dispositivos con
+  // copias locales distintas no se pisen el uno al otro y resuciten
+  // tickets que el otro ya había impreso y quitado. Solo si hay sesión de
+  // admin activa (evita permission_denied en intentos de login). Ver
+  // _ptColaRestaurarDesdeFirebase() más abajo, que recupera esto al volver
+  // a cargar la página.
+  if (window.fb_colaImpresionAgregar && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_colaImpresionAgregar(ticketConFecha).catch(() => {});
+  }
 }
 function _ptColaQuitar(orderNum) {
   _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
+  if (window.fb_colaImpresionQuitar && window.fb_getAdminUser && window.fb_getAdminUser()) {
+    window.fb_colaImpresionQuitar(orderNum).catch(() => {});
+  }
 }
 function _ptColaActualizarUI() {
   const cola = _ptColaCargar();
