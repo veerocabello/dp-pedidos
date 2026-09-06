@@ -3807,6 +3807,12 @@ function initFirebaseListeners() {
       console.error('[DPF] fb_listenStats: lectura de pedidos rechazada', err);
       _avisarFalloPermisoPedidos(true);
     });
+    // Expuesta en window para que _iniciarAvisoConexionFirebase (init.js)
+    // pueda forzar un refresco en cuanto ".info/connected" avise de que la
+    // conexión se ha recuperado tras un corte real — ver el comentario
+    // junto a esa función: antes solo escondía el banner y confiaba en que
+    // este listener se resincronizara solo, sin forzar nada.
+    window._procesarSnapshotStatsPedidos = _procesarSnapshotStatsPedidos;
     // Respaldo: si el listener en tiempo real de arriba se queda colgado en
     // este dispositivo (pasó de verdad en producción, sin explicación clara
     // — ver comentario en _procesarSnapshotStatsPedidos), esto vuelve a

@@ -292,6 +292,17 @@ applyAutoDelete(); // auto-borrado del historial al cargar
           clearTimeout(_conexionPerdidaTimeout);
           _conexionPerdidaTimeout = null;
         }
+        // Antes, al recuperar la conexión tras un corte real (wifi caído
+        // un rato, no solo pantalla apagada — eso ya lo cubre el aviso de
+        // visibilitychange en nucleo-compartido.js), esto solo escondía el
+        // banner y confiaba en que fb_listenStats se resincronizara solo.
+        // Visto en producción que a veces no lo hace: forzar aquí también
+        // un refresco directo de pedidos en cuanto la conexión vuelve.
+        if (_bannerConexionMostrado && _adminLoggedIn && window.fb_getStats && window._procesarSnapshotStatsPedidos) {
+          window.fb_getStats(new Date().toISOString().slice(0, 10))
+            .then(stats => { if (stats) window._procesarSnapshotStatsPedidos(stats); })
+            .catch(() => {});
+        }
         if (_bannerConexionMostrado) _mostrarBannerConexion(false);
       } else if (!_conexionPerdidaTimeout) {
         // Margen de unos segundos antes de avisar — un corte breve al

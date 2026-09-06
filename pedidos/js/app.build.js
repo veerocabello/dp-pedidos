@@ -3807,6 +3807,12 @@ function initFirebaseListeners() {
       console.error('[DPF] fb_listenStats: lectura de pedidos rechazada', err);
       _avisarFalloPermisoPedidos(true);
     });
+    // Expuesta en window para que _iniciarAvisoConexionFirebase (init.js)
+    // pueda forzar un refresco en cuanto ".info/connected" avise de que la
+    // conexión se ha recuperado tras un corte real — ver el comentario
+    // junto a esa función: antes solo escondía el banner y confiaba en que
+    // este listener se resincronizara solo, sin forzar nada.
+    window._procesarSnapshotStatsPedidos = _procesarSnapshotStatsPedidos;
     // Respaldo: si el listener en tiempo real de arriba se queda colgado en
     // este dispositivo (pasó de verdad en producción, sin explicación clara
     // — ver comentario en _procesarSnapshotStatsPedidos), esto vuelve a
@@ -8740,6 +8746,17 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         if (_conexionPerdidaTimeout) {
           clearTimeout(_conexionPerdidaTimeout);
           _conexionPerdidaTimeout = null;
+        }
+        // Antes, al recuperar la conexión tras un corte real (wifi caído
+        // un rato, no solo pantalla apagada — eso ya lo cubre el aviso de
+        // visibilitychange en nucleo-compartido.js), esto solo escondía el
+        // banner y confiaba en que fb_listenStats se resincronizara solo.
+        // Visto en producción que a veces no lo hace: forzar aquí también
+        // un refresco directo de pedidos en cuanto la conexión vuelve.
+        if (_bannerConexionMostrado && _adminLoggedIn && window.fb_getStats && window._procesarSnapshotStatsPedidos) {
+          window.fb_getStats(new Date().toISOString().slice(0, 10))
+            .then(stats => { if (stats) window._procesarSnapshotStatsPedidos(stats); })
+            .catch(() => {});
         }
         if (_bannerConexionMostrado) _mostrarBannerConexion(false);
       } else if (!_conexionPerdidaTimeout) {
