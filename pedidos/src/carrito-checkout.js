@@ -579,6 +579,14 @@ let SLOT_MAX = getSlotMax(); // sincronizado con localStorage
 // ── Slots: in-memory cache synced from Firebase ──
 let _slotsCache = {}; // { slotTime: count }
 
+// Turnos cerrados a mano hoy (panel bimba, "En vivo"/Modo Cocina) — nodo
+// aparte de _slotsCache (ese es solo ocupación). Sincronizado en tiempo
+// real vía fb_listenSlotsClosed (ver initFirebaseListeners en
+// nucleo-compartido.js), para cualquier visitante — el selector de turnos
+// necesita saber al momento si uno se acaba de cerrar, no solo al recargar.
+let _slotsClosedCache = {}; // { slotTime: true }
+function getSlotsClosed() { return _slotsClosedCache; }
+
 function getSlotsData() {
   const todayKey = new Date().toISOString().slice(0, 10);
   // Contar siempre desde pedidos reales (fuente de verdad)
@@ -770,6 +778,7 @@ function renderSlotPicker() {
     const full = count >= slotMax;
     const almostFull = !full && count === slotMax - 1;
     const past = slotIsPast(slot);
+    const cerrado = !!_slotsClosedCache[slot];
     const nowMs = new Date();
     const nowMinsSlot = nowMs.getHours() * 60 + nowMs.getMinutes();
     const _slot$split$map = slot.split(':').map(Number),
@@ -778,14 +787,14 @@ function renderSlotPicker() {
       slotM = _slot$split$map2[1];
     const slotTotalMins = slotH * 60 + slotM;
     const saturado = !full && !past && _saturacionSlotsActiva && (slotTotalMins - nowMinsSlot) < _avisoCfg.minutosSalto;
-    const disabled = full || past || saturado;
+    const disabled = full || past || saturado || cerrado;
     const pct = Math.min(100, Math.round(count / slotMax * 100));
     const color = full ? '#e74c3c' : almostFull ? '#e74c3c' : pct >= 50 ? '#3D1F0D' : '#5ECC76';
     const libres = slotMax - count;
-    const availableLabel = full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '');
+    const availableLabel = cerrado ? '🔒 Cerrado' : full ? '❌ Completo' : past ? 'Pasado' : saturado ? '⏳ Elige más tarde' : almostFull ? '⚠️ ¡Solo queda 1!' : libres + ' libre' + (libres !== 1 ? 's' : '');
     const isLateSlot = !disabled && slotTotalMins - nowMinsSlot <= 5;
     const btnBg = disabled ? 'background:#f5f5f5;border-color:#ccc;' : isLateSlot ? 'background:#fffbe6;border-color:#f0c040;' : full ? 'background:#fff0f0;border-color:#e74c3c;' : pct >= 75 ? 'background:rgba(244,196,48,0.08);border-color:#3D1F0D;' : 'background:#FFF8EE;border-color:#E8D5B0;';
-    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (full ? 'Turno completo' : past ? 'Hora pasada' : saturado ? 'Hay bastante ambiente ahora mismo, elige un turno más tarde' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
+    html += '<button type="button"' + ' class="slot-btn ' + (disabled ? 'slot-disabled' : '') + '"' + ' id="slotbtn-' + slot.replace(':', '-') + '"' + ' onclick="' + (disabled ? '' : 'selectSlot(\'' + slot + '\')') + '"' + (disabled ? ' disabled' : '') + ' style="' + btnBg + '"' + ' title="' + (cerrado ? 'Turno cerrado por la tienda' : full ? 'Turno completo' : past ? 'Hora pasada' : saturado ? 'Hay bastante ambiente ahora mismo, elige un turno más tarde' : count + '/' + slotMax + ' plazas') + '">' + '<span style="font-size:17px;font-weight:900">' + slot + '</span>' + (isLateSlot ? '<span style="font-size:10px;font-weight:700;color:#b45a00">⚠️ cierre del turno</span>' : '') + '<span style="font-size:13px;color:' + (disabled ? '#aaa' : color) + ';font-weight:600">' + availableLabel + '</span>' + (almostFull ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-top:2px">¡Solo queda 1 pedido disponible en esta franja!</span>' : '') + '<div style="height:4px;border-radius:99px;background:#eee;margin-top:4px;overflow:hidden">' + '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:99px;transition:width .3s"></div></div>' + '</button>';
   });
   document.getElementById('slot-grid').innerHTML = html;
 }

@@ -4,6 +4,10 @@
       ".read": true,
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"
     },
+    "slotsClosed": {
+      ".read": true,
+      ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'"
+    },
     "slotReservas": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'",
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2'"

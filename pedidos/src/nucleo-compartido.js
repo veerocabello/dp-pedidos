@@ -3621,6 +3621,24 @@ function initFirebaseListeners() {
     });
   }
 
+  // 1b. Turnos cerrados a mano (panel bimba, "En vivo"/Modo Cocina) — igual
+  // que fb_listenSlots de arriba pero para el bloqueo manual, no la
+  // ocupación: si alguien cierra un turno desde la tablet, el selector del
+  // cliente (y las dos cuadrículas de admin) lo reflejan al momento en
+  // cualquier dispositivo, sin depender de recargar.
+  if (window.fb_listenSlotsClosed) {
+    const _todayKeyCerrados = new Date().toISOString().slice(0, 10);
+    window.fb_listenSlotsClosed(_todayKeyCerrados, cerrados => {
+      _slotsClosedCache = cerrados || {};
+      const picker = document.getElementById('slot-picker-group');
+      if (picker && picker.offsetParent !== null) renderSlotPicker();
+      const _adminPedidosCerrEl = document.getElementById('admin-pedidos');
+      if (_adminPedidosCerrEl && _adminPedidosCerrEl.classList.contains('active')) loadLiveOrders();
+      const _kitchenModeCerrEl = document.getElementById('kitchen-mode');
+      if (_kitchenModeCerrEl && _kitchenModeCerrEl.classList.contains('open')) refreshKitchenGrid();
+    });
+  }
+
   // 2. Stats / pedidos — sync orders across all devices
   if (window.fb_listenStats) {
     // Semilla del contador con el último valor que esta misma tablet ya

@@ -168,6 +168,12 @@ function _initFirebase() {
   window.fb_getAllSlots = async function() { var sn=await jget("slots/"+tK()); return sn.exists()?sn.val():{}; };
   window.fb_listenSlots = function(cb) { return jlisten("slots/"+tK(),function(sn){cb(sn.exists()?sn.val():{});}); };
   window.fb_resetSlots = async function() { await jset("slots/"+tK(),null); };
+  // TURNOS CERRADOS A MANO (Panel bimba: cerrar un turno concreto desde
+  // "En vivo"/Modo Cocina sin cerrar la tienda entera) — nodo aparte de
+  // slots/ (que solo guarda el contador de ocupación), un turno por día
+  // igual que el resto de estructuras "por fecha" de este proyecto.
+  window.fb_toggleSlotClosed = async function(fecha, slot, cerrado) { await jset("slotsClosed/"+fecha+"/"+slot, cerrado ? true : null); };
+  window.fb_listenSlotsClosed = function(fecha, cb) { return jlisten("slotsClosed/"+fecha, function(sn){ cb(sn.exists()?sn.val():{}); }); };
   // STATS
   window.fb_saveStats = async function(st) { await jset("stats/"+st.date,st); };
   window.fb_getStats = async function(d) { var sn=await jget("stats/"+d); return sn.exists()?sn.val():null; };

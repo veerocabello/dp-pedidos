@@ -1627,6 +1627,16 @@ try {
         }
         $accessToken = obtenerTokenAcceso($rutaCredenciales);
         $todayKey = date('Y-m-d');
+        // Turno cerrado a mano desde el panel (En vivo/Modo Cocina) — se
+        // comprueba aquí, en el servidor, y no solo ocultando el botón en
+        // el selector del cliente: si no, cualquiera que ya tuviera la
+        // página abierta antes de cerrar el turno podría seguir reservando
+        // en él sin que nada lo impidiera de verdad.
+        $cerradoLeido = fbGetConEtag($databaseURL, 'slotsClosed/' . $todayKey . '/' . $slotTime, $accessToken);
+        if ($cerradoLeido['data'] === true) {
+            echo json_encode(['success' => false, 'error' => 'slot_closed']);
+            exit;
+        }
         // Primero se liberan las reservas de ESTE turno que llevan más de
         // SLOT_RESERVA_TTL_SEGUNDOS sin convertirse en un pedido real — así
         // alguien que reserve en bucle sin llegar nunca a pedir no puede

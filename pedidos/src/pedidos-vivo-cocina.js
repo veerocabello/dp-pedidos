@@ -177,22 +177,27 @@ function _renderLiveOrders(stats, todayKey) {
       if (s) liveSlotCounts[s] = (liveSlotCounts[s] || 0) + 1;
     });
     const slots = getSlots();
+    const cerrados = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
     liveSlotsGrid.innerHTML = slots.map(slot => {
       const count = liveSlotCounts[slot] || 0;
       const max = getSlotMax();
       const pct = Math.min(100, Math.round(count / max * 100));
+      const cerrado = !!cerrados[slot];
       const isFull = count >= max;
       const isMid = count > 0 && pct >= 50 && !isFull;
       const hasAny = count > 0 && !isMid && !isFull;
-      const bg = isFull ? '#FEF2F2' : isMid ? '#FFF7ED' : hasAny ? '#F0FDF4' : '#FFFFFF';
-      const border = isFull ? '#FCA5A5' : isMid ? '#FCD34D' : hasAny ? '#86EFAC' : '#F5E6C8';
-      const countColor = isFull ? '#991B1B' : isMid ? '#92400e' : hasAny ? '#166534' : '#C2B5A8';
+      const bg = cerrado ? '#F3F0EC' : isFull ? '#FEF2F2' : isMid ? '#FFF7ED' : hasAny ? '#F0FDF4' : '#FFFFFF';
+      const border = cerrado ? '#8A6A4E' : isFull ? '#FCA5A5' : isMid ? '#FCD34D' : hasAny ? '#86EFAC' : '#F5E6C8';
+      const countColor = cerrado ? '#8A6A4E' : isFull ? '#991B1B' : isMid ? '#92400e' : hasAny ? '#166534' : '#C2B5A8';
       const barColor = isFull ? '#ef4444' : isMid ? '#f59e0b' : '#22c55e';
-      return '<div style="background:' + bg + ';border:1.5px solid ' + border + ';border-radius:10px;padding:10px 8px;text-align:center">'
-        + '<div style="font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:4px">' + slot + '</div>'
-        + '<div style="font-size:17px;font-weight:900;color:' + countColor + ';margin-bottom:5px">' + count + '/' + max + '</div>'
+      // Cada turno se puede cerrar/reabrir con un toque, sin tener que
+      // cerrar la tienda entera — pensado para la tablet de cocina, que
+      // antes solo podía cerrar TODOS los pedidos de golpe desde Ajustes.
+      return '<div onclick="toggleSlotCerrado(\'' + slot + '\')" title="' + (cerrado ? 'Reabrir este turno' : 'Cerrar este turno') + '" style="cursor:pointer;background:' + bg + ';border:1.5px solid ' + border + ';border-radius:10px;padding:10px 8px;text-align:center;border-style:' + (cerrado ? 'dashed' : 'solid') + '">'
+        + '<div style="font-size:13px;font-weight:700;color:#3D1F0D;margin-bottom:4px">' + (cerrado ? '🔒 ' : '') + slot + '</div>'
+        + '<div style="font-size:17px;font-weight:900;color:' + countColor + ';margin-bottom:5px">' + (cerrado ? 'Cerrado' : count + '/' + max) + '</div>'
         + '<div style="height:4px;border-radius:99px;background:#e5e7eb;overflow:hidden">'
-          + (count > 0 ? '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:99px"></div>' : '')
+          + (!cerrado && count > 0 ? '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:99px"></div>' : '')
         + '</div>'
       + '</div>';
     }).join('');
@@ -408,6 +413,28 @@ function updateKitchenClock() {
     minute: '2-digit'
   });
 }
+// Cerrar/reabrir un turno concreto a mano, sin tener que cerrar la tienda
+// entera desde Ajustes — pensado sobre todo para la tablet de cocina,
+// tocando directamente la cuadrícula de turnos de "En vivo" o la fila de
+// Modo Cocina. El cierre se guarda en Firebase (slotsClosed/<fecha>/<hora>)
+// y lo hace cumplir también el servidor en guardar-pedido.php — no basta
+// con ocultar el botón en el selector del cliente, alguien que ya tuviera
+// la página abierta podría seguir reservando si solo se bloqueara aquí.
+async function toggleSlotCerrado(slot) {
+  if (!window.fb_toggleSlotClosed) return;
+  const cerrados = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
+  const yaCerrado = !!cerrados[slot];
+  if (!yaCerrado && !confirm('¿Cerrar el turno de las ' + slot + '?\n\nLos clientes ya no podrán elegirlo. Los pedidos que ya tenga no se ven afectados.')) return;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  try {
+    await window.fb_toggleSlotClosed(todayKey, slot, !yaCerrado);
+  } catch (e) {
+    alert('⚠️ No se pudo ' + (yaCerrado ? 'reabrir' : 'cerrar') + ' el turno: ' + e.message);
+  }
+  // El listener en tiempo real (fb_listenSlotsClosed, en
+  // initFirebaseListeners) repinta solo en cuanto Firebase confirme el
+  // cambio — no hace falta repintar aquí a mano.
+}
 async function refreshKitchenGrid() {
   if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -494,16 +521,25 @@ async function refreshKitchenGrid() {
       if (diff >= 0 && diff < closestDiff) { closestDiff = diff; closestSlot = slot; }
     });
     const isLightMode = document.getElementById('kitchen-mode').classList.contains('kitchen-light');
+    const cerradosK = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
+    // Cada pastilla se puede tocar para cerrar/reabrir ese turno sin salir
+    // de Modo Cocina ni tener que cerrar la tienda entera — antes solo se
+    // podía cerrar TODOS los pedidos de golpe desde Ajustes.
     kSlots.innerHTML = allSlots.filter(slot => (slotCounts[slot] || 0) > 0 || slots.includes(slot)).map(slot => {
       const count = slotCounts[slot] || 0;
+      const cerrado = !!cerradosK[slot];
       const isNow = slot === closestSlot;
+      const clickAttr = ' onclick="toggleSlotCerrado(\'' + slot + '\')" title="' + (cerrado ? 'Reabrir este turno' : 'Cerrar este turno') + '" style="cursor:pointer;';
+      if (cerrado) {
+        return '<span' + clickAttr + 'background:#2a2a2a;border:1.5px dashed #8A6A4E;border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700;color:#8A6A4E">🔒 ' + slot + '</span>';
+      }
       if (isNow) {
         const bg = isLightMode ? '#3D1F0D' : '#F4C430';
         const txt = isLightMode ? '#F4C430' : '#1a1a1a';
-        return '<span style="background:' + bg + ';border:1.5px solid ' + bg + ';border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700;color:' + txt + '">' + slot + ' · ' + count + '/' + getSlotMax() + '</span>';
+        return '<span' + clickAttr + 'background:' + bg + ';border:1.5px solid ' + bg + ';border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700;color:' + txt + '">' + slot + ' · ' + count + '/' + getSlotMax() + '</span>';
       }
       const color = count >= getSlotMax() ? '#c0392b' : count > 0 ? '#3D1F0D' : '#555';
-      return '<span style="background:#2a2a2a;border:1.5px solid ' + color + ';border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700;color:' + color + '">' + slot + ' · ' + count + '/' + getSlotMax() + '</span>';
+      return '<span' + clickAttr + 'background:#2a2a2a;border:1.5px solid ' + color + ';border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700;color:' + color + '">' + slot + ' · ' + count + '/' + getSlotMax() + '</span>';
     }).join('');
   }
   const countEl = document.getElementById('kitchen-active-count');
