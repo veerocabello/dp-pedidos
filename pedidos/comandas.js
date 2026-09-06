@@ -4142,7 +4142,10 @@ function closeStockModal() { document.getElementById('stock-modal').classList.re
 // El nombre completo (p.ej. "Panini Jamón York y Queso") no cabe en el
 // badge — se le quita el prefijo de categoría, que ya da el icono.
 function tallyShortName(label, prefix) {
-  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '');
+  // "Jamón" también se quita del nombre corto (p.ej. "Panini Jamón York y
+  // Queso" -> "York y Queso") — es redundante, "york" ya deja claro que
+  // es jamón.
+  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '').replace(/^Jamón\s+/i, '');
   return n || label;
 }
 function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
