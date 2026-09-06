@@ -3676,7 +3676,17 @@ function initFirebaseListeners() {
         _fbLastCount = _statsCacheInicial.count;
       }
     } catch (e) {}
-    window.fb_listenStats(todayKey, stats => {
+    // Extraído a función con nombre (antes iba inline dentro de
+    // fb_listenStats) para poder llamarla también desde un chequeo
+    // periódico de refresco (ver más abajo, _reintentoPeriodicoPedidos) —
+    // el listener en tiempo real de Firebase puede quedarse "colgado" en
+    // algún dispositivo concreto sin ningún aviso (visto en producción: la
+    // pantalla de la tienda seguía pareciendo normal, pero dejó de recibir
+    // pedidos nuevos — ni salían en la lista, ni sonaba, ni imprimía, hasta
+    // recargar la página a mano). Modo Cocina ya tenía su propio refresco
+    // periódico de respaldo (refreshKitchenGrid, cada 15s); esto le da lo
+    // mismo a CUALQUIER pantalla de admin, no solo a Modo Cocina.
+    const _procesarSnapshotStatsPedidos = stats => {
       _avisarFalloPermisoPedidos(false);
       var _document$getElementB11, _document$getElementB12;
       if (!stats) return;
@@ -3786,10 +3796,30 @@ function initFirebaseListeners() {
       if (_kitchenModeEl && _kitchenModeEl.classList.contains('open')) {
         refreshKitchenGrid();
       }
-    }, err => {
+    };
+    window.fb_listenStats(todayKey, _procesarSnapshotStatsPedidos, err => {
       console.error('[DPF] fb_listenStats: lectura de pedidos rechazada', err);
       _avisarFalloPermisoPedidos(true);
     });
+    // Respaldo: si el listener en tiempo real de arriba se queda colgado en
+    // este dispositivo (pasó de verdad en producción, sin explicación clara
+    // — ver comentario en _procesarSnapshotStatsPedidos), esto vuelve a
+    // preguntar a Firebase directamente cada 20s mientras haya sesión de
+    // admin activa, en cualquier pantalla — no solo en "En vivo" o Modo
+    // Cocina, que ya tenían su propio refresco. _procesarSnapshotStatsPedidos
+    // ya compara contra el último recuento conocido, así que si el listener
+    // en tiempo real SÍ está vivo esto no hace nada de más (mismo dato, no
+    // se vuelve a avisar ni a imprimir dos veces).
+    setInterval(async () => {
+      if (!_adminLoggedIn || !window.fb_getStats) return;
+      try {
+        const _statsRespaldo = await Promise.race([
+          window.fb_getStats(new Date().toISOString().slice(0, 10)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+        ]);
+        if (_statsRespaldo) _procesarSnapshotStatsPedidos(_statsRespaldo);
+      } catch (e) { console.warn('[DPF] refresco periódico de respaldo falló', e); }
+    }, 20000);
   }
 
   // 3. Order statuses — sync kitchen status across devices
