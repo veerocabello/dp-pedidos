@@ -847,6 +847,12 @@ async function openAdmin() {
     loadOrdersStatus();
     showTrustedBannerIfNeeded();
     setTimeout(_updateAudioBannerState, 200);
+    // Evitar que la pantalla se apague en dispositivos usados como panel
+    // fijo (tablet de tienda) — antes solo se pedía dentro de Modo Cocina;
+    // si la pantalla se apaga estando aquí, en "En vivo", el navegador
+    // puede suspender la conexión de Firebase sin avisar (ver el aviso
+    // junto al chequeo de respaldo, más abajo en initFirebaseListeners).
+    if (typeof _pedirWakeLockCocina === 'function') _pedirWakeLockCocina();
     logActivity('📱 Acceso automático — dispositivo de confianza');
   } else {
     document.getElementById('admin-login').style.display = 'block';
@@ -3820,6 +3826,33 @@ function initFirebaseListeners() {
         if (_statsRespaldo) _procesarSnapshotStatsPedidos(_statsRespaldo);
       } catch (e) { console.warn('[DPF] refresco periódico de respaldo falló', e); }
     }, 20000);
+    // Sospecha fundada de por qué el listener se queda colgado en
+    // dispositivos concretos (tablets sobre todo): el navegador suspende
+    // temporizadores y conexiones de fondo cuando la pantalla se apaga o la
+    // pestaña queda en segundo plano un rato, y el SDK de Firebase no
+    // siempre reconecta su WebSocket solo al volver — se queda "vivo" en
+    // apariencia pero sin recibir nada más. goOffline()+goOnline() obliga
+    // al SDK a tirar la conexión vieja (puede que ya muerta) y abrir una
+    // de cero en cuanto la pantalla vuelve a primer plano, en vez de
+    // esperar hasta 20s a que lo note el respaldo de arriba.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !_adminLoggedIn) return;
+      try {
+        if (typeof firebase !== 'undefined' && firebase.database) {
+          firebase.database().goOffline();
+          firebase.database().goOnline();
+        }
+      } catch (e) {}
+      if (window.fb_getStats) {
+        window.fb_getStats(new Date().toISOString().slice(0, 10))
+          .then(stats => { if (stats) _procesarSnapshotStatsPedidos(stats); })
+          .catch(() => {});
+      }
+      // Pedir la pantalla siempre encendida en cuanto se recupera el foco,
+      // no solo dentro de Modo Cocina — si la pantalla nunca llega a
+      // apagarse, esto ni hace falta.
+      if (typeof _pedirWakeLockCocina === 'function') _pedirWakeLockCocina();
+    });
   }
 
   // 3. Order statuses — sync kitchen status across devices

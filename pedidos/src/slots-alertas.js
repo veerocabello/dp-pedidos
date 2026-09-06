@@ -401,6 +401,16 @@ async function checkAdminPwd() {
     if (trustedChecked) await setTrustedDevice(true, trustedName);
     document.getElementById('admin-login').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    // Antes este camino (login normal con contraseña) nunca ponía
+    // _adminLoggedIn a true de verdad — funcionaba "por accidente" porque
+    // el listener de pedidos nuevos también comprobaba si #admin-panel
+    // estaba visible como respaldo, pero eso deja de valer en cuanto se
+    // navega a otra pantalla que oculta admin-panel (p.ej. Modo Cocina).
+    _adminLoggedIn = true; window._adminLoggedIn = true;
+    // Evitar que la pantalla se apague en dispositivos usados como panel
+    // fijo — si se apaga, el navegador puede suspender la conexión de
+    // Firebase sin avisar (visto de verdad en producción).
+    if (typeof _pedirWakeLockCocina === 'function') _pedirWakeLockCocina();
     _cargarDatosEmpleadosPrivados();
     renderAdminProducts();
     loadAdminConfig();
