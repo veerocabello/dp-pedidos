@@ -3631,7 +3631,24 @@ function initFirebaseListeners() {
     window.fb_listenSlotsClosed(_todayKeyCerrados, cerrados => {
       _slotsClosedCache = cerrados || {};
       const picker = document.getElementById('slot-picker-group');
-      if (picker && picker.offsetParent !== null) renderSlotPicker();
+      if (picker && picker.offsetParent !== null) {
+        renderSlotPicker();
+        // Si el slot ya elegido por el cliente se acaba de cerrar, avisar
+        // igual que arriba cuando se llena — antes se quedaba "elegido" por
+        // dentro sin que nadie le dijera nada hasta el rechazo del servidor
+        // al confirmar el pedido.
+        if (selectedSlot && _slotsClosedCache[selectedSlot]) {
+          selectedSlot = null;
+          document.querySelectorAll('.slot-btn').forEach(b => {
+            b.classList.remove('slot-selected');
+            b.style.background = '';
+            b.style.borderColor = '';
+            b.style.color = '';
+          });
+          const err = document.getElementById('slot-error');
+          if (err) { err.textContent = '⚠️ El turno que habías elegido se ha cerrado. Por favor elige otro horario.'; err.style.display = 'block'; err.style.color = '#c0392b'; }
+        }
+      }
       const _adminPedidosCerrEl = document.getElementById('admin-pedidos');
       if (_adminPedidosCerrEl && _adminPedidosCerrEl.classList.contains('active')) loadLiveOrders();
       const _kitchenModeCerrEl = document.getElementById('kitchen-mode');
@@ -6202,7 +6219,12 @@ async function incrementSlot(slotTime) {
       _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
       saveSlotsData(getSlotsData());
       console.warn('Slot reserve rejected by server', data && data.error);
-      return false;
+      // 'slot_closed' (la tienda cerró este turno a mano, ver
+      // toggleSlotCerrado en pedidos-vivo-cocina.js) es un motivo distinto
+      // de "turno lleno" — antes se trataba todo rechazo como "lleno" y el
+      // cliente veía un mensaje falso ("se ha llenado") aunque el turno
+      // siguiera con hueco de verdad.
+      return (data && data.error === 'slot_closed') ? 'closed' : false;
     }
     return true;
   } catch (e) {
@@ -6612,6 +6634,12 @@ async function _submitOrderInner() {
     const reservado = await incrementSlot(selectedSlot);
     if (!reservado) {
       showAlert("El turno de las ".concat(selectedSlot, " se ha llenado justo ahora. Por favor elige otro."));
+      selectedSlot = null;
+      renderSlotPicker();
+      return;
+    }
+    if (reservado === 'closed') {
+      showAlert("El turno de las ".concat(selectedSlot, " se ha cerrado justo ahora. Por favor elige otro."));
       selectedSlot = null;
       renderSlotPicker();
       return;

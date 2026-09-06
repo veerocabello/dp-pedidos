@@ -646,7 +646,12 @@ async function incrementSlot(slotTime) {
       _slotsCache[slotTime] = Math.max(0, (_slotsCache[slotTime] || 0) - 1);
       saveSlotsData(getSlotsData());
       console.warn('Slot reserve rejected by server', data && data.error);
-      return false;
+      // 'slot_closed' (la tienda cerró este turno a mano, ver
+      // toggleSlotCerrado en pedidos-vivo-cocina.js) es un motivo distinto
+      // de "turno lleno" — antes se trataba todo rechazo como "lleno" y el
+      // cliente veía un mensaje falso ("se ha llenado") aunque el turno
+      // siguiera con hueco de verdad.
+      return (data && data.error === 'slot_closed') ? 'closed' : false;
     }
     return true;
   } catch (e) {
@@ -1056,6 +1061,12 @@ async function _submitOrderInner() {
     const reservado = await incrementSlot(selectedSlot);
     if (!reservado) {
       showAlert("El turno de las ".concat(selectedSlot, " se ha llenado justo ahora. Por favor elige otro."));
+      selectedSlot = null;
+      renderSlotPicker();
+      return;
+    }
+    if (reservado === 'closed') {
+      showAlert("El turno de las ".concat(selectedSlot, " se ha cerrado justo ahora. Por favor elige otro."));
       selectedSlot = null;
       renderSlotPicker();
       return;

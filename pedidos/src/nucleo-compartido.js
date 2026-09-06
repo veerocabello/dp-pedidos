@@ -3631,7 +3631,24 @@ function initFirebaseListeners() {
     window.fb_listenSlotsClosed(_todayKeyCerrados, cerrados => {
       _slotsClosedCache = cerrados || {};
       const picker = document.getElementById('slot-picker-group');
-      if (picker && picker.offsetParent !== null) renderSlotPicker();
+      if (picker && picker.offsetParent !== null) {
+        renderSlotPicker();
+        // Si el slot ya elegido por el cliente se acaba de cerrar, avisar
+        // igual que arriba cuando se llena — antes se quedaba "elegido" por
+        // dentro sin que nadie le dijera nada hasta el rechazo del servidor
+        // al confirmar el pedido.
+        if (selectedSlot && _slotsClosedCache[selectedSlot]) {
+          selectedSlot = null;
+          document.querySelectorAll('.slot-btn').forEach(b => {
+            b.classList.remove('slot-selected');
+            b.style.background = '';
+            b.style.borderColor = '';
+            b.style.color = '';
+          });
+          const err = document.getElementById('slot-error');
+          if (err) { err.textContent = '⚠️ El turno que habías elegido se ha cerrado. Por favor elige otro horario.'; err.style.display = 'block'; err.style.color = '#c0392b'; }
+        }
+      }
       const _adminPedidosCerrEl = document.getElementById('admin-pedidos');
       if (_adminPedidosCerrEl && _adminPedidosCerrEl.classList.contains('active')) loadLiveOrders();
       const _kitchenModeCerrEl = document.getElementById('kitchen-mode');
