@@ -4135,23 +4135,23 @@ function closeStockModal() { document.getElementById('stock-modal').classList.re
 
 // ── Mini contador de "quedan hoy" en el hueco de la barra lateral (bajo
 // Cobrar/Ver ticket) — misma cuenta que 📦 Stock, pero a mano y siempre a
-// la vista. Tocar el cuadrado entero "tacha" una unidad usada fuera de
-// una comanda (una merma, un regalo, una que se ha estropeado...)
-// sumando 1 a "usado"; el ↺ de la esquina la deshace. Solo lista lo que
-// ya tiene unidades de hoy puestas — si no se ha configurado nada en
-// 📦 Stock, no sale nada aquí.
-// El nombre completo (p.ej. "Panini Jamón York y Queso") no cabe en un
-// cuadrado — se le quita el prefijo de categoría, que ya da el icono.
+// la vista. El − de cada badge "tacha" una unidad usada fuera de una
+// comanda (una merma, un regalo, una que se ha estropeado...) sumando 1
+// a "usado"; el + la deshace. Solo lista lo que ya tiene unidades de hoy
+// puestas — si no se ha configurado nada en 📦 Stock, no sale nada aquí.
+// El nombre completo (p.ej. "Panini Jamón York y Queso") no cabe en el
+// badge — se le quita el prefijo de categoría, que ya da el icono.
 function tallyShortName(label, prefix) {
   const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '');
   return n || label;
 }
-function sidebarTallyTile(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
+function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
   const cls = restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok';
-  return `<div class="tally-tile ${restante <= 0 ? 'agotado' : ''}" title="${escapeHtml(fullLabel)} — toca para tachar 1" onclick="${restante <= 0 ? '' : onTachar}">
-    <span class="tally-undo ${usado > 0 ? '' : 'hidden'}" onclick="event.stopPropagation();${onDeshacer}" title="Deshacer">↺</span>
-    <span class="tally-name">${icon} ${escapeHtml(shortLabel)}</span>
+  return `<div class="tally-badge" title="${escapeHtml(fullLabel)}">
+    ${icon} ${escapeHtml(shortLabel)}
+    <button class="tally-btn" onclick="${onTachar}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
     <span class="tally-num ${cls}">${restante}</span>
+    <button class="tally-btn" onclick="${onDeshacer}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
   </div>`;
 }
 function renderSidebarStockTally() {
@@ -4162,16 +4162,16 @@ function renderSidebarStockTally() {
     const e = getPaniniEntry(item.id);
     if (!e.inicial) return;
     const restante = paniniRestante(item.id);
-    html += sidebarTallyTile('🍕', item.name, tallyShortName(item.name, 'Panini'), restante, e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`);
+    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), restante, e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`);
   });
   const boniato = loadBoniatoCounts();
   Object.entries(BONIATO_STOCK_TIPOS).forEach(([tipo, label]) => {
     const e = boniato[tipo];
     if (!e.inicial) return;
     const restante = boniatoRestante(tipo);
-    html += sidebarTallyTile('🍠', label, tallyShortName(label, 'Boniato'), restante, e.usado, `tacharBoniatoStock('${tipo}')`, `deshacerBoniatoStock('${tipo}')`);
+    html += sidebarTallyBadge('🍠', label, tallyShortName(label, 'Boniato'), restante, e.usado, `tacharBoniatoStock('${tipo}')`, `deshacerBoniatoStock('${tipo}')`);
   });
-  el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy <span>(toca para tachar 1)</span></div><div class="tally-grid">${html}</div>` : '';
+  el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div><div class="tally-badges">${html}</div>` : '';
 }
 function tacharPaniniStock(id) {
   const counts = loadPaniniCounts();
