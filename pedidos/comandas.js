@@ -413,6 +413,7 @@ function renderMenu() {
   } else {
     grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory && !m.hidden));
   }
+  renderSidebarStockTally();
 }
 
 function animateAdd(id) {
@@ -2006,7 +2007,14 @@ function removeExtraCambio(i) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-function extrasHasQuesoIngredient() { return Object.entries(extrasIngredientes).some(([name, on]) => on && isQuesoIngredient(name)); }
+// También cuenta como "ya lleva queso" cambiar un ingrediente POR queso
+// (Cambiar un ingrediente → Queso Mozzarella) — si no, al elegir ese
+// cambio seguía saliendo "Añadir queso mozzarella +1,00€" y el gratinado
+// cobraba el queso otra vez encima del cambio, que ya lo pone.
+function extrasHasQuesoIngredient() {
+  return Object.entries(extrasIngredientes).some(([name, on]) => on && isQuesoIngredient(name))
+    || extrasCambios.some(c => isQuesoIngredient(c.to));
+}
 function toggleExtra(which) {
   const yaLlevaQueso = EXTRAS_SOLO_GRATINADO.has(extrasCurrentId) || extrasHasQuesoIngredient(); // ya lleva queso incluido
   if (which === 'queso') {
@@ -4124,6 +4132,71 @@ function openStockModal() {
   document.getElementById('stock-modal').classList.add('open');
 }
 function closeStockModal() { document.getElementById('stock-modal').classList.remove('open'); }
+
+// ── Mini contador de "quedan hoy" en el hueco de la barra lateral (bajo
+// Cobrar/Ver ticket) — misma cuenta que 📦 Stock, pero a mano y siempre a
+// la vista. El − "tacha" una unidad usada fuera de una comanda (una
+// merma, un regalo, una que se ha estropeado...) sumando 1 a "usado"; el
+// + la deshace. Solo lista lo que ya tiene unidades de hoy puestas —
+// si no se ha configurado nada en 📦 Stock, no sale nada aquí.
+function sidebarTallyRow(label, restante, usado, onMinus, onPlus) {
+  const cls = restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok';
+  return `<div class="tally-row">
+    <span class="tally-label">${escapeHtml(label)}</span>
+    <div class="tally-controls">
+      <button class="tally-btn" onclick="${onMinus}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
+      <span class="tally-restante ${cls}">${restante}</span>
+      <button class="tally-btn" onclick="${onPlus}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
+    </div>
+  </div>`;
+}
+function renderSidebarStockTally() {
+  const el = document.getElementById('sidebar-stock-tally');
+  if (!el) return;
+  let html = '';
+  MENU.filter(m => m.cat === 'Paninis').forEach(item => {
+    const e = getPaniniEntry(item.id);
+    if (!e.inicial) return;
+    const restante = paniniRestante(item.id);
+    html += sidebarTallyRow(item.name, restante, e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`);
+  });
+  const boniato = loadBoniatoCounts();
+  Object.entries(BONIATO_STOCK_TIPOS).forEach(([tipo, label]) => {
+    const e = boniato[tipo];
+    if (!e.inicial) return;
+    const restante = boniatoRestante(tipo);
+    html += sidebarTallyRow(label, restante, e.usado, `tacharBoniatoStock('${tipo}')`, `deshacerBoniatoStock('${tipo}')`);
+  });
+  el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div>${html}` : '';
+}
+function tacharPaniniStock(id) {
+  const counts = loadPaniniCounts();
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  entry.usado = (entry.usado || 0) + 1;
+  counts[id] = entry;
+  savePaniniCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
+function deshacerPaniniStock(id) {
+  const counts = loadPaniniCounts();
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  entry.usado = Math.max(0, (entry.usado || 0) - 1);
+  counts[id] = entry;
+  savePaniniCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
+function tacharBoniatoStock(tipo) {
+  const counts = loadBoniatoCounts();
+  counts[tipo].usado = (counts[tipo].usado || 0) + 1;
+  saveBoniatoCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
+function deshacerBoniatoStock(tipo) {
+  const counts = loadBoniatoCounts();
+  counts[tipo].usado = Math.max(0, (counts[tipo].usado || 0) - 1);
+  saveBoniatoCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
 
 /* ══════════════════════════════════════════════════════════════
    INIT
