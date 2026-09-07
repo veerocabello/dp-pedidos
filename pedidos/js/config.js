@@ -278,6 +278,14 @@ function _initFirebase() {
   // panel de Admin (ya autenticado) borra cada trabajo tras imprimirlo.
   window.fb_listenComandasCola = function(cb) { return jlisten("config/comandasImpresionPendiente", function(sn){ cb(sn.exists()?sn.val():{}); }); };
   window.fb_borrarComandaImpresionPendiente = async function(jobId) { await jset("config/comandasImpresionPendiente/"+jobId, null); };
+  // Aviso de "sigo viva y conectada a la impresora" — lo manda el panel de
+  // Admin cada pocos segundos mientras esté conectado de verdad (ver
+  // _ptBucleMantenimiento/_ptStatusUI en impresora-termica.js). El servidor
+  // (guardar-pedido.php, acción encolarImpresionComandas) lo comprueba
+  // antes de aceptar un ticket de Comandas — si está viejo o no existe,
+  // Comandas se entera al momento (success:false) y puede imprimir ella
+  // misma en vez de dejar el ticket encolado sin que nadie lo recoja nunca.
+  window.fb_avisarPuntoImpresionActivo = async function() { await jset("config/puntoImpresionActivo", { ts: Date.now() }); };
   // SLOTS CONFIG
   window.fb_saveSlotConfig = async function(t,m) { await jset("config/slotConfig",jstr({turnos:t,max:m})); };
   window.fb_loadSlotConfig = async function() { var sn=await jget("config/slotConfig"); return sn.exists()?jparse(sn.val()):null; };

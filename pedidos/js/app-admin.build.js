@@ -6937,6 +6937,10 @@ function _ptStatusUI(connected, msg) {
     setTimeout(_ptColaProcesar, 800);
   }
   if (connected) _ptOcultarAvisoDesconexion();
+  // Avisar de inmediato al conectar — no esperar al primer tick de
+  // _ptBucleMantenimiento (hasta 8s) para que Comandas pueda fiarse de
+  // este aviso lo antes posible tras encender/emparejar la impresora.
+  if (connected && window.fb_avisarPuntoImpresionActivo) window.fb_avisarPuntoImpresionActivo().catch(() => {});
   _ptEstabaConectada = connected;
   const texto = msg || (connected ? '🟢 Impresora conectada' : '🔴 Impresora no conectada');
   document.querySelectorAll('.pt-conn-status').forEach(el => {
@@ -8197,6 +8201,7 @@ if (navigator.usb || navigator.bluetooth) {
       } else {
         _ptComprobarPapel();
       }
+      if (_ptIsConnected() && window.fb_avisarPuntoImpresionActivo) window.fb_avisarPuntoImpresionActivo().catch(() => {});
       // La cola pendiente normalmente se vacía sola al detectar una
       // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un
       // error puntual de escritura SIN que la impresora llegue a desconectarse
