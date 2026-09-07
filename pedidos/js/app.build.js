@@ -2171,6 +2171,15 @@ function _ejecutarLoadOrdersStatus() {
     }
     const closedMsg2 = h2.closedMsgDay || (firstSession2 ? 'Hoy estamos cerrados. ¡Volvemos ' + nextDayLabel2 + ' a las ' + firstSession2.open + '!' : 'Hoy estamos cerrados. ¡Volvemos ' + nextDayLabel2 + '!');
     updateOrdersUI(false, closedMsg2);
+    // El punto/texto "Abierto ahora" de la cabecera solo reflejaba el
+    // interruptor manual de "Local" (config/openLocal) — sin enterarse de
+    // si hoy es un día de apertura configurado. Antes podía decir
+    // "Abierto ahora" mientras el propio aviso de aquí abajo dice "Hoy
+    // estamos cerrados" y bloquea el pedido — dos señales contradictorias
+    // a la vista de cualquiera. El cierre por horario/día manda siempre
+    // sobre el interruptor manual: si hoy no se abre, no se abre.
+    updateHeroDot(false);
+    updateOpenBtn(false);
     return;
   }
   // Si estamos fuera del horario, mostrar cerrado con próxima apertura
@@ -2213,6 +2222,10 @@ function _ejecutarLoadOrdersStatus() {
       msg = h.closedMsgNight || (openStart ? 'Hoy ya hemos cerrado. ¡Volvemos ' + nextDayLabel + ' a las ' + openStart + '!' : 'Hoy ya hemos cerrado. ¡Volvemos ' + nextDayLabel + '!');
     }
     updateOrdersUI(false, msg);
+    // Mismo motivo que en la rama de "hoy no abrimos" de arriba: el cierre
+    // por horario manda siempre sobre el interruptor manual de "Local".
+    updateHeroDot(false);
+    updateOpenBtn(false);
     return;
   }
   // Estamos en día y hora de apertura — respetar cierre manual si existe.
