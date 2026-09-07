@@ -538,8 +538,31 @@ function _renderHistorial() {
       day: 'numeric',
       month: 'short'
     });
-    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "',this)\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n      <button onclick=\"imprimirResumenHistorialDiaTermico('").concat(d.date, "')\" style=\"background:var(--brown);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDA8\uFE0F Imprimir</button>\n    </div>");
+    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "',this)\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n      <button onclick=\"imprimirResumenHistorialDiaTermico('").concat(d.date, "')\" style=\"background:var(--brown);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDA8\uFE0F Imprimir</button>\n      <button onclick=\"borrarHistorialDia('").concat(d.date, "')\" style=\"background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDD1\uFE0F Borrar</button>\n    </div>");
   }).join('');
+}
+// Borra un día entero del historial — pensado para quitar días de prueba
+// (pedidos de test antes de abrir de verdad, etc.), no para el uso normal
+// del día a día. stats/<fecha> es el MISMO nodo que usan los pedidos en
+// vivo de hoy, así que nunca se permite borrar la fecha de hoy: eso
+// borraría pedidos en curso, no historial.
+function borrarHistorialDia(date) {
+  const hoy = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+  if (date === hoy) {
+    alert('No se puede borrar el día de hoy desde aquí — son los pedidos en curso, no historial. Usa "Cerrar el día" si quieres reiniciarlo.');
+    return;
+  }
+  const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  if (!confirm('¿Borrar del todo el ' + dateLabel + '? Se pierden sus pedidos, estadísticas y facturación de ese día para siempre — no se puede deshacer.')) return;
+  const hist = getHistorial().filter(d => d.date !== date);
+  localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist));
+  if (window.fb_borrarStatsDia) {
+    window.fb_borrarStatsDia(date).catch(e => {
+      console.warn('[historial] no se pudo borrar de Firebase:', e);
+      alert('⚠️ Se ha borrado en este dispositivo, pero no se ha podido borrar en el servidor (revisa la conexión) — puede reaparecer al sincronizar. Vuelve a intentarlo.');
+    });
+  }
+  _renderHistorial();
 }
 function exportDayPDFFromHistorial(date, btn) {
   const hist = getHistorial();

@@ -177,6 +177,12 @@ function _initFirebase() {
   // STATS
   window.fb_saveStats = async function(st) { await jset("stats/"+st.date,st); };
   window.fb_getStats = async function(d) { var sn=await jget("stats/"+d); return sn.exists()?sn.val():null; };
+  // Borrar un día entero del historial (Historial por días, panel bimba) —
+  // mismo nodo que usan los pedidos en vivo de hoy (stats/<fecha>), así que
+  // esto SOLO debe llamarse para días YA PASADOS, nunca para el día de hoy
+  // (borraría los pedidos en curso). La comprobación de "no es hoy" vive en
+  // borrarHistorialDia (banner-pdf.js), no aquí.
+  window.fb_borrarStatsDia = async function(fecha) { await jset("stats/"+fecha, null); };
   // errCb (opcional): antes un permission-denied o token caducado en este
   // listener fallaba del todo en silencio — sin error en consola, sin aviso
   // en pantalla — indistinguible de "todavía no ha llegado ningún pedido".
