@@ -740,6 +740,25 @@ function toggleOrdersAccepting() {
   updateOrdersUI(next);
   logActivity("🚦 Pedidos: ".concat(next ? 'ACTIVADOS' : 'PAUSADOS'));
 }
+// Escribe config/openManualOverride con un par de reintentos — antes un
+// solo fallo silencioso (.catch(() => {})) aquí bastaba para dejar la
+// tienda "atascada" cerrada: el chequeo automático de horario
+// (_ejecutarLoadOrdersStatus, cada 60s) lee este mismo valor de Firebase
+// para decidir si respeta un cierre manual, y si la escritura de
+// "reabrir" (false) nunca llegó a cuajar, ese chequeo seguía viendo
+// "true" y volvía a marcar el local como cerrado él solo, deshaciendo el
+// botón de "abrir" aunque en este dispositivo pareciera haber funcionado.
+async function _guardarOpenManualOverride(cerrado) {
+  for (let intento = 0; intento < 3; intento++) {
+    try {
+      await firebase.database().ref('config/openManualOverride').set(cerrado);
+      return;
+    } catch (e) {
+      if (intento === 2) _avisarSiFalloGuardado(e, 'cierre manual del local');
+      else await new Promise(r => setTimeout(r, 500));
+    }
+  }
+}
 function toggleOpenStatus() {
   const current = localStorage.getItem(OPEN_KEY) !== 'false';
   const next = !current;
@@ -747,11 +766,11 @@ function toggleOpenStatus() {
   if (!next) {
     localStorage.setItem('dpf_open_manual_override', '1');
     if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(function (e) { _avisarSiFalloGuardado(e, 'estado abierto/cerrado'); });
-    firebase.database().ref('config/openManualOverride').set(true).catch(() => {});
+    _guardarOpenManualOverride(true);
   } else {
     localStorage.removeItem('dpf_open_manual_override');
     if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(function (e) { _avisarSiFalloGuardado(e, 'estado abierto/cerrado'); });
-    firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
+    _guardarOpenManualOverride(false);
   }
   updateOpenBtn(next);
   updateHeroDot(next);
