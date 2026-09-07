@@ -3613,6 +3613,42 @@ function playPrintSound(ok) {
   } catch (e) { /* sin sonido, no pasa nada */ }
 }
 
+// Manda el ticket a la cola del panel de Admin (que ya está conectado a
+// la impresora — el "punto único") en vez de que Comandas se conecte
+// ella misma. Solo la PRIMERA copia decide si se sigue este camino o el
+// de siempre: si esa falla, no se ha encolado nada todavía y se puede
+// caer al plan B (imprimir aquí) sin riesgo de que salga el ticket
+// duplicado; si esa sale bien, las copias siguientes se intentan igual
+// pero un fallo suyo solo se avisa por consola (mejor perder una copia
+// de más que arriesgarse a duplicar la comanda entera).
+async function intentarEncolarEnAdmin(bytes, copies) {
+  let bytesBase64;
+  try { bytesBase64 = bytesToBase64(bytes); } catch (e) { return false; }
+  let primeraOk = false;
+  for (let i = 0; i < copies; i++) {
+    try {
+      const res = await _conTimeout(
+        fetch('guardar-pedido.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'encolarImpresionComandas', bytesBase64 })
+        }).then(r => r.json()),
+        4000,
+        'timeout avisando a Admin'
+      );
+      if (res && res.success) {
+        primeraOk = true;
+      } else if (i === 0) {
+        return false;
+      }
+    } catch (e) {
+      if (i === 0) return false;
+      console.warn('[comandas] copia adicional no se pudo encolar en Admin', e);
+    }
+  }
+  return primeraOk;
+}
+
 async function printOrder(order) {
   renderTicketPreview(order);
   const cfg = getTicketConfig();
@@ -3624,8 +3660,17 @@ async function printOrder(order) {
     try {
       const bytes = buildEscPosBytes(order);
       const copies = Math.max(1, parseInt(cfg.copias, 10) || 1);
-      for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
-      printedOk = true;
+      // Primero se intenta que lo imprima Admin — evita que Comandas toque
+      // el Bluetooth y se lo quite. Solo si esto falla del todo (sin
+      // internet, el servidor no responde...) se cae al camino de siempre:
+      // imprimir aquí mismo.
+      const okAdmin = await intentarEncolarEnAdmin(bytes, copies);
+      if (okAdmin) {
+        printedOk = true;
+      } else {
+        for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
+        printedOk = true;
+      }
     } catch (e) {
       console.warn('[comandas] impresión directa falló:', e);
       anyFailure = true;

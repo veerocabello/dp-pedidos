@@ -4062,6 +4062,18 @@ function initFirebaseListeners() {
     });
   }
 
+  // Comandas — "punto único" de impresión: este panel (ya conectado a la
+  // impresora) imprime también los tickets de mostrador que Comandas no
+  // pudo mandar ella misma (ver guardar-pedido.php, acción
+  // encolarImpresionComandas). _procesarColaComandas vive en
+  // impresora-termica.js (bundle admin) — con typeof por si este bundle
+  // se cargara sin ese archivo por lo que sea.
+  if (window.fb_listenComandasCola) {
+    window.fb_listenComandasCola(jobs => {
+      if (typeof _procesarColaComandas === 'function') _procesarColaComandas(jobs || {});
+    });
+  }
+
   // Slot config sync — sincronizar turnos y max pedidos en tiempo real
   if (window.fb_listenSlotConfig) {
     window.fb_listenSlotConfig(cfg => {

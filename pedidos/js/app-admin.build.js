@@ -7621,6 +7621,48 @@ async function _ptColaRestaurarDesdeFirebase() {
 _ptColaActualizarUI();
 _ptColaRestaurarDesdeFirebase();
 
+// ── "Punto único" de impresión para Comandas ─────────────────────────
+// Comandas (herramienta de mostrador aparte, ver comandas.js) ya no se
+// conecta a la impresora ella misma cuando puede evitarlo — en vez de
+// eso, manda los bytes ya listos del ticket a esta cola (a través de
+// guardar-pedido.php, porque Comandas no tiene sesión de admin) y es
+// este panel, que sí está conectado, quien los imprime de verdad. Así
+// las dos pantallas dejan de pelearse por la misma conexión Bluetooth
+// (un módulo barato solo admite una a la vez). Si Comandas no consigue
+// avisar (sin internet...), sigue imprimiendo ella misma como respaldo —
+// esto es solo el camino preferido cuando hay conexión.
+//
+// _comandasColaProcesando evita procesar el mismo trabajo dos veces si
+// llega otro snapshot del listener antes de que dé tiempo a borrarlo de
+// Firebase tras imprimirlo.
+const _comandasColaProcesando = new Set();
+function _base64ABytes(b64) {
+  const binStr = atob(b64);
+  const bytes = new Uint8Array(binStr.length);
+  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+  return bytes;
+}
+async function _procesarColaComandas(jobs) {
+  for (const jobId of Object.keys(jobs)) {
+    if (_comandasColaProcesando.has(jobId)) continue;
+    const job = jobs[jobId];
+    if (!job || !job.bytesBase64) continue;
+    _comandasColaProcesando.add(jobId);
+    try {
+      const bytes = _base64ABytes(job.bytesBase64);
+      const _ptEjecutar = typeof _ptEnFila === 'function' ? _ptEnFila : fn => fn();
+      await _ptEjecutar(() => _ptEnviarBytes(bytes));
+      if (window.fb_borrarComandaImpresionPendiente) await window.fb_borrarComandaImpresionPendiente(jobId);
+    } catch (e) {
+      // No se borra de la cola — el próximo snapshot (o cuando la
+      // impresora reconecte) lo vuelve a intentar solo.
+      console.warn('[Comandas] no se pudo imprimir un ticket de mostrador pendiente', e);
+    } finally {
+      _comandasColaProcesando.delete(jobId);
+    }
+  }
+}
+
 // Vacía la cola cuando la impresora reconecta — de una en una y en orden;
 // si alguna vuelve a fallar (se ha caído otra vez a media cola), se para
 // ahí y se deja para el próximo reconectar, en vez de perder el orden o

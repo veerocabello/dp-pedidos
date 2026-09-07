@@ -1690,6 +1690,36 @@ try {
         exit;
     }
 
+    // ── Comandas: encolar un ticket para que lo imprima el "punto único" de
+    // impresión (panel de Admin) en vez de que Comandas se conecte ella
+    // misma a la impresora — evita que dos pestañas se peleen por la misma
+    // conexión Bluetooth (un módulo barato solo admite una a la vez).
+    // Comandas no tiene sesión de admin (solo la contraseña del .htaccess,
+    // no Firebase Auth), así que no puede escribir en config/ directamente
+    // — pasa por aquí, con la cuenta de servicio, igual que el resto de
+    // escrituras que exigen UID de admin. Si Comandas no consigue avisar
+    // (sin internet, timeout, este script caído...) sigue imprimiendo ella
+    // misma como hacía siempre — esto es solo el camino preferido cuando
+    // hay conexión, ver sendToPrinter() en comandas.js.
+    if (($payload['action'] ?? '') === 'encolarImpresionComandas') {
+        $bytesBase64 = isset($payload['bytesBase64']) ? (string)$payload['bytesBase64'] : '';
+        // ~30KB en base64 (~22KB reales) es de sobra para un ticket ESC/POS
+        // de texto plano, incluso con varias copias — un límite generoso
+        // que evita que alguien mande basura enorme a la cola.
+        if ($bytesBase64 === '' || strlen($bytesBase64) > 30000 || !preg_match('/^[A-Za-z0-9+\/=]+$/', $bytesBase64)) {
+            echo json_encode(['success' => false, 'error' => 'Ticket inválido']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $jobId = date('YmdHis') . '_' . bin2hex(random_bytes(4));
+        $ok = fbPutSiCoincide($databaseURL, 'config/comandasImpresionPendiente/' . $jobId, $accessToken, [
+            'bytesBase64' => $bytesBase64,
+            'ts' => round(microtime(true) * 1000),
+        ], null);
+        echo json_encode(['success' => $ok]);
+        exit;
+    }
+
     // ── Generar un número de pedido único del día (usedOrderNums/<fecha>) ──
     // Mismo motivo que arriba: antes lo reservaba el navegador
     // (generateOrderNumber() en carrito-checkout.js) escribiendo directo

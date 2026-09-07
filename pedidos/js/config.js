@@ -270,6 +270,14 @@ function _initFirebase() {
   window.fb_saveBlockedCats = async function(a) { await jset("config/blockedCats",jstr(a)); };
   window.fb_loadBlockedCats = async function() { var sn=await jget("config/blockedCats"); return sn.exists()?jparse(sn.val()):null; };
   window.fb_listenBlockedCats = function(cb) { return jlisten("config/blockedCats",function(sn){if(sn.exists())cb(jparse(sn.val()));}); };
+  // COMANDAS — cola de impresión para el "punto único" (ver
+  // guardar-pedido.php, acción encolarImpresionComandas, y
+  // _procesarColaComandas en impresora-termica.js). Comandas nunca escribe
+  // aquí directo — no tiene sesión de admin (solo la contraseña del
+  // .htaccess), así que pasa por el servidor con la cuenta de servicio; el
+  // panel de Admin (ya autenticado) borra cada trabajo tras imprimirlo.
+  window.fb_listenComandasCola = function(cb) { return jlisten("config/comandasImpresionPendiente", function(sn){ cb(sn.exists()?sn.val():{}); }); };
+  window.fb_borrarComandaImpresionPendiente = async function(jobId) { await jset("config/comandasImpresionPendiente/"+jobId, null); };
   // SLOTS CONFIG
   window.fb_saveSlotConfig = async function(t,m) { await jset("config/slotConfig",jstr({turnos:t,max:m})); };
   window.fb_loadSlotConfig = async function() { var sn=await jget("config/slotConfig"); return sn.exists()?jparse(sn.val()):null; };
