@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
-<link rel="stylesheet" href="comandas.css?v=1788771538450">
+<link rel="stylesheet" href="comandas.css?v=1788800678135">
 </head>
 <body>
 
@@ -253,7 +253,15 @@
       <div><div class="option-title" style="font-size:13.5px">Imprimir automáticamente al confirmar</div><div class="option-sub">Si lo desactivas, la comanda no se vacía sola tras imprimir (para revisar o sacar copias antes de empezar la siguiente)</div></div>
       <input type="checkbox" id="set-auto-imprimir" style="width:20px;height:20px;flex-shrink:0" checked>
     </label>
-    <div class="form-group">
+    <!-- Ocultos a petición: solo se quiere conectar por Bluetooth
+         automático, como en el panel de Admin — sin elegir modo de
+         impresión ni impresora de Windows. Se dejan en el DOM (ocultos, no
+         quitados) para no tener que tocar cada sitio de comandas.js que
+         los lee — el valor se queda fijo en "auto" (su opción por
+         defecto), que sigue teniendo su propio plan B (app de escritorio /
+         diálogo) si la conexión directa falla, aunque ya no se pueda
+         elegir a mano. -->
+    <div class="form-group" style="display:none">
       <label>Modo de impresión (propio de esta herramienta offline)</label>
       <select id="set-modo-impresion" onchange="updatePrinterNameVisibility()">
         <option value="auto">Directa a la impresora — si falla, imprime igualmente sin diálogo (app de escritorio) o abre el diálogo</option>
@@ -309,12 +317,11 @@
 
     <div class="settings-actions">
       <button class="btn-secondary" onclick="pairPrinterBluetooth()">📶 Conectar impresora por Bluetooth</button>
-      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora por cable (USB)</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
     </div>
 
     <div class="settings-help">
-      <b>¿Cómo funciona?</b> "Conectar impresora por Bluetooth" es la vía pensada para la tablet, sin cable — pulsa el botón una vez, elige la impresora en la lista que aparece y ya queda emparejada (se reconecta sola las siguientes veces que abras Comandas). Solo funciona en Chrome sobre Android — en iPhone/iPad o Safari no está disponible, es un límite del propio sistema, no de esta herramienta. "Conectar impresora por cable (USB)" es la alternativa si usas Comandas desde un ordenador con la impresora enchufada. Con cualquiera de las dos conectada, "Directa a la impresora" (más abajo) manda el ticket sin abrir ningún diálogo. "Silenciosa" (solo en la app de escritorio) manda el ticket directo a tu impresora ya instalada en Windows. "Siempre usar el diálogo" abre el diálogo de impresión normal de Windows/Chrome cada vez, para elegir la impresora a mano; la primera vez configura ahí el tamaño de papel (58/80&nbsp;mm) y "sin márgenes".
+      <b>¿Cómo funciona?</b> Pulsa "Conectar impresora por Bluetooth" una vez, elige la impresora en la lista que aparece y ya queda emparejada — se reconecta sola las siguientes veces que abras Comandas, igual que en el panel de Admin. Solo funciona en Chrome sobre Android — en iPhone/iPad o Safari no está disponible, es un límite del propio sistema, no de esta herramienta.
     </div>
   </div>
 </div>
@@ -697,6 +704,6 @@
      siempre con los últimos precios conocidos. -->
 <script src="js/firebase-auth-compat.js"></script>
 <script src="js/config.js"></script>
-<script src="comandas.js?v=1788771538450"></script>
+<script src="comandas.js?v=1788800678135"></script>
 </body>
 </html>
