@@ -8871,6 +8871,17 @@ function _closeSettingsOnClickOutside(e) {
   }
 }
 function showAdminSection(id, btn) {
+  // Mandar un "pulso" a la impresora Bluetooth (si está conectada) lo
+  // primero de todo, antes de renderizar la sección — cambiar de pestaña
+  // puede disparar una renderización pesada (Historial, Clientes...) que
+  // ocupa el hilo un rato, y muchos módulos BLE baratos se desconectan
+  // solos si pasan varios segundos sin tráfico. El pulso periódico normal
+  // (cada 8s, ver _ptBucleMantenimiento en impresora-termica.js) puede
+  // llegar tarde si el hilo está ocupado justo en ese momento — este sale
+  // antes de que empiece ese trabajo, no después.
+  if (typeof _ptIsConnected === 'function' && _ptIsConnected() && typeof _ptTransporte !== 'undefined' && _ptTransporte === 'ble' && typeof _ptBlePulso === 'function') {
+    _ptBlePulso().catch(() => {});
+  }
   // Guardar sección anterior para el botón volver (solo si venimos de una tab normal)
   const settingsSections = ['config', 'pwd', 'pedidos-config'];
   const currentActive = document.querySelector('.admin-section.active');
