@@ -1251,6 +1251,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .btn-secondary:hover { background: var(--brown); color: var(--cream); box-shadow: var(--shadow-md); }
 .btn-secondary:active { transform: scale(.98); }
 
+/* ── Tally de stock (sidebar) ── */
+.sidebar-stock-tally { margin-top: 10px; }
+.tally-title {
+  font-family: var(--font-head); font-weight: 700; font-size: 12px; letter-spacing: .03em;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 6px;
+}
+.tally-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.tally-badge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  font-family: var(--font-head); font-weight: 600; font-size: 12.5px; color: var(--text);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.tally-badge:hover { border-color: var(--amber-dark); background: var(--amber-light); }
+.tally-num { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tally-num.ok { color: var(--success); }
+.tally-num.bajo { color: var(--amber-dark); }
+.tally-num.agotado { color: var(--error); }
+
 /* ── Historial ── */
 .historial-item {
   display: flex; align-items: center; justify-content: space-between;

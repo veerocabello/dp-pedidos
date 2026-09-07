@@ -66,6 +66,27 @@ const MENU = [
   { id: 48, cat: "Bebidas", name: "Nestea / Aquarius 1,5 l", desc: "", price: 2.40 },
   { id: 49, cat: "Bebidas", name: "Refresco 2 litros", desc: "", price: 2.70 },
 
+  { id: 53, cat: "Snacks", name: "Lays Campesinas", desc: "", price: 1.70 },
+  { id: 54, cat: "Snacks", name: "Lays Clásicas", desc: "", price: 1.70 },
+  { id: 55, cat: "Snacks", name: "Ruffles York Queso", desc: "", price: 1.70 },
+  { id: 56, cat: "Snacks", name: "Ruffles Jamón", desc: "", price: 1.70 },
+  { id: 57, cat: "Snacks", name: "Doritos Verdes", desc: "", price: 1.70 },
+  { id: 58, cat: "Snacks", name: "Doritos Naranjas", desc: "", price: 1.70 },
+  { id: 59, cat: "Snacks", name: "Cheetos Pandilla Fantasma", desc: "", price: 1.50 },
+  { id: 60, cat: "Snacks", name: "Cheetos Pelotazos", desc: "", price: 1.50 },
+  { id: 61, cat: "Snacks", name: "Cheetos Palitos Stick", desc: "", price: 1.50 },
+  { id: 62, cat: "Snacks", name: "Mix Ups", desc: "", price: 1.50 },
+  { id: 63, cat: "Snacks", name: "Cheetos Gustosines", desc: "", price: 1.50 },
+  { id: 64, cat: "Snacks", name: "Cheetos Palomitas", desc: "", price: 1.50 },
+  { id: 65, cat: "Snacks", name: "Bits Verdes Pequeños", desc: "", price: 0.50 },
+  { id: 66, cat: "Snacks", name: "Bits Rojos Pequeños", desc: "", price: 0.50 },
+  { id: 67, cat: "Snacks", name: "Bits Naranjas Pequeños", desc: "", price: 0.50 },
+  { id: 68, cat: "Snacks", name: "Bits Rojos Grandes", desc: "", price: 1.00 },
+  { id: 69, cat: "Snacks", name: "Bits Verdes Grandes", desc: "", price: 1.00 },
+  { id: 70, cat: "Snacks", name: "Bits Naranjas Grandes", desc: "", price: 1.00 },
+  { id: 71, cat: "Snacks", name: "Revoltillo", desc: "", price: 2.80 },
+  { id: 72, cat: "Snacks", name: "Pipas", desc: "", price: 1.90 },
+
   { id: 52, cat: "Extras", name: "Bolsa", desc: "Para llevar", price: 0.10 },
 ];
 
@@ -278,7 +299,7 @@ function dobleSurcharge(dobles) {
 const BOLSA_ID = 52;
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
 // sin importar el orden en que estén los productos en MENU).
-const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas"];
+const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas", "Snacks"];
 let menuCatsSet, extraCats, categories;
 // Categorías nuevas creadas a mano desde "Gestionar carta" (ver
 // addCartaProduct): no están en CATEGORY_ORDER, así que caen al final —
@@ -386,7 +407,7 @@ function toast(msg, ms = 2600) {
 /* ══════════════════════════════════════════════════════════════
    RENDER — CARTA
    ══════════════════════════════════════════════════════════════ */
-const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Extras: '🛍️' };
+const CATEGORY_ICONS = { Todos: '🍽️', Patatas: '🥔', Boniato: '🍠', Paninis: '🍕', Cookies: '🍪', Tartas: '🍰', Bebidas: '🥤', Snacks: '🍿', Extras: '🛍️' };
 
 function initTabs() {
   const catTabs = categories.map(c =>
@@ -463,6 +484,7 @@ function renderMenu() {
   } else {
     grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory && !m.hidden));
   }
+  if (typeof renderSidebarStockTally === 'function') renderSidebarStockTally();
 }
 
 function animateAdd(id) {
@@ -4364,6 +4386,35 @@ function openStockModal() {
   document.getElementById('stock-modal').classList.add('open');
 }
 function closeStockModal() { document.getElementById('stock-modal').classList.remove('open'); }
+
+// Solo muestra productos con un límite puesto en 📦 Stock; el badge abre ese modal para ajustarlo.
+function tallyShortName(label, prefix) {
+  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '').replace(/^Jamón\s+/i, '');
+  return n || label;
+}
+function sidebarTallyBadge(icon, fullLabel, shortLabel, restante) {
+  const cls = restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok';
+  return `<button type="button" class="tally-badge" title="${escapeHtml(fullLabel)} — toca para ajustar en Stock" onclick="openStockModal()">
+    ${icon} ${escapeHtml(shortLabel)}
+    <span class="tally-num ${cls}">${restante <= 0 ? 'AGOTADO' : restante}</span>
+  </button>`;
+}
+function renderSidebarStockTally() {
+  const el = document.getElementById('sidebar-stock-tally');
+  if (!el) return;
+  let html = '';
+  MENU.filter(m => m.cat === 'Paninis').forEach(item => {
+    const e = getPaniniEntry(item.id);
+    if (!e.inicial) return;
+    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), paniniRestante(item.id));
+  });
+  const boniato = loadBoniatoCounts();
+  Object.entries(BONIATO_STOCK_TIPOS).forEach(([tipo, label]) => {
+    if (!boniato[tipo].inicial) return;
+    html += sidebarTallyBadge('🍠', label, tallyShortName(label, 'Boniato'), boniatoRestante(tipo));
+  });
+  el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div><div class="tally-badges">${html}</div>` : '';
+}
 
 /* ══════════════════════════════════════════════════════════════
    INIT
