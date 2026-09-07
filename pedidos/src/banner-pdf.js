@@ -564,6 +564,26 @@ function borrarHistorialDia(date) {
   }
   _renderHistorial();
 }
+// Quita UN pedido concreto del historial de un día (a diferencia de
+// borrarHistorialDia, que borra el día entero) — pensado para cuando un
+// cliente no viene a recoger su pedido y no se quiere que siga contando
+// en el total facturado/nº de pedidos de ese día. Si el día es hoy, esto
+// también actualiza lo que ve "En vivo"/Modo Cocina al momento (mismo
+// nodo stats/<fecha>) — normal, ya que el pedido deja de existir de
+// verdad a efectos de caja.
+function borrarPedidoDeHistorial(date, orderNum) {
+  const hist = getHistorial();
+  const day = hist.find(d => d.date === date);
+  if (!day) return;
+  const pedido = (day.orders || []).find(o => o.num === orderNum);
+  if (!confirm('¿Quitar el pedido ' + orderNum + (pedido ? ' (' + pedido.name + ', ' + (pedido.total || 0).toFixed(2).replace('.', ',') + ' €)' : '') + ' del historial? Deja de contar en el total y nº de pedidos de ese día. No se puede deshacer.')) return;
+  day.orders = (day.orders || []).filter(o => o.num !== orderNum);
+  day.count = day.orders.length;
+  day.total = day.orders.reduce((s, o) => s + (o.total || 0), 0);
+  saveToHistorial(day);
+  expandHistorialDay(date);
+  _renderHistorial();
+}
 function exportDayPDFFromHistorial(date, btn) {
   const hist = getHistorial();
   const day = hist.find(d => d.date === date);
@@ -674,7 +694,7 @@ function expandHistorialDay(date) {
   }
   html += "<div style=\"font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px\">\uD83E\uDDFE Pedidos</div>";
   (day.orders || []).forEach(o => {
-    html += "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F5E6C8;font-size:13px;flex-wrap:wrap\">\n      <span style=\"font-weight:700;color:#3D1F0D\">".concat(escapeHtml(o.num), "</span>\n      <span style=\"flex:1;color:#2A1506\">").concat(escapeHtml(o.name), "</span>\n      ").concat(o.slot ? "<span style=\"background:rgba(244,196,48,0.08);color:#3D1F0D;font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px\">\uD83D\uDD50 ".concat(escapeHtml(o.slot), "</span>") : '', "\n      <span style=\"color:#8A6A4E;font-size:12px\">").concat(escapeHtml(o.time), "</span>\n      <span style=\"font-weight:700;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span>\n    </div>");
+    html += "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F5E6C8;font-size:13px;flex-wrap:wrap\">\n      <span style=\"font-weight:700;color:#3D1F0D\">".concat(escapeHtml(o.num), "</span>\n      <span style=\"flex:1;color:#2A1506\">").concat(escapeHtml(o.name), "</span>\n      ").concat(o.slot ? "<span style=\"background:rgba(244,196,48,0.08);color:#3D1F0D;font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px\">\uD83D\uDD50 ".concat(escapeHtml(o.slot), "</span>") : '', "\n      <span style=\"color:#8A6A4E;font-size:12px\">").concat(escapeHtml(o.time), "</span>\n      <span style=\"font-weight:700;color:#3D1F0D\">").concat((o.total || 0).toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"borrarPedidoDeHistorial('").concat(escapeAttr(date), "','").concat(escapeAttr(o.num), "')\" title=\"Quitar este pedido del historial (ej. no vino a recogerlo)\" style=\"background:none;border:none;color:#c0392b;cursor:pointer;font-size:14px;padding:2px 4px\">\uD83D\uDDD1\uFE0F</button>\n    </div>");
   });
   html += "<div style=\"text-align:right;margin-top:12px\"><button onclick=\"closeHistorialDayModal()\" style=\"background:#F5E6C8;border:none;border-radius:8px;padding:8px 20px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;color:#3D1F0D\">Cerrar</button></div>";
   const modal = document.getElementById('historial-day-modal');
