@@ -44,7 +44,8 @@
       "ticketConfig": { ".read": true },
       "promos": { ".read": true },
       "juegoActivo": { ".read": true },
-      "ofertaRelampago": { ".read": true }
+      "ofertaRelampago": { ".read": true },
+      "blockedCats": { ".read": true }
     },
     "stats": {
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
