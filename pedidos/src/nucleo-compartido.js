@@ -2036,11 +2036,14 @@ function getOrdersOpen() {
   return val !== 'false';
 }
 function updateOrdersUI(open, customMsg) {
-  const btn = document.getElementById('orders-toggle-btn');
-  if (btn) {
-    btn.className = 'open-toggle ' + (open ? 'abierto' : 'cerrado');
+  // Hay más de un botón "Pausar/Reanudar pedidos" en la página (Local y En
+  // vivo) — se actualizan todos igual, por clase, en vez de solo el de id
+  // fijo de antes (mismo patrón que _ptColaListaRenderUI para varias
+  // instancias del mismo aviso).
+  document.querySelectorAll('.orders-toggle-btn').forEach(btn => {
+    btn.className = 'open-toggle orders-toggle-btn ' + (open ? 'abierto' : 'cerrado');
     btn.textContent = open ? '✅ Aceptando pedidos' : '⏸️ Pedidos pausados';
-  }
+  });
   const msg = customMsg || localStorage.getItem(ORDERS_MSG_KEY) || 'Estamos al límite de capacidad. Vuelve en unos minutos.';
   const banner = document.getElementById('orders-closed-banner');
   const bannerMsg = document.getElementById('orders-closed-msg');
