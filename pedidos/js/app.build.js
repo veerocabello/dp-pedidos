@@ -2212,7 +2212,21 @@ function _ejecutarLoadOrdersStatus() {
     updateOrdersUI(false, msg);
     return;
   }
-  // Estamos en día y hora de apertura — respetar cierre manual si existe
+  // Estamos en día y hora de apertura — respetar cierre manual si existe.
+  // OJO: esto solo gestiona "openManualOverride" (el estado de "LOCAL
+  // abierto/cerrado", el del punto del héroe y el pie de página) — NUNCA
+  // debe tocar "ordersOpen" (el de "Pausar/Reanudar pedidos" en el panel).
+  // Antes esta función SÍ ponía ordersOpen a true aquí abajo cada vez que
+  // se ejecutaba (cada 60s, vía _startAutoStatusInterval en init.js, y
+  // también al volver la pestaña a primer plano) siempre que no hubiera
+  // cierre manual del LOCAL — así que una pausa manual de pedidos hecha a
+  // mano por la dueña (botón "⏸️ Pedidos pausados") se deshacía sola en
+  // menos de un minuto, sin que nadie la tocara. ordersOpen tiene su
+  // propio control explícito (toggleOrdersAccepting en admin-config.js) y
+  // su propia lógica de auto-pausa por saturación — esta función de aquí
+  // no necesita re-afirmarlo nunca: getOrdersOpen() ya calcula solo el
+  // "false" que corresponde por horario, sin depender de que este chequeo
+  // periódico ponga el flag a true "por si acaso".
   checkVacationMode();
   // Solo el admin autenticado necesita sincronizar este estado hacia Firebase;
   // un cliente anónimo mirando la carta no tiene permiso de escritura en
@@ -2229,9 +2243,7 @@ function _ejecutarLoadOrdersStatus() {
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
-      localStorage.setItem(ORDERS_KEY, 'true');
       if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
-      if (_esAdminAutenticado && window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
     }
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
