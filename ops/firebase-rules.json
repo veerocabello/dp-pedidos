@@ -24,6 +24,7 @@
       ".read": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
       ".write": "auth.uid === 'Lj1vS6YVh5WQlomzv6bRksXx82U2' || auth.uid === 'k1JxZF3jkEVmqpv8lqvTbekAzff2'",
       "open": { ".read": true },
+      "openLocal": { ".read": true },
       "menu": { ".read": true },
       "horario": { ".read": true },
       "ordersOpen": { ".read": true },
