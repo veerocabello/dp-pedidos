@@ -4387,17 +4387,21 @@ function openStockModal() {
 }
 function closeStockModal() { document.getElementById('stock-modal').classList.remove('open'); }
 
-// Solo muestra productos con un límite puesto en 📦 Stock; el badge abre ese modal para ajustarlo.
+// Solo muestra productos con un límite puesto en 📦 Stock. El − tacha una
+// unidad usada fuera de una comanda (merma, regalo...) sumando 1 a "usado"
+// (ver paniniUsadoTotal/boniatoUsadoTotal); el + lo deshace.
 function tallyShortName(label, prefix) {
   const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '').replace(/^Jamón\s+/i, '');
   return n || label;
 }
-function sidebarTallyBadge(icon, fullLabel, shortLabel, restante) {
+function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
   const cls = restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok';
-  return `<button type="button" class="tally-badge" title="${escapeHtml(fullLabel)} — toca para ajustar en Stock" onclick="openStockModal()">
+  return `<div class="tally-badge" title="${escapeHtml(fullLabel)}">
     ${icon} ${escapeHtml(shortLabel)}
+    <button type="button" class="tally-btn" onclick="${onTachar}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
     <span class="tally-num ${cls}">${restante <= 0 ? 'AGOTADO' : restante}</span>
-  </button>`;
+    <button type="button" class="tally-btn" onclick="${onDeshacer}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
+  </div>`;
 }
 function renderSidebarStockTally() {
   const el = document.getElementById('sidebar-stock-tally');
@@ -4406,14 +4410,43 @@ function renderSidebarStockTally() {
   MENU.filter(m => m.cat === 'Paninis').forEach(item => {
     const e = getPaniniEntry(item.id);
     if (!e.inicial) return;
-    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), paniniRestante(item.id));
+    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), paniniRestante(item.id), e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`);
   });
   const boniato = loadBoniatoCounts();
   Object.entries(BONIATO_STOCK_TIPOS).forEach(([tipo, label]) => {
-    if (!boniato[tipo].inicial) return;
-    html += sidebarTallyBadge('🍠', label, tallyShortName(label, 'Boniato'), boniatoRestante(tipo));
+    const e = boniato[tipo];
+    if (!e.inicial) return;
+    html += sidebarTallyBadge('🍠', label, tallyShortName(label, 'Boniato'), boniatoRestante(tipo), e.usado, `tacharBoniatoStock('${tipo}')`, `deshacerBoniatoStock('${tipo}')`);
   });
   el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div><div class="tally-badges">${html}</div>` : '';
+}
+function tacharPaniniStock(id) {
+  const counts = loadPaniniCounts();
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  entry.usado = (entry.usado || 0) + 1;
+  counts[id] = entry;
+  savePaniniCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
+function deshacerPaniniStock(id) {
+  const counts = loadPaniniCounts();
+  const entry = counts[id] || { inicial: 0, usado: 0 };
+  entry.usado = Math.max(0, (entry.usado || 0) - 1);
+  counts[id] = entry;
+  savePaniniCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
+function tacharBoniatoStock(tipo) {
+  const counts = loadBoniatoCounts();
+  counts[tipo].usado = (counts[tipo].usado || 0) + 1;
+  saveBoniatoCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
+}
+function deshacerBoniatoStock(tipo) {
+  const counts = loadBoniatoCounts();
+  counts[tipo].usado = Math.max(0, (counts[tipo].usado || 0) - 1);
+  saveBoniatoCounts(counts);
+  renderSidebarStockTally(); renderStockModal(); renderMenu();
 }
 
 /* ══════════════════════════════════════════════════════════════

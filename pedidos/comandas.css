@@ -1260,11 +1260,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tally-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .tally-badge {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px; background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
+  padding: 6px 8px; background: var(--white); border: 1.5px solid var(--warm); border-radius: var(--radius-xs);
   font-family: var(--font-head); font-weight: 600; font-size: 12.5px; color: var(--text);
+}
+.tally-btn {
+  width: 22px; height: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--warm); background: var(--white); border-radius: 50%;
+  font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--brown);
   cursor: pointer; transition: border-color .15s, background .15s;
 }
-.tally-badge:hover { border-color: var(--amber-dark); background: var(--amber-light); }
+.tally-btn:hover:not(:disabled) { border-color: var(--amber-dark); background: var(--amber-light); }
+.tally-btn:disabled { opacity: .35; cursor: default; }
 .tally-num { font-weight: 700; font-variant-numeric: tabular-nums; }
 .tally-num.ok { color: var(--success); }
 .tally-num.bajo { color: var(--amber-dark); }
