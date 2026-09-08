@@ -2030,6 +2030,13 @@ function loadTicketConfigFromFirebase() {
 function getOrdersOpen() {
   // Si estamos fuera de horario o hoy es día cerrado, siempre devolver false
   if (isOutsideHours() || !isTodayOpen()) return false;
+  // "Local cerrado" (botón de la pestaña Local) — antes solo cambiaba el
+  // punto de la cabecera sin tocar esto, así que el formulario seguía
+  // aceptando pedidos con el local "cerrado" (el servidor los aceptaba
+  // igual, ver comprobarTiendaAbierta en guardar-pedido.php). El flag de
+  // aquí abajo se mantiene al día con el valor real de Firebase desde
+  // _ejecutarLoadOrdersStatus, no es un aviso aparte.
+  if (localStorage.getItem('dpf_open_manual_override')) return false;
   const val = localStorage.getItem(ORDERS_KEY);
   if (val === null || val === undefined) return true; // abierto por defecto
   return val !== 'false';
@@ -2272,8 +2279,9 @@ function _ejecutarLoadOrdersStatus() {
       if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   });
-  const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario
-  updateOrdersUI(open);
+  const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario y "Local cerrado"
+  const localCerrado = !open && !!localStorage.getItem('dpf_open_manual_override');
+  updateOrdersUI(open, localCerrado ? 'Ahora mismo tenemos el local cerrado.' : undefined);
   const savedMsg = localStorage.getItem(ORDERS_MSG_KEY);
   const msgInput = document.getElementById('orders-pause-msg');
   if (msgInput && savedMsg) msgInput.value = savedMsg;

@@ -7,13 +7,15 @@
 //  para que el menú, precios y pedidos estén siempre al día.
 // ═══════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'dpf-static-v10'; // subida por añadir el icono de gluten en img/alergenos/ — súbelo otra vez si cambias otra imagen
-//
-// ⚠️ IMPORTANTE: las imágenes de img/ y js/firebase-auth-compat.js NO llevan
-// ?v= en su URL (a diferencia de css/style.css y los módulos de src/, que sí).
-// Si algún día cambias una imagen o ese archivo, hay que subir este número
-// de versión (CACHE_NAME) también, o el Service Worker seguirá sirviendo
-// la versión vieja cacheada indefinidamente a quien ya haya visitado la web.
+// dpf-static-vNNN: regenerado solo en cada build (ver
+// actualizarVersionCacheSW en scripts/build.js) — no lo subas a mano. Las
+// imágenes de img/ y js/firebase-auth-compat.js son los únicos assets
+// cacheados aquí que NO llevan su propio "?v=" en la URL (a diferencia de
+// css/style.css y los módulos de src/, que sí) — antes dependía de acordarse
+// de subir este número a mano cada vez que cambiaba una imagen; si se
+// olvidaba, el Service Worker seguía sirviendo la versión vieja
+// indefinidamente a quien ya hubiera visitado la web.
+const CACHE_NAME = 'dpf-static-v1788857106057';
 const CACHEABLE_PATHS = ['/css/', '/fonts/', '/img/', '/js/', '/src/'];
 
 // Página de "sin conexión" — autocontenida (estilos inline, sin depender de

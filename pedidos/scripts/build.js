@@ -165,3 +165,25 @@ Promise.all([
     console.log('✅ comandas.html: versión de caché de comandas.js/comandas.css actualizada a ' + v);
   }
 })();
+
+// sw.js (Service Worker): cachea img/, fonts/, css/, js/ por URL exacta —
+// css/style.min.css y js/app.js/auth.js ya llevan su propio "?v=" (arriba),
+// pero las imágenes y js/firebase-auth-compat.js no lo llevan en su URL, así
+// que dependían de subir CACHE_NAME a mano cada vez que cambiaba alguna
+// (ver el comentario en el propio sw.js) — fácil de olvidar, y si se
+// olvidaba el Service Worker seguía sirviendo la versión vieja
+// indefinidamente a quien ya hubiera visitado la web. Ahora se regenera
+// solo en cada build, igual que el resto de versiones de arriba — el coste
+// es que un build sin ningún cambio de imagen de por medio también fuerza a
+// volver a descargar todo lo cacheado una vez, un precio razonable frente a
+// quedarse con una imagen vieja para siempre sin enterarse.
+(function actualizarVersionCacheSW() {
+  const swPath = path.join(rootDir, 'sw.js');
+  const original = fs.readFileSync(swPath, 'utf8');
+  const v = Date.now();
+  const actualizado = original.replace(/dpf-static-v\d+/, 'dpf-static-v' + v);
+  if (actualizado !== original) {
+    fs.writeFileSync(swPath, actualizado);
+    console.log('✅ sw.js: CACHE_NAME actualizado a dpf-static-v' + v);
+  }
+})();

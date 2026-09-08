@@ -1093,13 +1093,13 @@ function dpf_limitesPersonalizadorExcedidos($items) {
 // tratamiento de sesión continua manOpen→tarClose con posible cruce de
 // medianoche) para no rechazar pedidos que la propia web sí deja hacer.
 function comprobarTiendaAbierta($databaseURL, $accessToken) {
-    // Las 4 comprobaciones de abajo son independientes entre sí (ninguna
+    // Las comprobaciones de abajo son independientes entre sí (ninguna
     // necesita el resultado de otra para saber QUÉ leer) — antes se leían
     // una detrás de otra, con cortocircuito en cuanto la primera ya bastaba
     // para bloquear el pedido. Eso ahorraba round-trips en el caso
-    // bloqueado, pero costaba 4 viajes de red seguidos en el caso normal
-    // (tienda abierta, sin pausas), que es el que más pasa y el que más
-    // importa en hora punta. Leerlas todas en paralelo con
+    // bloqueado, pero costaba varios viajes de red seguidos en el caso
+    // normal (tienda abierta, sin pausas), que es el que más pasa y el que
+    // más importa en hora punta. Leerlas todas en paralelo con
     // fbGetMultipleConEtag() y evaluar los resultados en el MISMO orden de
     // prioridad de siempre no cambia qué motivo de bloqueo ve el cliente
     // primero — solo cambia cuánto se tarda en tener los datos para decidir.
@@ -1108,10 +1108,19 @@ function comprobarTiendaAbierta($databaseURL, $accessToken) {
         'config/ordersOpen',
         'config/pausaExpresHasta',
         'config/horario',
+        'config/openManualOverride',
     ], $accessToken);
 
     if ($leido['config/vacacionesActivo']['data'] === true) {
         return 'Estamos de vacaciones ahora mismo. No se aceptan pedidos.';
+    }
+    // "Local cerrado" (botón de la pestaña Local, config/openManualOverride)
+    // — antes solo cambiaba el punto/texto de la cabecera, sin afectar de
+    // verdad a si se aceptaba el pedido (hallazgo de auditoría, confirmado
+    // con la dueña: ella esperaba que cerrase de verdad, igual que "Pausar
+    // pedidos"). Ahora bloquea aquí también.
+    if ($leido['config/openManualOverride']['data'] === true) {
+        return 'Ahora mismo tenemos el local cerrado. No se aceptan pedidos.';
     }
     if ($leido['config/ordersOpen']['data'] === false) {
         return 'No estamos aceptando pedidos en este momento.';
