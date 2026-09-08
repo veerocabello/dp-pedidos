@@ -3514,6 +3514,19 @@ function marcarPatatasAlergenosQuitables() {
 // producto a producto (por id) en vez de que uno pise al otro entero, y si
 // la escritura real falla del todo, se avisa con un mensaje claro en vez
 // de dar el guardado por bueno sin más.
+// Ids borrados de VERDAD con el botón "🗑️ Eliminar" (confirmDeleteProduct)
+// — es la ÚNICA fuente de verdad que saveMenu() usa para saber qué borrar
+// del servidor. Antes se INFERÍA un borrado solo por no encontrar el id en
+// el MENU en memoria de este dispositivo comparado con la última copia
+// sincronizada (antesPorId) — pero MENU puede quedarse momentáneamente
+// incompleto por cualquier otro motivo (un repintado a medias, una recarga
+// que no ha terminado de traer todo Firebase...), y esa inferencia no
+// distinguía "lo borré yo" de "mi copia local está incompleta ahora
+// mismo". Un guardado disparado en ese momento borraba productos de
+// Firebase para todo el mundo sin que nadie los hubiera borrado de
+// verdad — bug real reportado por la dueña con las Tartas. Ahora solo se
+// borra lo que de verdad pasó por el botón de eliminar.
+window._menuDeletedIds = window._menuDeletedIds || new Set();
 function saveMenu() {
   localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
   localStorage.setItem(MENU_KEY + '_ts', Date.now());
@@ -3534,12 +3547,13 @@ function saveMenu() {
       if (localPorId.hasOwnProperty(ri.id)) {
         merged[ri.id] = tocadoAqui ? localPorId[ri.id] : ri;
         ordenIds.push(ri.id);
-      } else if (antesPorId.hasOwnProperty(ri.id)) {
-        // Este dispositivo lo tenía y ya no lo tiene: lo borró — se respeta
-        // el borrado en vez de resucitarlo con lo que traiga el servidor.
+      } else if (window._menuDeletedIds.has(String(ri.id))) {
+        // Borrado de verdad con el botón de eliminar — se respeta el
+        // borrado en vez de resucitarlo con lo que traiga el servidor.
       } else {
-        // Producto que otro dispositivo añadió después de la última
-        // sincronización de este — se conserva.
+        // No está en la copia local de este dispositivo pero NADIE lo ha
+        // borrado de verdad — se conserva tal cual venga del servidor, en
+        // vez de darlo por borrado solo por no verlo aquí ahora mismo.
         merged[ri.id] = ri;
         ordenIds.push(ri.id);
       }
@@ -3755,6 +3769,7 @@ function confirmDeleteProduct(id, name) {
   showConfirm('¿Eliminar producto?', "\"".concat(name, "\" se eliminar\xE1 de la carta permanentemente."), '🗑️ Eliminar', () => {
     const idx = MENU.findIndex(m => m.id == id);
     if (idx >= 0) MENU.splice(idx, 1);
+    window._menuDeletedIds.add(String(id));
     saveMenu();
     initTabs();
     renderMenu();
