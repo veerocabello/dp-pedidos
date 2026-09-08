@@ -2673,6 +2673,41 @@ function _cajaTotalesAplicar(order, signo, fecha) {
   _acumularEnTotales(t, order, signo);
   saveCajaTotales(t, fecha);
 }
+// Id fijo por aparato (no por persona) — se genera una vez y se queda en
+// localStorage. Sirve para que el servidor pueda distinguir un "C001" del
+// móvil de un "C001" del mostrador: cada aparato lleva su propio contador
+// de comandas reiniciado cada día (ver getNextOrderNum), así que dos
+// aparatos sueltos a la vez pueden repetir el mismo número sin ser el
+// mismo pedido — ver registrarVentaTienda en guardar-pedido.php.
+function getComandasDeviceId() {
+  let id = localStorage.getItem('dpf_comandas_device_id');
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('dpf_comandas_device_id', id);
+  }
+  return id;
+}
+// Manda una venta ya cobrada de tienda a Firebase (statsTienda/ y
+// ventasProductosTienda/), para que se sume aparte del total de la web en
+// Finanzas — best-effort, en segundo plano: si falla (sin internet, el
+// servidor no responde...) no pasa nada, el pedido ya está a salvo en el
+// historial local del aparato, solo se pierde ese dato para el resumen de
+// facturación de tienda, nunca la comanda en sí.
+function enviarVentaTiendaAFirebase(order) {
+  try {
+    fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'registrarVentaTienda',
+        num: order.num,
+        deviceId: getComandasDeviceId(),
+        total: order.total,
+        items: order.items.map(it => ({ name: it.name, qty: it.qty, subtotal: it.subtotal, menuId: it._menuId })),
+      }),
+    }).catch(() => {});
+  } catch (e) { /* no debe romper el cobro si esto falla */ }
+}
 function saveToHistorial(order) {
   let list;
   try { list = JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { list = []; }
@@ -2681,6 +2716,7 @@ function saveToHistorial(order) {
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
   _cajaTotalesAplicar(order, 1);
   maybeAutoBackup(todayISO());
+  if (order.paid) enviarVentaTiendaAFirebase(order);
 }
 function getHistorial(fecha) {
   try { return JSON.parse(localStorage.getItem(getHistorialKey(fecha)) || '[]'); } catch (e) { return []; }

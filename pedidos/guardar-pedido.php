@@ -535,6 +535,39 @@ function guardarPedidoEnStats($databaseURL, $accessToken, $fecha, $newOrder, $to
     return false;
 }
 
+// ── Misma idea que guardarPedidoEnStats() pero para statsTienda/<fecha>
+// (ventas de Comandas) y con clave de idempotencia distinta: aquí se
+// deduplica por syncKey (deviceId+num), no por num a secas, porque num es
+// un contador LOCAL de cada aparato y dos aparatos sueltos a la vez pueden
+// repetir el mismo "C001" sin ser el mismo pedido — ver el comentario de
+// la acción registrarVentaTienda más abajo.
+function guardarVentaEnStatsTienda($databaseURL, $accessToken, $fecha, $newOrder, $total) {
+    for ($intento = 0; $intento < 8; $intento++) {
+        $leido = fbGetConEtag($databaseURL, 'statsTienda/' . $fecha, $accessToken);
+        $stats = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$stats || ($stats['date'] ?? null) !== $fecha) {
+            $stats = ['date' => $fecha, 'count' => 0, 'total' => 0, 'orders' => []];
+        }
+        if (!is_array($stats['orders'] ?? null)) $stats['orders'] = [];
+
+        $yaExiste = false;
+        foreach ($stats['orders'] as $o) {
+            if (($o['syncKey'] ?? null) === $newOrder['syncKey']) { $yaExiste = true; break; }
+        }
+        if (!$yaExiste) {
+            $stats['count'] = (int)($stats['count'] ?? 0) + 1;
+            $stats['total'] = round((float)($stats['total'] ?? 0) + $total, 2);
+            array_unshift($stats['orders'], $newOrder);
+        }
+
+        if (fbPutSiCoincide($databaseURL, 'statsTienda/' . $fecha, $accessToken, $stats, $leido['etag'])) {
+            return true;
+        }
+        usleep(rand(20000, 80000));
+    }
+    return false;
+}
+
 // ── Nodos guardados como STRING JSON (igual que jset/jget del resto de la
 // web) sobre las mismas funciones fbGetConEtag/fbPutSiCoincide de arriba.
 function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
@@ -707,9 +740,9 @@ function _idsDeProductosPorNombre($databaseURL, $accessToken) {
 // (mismo patrón que guardarPedidoEnStats) — nunca baja de 0 ni dispara
 // error si falla tras los reintentos, es puramente informativo y no debe
 // afectar a la respuesta del pedido/cancelación real.
-function _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas) {
+function _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas, $nodo = 'ventasProductos') {
     if (!$deltas) return;
-    $path = 'ventasProductos/' . $fecha;
+    $path = $nodo . '/' . $fecha;
     for ($intento = 0; $intento < 8; $intento++) {
         $leido = fbGetConEtag($databaseURL, $path, $accessToken);
         $actual = is_array($leido['data']) ? $leido['data'] : [];
@@ -725,7 +758,7 @@ function _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $delta
     // venta se perdía de "Estrellas y perdedores" sin dejar ningún rastro
     // en ningún sitio para detectarlo después. Un error_log al menos deja
     // constancia en el servidor de qué producto/fecha se perdió.
-    error_log('[guardar-pedido] No se pudo actualizar ventasProductos/' . $fecha . ' tras varios intentos — deltas perdidos: ' . json_encode($deltas));
+    error_log('[guardar-pedido] No se pudo actualizar ' . $path . ' tras varios intentos — deltas perdidos: ' . json_encode($deltas));
 }
 function registrarVentasProductos($databaseURL, $accessToken, $fecha, $items) {
     $idPorNombre = _idsDeProductosPorNombre($databaseURL, $accessToken);
@@ -1733,6 +1766,56 @@ try {
             'bytesBase64' => $bytesBase64,
             'ts' => round(microtime(true) * 1000),
         ], null);
+        echo json_encode(['success' => $ok]);
+        exit;
+    }
+
+    // ── Comandas: registrar una venta ya cobrada en tienda (mostrador o
+    // móvil) en statsTienda/<fecha> y ventasProductosTienda/<fecha> — igual
+    // que stats/ y ventasProductos/ para los pedidos de la web, pero en
+    // nodos aparte a propósito (decisión de la dueña: quiere ver
+    // facturación de web y de tienda por separado, no un único total
+    // mezclado). Se llama justo al marcar un pedido de Comandas como
+    // pagado — ver saveToHistorial() en comandas.js. Comandas no tiene
+    // sesión de admin, así que escribe aquí con la cuenta de servicio,
+    // igual que el resto de nodos solo-admin.
+    // "num" (p.ej. "C003") es el contador local de CADA aparato, reiniciado
+    // cada día — si el mostrador y el móvil están sueltos a la vez, los dos
+    // pueden generar el mismo "C001" sin saberlo el uno del otro. Por eso
+    // la clave de idempotencia real que evita duplicados (reintentos de
+    // red) es deviceId+num, no num a secas; "num" se guarda tal cual solo
+    // para que se reconozca en pantalla.
+    if (($payload['action'] ?? '') === 'registrarVentaTienda') {
+        $num = isset($payload['num']) ? trim((string)$payload['num']) : '';
+        $deviceId = isset($payload['deviceId']) ? trim((string)$payload['deviceId']) : '';
+        $total = isset($payload['total']) && is_numeric($payload['total']) ? (float)$payload['total'] : -1;
+        $itemsIn = is_array($payload['items'] ?? null) ? $payload['items'] : [];
+        if (
+            $num === '' || strlen($num) > 20 || !preg_match('/^[A-Za-z0-9_-]+$/', $num) ||
+            $deviceId === '' || strlen($deviceId) > 40 || !preg_match('/^[A-Za-z0-9_-]+$/', $deviceId) ||
+            $total < 0 || $total > 3000 || count($itemsIn) > 200
+        ) {
+            echo json_encode(['success' => false, 'error' => 'Datos de venta inválidos']);
+            exit;
+        }
+        $items = [];
+        $deltas = [];
+        foreach ($itemsIn as $it) {
+            $name = isset($it['name']) ? trim((string)$it['name']) : '';
+            $qty = isset($it['qty']) && is_numeric($it['qty']) ? (float)$it['qty'] : 0;
+            $subtotal = isset($it['subtotal']) && is_numeric($it['subtotal']) ? (float)$it['subtotal'] : 0;
+            $menuId = isset($it['menuId']) && $it['menuId'] !== null && $it['menuId'] !== '' ? (string)$it['menuId'] : null;
+            if ($name === '' || strlen($name) > 120 || $qty <= 0 || $qty > 500) continue;
+            $items[] = ['name' => $name, 'qty' => $qty, 'subtotal' => round($subtotal, 2)];
+            if ($menuId !== null && preg_match('/^[0-9]+$/', $menuId)) {
+                $deltas[$menuId] = ($deltas[$menuId] ?? 0) + $qty;
+            }
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $fecha = date('Y-m-d');
+        $newOrder = ['num' => $num, 'syncKey' => $deviceId . '_' . $num, 'items' => $items];
+        $ok = guardarVentaEnStatsTienda($databaseURL, $accessToken, $fecha, $newOrder, round($total, 2));
+        _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas, 'ventasProductosTienda');
         echo json_encode(['success' => $ok]);
         exit;
     }
