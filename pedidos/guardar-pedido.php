@@ -568,6 +568,39 @@ function guardarVentaEnStatsTienda($databaseURL, $accessToken, $fecha, $newOrder
     return false;
 }
 
+// ── Quita UN pedido de statsTienda/<fecha> por syncKey (deviceId+num) y
+// recalcula count/total desde lo que quede — mismo patrón que el paso 2 de
+// 'cancelarPedido' más abajo para stats/ (la web), pero indexado por
+// syncKey en vez de num. Devuelve los items del pedido quitado (para poder
+// revertir ventasProductosTienda/ después) o null si no se encontró nada
+// que quitar.
+function revertirVentaTiendaDeStats($databaseURL, $accessToken, $fecha, $syncKey) {
+    $itemsRevertidos = null;
+    for ($intento = 0; $intento < 8; $intento++) {
+        $leido = fbGetConEtag($databaseURL, 'statsTienda/' . $fecha, $accessToken);
+        $stats = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$stats || ($stats['date'] ?? null) !== $fecha || !is_array($stats['orders'] ?? null)) {
+            return null; // nada que quitar
+        }
+        $pedido = null;
+        foreach ($stats['orders'] as $o) {
+            if (($o['syncKey'] ?? null) === $syncKey) { $pedido = $o; break; }
+        }
+        if (!$pedido) return null; // ya no está (reintento repetido, o nunca llegó a sincronizarse)
+        $itemsRevertidos = $pedido['items'] ?? null;
+        $stats['orders'] = array_values(array_filter($stats['orders'], function ($o) use ($syncKey) {
+            return ($o['syncKey'] ?? null) !== $syncKey;
+        }));
+        $stats['count'] = max(0, count($stats['orders']));
+        $stats['total'] = round(array_reduce($stats['orders'], function ($acc, $o) { return $acc + (is_numeric($o['total'] ?? null) ? (float)$o['total'] : 0); }, 0), 2);
+        if (fbPutSiCoincide($databaseURL, 'statsTienda/' . $fecha, $accessToken, $stats, $leido['etag'])) {
+            return $itemsRevertidos;
+        }
+        usleep(rand(20000, 80000));
+    }
+    return $itemsRevertidos;
+}
+
 // ── Nodos guardados como STRING JSON (igual que jset/jget del resto de la
 // web) sobre las mismas funciones fbGetConEtag/fbPutSiCoincide de arriba.
 function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
@@ -760,7 +793,7 @@ function _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $delta
     // constancia en el servidor de qué producto/fecha se perdió.
     error_log('[guardar-pedido] No se pudo actualizar ' . $path . ' tras varios intentos — deltas perdidos: ' . json_encode($deltas));
 }
-function registrarVentasProductos($databaseURL, $accessToken, $fecha, $items) {
+function registrarVentasProductos($databaseURL, $accessToken, $fecha, $items, $nodo = 'ventasProductos') {
     $idPorNombre = _idsDeProductosPorNombre($databaseURL, $accessToken);
     $deltas = [];
     foreach ($items as $it) {
@@ -771,9 +804,9 @@ function registrarVentasProductos($databaseURL, $accessToken, $fecha, $items) {
         if ($qty <= 0) continue;
         $deltas[$id] = ($deltas[$id] ?? 0) + $qty;
     }
-    _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas);
+    _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas, $nodo);
 }
-function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
+function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items, $nodo = 'ventasProductos') {
     if (!$items) return;
     $idPorNombre = _idsDeProductosPorNombre($databaseURL, $accessToken);
     $deltas = [];
@@ -785,7 +818,7 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items) {
         if ($qty <= 0) continue;
         $deltas[$id] = ($deltas[$id] ?? 0) - $qty;
     }
-    _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas);
+    _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas, $nodo);
 }
 
 // ── Precio real de un "extra" de pago de un producto normal de la carta
@@ -1798,25 +1831,57 @@ try {
             echo json_encode(['success' => false, 'error' => 'Datos de venta inválidos']);
             exit;
         }
+        // El id de producto de Comandas (MENU propio, ids 1-72...) no tiene
+        // nada que ver con los id de config/menu (la carta de la web) — igual
+        // que registrarVentasProductos() de arriba, se resuelve por NOMBRE
+        // contra config/menu en vez de fiarse de un id que mande el cliente,
+        // para que ventasProductosTienda/ use los MISMOS id que
+        // ventasProductos/ y no se lea nunca un producto equivocado.
         $items = [];
-        $deltas = [];
         foreach ($itemsIn as $it) {
             $name = isset($it['name']) ? trim((string)$it['name']) : '';
             $qty = isset($it['qty']) && is_numeric($it['qty']) ? (float)$it['qty'] : 0;
             $subtotal = isset($it['subtotal']) && is_numeric($it['subtotal']) ? (float)$it['subtotal'] : 0;
-            $menuId = isset($it['menuId']) && $it['menuId'] !== null && $it['menuId'] !== '' ? (string)$it['menuId'] : null;
             if ($name === '' || strlen($name) > 120 || $qty <= 0 || $qty > 500) continue;
             $items[] = ['name' => $name, 'qty' => $qty, 'subtotal' => round($subtotal, 2)];
-            if ($menuId !== null && preg_match('/^[0-9]+$/', $menuId)) {
-                $deltas[$menuId] = ($deltas[$menuId] ?? 0) + $qty;
-            }
         }
         $accessToken = obtenerTokenAcceso($rutaCredenciales);
         $fecha = date('Y-m-d');
-        $newOrder = ['num' => $num, 'syncKey' => $deviceId . '_' . $num, 'items' => $items];
-        $ok = guardarVentaEnStatsTienda($databaseURL, $accessToken, $fecha, $newOrder, round($total, 2));
-        _aplicarDeltaVentasProductos($databaseURL, $accessToken, $fecha, $deltas, 'ventasProductosTienda');
+        $totalRedondeado = round($total, 2);
+        $newOrder = ['num' => $num, 'syncKey' => $deviceId . '_' . $num, 'items' => $items, 'total' => $totalRedondeado];
+        $ok = guardarVentaEnStatsTienda($databaseURL, $accessToken, $fecha, $newOrder, $totalRedondeado);
+        registrarVentasProductos($databaseURL, $accessToken, $fecha, $items, 'ventasProductosTienda');
         echo json_encode(['success' => $ok]);
+        exit;
+    }
+
+    // ── Comandas: revertir una venta de tienda ya sincronizada — se llama
+    // al "Modificar" (recuperar en la comanda para cambiar algo) o al
+    // "Borrar del historial" un pedido que ya estaba marcado como pagado
+    // (y por tanto ya sumado en statsTienda/ventasProductosTienda). Sin
+    // esto, modificar un pedido pagado y reimprimirlo generaba un num
+    // nuevo (getNextOrderNum) y lo volvía a mandar como venta aparte, sin
+    // quitar la original — la facturación de tienda quedaba duplicada por
+    // cada pedido pagado que se editara. Misma idea que el paso 2-4 de
+    // 'cancelarPedido' más abajo, pero indexado por syncKey (deviceId+num)
+    // en vez de por num a secas — ver el comentario de registrarVentaTienda.
+    if (($payload['action'] ?? '') === 'revertirVentaTienda') {
+        $num = isset($payload['num']) ? trim((string)$payload['num']) : '';
+        $deviceId = isset($payload['deviceId']) ? trim((string)$payload['deviceId']) : '';
+        $fecha = isset($payload['fecha']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$payload['fecha']) ? (string)$payload['fecha'] : date('Y-m-d');
+        if (
+            $num === '' || strlen($num) > 20 || !preg_match('/^[A-Za-z0-9_-]+$/', $num) ||
+            $deviceId === '' || strlen($deviceId) > 40 || !preg_match('/^[A-Za-z0-9_-]+$/', $deviceId)
+        ) {
+            echo json_encode(['success' => false, 'error' => 'Datos inválidos']);
+            exit;
+        }
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        $itemsRevertidos = revertirVentaTiendaDeStats($databaseURL, $accessToken, $fecha, $deviceId . '_' . $num);
+        if ($itemsRevertidos) {
+            revertirVentasProductos($databaseURL, $accessToken, $fecha, $itemsRevertidos, 'ventasProductosTienda');
+        }
+        echo json_encode(['success' => true]);
         exit;
     }
 

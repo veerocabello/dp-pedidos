@@ -2703,10 +2703,32 @@ function enviarVentaTiendaAFirebase(order) {
         num: order.num,
         deviceId: getComandasDeviceId(),
         total: order.total,
-        items: order.items.map(it => ({ name: it.name, qty: it.qty, subtotal: it.subtotal, menuId: it._menuId })),
+        items: order.items.map(it => ({ name: it.name, qty: it.qty, subtotal: it.subtotal })),
       }),
     }).catch(() => {});
   } catch (e) { /* no debe romper el cobro si esto falla */ }
+}
+// Deshace el envío de arriba — se llama al recuperar ("Modificar") o
+// borrar del historial un pedido que ya estaba pagado (y por tanto ya
+// sincronizado): sin esto, modificar un pedido pagado y reimprimirlo
+// generaba un número de comanda nuevo (getNextOrderNum) y lo volvía a
+// mandar como venta aparte sin quitar la original, duplicando esa venta en
+// la facturación de tienda. Mismo best-effort que el envío: si falla, el
+// dato queda desincronizado (la venta revertida localmente sigue sumada
+// en Firebase) pero nunca bloquea la acción del usuario.
+function revertirVentaTiendaFirebase(order, fecha) {
+  try {
+    fetch('guardar-pedido.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'revertirVentaTienda',
+        num: order.num,
+        deviceId: getComandasDeviceId(),
+        fecha: fecha || todayISO(),
+      }),
+    }).catch(() => {});
+  } catch (e) { /* no debe romper la acción local si esto falla */ }
 }
 function saveToHistorial(order) {
   let list;
@@ -2812,6 +2834,7 @@ function deleteHistorialOrder(index) {
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
   _cajaTotalesAplicar(order, -1, historialFechaSel);
+  if (order.paid) revertirVentaTiendaFirebase(order, historialFechaSel);
   renderHistorial();
   toast('🗑️ Pedido borrado del historial');
 }
@@ -2841,6 +2864,7 @@ function modifyHistorialOrder(index) {
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
   _cajaTotalesAplicar(order, -1, historialFechaSel);
+  if (order.paid) revertirVentaTiendaFirebase(order, historialFechaSel);
   closeHistorial();
   renderMenu();
   renderCart();
