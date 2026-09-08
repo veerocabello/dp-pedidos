@@ -1650,15 +1650,14 @@ function checkAutoCloseWarning() {
       const bt = document.getElementById('closing-banner-text');
       if (bt) bt.textContent = minsLeft <= 1 ? '¡Cerramos ahora! Último momento para hacer tu pedido.' : "Cerramos en ".concat(minsLeft, " minuto").concat(minsLeft !== 1 ? 's' : '', ". \xA1Date prisa!");
     } else {
-      // Respetar cierre manual del admin
-      if (localStorage.getItem('dpf_open_manual_override')) {
-        dot.style.background = '#e74c3c';
-        statusEl.textContent = 'Cerrado ahora';
-      } else {
-        dot.style.background = '#5ECC76';
-        statusEl.textContent = 'Abierto ahora';
-        if (existingBanner) existingBanner.remove();
-      }
+      // "manualOpen" ya es true a la fuerza aquí (si no, la función ya
+      // habría vuelto en el "if (!manualOpen) return;" de arriba) — el
+      // "dpf_open_manual_override" que había aquí era un flag pegajoso de
+      // un único aparato que dejaba a cualquier visitante viendo "Cerrado"
+      // el resto del día aunque el local ya hubiera reabierto de verdad.
+      dot.style.background = '#5ECC76';
+      statusEl.textContent = 'Abierto ahora';
+      if (existingBanner) existingBanner.remove();
     }
   } else {
     const nextOpen = sessions.filter(s => s.open > nowMin).sort((a, b) => a.open - b.open)[0];
@@ -2251,7 +2250,12 @@ function _ejecutarLoadOrdersStatus() {
   const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
-    if (manualClosed || localStorage.getItem('dpf_open_manual_override')) {
+    // Antes también entraba aquí "|| localStorage.getItem('dpf_open_manual_override')"
+    // (aviso local que nada borraba hasta el día siguiente) y ganaba
+    // siempre al valor real de Firebase — quien cargara la web mientras
+    // el local estaba cerrado veía "Cerrado" el resto del día en ESE
+    // móvil aunque llevara horas reabierto. Ahora manda solo Firebase.
+    if (manualClosed) {
       localStorage.setItem(OPEN_KEY, 'false');
       localStorage.setItem('dpf_open_manual_override', '1');
       if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
@@ -2259,6 +2263,7 @@ function _ejecutarLoadOrdersStatus() {
       updateHeroDot(false);
     } else {
       localStorage.setItem(OPEN_KEY, 'true');
+      localStorage.removeItem('dpf_open_manual_override');
       if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
   }).catch(() => {
