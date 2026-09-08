@@ -1856,6 +1856,8 @@ function esComponenteSalsa(comp) {
 // quitar como los demás — es un hueco que hay que rellenar sí o sí con
 // una salsa concreta antes de añadir el producto al pedido.
 function isElegirSalsaComp(comp) { return comp.trim().toLowerCase() === 'salsa a elegir'; }
+// Patata Simple: "aceite de oliva o mantequilla, una u otra, no las dos".
+function isBaseGrasaComp(comp) { return ['aceite de oliva', 'mantequilla'].includes(comp.trim().toLowerCase()); }
 // 4 Quesos lleva los quesos ya mezclados (no se pueden quitar ni cambiar),
 // pero la salsa base sí es un ingrediente suelto que se puede cambiar.
 const SALSA_CAMBIABLE_AUNQUE_BLOQUEADO_IDS = new Set([8]);
@@ -1865,11 +1867,23 @@ function renderExtrasBody(item) {
   const baseComponents = parseBaseComponents(item);
   const ingredientesBloqueados = isQuitarBlocked(item.id);
   const canQuitar = !ingredientesBloqueados && baseComponents.length > 0;
-  const salsaComponents = baseComponents.filter(esComponenteSalsa);
-  const ingComponents = baseComponents.filter(c => !esComponenteSalsa(c));
+  // Patata Simple lleva "Aceite de oliva o mantequilla (una u otra, no las
+  // dos)" — con dos chips sueltos de quitar, ambos aparecían puestos por
+  // defecto como si llevara los dos a la vez. Cuando la base trae este par
+  // completo, se cambia por un selector de una sola opción.
+  const baseGrasa = baseComponents.filter(isBaseGrasaComp);
+  const salsaComponents = baseComponents.filter(c => esComponenteSalsa(c) && !isBaseGrasaComp(c));
+  const ingComponents = baseComponents.filter(c => !esComponenteSalsa(c) && !isBaseGrasaComp(c));
   const canCambiarSalsaBloqueado = ingredientesBloqueados && !isBoniato
     && salsaComponents.length > 0 && SALSA_CAMBIABLE_AUNQUE_BLOQUEADO_IDS.has(item.id);
   let html = '';
+  if (baseGrasa.length === 2) {
+    const esMantequilla = extrasCambios.some(c => c.from === 'Aceite de oliva' && c.to === 'Mantequilla');
+    html += `<div class="section-label" style="margin-top:0">Base</div><div class="chip-grid">
+      <button class="chip ${esMantequilla ? '' : 'selected'}" onclick="setExtraBase('aceite')">🫒 Aceite de oliva</button>
+      <button class="chip ${esMantequilla ? 'selected' : ''}" onclick="setExtraBase('mantequilla')">🧈 Mantequilla</button>
+    </div>`;
+  }
   const salsaAElegir = baseComponents.find(isElegirSalsaComp);
   if (salsaAElegir) {
     const elegida = extrasCambios.find(c => c.from === salsaAElegir);
@@ -1888,9 +1902,9 @@ function renderExtrasBody(item) {
     }
   }
   if (canQuitar) {
-    const quitarComponents = baseComponents.filter(c => !isElegirSalsaComp(c));
+    const quitarComponents = baseComponents.filter(c => !isElegirSalsaComp(c) && !isBaseGrasaComp(c));
     if (quitarComponents.length) {
-      html += `<div class="section-label"${salsaAElegir ? '' : ' style="margin-top:0"'}>Quitar ingredientes <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple, si se puede)</span></div><div class="chip-grid">`;
+      html += `<div class="section-label"${(salsaAElegir || baseGrasa.length === 2) ? '' : ' style="margin-top:0"'}>Quitar ingredientes <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple, si se puede)</span></div><div class="chip-grid">`;
       quitarComponents.forEach(comp => {
         const state = extrasQuitados[comp]; // undefined | 'quitado' | 2 | 3
         const isMult = typeof state === 'number';
@@ -2033,7 +2047,24 @@ function removeExtraCambio(i) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-function extrasHasQuesoIngredient() { return Object.entries(extrasIngredientes).some(([name, on]) => on && isQuesoIngredient(name)); }
+// Selector "Aceite de oliva" / "Mantequilla" de Patata Simple — se guarda
+// como un cambio (igual que "Cambiar un ingrediente") para que el ticket
+// diga claramente "🔄 Aceite de oliva → Mantequilla" en vez de un simple
+// "Sin aceite" que la cocina podría confundir con "sin nada".
+function setExtraBase(which) {
+  extrasCambios = extrasCambios.filter(c => c.from !== 'Aceite de oliva');
+  if (which === 'mantequilla') extrasCambios.push({ from: 'Aceite de oliva', to: 'Mantequilla' });
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+  updateExtrasTotalPrice();
+}
+// También cuenta como "ya lleva queso" cambiar un ingrediente POR queso
+// (Cambiar un ingrediente → Queso Mozzarella) — si no, al elegir ese
+// cambio seguía saliendo "Añadir queso mozzarella +1,00€" y el gratinado
+// cobraba el queso otra vez encima del cambio, que ya lo pone.
+function extrasHasQuesoIngredient() {
+  return Object.entries(extrasIngredientes).some(([name, on]) => on && isQuesoIngredient(name))
+    || extrasCambios.some(c => isQuesoIngredient(c.to));
+}
 function toggleExtra(which) {
   const yaLlevaQueso = EXTRAS_SOLO_GRATINADO.has(extrasCurrentId) || extrasHasQuesoIngredient(); // ya lleva queso incluido
   if (which === 'queso') {
