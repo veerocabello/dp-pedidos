@@ -6,6 +6,18 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
+<!-- ── Instalable en el iPhone (o Android) desde "Añadir a pantalla de
+     inicio" en Safari: icono propio, abre a pantalla completa sin la
+     barra de Safari, como una app. No lleva Service Worker propio para
+     no interferir con el de la web de pedidos (pedidos/sw.js) — como
+     todo el estado va en localStorage, ya funciona sin conexión en
+     cuanto se ha cargado una vez. ── -->
+<link rel="manifest" href="comandas-manifest.json">
+<meta name="theme-color" content="#3D1F0D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Comandas">
+<link rel="apple-touch-icon" href="img/icon-192.png">
 <link rel="stylesheet" href="comandas.css">
 </head>
 <body>
