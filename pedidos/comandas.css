@@ -192,6 +192,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .btn-ghost:hover { background: rgba(255,248,238,.18); box-shadow: var(--shadow-sm); }
 .btn-ghost:active { transform: translateY(1px) scale(.98); }
 
+/* ── En un iPhone (o cualquier móvil estrecho) los 5 botones + el aviso
+   de impresora no caben en una fila y quedaban escondidos del todo hasta
+   arrastrar la cabecera hacia el lado (nada visible que avisara de que
+   se podía) — en vez de eso, aquí se quedan solo con el icono (sin el
+   texto) y el aviso de impresora se acorta, así entran todos de un
+   vistazo sin tener que descubrir el scroll. ── */
+@media (max-width: 480px) {
+  .btn-ghost-label { display: none; }
+  .btn-ghost { padding: 8px 9px; }
+  .printer-status { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* El bloque de marca (logo + título + subtítulo) por sí solo ya se
+     comía dos tercios de los 390px de un iPhone — el subtítulo no hace
+     falta para trabajar, así que se quita primero. */
+  .topbar { gap: 6px; padding: 9px 8px; }
+  .topbar-sub { display: none; }
+  .topbar-title { font-size: 14px; }
+  .topbar-logo { width: 24px; height: 24px; }
+  .printer-status { max-width: 60px; padding: 6px 8px 6px 8px; }
+  .topbar-actions { gap: 4px; }
+}
+
 /* ── Layout ── */
 .layout {
   max-width: 1440px;
