@@ -1305,34 +1305,35 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
     return null;
 }
 
-// ── Verificación de gastos de gestión / bolsa contra la config real (solo
-// aviso, no bloquea ni corrige el pedido) ── El navegador decide si cobrar
-// fee1/fee2 según su propia copia de la configuración (localStorage), que
-// puede no haber cargado a tiempo en una visita nueva/muy rápida — ya se
-// mitigó del lado del cliente (ver esperarConfigCriticaLista() en
-// admin-config.js), pero esto sirve de red de seguridad: si algún pedido
-// se cuela sin el gasto que le tocaba (o con el que no le tocaba, p.ej. por
-// el código de "pedido desde el local"), queda un aviso claro en Alertas
-// con el importe exacto que falta, para poder cobrarlo/ajustarlo a mano si
-// hiciera falta. No se corrige solo, porque el ticket que ya se imprimió o
-// se le mostró al cliente no se puede cambiar retroactivamente — mejor
-// avisar que desincronizar lo guardado de lo impreso.
+// ── Corrige (no solo avisa) los gastos de gestión / bolsa contra la config
+// real — mismo patrón que corregirPreciosCatalogo/Extras/Promos de arriba.
+// El navegador decide si cobrar fee1/fee2 según su propia copia de la
+// configuración (localStorage), que puede quedarse vieja si el admin
+// cambia el importe mientras un cliente ya tiene la página abierta desde
+// antes (o no haber cargado a tiempo en una visita nueva/muy rápida — ya
+// mitigado aparte con esperarConfigCriticaLista() en admin-config.js).
+// Antes esto solo dejaba un aviso en Alertas sin tocar el pedido — a
+// petición expresa de la dueña (fuga de dinero si nadie revisaba Alertas a
+// tiempo), ahora se corrige aquí mismo: añade el gasto que faltaba, ajusta
+// el importe que no cuadrara, o quita el que no debía cobrarse — siempre
+// dejando aviso en Alertas de qué se corrigió, igual que el resto.
 function _esEtiquetaDeGestionPHP($label) {
     $l = mb_strtolower((string)$label);
     return (mb_strpos($l, 'gestión') !== false) || (mb_strpos($l, 'gestion') !== false);
 }
-function comprobarFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal, $orderNum) {
+function corregirFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal) {
     $feeResp = fbGetConEtag($databaseURL, 'config/feeConfig', $accessToken);
     $fee = is_array($feeResp['data']) ? $feeResp['data'] : null;
     $fee2Resp = fbGetConEtag($databaseURL, 'config/fee2Config', $accessToken);
     $fee2 = is_array($fee2Resp['data']) ? $fee2Resp['data'] : null;
-    if (!$fee && !$fee2) return [];
+    if (!$fee && !$fee2) return ['items' => $items, 'avisos' => [], 'deltaTotal' => 0];
 
     $fee1EsGestion = $fee && _esEtiquetaDeGestionPHP($fee['label'] ?? '');
     $fee2EsGestion = $fee2 && _esEtiquetaDeGestionPHP($fee2['label'] ?? '');
     $ningunaEsGestion = !$fee1EsGestion && !$fee2EsGestion;
 
     $avisos = [];
+    $deltaTotal = 0;
     $revisar = [];
     if ($fee) $revisar[] = ['cfg' => $fee, 'esperado' => !empty($fee['enabled']) && !($esPedidoLocal && ($fee1EsGestion || $ningunaEsGestion))];
     if ($fee2) $revisar[] = ['cfg' => $fee2, 'esperado' => !empty($fee2['enabled']) && !($esPedidoLocal && $fee2EsGestion)];
@@ -1341,21 +1342,31 @@ function comprobarFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLoc
         $label = trim((string)($r['cfg']['label'] ?? ''));
         if ($label === '') continue;
         $montoReal = round((float)($r['cfg']['amount'] ?? 0), 2);
-        $enItems = null;
-        foreach ($items as $it) {
-            if (!empty($it['isFee']) && trim((string)($it['name'] ?? '')) === $label) { $enItems = $it; break; }
+        $idxEnItems = null;
+        foreach ($items as $i => $it) {
+            if (!empty($it['isFee']) && trim((string)($it['name'] ?? '')) === $label) { $idxEnItems = $i; break; }
         }
         if ($r['esperado']) {
-            if ($enItems === null) {
-                $avisos[] = 'falta "' . $label . '" (' . number_format($montoReal, 2) . '€)';
-            } elseif (abs((float)($enItems['subtotal'] ?? 0) - $montoReal) > 0.01) {
-                $avisos[] = '"' . $label . '" cobrado ' . number_format((float)$enItems['subtotal'], 2) . '€ en vez de ' . number_format($montoReal, 2) . '€';
+            if ($idxEnItems === null) {
+                $avisos[] = 'faltaba "' . $label . '" (' . number_format($montoReal, 2) . '€, añadido)';
+                $items[] = ['name' => $label, 'qty' => 1, 'subtotal' => $montoReal, 'isFee' => true];
+                $deltaTotal += $montoReal;
+            } else {
+                $subtotalActual = (float)($items[$idxEnItems]['subtotal'] ?? 0);
+                if (abs($subtotalActual - $montoReal) > 0.01) {
+                    $avisos[] = '"' . $label . '" cobrado ' . number_format($subtotalActual, 2) . '€ en vez de ' . number_format($montoReal, 2) . '€ (corregido)';
+                    $deltaTotal += ($montoReal - $subtotalActual);
+                    $items[$idxEnItems]['subtotal'] = $montoReal;
+                }
             }
-        } elseif ($enItems !== null) {
-            $avisos[] = '"' . $label . '" cobrado (' . number_format((float)$enItems['subtotal'], 2) . '€) cuando no debía aplicarse';
+        } elseif ($idxEnItems !== null) {
+            $subtotalActual = (float)($items[$idxEnItems]['subtotal'] ?? 0);
+            $avisos[] = '"' . $label . '" cobrado (' . number_format($subtotalActual, 2) . '€) cuando no debía aplicarse (quitado)';
+            $deltaTotal -= $subtotalActual;
+            array_splice($items, $idxEnItems, 1);
         }
     }
-    return $avisos;
+    return ['items' => $items, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2)];
 }
 
 // ── Aviso (no bloquea) de un posible pedido duplicado: mismo teléfono e
@@ -2292,9 +2303,12 @@ try {
         echo json_encode(['success' => false, 'error' => 'No se pudo verificar el importe del pedido. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
-    $avisosFees = comprobarFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal, $orderNum);
-    if ($avisosFees) {
-        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Gastos de gestión/bolsa no coinciden en pedido ' . $orderNum . ' — ' . implode(' · ', $avisosFees));
+    $corrFees = corregirFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal);
+    $items = $corrFees['items'];
+    if ($corrFees['avisos']) {
+        $total = round($total + $corrFees['deltaTotal'], 2);
+        if ($total < 0) $total = 0;
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Gasto de gestión/bolsa corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrFees['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
     }
     $posibleDup = detectarPosibleDuplicado($databaseURL, $accessToken, $todayKey, $phone, $total);
     if ($posibleDup) {
