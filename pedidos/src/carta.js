@@ -1072,6 +1072,7 @@ function renderCart() {
     // adivinarla.
     const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')')
       : c.boniatoSalsa ? (_extItem.name + ' (' + c.boniatoSalsa + ')')
+      : c.base === 'mantequilla' ? (_extItem.name + ' (Mantequilla)')
       : _extItem.name;
     const extras = [];
     if (c.queso) extras.push('+ Extra Queso +1,00€');

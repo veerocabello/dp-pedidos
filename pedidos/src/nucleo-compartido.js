@@ -122,6 +122,7 @@ let _extrasCurrentId = null;
 let _extrasQueso = false;
 let _extrasGratinado = false;
 let _extrasIngredientes = {}; // { name: true/false }
+let _extrasBase = 'aceite'; // 'aceite' | 'mantequilla' — solo aplica a Patata Simple (id 1)
 
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
@@ -139,12 +140,21 @@ function openExtrasModal(itemId) {
   _extrasGratinado = false;
   _extrasIngredientes = {};
   _extrasSalsas = {};
+  _extrasBase = 'aceite';
   const item = MENU.find(m => m.id == itemId);
   if (!item) return;
   document.getElementById('extras-title').textContent = item.name;
   document.getElementById('extras-base-price').textContent = 'Base: ' + item.price.toFixed(2).replace('.', ',') + ' €';
   const onlySoloGratinado = EXTRAS_SOLO_GRATINADO.has(itemId);
   let optionsHtml = '';
+  // Patata Simple: "aceite de oliva o mantequilla, una u otra, no las
+  // dos" — antes esto era solo texto descriptivo, sin ninguna forma de
+  // elegir de verdad al hacer el pedido (Comandas sí lo tenía como
+  // selector). Mismo patrón visual .chip-grid que ya usa el
+  // personalizador de Al Gusto/Bomba más abajo en esta misma página.
+  if (itemId === 1) {
+    optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px;margin-bottom:6px\">BASE</div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">\n        <button type=\"button\" class=\"chip selected\" id=\"extra-base-aceite\" onclick=\"setExtrasBase('aceite')\">🫒 Aceite de oliva</button>\n        <button type=\"button\" class=\"chip\" id=\"extra-base-mantequilla\" onclick=\"setExtrasBase('mantequilla')\">🧈 Mantequilla</button>\n      </div>";
+  }
   if (!onlySoloGratinado) {
     optionsHtml += "\n      <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('queso')\">\n        <div>\n          <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F9C0; A\xF1adir queso mozzarella</div>\n          <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+1,00 €</div>\n        </div>\n        <div id=\"extra-check-queso\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n      </label>";
   }
@@ -197,6 +207,13 @@ function toggleExtra(type) {
   }
   updateExtraCheckUI(type, type === 'queso' ? _extrasQueso : _extrasGratinado);
   updateExtrasTotal();
+}
+function setExtrasBase(which) {
+  _extrasBase = which;
+  const elAceite = document.getElementById('extra-base-aceite');
+  const elMantequilla = document.getElementById('extra-base-mantequilla');
+  if (elAceite) elAceite.classList.toggle('selected', which === 'aceite');
+  if (elMantequilla) elMantequilla.classList.toggle('selected', which === 'mantequilla');
 }
 function toggleExtraIng(ing) {
   _extrasIngredientes[ing] = !_extrasIngredientes[ing];
@@ -302,7 +319,8 @@ function confirmExtras() {
       k = _ref20s[0];
     return k;
   }).sort().join('|');
-  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') || 'BASE';
+  const baseKey = (itemId === 1 && _extrasBase === 'mantequilla') ? 'Bmantequilla' : '';
+  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') + baseKey || 'BASE';
   const cartKey = 'ext:' + itemId + ':' + fingerprint;
   if (!extrasCart[cartKey]) {
     extrasCart[cartKey] = {
@@ -310,6 +328,7 @@ function confirmExtras() {
       qty: 0,
       queso: _extrasQueso,
       gratinado: _extrasGratinado,
+      base: itemId === 1 ? _extrasBase : undefined,
       ingredientesExtra: Object.entries(_extrasIngredientes).filter(_ref17 => {
         let _ref18 = _slicedToArray(_ref17, 2),
           v = _ref18[1];
@@ -370,6 +389,7 @@ function duplicarExtrasItem(key) {
     return;
   }
   openExtrasModal(item.menuId);
+  if (item.base === 'mantequilla') setExtrasBase('mantequilla');
   if (item.queso) toggleExtra('queso');
   if (item.gratinado) toggleExtra('gratinado');
   (item.ingredientesExtra || []).forEach(function (ing) { toggleExtraIng(ing); });

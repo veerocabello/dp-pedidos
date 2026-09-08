@@ -1307,6 +1307,11 @@ async function _submitOrderInner() {
     // Misma idea para la salsa elegida en Boniato Bacon — informativa,
     // precio 0, para no romper la comprobación de precio del servidor.
     if (c.boniatoSalsa) extras.push({ name: c.boniatoSalsa, price: 0 });
+    // Base de Patata Simple (aceite/mantequilla) — misma idea que cheddarCarne
+    // de arriba: informativa, precio 0, solo se anota cuando NO es la base
+    // por defecto (aceite), para no ensuciar el ticket de la inmensa mayoría
+    // de pedidos que sí llevan aceite.
+    if (c.base === 'mantequilla') extras.push({ name: '🧈 Mantequilla (en vez de aceite)', price: 0 });
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 1.00 : 0;
