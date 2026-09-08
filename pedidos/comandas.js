@@ -1950,10 +1950,6 @@ function renderExtrasBody(item) {
   }
   if (!isBoniato) {
     const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
-    // Las patatas con la mezcla ya preparada (Carbonara, Boloñesa, 4 Quesos)
-    // no admiten nada más que gratinarlas — no tiene sentido añadir
-    // ingredientes o salsas sueltas encima de una receta ya cerrada.
-    const soloGratinar = isQuitarBlocked(item.id) && soloGratinado;
     if (!yaLlevaQueso) {
       html += `<label class="option-row" onclick="toggleExtra('queso')">
         <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
@@ -1964,32 +1960,36 @@ function renderExtrasBody(item) {
       <div><div class="option-title">🔥 Gratinar${yaLlevaQueso ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${yaLlevaQueso ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
-    if (!soloGratinar) {
-      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
-      sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-        const precio = priceOfIngExtra(ing);
-        const qty = extrasIngredientes[ing] || 0;
-        const on = qty > 0, mult = qty >= 2;
-        const label = mult ? ing + ' (x' + qty + ')' : ing;
-        html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
-        </label>`;
-      });
-      html += `</div>`;
-      html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
-      CUST_SAUCES.forEach(s => {
-        const precio = priceOfSalsaExtra(s);
-        const qty = extrasSalsas[s] || 0;
-        const on = qty > 0, mult = qty >= 2;
-        const label = mult ? s + ' (x' + qty + ')' : s;
-        html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-          <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
-          <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
-        </label>`;
-      });
-      html += `</div>`;
-    }
+    // Ingredientes/salsas extra: siempre disponibles, igual que en la web
+    // (nucleo-compartido.js/openExtrasModal) — antes aquí se bloqueaban
+    // para Carbonara/Boloñesa/4 Quesos ("mezcla ya preparada") pensando
+    // que no tenía sentido añadir nada encima de una receta cerrada, pero
+    // la web sí lo permite para esos mismos productos y Comandas se había
+    // quedado desincronizada de eso.
+    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+    sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
+      const precio = priceOfIngExtra(ing);
+      const qty = extrasIngredientes[ing] || 0;
+      const on = qty > 0, mult = qty >= 2;
+      const label = mult ? ing + ' (x' + qty + ')' : ing;
+      html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
+        <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
+        <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
+      </label>`;
+    });
+    html += `</div>`;
+    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+    CUST_SAUCES.forEach(s => {
+      const precio = priceOfSalsaExtra(s);
+      const qty = extrasSalsas[s] || 0;
+      const on = qty > 0, mult = qty >= 2;
+      const label = mult ? s + ' (x' + qty + ')' : s;
+      html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
+        <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
+        <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
+      </label>`;
+    });
+    html += `</div>`;
   }
   // Guarda y restaura el scroll del modal: sin esto, cada vez que se marca
   // algo en "Ingredientes extra" / "Salsas extra" (más abajo del todo) el
