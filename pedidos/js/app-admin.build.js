@@ -8720,6 +8720,24 @@ function exportClientesCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
+// Total de ventas de TIENDA (Comandas: mostrador + móvil) por día, para
+// mostrarlo junto al de la web en "Historial por días" — sin sumarlos en
+// un único número (a propósito: la dueña quiere verlos aparte), solo uno
+// al lado del otro. Vive en memoria nada más (no en localStorage): es
+// solo para pintar esta pantalla, no hace falta que sobreviva a recargar.
+let _statsTiendaPorDia = {};
+function _cargarStatsTiendaPorDia(dias) {
+  if (!window.firebase || !firebase.database) return Promise.resolve();
+  const fin = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+  const desde = new Date(Date.now() - dias * 86400000).toISOString().slice(0, 10);
+  return firebase.database().ref('statsTienda').orderByKey().startAt(desde).endAt(fin).once('value')
+    .then(snap => {
+      const out = {};
+      if (snap.exists()) snap.forEach(diaSnap => { out[diaSnap.key] = Number((diaSnap.val() || {}).total) || 0; });
+      _statsTiendaPorDia = out;
+    })
+    .catch(() => {});
+}
 function loadHistorial(despues) {
   // Cargar historial completo desde Firebase (fuente de verdad entre
   // dispositivos) — sin esto, un dispositivo que nunca lo haya sincronizado
@@ -8730,7 +8748,7 @@ function loadHistorial(despues) {
   // Clientes dependen de esto, por eso admite un callback opcional para
   // repintar lo que corresponda en cada caso.
   if (window.fb_loadHistorial) {
-    window.fb_loadHistorial(30).then(fbHist => {
+    Promise.all([window.fb_loadHistorial(30), _cargarStatsTiendaPorDia(30)]).then(([fbHist]) => {
       if (fbHist && fbHist.length > 0) {
         // Guardar en localStorage para acceso rápido futuro
         fbHist.forEach(d => saveToHistorial(d));
@@ -8783,7 +8801,9 @@ function _renderHistorial() {
       day: 'numeric',
       month: 'short'
     });
-    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "',this)\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n      <button onclick=\"imprimirResumenHistorialDiaTermico('").concat(d.date, "')\" style=\"background:var(--brown);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDA8\uFE0F Imprimir</button>\n      <button onclick=\"borrarHistorialDia('").concat(d.date, "')\" style=\"background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDD1\uFE0F Borrar</button>\n    </div>");
+    const tiendaTotal = _statsTiendaPorDia[d.date];
+    const tiendaSpan = tiendaTotal ? "<span style=\"font-size:12px;color:#8A6A4E\">\uD83C\uDFEA Tienda: ".concat(tiendaTotal.toFixed(2).replace('.', ','), " \u20AC</span>") : '';
+    return "\n    <div style=\"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F5E6C8;flex-wrap:wrap\">\n      <span style=\"font-weight:600;color:#2A1506;font-size:13px;min-width:110px\">".concat(dateLabel, "</span>\n      <span style=\"font-size:13px;color:#8A6A4E\">").concat(d.count, " pedido").concat(d.count !== 1 ? 's' : '', "</span>\n      <span style=\"font-weight:700;color:#3D1F0D;font-size:14px\">").concat(d.total.toFixed(2).replace('.', ','), " \u20AC (web)</span>").concat(tiendaSpan, "\n      <button onclick=\"expandHistorialDay('").concat(d.date, "')\" style=\"background:#F5E6C8;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:#3D1F0D;font-weight:600\">Ver detalle</button>\n      <button onclick=\"exportDayPDFFromHistorial('").concat(d.date, "',this)\" style=\"background:#3D1F0D;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDCC4 PDF</button>\n      <button onclick=\"imprimirResumenHistorialDiaTermico('").concat(d.date, "')\" style=\"background:var(--brown);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDA8\uFE0F Imprimir</button>\n      <button onclick=\"borrarHistorialDia('").concat(d.date, "')\" style=\"background:none;color:#c0392b;border:1.5px solid #c0392b;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif\">\uD83D\uDDD1\uFE0F Borrar</button>\n    </div>");
   }).join('');
 }
 // Borra un día entero del historial — pensado para quitar días de prueba
