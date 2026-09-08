@@ -2255,6 +2255,22 @@ function _ejecutarLoadOrdersStatus() {
   // config/ (por diseño, en las Firebase Rules) y antes lo intentaba igual,
   // generando avisos de "permission_denied" en la consola sin ningún efecto.
   const _esAdminAutenticado = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+  // Repinta el formulario de pedido con el valor de "Local cerrado" que
+  // haya en localStorage en ESE momento — se llama dos veces: una ya
+  // mismo con lo que hubiera en caché (para no dejar el formulario en
+  // blanco esperando a la red) y otra dentro del .then()/.catch() de
+  // abajo, con el valor recién confirmado por Firebase. Antes solo se
+  // llamaba la primera vez: si el dueño cerraba el Local mientras un
+  // cliente ya tenía la página abierta, el punto de la cabecera se ponía
+  // en rojo al momento pero el formulario (que lee el mismo flag) seguía
+  // aceptando pedidos hasta el siguiente chequeo periódico (60s) — el
+  // cliente podía rellenar y mandar un pedido que el servidor iba a
+  // rechazar de todas formas, en vez de ver el aviso desde el principio.
+  function _refrescarFormularioPedido() {
+    const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario y "Local cerrado"
+    const localCerrado = !open && !!localStorage.getItem('dpf_open_manual_override');
+    updateOrdersUI(open, localCerrado ? 'Ahora mismo tenemos el local cerrado.' : undefined);
+  }
   firebase.database().ref('config/openManualOverride').once('value').then(sn => {
     const manualClosed = sn.exists() && sn.val() === true;
     // Antes también entraba aquí "|| localStorage.getItem('dpf_open_manual_override')"
@@ -2273,15 +2289,15 @@ function _ejecutarLoadOrdersStatus() {
       localStorage.removeItem('dpf_open_manual_override');
       if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
+    _refrescarFormularioPedido();
   }).catch(() => {
     if (!localStorage.getItem('dpf_open_manual_override')) {
       localStorage.setItem(OPEN_KEY, 'true');
       if (_esAdminAutenticado && window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
     }
+    _refrescarFormularioPedido();
   });
-  const open = getOrdersOpen(); // getOrdersOpen ya respeta el horario y "Local cerrado"
-  const localCerrado = !open && !!localStorage.getItem('dpf_open_manual_override');
-  updateOrdersUI(open, localCerrado ? 'Ahora mismo tenemos el local cerrado.' : undefined);
+  _refrescarFormularioPedido();
   const savedMsg = localStorage.getItem(ORDERS_MSG_KEY);
   const msgInput = document.getElementById('orders-pause-msg');
   if (msgInput && savedMsg) msgInput.value = savedMsg;
