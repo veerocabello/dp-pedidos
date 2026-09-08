@@ -2109,8 +2109,17 @@ function isOutsideHours() {
     const closeEnd = getMinutes(h.tarClose, true) ?? getMinutes(h.manClose, true);
     if (openStart === null || closeEnd === null) return false;
 
+    // nowMin ya viene desplazado +1440 para horas de madrugada (arriba del
+    // todo de esta función) — closeEnd tiene que desplazarse igual para
+    // compararlo en la misma recta, con un tramo continuo (AND), no con un
+    // "o" que antes daba por buena CUALQUIER hora de madrugada sin mirar
+    // cuándo cerraba de verdad (bug real: con cierre tras medianoche, p.ej.
+    // 01:00, un cliente a las 3 de la madrugada veía el formulario abierto
+    // 2 horas después de haber cerrado — el servidor sí lo rechazaba
+    // después, con la comprobación ya correcta de comprobarTiendaAbierta en
+    // guardar-pedido.php, que es de donde sale este arreglo).
     const inSession = (closeEnd < openStart)
-      ? (nowMin >= openStart || nowMin < closeEnd)
+      ? (nowMin >= openStart && nowMin < closeEnd + 1440)
       : (nowMin >= openStart && nowMin < closeEnd);
     if (inSession) return false;
     // Fuera de la franja continua (ej: antes de manOpen o después de tarClose) → cerrado
@@ -6076,7 +6085,11 @@ function _limpiarItemsCarritoInvalidos() {
   let quitados = 0;
   function _disponible(id) {
     const item = MENU.find(m => m.id == id);
-    return item && !item.soldout;
+    // !item.hidden también — antes solo miraba "agotado", así que un
+    // producto que el admin quitara del todo de la carta (oculto, no solo
+    // sin stock) se quedaba en un carrito ya abierto y se confirmaba igual
+    // (mismo criterio que ya usa repetirUltimoPedido() para esto mismo).
+    return item && !item.hidden && !item.soldout;
   }
   Object.keys(cart).forEach(id => {
     if (!_disponible(id)) { delete cart[id]; quitados++; }

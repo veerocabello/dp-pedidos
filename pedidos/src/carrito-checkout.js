@@ -365,7 +365,11 @@ function _limpiarItemsCarritoInvalidos() {
   let quitados = 0;
   function _disponible(id) {
     const item = MENU.find(m => m.id == id);
-    return item && !item.soldout;
+    // !item.hidden también — antes solo miraba "agotado", así que un
+    // producto que el admin quitara del todo de la carta (oculto, no solo
+    // sin stock) se quedaba en un carrito ya abierto y se confirmaba igual
+    // (mismo criterio que ya usa repetirUltimoPedido() para esto mismo).
+    return item && !item.hidden && !item.soldout;
   }
   Object.keys(cart).forEach(id => {
     if (!_disponible(id)) { delete cart[id]; quitados++; }

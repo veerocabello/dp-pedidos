@@ -945,16 +945,17 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
             return $it;
         }
         $mi = $menuPorNombre[$nombre];
-        // Marcado "agotado" DESPUÉS de que el cliente ya lo tuviera en el
-        // carrito: la web ya lo quita al confirmar (_limpiarItemsCarritoInvalidos
-        // en carrito-checkout.js), pero eso no evita que alguien llame a
-        // este script directamente saltándose la web — a diferencia de un
-        // precio que no cuadra, un producto agotado no tiene "precio
-        // corregido" que valga: no se puede preparar, así que el pedido
-        // entero se rechaza más abajo en vez de solo avisar. Esto SÍ se
-        // comprueba también para Al Gusto/Bomba (justo debajo se exceptúa
-        // solo la comparación de precio, no esta).
-        if (!empty($mi['soldout']) && $qty > 0) {
+        // Marcado "agotado" (o quitado del todo de la carta, "hidden")
+        // DESPUÉS de que el cliente ya lo tuviera en el carrito: la web ya
+        // lo quita al confirmar (_limpiarItemsCarritoInvalidos en
+        // carrito-checkout.js), pero eso no evita que alguien llame a este
+        // script directamente saltándose la web — a diferencia de un
+        // precio que no cuadra, ninguno de los dos casos tiene "precio
+        // corregido" que valga: no se puede preparar/ya no está en carta,
+        // así que el pedido entero se rechaza más abajo en vez de solo
+        // avisar. Esto SÍ se comprueba también para Al Gusto/Bomba (justo
+        // debajo se exceptúa solo la comparación de precio, no esta).
+        if ((!empty($mi['soldout']) || !empty($mi['hidden'])) && $qty > 0) {
             $agotados[] = $nombre;
         }
         // Patata Al Gusto (id 15) / Bomba (id 16): el comentario de esta
@@ -1226,7 +1227,17 @@ function comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $d
                 }
             }
         }
-        $itemsSum += $subtotal + ($extrasSum * $qty);
+        // Una línea con subtotal negativo (un descuento, "Código ABC12
+        // (-2,00€)"...) no debe RESTAR aquí — el margen que admite un total
+        // por debajo de itemsSum se calcula unas líneas más abajo a partir
+        // de datos verificados de verdad en Firebase (código real,
+        // fidelización real...), no de lo que diga esta línea suelta. Sin
+        // este tope, cualquiera podría llamar a este script saltándose la
+        // web y colar un carrito de comida real de catálogo junto con UNA
+        // línea inventada de nombre cualquiera y subtotal -9999€: itemsSum
+        // se hundiría y CUALQUIER total (incluso 0€) pasaría esta
+        // comprobación para un pedido de comida real.
+        $itemsSum += max(0, $subtotal + ($extrasSum * $qty));
         $nombre = isset($it['name']) ? mb_strtolower(trim((string)$it['name'])) : '';
         if (strpos($nombre, 'patata') === 0) {
             $unit = $subtotal / $qty;
