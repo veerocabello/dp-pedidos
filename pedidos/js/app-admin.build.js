@@ -5981,7 +5981,6 @@ async function toggleSlotCerrado(slot) {
   if (!window.fb_toggleSlotClosed) return;
   const cerrados = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
   const yaCerrado = !!cerrados[slot];
-  if (!yaCerrado && !confirm('¿Cerrar el turno de las ' + slot + '?\n\nLos clientes ya no podrán elegirlo. Los pedidos que ya tenga no se ven afectados.')) return;
   const todayKey = new Date().toISOString().slice(0, 10);
   try {
     await window.fb_toggleSlotClosed(todayKey, slot, !yaCerrado);
