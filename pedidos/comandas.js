@@ -1539,6 +1539,82 @@ function updateCustTotalPrice() {
   p += custSelExtraSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
   p += custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
+  renderCustConvertBanner();
+}
+// Divide una lista con posibles nombres repetidos (así es como el
+// customizer guarda un ingrediente doble/triple: el mismo nombre puesto
+// varias veces) en nombres únicos + una lista de "dobles" (una copia por
+// cada unidad de más) — el formato que espera un registro de extrasCart.
+function splitCustDuplicates(list) {
+  const counts = {};
+  list.forEach(n => { counts[n] = (counts[n] || 0) + 1; });
+  const unique = Object.keys(counts).sort();
+  const dobles = [];
+  unique.forEach(n => { for (let i = 1; i < counts[n]; i++) dobles.push(n); });
+  return { unique, dobles };
+}
+// Si con los ingredientes/salsas elegidos en Al Gusto sale más barato
+// cobrarla como Patata Simple + esos mismos extras (precio plano de Al
+// Gusto vs. base de Simple + cada extra a su precio), se puede ofrecer
+// la conversión — solo aplica a Al Gusto (Bomba parte de un precio ya
+// pensado para llenarse de ingredientes, no tiene sentido ahí).
+function custSimpleEquivalent() {
+  if (custType !== 'algusto') return null;
+  const simpleItem = MENU.find(m => m.id == 1);
+  if (!simpleItem) return null;
+  const cfg = CUSTOMIZER_CONFIG[custType];
+  const algustoCore = cfg.price
+    + custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0)
+    + custSelExtraSauces.reduce((s, n) => s + priceOfSalsaExtra(n), 0);
+  const allIngredients = [...custSelIngredients, ...custSelExtraIngredients];
+  const allSauces = [...custSelSauces, ...custSelExtraSauces];
+  const simpleCore = simpleItem.price
+    + allIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0)
+    + allSauces.reduce((s, n) => s + priceOfSalsaExtra(n), 0);
+  if (simpleCore >= algustoCore) return null;
+  return { simpleItem, simpleCore, savings: algustoCore - simpleCore, allIngredients, allSauces };
+}
+function renderCustConvertBanner() {
+  const banner = document.getElementById('cust-convert-banner');
+  if (!banner) return;
+  const info = custSimpleEquivalent();
+  if (!info) { banner.style.display = 'none'; return; }
+  const qg = (custExtraQueso ? 1 : 0) + (custExtraGratinado ? 0.5 : 0);
+  banner.style.display = 'flex';
+  document.getElementById('cust-convert-msg').innerHTML =
+    'Con estos ingredientes sale más barato como <b>Patata Simple: ' + fmt(info.simpleCore + qg) + ' €</b> (ahorras ' + fmt(info.savings) + ').';
+}
+// Cierra el customizer añadiendo lo elegido como una Patata Simple (3,00 €
+// de base) con esos mismos ingredientes/salsa como extras, en vez de al
+// precio plano de Al Gusto — reutiliza extrasCart, así el ticket, la
+// edición posterior (incluido quitar el aceite de la base) y el descuento
+// de stock funcionan exactamente igual que en cualquier Simple normal.
+function confirmCustomizerAsSimple() {
+  const info = custSimpleEquivalent();
+  if (!info) return;
+  const { simpleItem, allIngredients, allSauces } = info;
+  const ingSplit = splitCustDuplicates(allIngredients);
+  const salsaSplit = splitCustDuplicates(allSauces);
+  const dobles = [...ingSplit.dobles, ...salsaSplit.dobles].sort();
+  const pickOrder = [
+    ...salsaSplit.unique.map(name => ({ type: 'salsa', name })),
+    ...ingSplit.unique.map(name => ({ type: 'ing', name })),
+  ];
+  const sig = (custExtraQueso ? 'Q' : '') + (custExtraGratinado ? 'G' : '')
+    + (ingSplit.unique.length ? 'I' + ingSplit.unique.join('|') : '')
+    + (salsaSplit.unique.length ? 'S' + salsaSplit.unique.join('|') : '')
+    + (dobles.length ? 'D' + dobles.join('|') : '') || 'BASE';
+  const key = 'ext:' + simpleItem.id + ':' + sig;
+  let qtyToSet = 1;
+  if (custEditKey && custCart[custEditKey]) {
+    qtyToSet = custCart[custEditKey].qty;
+    delete custCart[custEditKey];
+  }
+  if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
+  else extrasCart[key] = { menuId: simpleItem.id, qty: qtyToSet, queso: custExtraQueso, gratinado: custExtraGratinado, ingredientesExtra: ingSplit.unique, salsasExtra: salsaSplit.unique, quitados: [], dobles, cambios: [], pickOrder, basePrice: simpleItem.price, key };
+  closeCustomizer();
+  renderCart();
+  toast('✅ Convertida a Patata Simple');
 }
 function confirmCustomizer() {
   const cfg = CUSTOMIZER_CONFIG[custType];
