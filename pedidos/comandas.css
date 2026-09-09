@@ -846,6 +846,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   font-size: 11.5px; font-weight: 700; color: var(--brown);
   text-transform: uppercase; letter-spacing: .4px; flex-shrink: 0;
 }
+/* Sin este tamaño explícito, el importe heredaba el font-size ambiente
+   del modal (16px) — con una etiqueta larga tipo "Efectivo esperado en
+   caja" en una pantalla estrecha (iPhone), no quedaba sitio para los dos
+   en la misma línea y la etiqueta se partía en dos. */
+.cash-calc-total-row b { font-size: 13px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.cash-calc-total-row.editable { cursor: pointer; padding: 4px 6px; margin: 0 -6px; border-radius: var(--radius-xs); }
+.cash-calc-total-row.editable:hover { background: var(--amber-light); }
 
 /* ── Teclado numérico táctil reutilizado en Descuento y Hora de recogida ── */
 .cash-keypad { margin-top: 6px; }

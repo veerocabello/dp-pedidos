@@ -2966,16 +2966,83 @@ function viewHistorialOrder(index) {
    método de cada comanda desde el panel antes de imprimir. Con selector
    de fecha, para poder cuadrar caja de un día anterior si hizo falta. ── */
 function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || todayISO()); }
-function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? 0 : v; }
+// El fondo de caja con el que se abre siempre son 200€ — se deja como
+// valor por defecto en vez de tener que escribirlo cada día; si algún
+// día se abre con otro importe, se puede cambiar a mano igual que antes.
+const CAJA_FONDO_DEFECTO = 200;
+function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? CAJA_FONDO_DEFECTO : v; }
 function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
 function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
 function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX + fecha) === '1'; }
+// ── Efectivo contado en el cajón al cerrar — para que la app diga sola si
+// cuadra, en vez de tener que restar a mano el "esperado" contra lo
+// contado. Se toca cada billete/moneda (igual que en Cobrar) o se
+// escribe el total directamente; se guarda por fecha para poder volver a
+// abrir un día ya cuadrado y ver lo mismo que se contó entonces.
+function getCajaContadoKey(fecha) { return 'dpf_comandas_caja_contado_' + fecha; }
+function loadCajaContadoState(fecha) {
+  try { return JSON.parse(localStorage.getItem(getCajaContadoKey(fecha)) || 'null') || { total: 0, counts: {} }; }
+  catch (e) { return { total: 0, counts: {} }; }
+}
+function saveCajaContadoState() { localStorage.setItem(getCajaContadoKey(cajaFechaSel), JSON.stringify(cajaContado)); }
+let cajaContado = { total: 0, counts: {} };
+function tapCajaDenom(btn, v) {
+  const key = String(v);
+  cajaContado.counts[key] = (cajaContado.counts[key] || 0) + 1;
+  cajaContado.total = Math.round((cajaContado.total + v) * 100) / 100;
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function untapCajaDenom(btn, v) {
+  const key = String(v);
+  const n = (cajaContado.counts[key] || 0) - 1;
+  if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
+  cajaContado.total = Math.max(0, Math.round((cajaContado.total - v) * 100) / 100);
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function limpiarCajaContado() {
+  cajaContado = { total: 0, counts: {} };
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function setCajaContadoManual(valorStr) {
+  cajaContado = { total: Math.max(0, parseCashNum(valorStr)), counts: {} };
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function renderCajaContadoUI() {
+  document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
+    const v = btn.dataset.v;
+    const n = cajaContado.counts[v] || 0;
+    btn.classList.toggle('tapped', n > 0);
+    let badge = btn.querySelector('.denom-count');
+    if (n > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'denom-count';
+        badge.title = 'Tocar para quitar uno';
+        badge.onclick = (e) => { e.stopPropagation(); untapCajaDenom(btn, parseFloat(v)); };
+        btn.appendChild(badge);
+      }
+      badge.textContent = '×' + n;
+    } else if (badge) badge.remove();
+  });
+  const totalEl = document.getElementById('caja-contado-total');
+  if (totalEl) totalEl.textContent = fmt(cajaContado.total) + ' €';
+}
 let cajaFechaSel = todayISO();
 function openCaja() {
   cajaFechaSel = todayISO();
   const fechaInput = document.getElementById('caja-fecha-input');
   if (fechaInput) fechaInput.value = cajaFechaSel;
+  cajaContado = loadCajaContadoState(cajaFechaSel);
+  renderCajaContadoUI();
   document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
   const btnOrganizada = document.getElementById('btn-copia-organizada');
   if (btnOrganizada) btnOrganizada.style.display = isDesktopApp() ? '' : 'none';
@@ -2985,6 +3052,8 @@ function openCaja() {
 function setCajaFecha(fecha) {
   cajaFechaSel = fecha || todayISO();
   document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
+  cajaContado = loadCajaContadoState(cajaFechaSel);
+  renderCajaContadoUI();
   renderCaja();
 }
 function closeCaja() { document.getElementById('caja-modal').classList.remove('open'); }
@@ -3002,17 +3071,42 @@ function renderCaja() {
   const esHoy = cajaFechaSel === todayISO();
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
-  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
+  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
   const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
     ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
+    : '';
+  // Antes "pendiente" solo entraba en el total facturado sin verse en
+  // ningún sitio — si alguien marcaba un pedido como pagado a mano fuera de
+  // la app (en vez de darle a "pedido no cobrado" desde el panel) la caja
+  // se descuadraba sin que nada avisara de por qué. Esta fila lo hace
+  // visible siempre que haya algo pendiente, en rojo, para que salte a la
+  // vista antes de cerrar.
+  const avisoPendiente = pendiente > 0
+    ? `<div style="background:#FBE7E4;border:1.5px solid rgba(192,57,43,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+        <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:var(--error);font-weight:700">⚠️ Pendiente de cobro</label><b style="color:var(--error)">${fmt(pendiente)} €</b></div>
+        <div style="font-size:11.5px;color:var(--error);margin-top:4px">Si alguno se cobró a mano sin marcarlo pagado en la app, la caja no cuadrará.</div>
+      </div>`
+    : '';
+  // Descuadre automático: en cuanto se ha contado algo (tocando un
+  // billete/moneda o escribiendo el total a mano), se compara solo contra
+  // "esperado" — antes había que restar a mano cada vez.
+  const hayContado = cajaContado.total > 0 || Object.keys(cajaContado.counts).length > 0;
+  const diferencia = Math.round((cajaContado.total - esperadoCajon) * 100) / 100;
+  const cuadra = Math.abs(diferencia) < 0.005;
+  const avisoDiferencia = hayContado
+    ? `<div style="background:${cuadra ? '#E3F3E9' : '#FBE7E4'};border:1.5px solid ${cuadra ? 'rgba(46,139,87,.35)' : 'rgba(192,57,43,.4)'};border-radius:10px;padding:10px 12px;margin:8px 0">
+        <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadra ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadra ? '✅ Cuadra' : diferencia > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadra ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferencia))} €</b></div>
+      </div>`
     : '';
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + row('💵 Cobrado en efectivo', efectivo)
     + row('💳 Cobrado con tarjeta', tarjeta)
+    + avisoPendiente
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
-    + row('💰 Efectivo esperado en caja', esperadoCajon, true);
+    + row('💰 Esperado en caja', esperadoCajon, true)
+    + avisoDiferencia;
 }
 
 /* ── Resumen de caja (fin de día) en papel — usa el mismo formato de
@@ -3326,7 +3420,7 @@ function renderResumen() {
     return { fecha: f, ...t };
   }).filter(d => d.count > 0).reverse();
   const facturado = efectivo + tarjeta + pendiente;
-  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
+  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
   const tablaDias = dias.length === 0
     ? `<div class="historial-empty">Sin pedidos en ese rango.</div>`
     : dias.map(d => `<div class="historial-item">
