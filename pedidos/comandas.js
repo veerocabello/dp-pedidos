@@ -1811,9 +1811,12 @@ function renderExtrasBody(item) {
   let html = '';
   if (baseGrasa.length === 2) {
     const esMantequilla = extrasCambios.some(c => c.from === 'Aceite de oliva' && c.to === 'Mantequilla');
+    const esNinguna = extrasQuitados['Aceite de oliva'] === 'quitado';
+    const esAceite = !esMantequilla && !esNinguna;
     html += `<div class="section-label" style="margin-top:0">Base</div><div class="chip-grid">
-      <button class="chip ${esMantequilla ? '' : 'selected'}" onclick="setExtraBase('aceite')">🫒 Aceite de oliva</button>
+      <button class="chip ${esAceite ? 'selected' : ''}" onclick="setExtraBase('aceite')">🫒 Aceite de oliva</button>
       <button class="chip ${esMantequilla ? 'selected' : ''}" onclick="setExtraBase('mantequilla')">🧈 Mantequilla</button>
+      <button class="chip ${esNinguna ? 'quitado' : ''}" onclick="setExtraBase('ninguna')">🚫 Ninguna</button>
     </div>`;
   }
   const salsaAElegir = baseComponents.find(isElegirSalsaComp);
@@ -1997,13 +2000,16 @@ function toggleExtraQuitar(comp) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-// Selector "Aceite de oliva" / "Mantequilla" de Patata Simple — se guarda
-// como un cambio (igual que "Cambiar un ingrediente") para que el ticket
-// diga claramente "🔄 Aceite de oliva → Mantequilla" en vez de un simple
-// "Sin aceite" que la cocina podría confundir con "sin nada".
+// Selector de base de Patata Simple: aceite (por defecto), mantequilla —
+// se guarda como un cambio para que el ticket diga claramente "🔄 Aceite
+// de oliva → Mantequilla" en vez de un simple "Sin aceite" que la cocina
+// podría confundir con "sin nada" — o "ninguna" (de verdad sin nada),
+// que sí se guarda como un quitado normal.
 function setExtraBase(which) {
   extrasCambios = extrasCambios.filter(c => c.from !== 'Aceite de oliva');
+  delete extrasQuitados['Aceite de oliva'];
   if (which === 'mantequilla') extrasCambios.push({ from: 'Aceite de oliva', to: 'Mantequilla' });
+  else if (which === 'ninguna') extrasQuitados['Aceite de oliva'] = 'quitado';
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
