@@ -1859,18 +1859,38 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
   // canjeado) se hace en el servidor (fidelizacion.php): el navegador ya
   // no lee ni escribe fidelizacion/<telefono> directamente, para que nadie
   // pueda regalarse sellos/premios abriendo las devtools.
+  const payloadSello = {
+    action: 'registrarSello',
+    telefono: phoneClean,
+    orderNum: (ticketData && ticketData.orderNum) || '',
+    tienePatata: true,
+    consumioPremio: !!consumioPremio,
+    nombre: (ticketData && ticketData.name) || ''
+  };
+  // Detectado en producción: pedidos reales con patata y más de 5€ que se
+  // quedaban SIN sello, sin ningún aviso en ningún sitio — porque esta
+  // petición sale del navegador del CLIENTE justo después de mostrar
+  // "pedido confirmado", cuando lo normal es que cierre la pestaña o
+  // cambie de app enseguida (sobre todo en el móvil). Si el navegador
+  // corta la petición a media, ni siquiera llega a fidelizacion.php, así
+  // que no hay nada que registrar como fallo en Alertas — el sello se
+  // pierde en un punto ciego total. navigator.sendBeacon() está pensado
+  // justo para esto: el navegador garantiza el envío aunque la página se
+  // esté cerrando en ese mismo instante, a cambio de no poder leer la
+  // respuesta — por eso se manda ADEMÁS del fetch normal (que sigue
+  // haciendo falta para el caso normal), no en su lugar. Registrar el
+  // mismo pedido dos veces no duplica el sello: fidelizacion.php ya es
+  // idempotente por (orderNum, fecha).
+  if (navigator.sendBeacon) {
+    try {
+      navigator.sendBeacon('fidelizacion.php', new Blob([JSON.stringify(payloadSello)], { type: 'application/json' }));
+    } catch (e) {}
+  }
   try {
     const res = await _fetchConTimeout('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'registrarSello',
-        telefono: phoneClean,
-        orderNum: (ticketData && ticketData.orderNum) || '',
-        tienePatata: true,
-        consumioPremio: !!consumioPremio,
-        nombre: (ticketData && ticketData.name) || ''
-      })
+      body: JSON.stringify(payloadSello)
     }, 10000);
     // Si el servidor rechaza el sello (success:false, no "skipped"), ya lo
     // registra fidelizacion.php por su cuenta con la cuenta de servicio
@@ -1879,7 +1899,7 @@ async function _procesarSelloFidelizacion(phoneClean, ticketData, consumioPremio
     // tiene permiso para escribir en config/activityLog) y solo duplicaba
     // el aviso cuando quien probaba era la propia admin con el panel
     // abierto en el mismo navegador.
-  } catch (e) { /* no crítico: si falla, el cliente simplemente no suma sello esta vez */ }
+  } catch (e) { /* no crítico: si falla, queda el intento por sendBeacon de arriba */ }
   // Nota: el aviso de "completaste tus 10 pedidos" ya se mostró ANTES de
   // confirmar (ver _comprobarPremioFidelizacion / _mostrarAvisoProximoSelloFidelizacion),
   // así que aquí no se repite para no duplicar el mensaje.
