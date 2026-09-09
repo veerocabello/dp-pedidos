@@ -599,6 +599,23 @@ function comboCorePrice(basePrice, sauces, extraSauces, ingredients, extraIngred
   const extraIngPrice = (extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   return basePrice + extraSaucePrice + extraIngPrice;
 }
+// Si una Al Gusto se carga tanto que llega a los 9 de Bomba, ya no se
+// llama (ni se cobra) como Al Gusto — se convierte sin más en una Bomba,
+// tanto en el carrito como en el ticket (ver comboCorePrice, que ya le
+// aplica el precio). Bomba nunca "baja" a Al Gusto aunque lleve pocos
+// ingredientes: solo hay conversión automática hacia arriba.
+function custCartIsUpgraded(c) {
+  if (c.menuId != 15) return false;
+  const totalPicks = c.sauces.length + (c.extraSauces || []).length + c.ingredients.length + (c.extraIngredients || []).length;
+  return totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal;
+}
+function getCustCartItemLabel(c) {
+  const item = MENU.find(m => m.id == c.menuId);
+  if (!item) return 'Producto desconocido';
+  if (!custCartIsUpgraded(c)) return item.name;
+  const bomba = MENU.find(m => m.id == 16);
+  return bomba ? bomba.name : item.name;
+}
 
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
@@ -609,18 +626,31 @@ function comboCorePrice(basePrice, sauces, extraSauces, ingredients, extraIngred
 // lugar, en vez de usar el selector de "Cambiar un ingrediente") — se
 // aplica a los primeros picks por orden de selección, tope 2 en total
 // entre esto y los cambios explícitos (ver confirmExtras/updateExtrasTotalPrice).
+// A qué precio plano se ha subido automáticamente (si a alguno) según
+// cuántos ingredientes/salsas extra lleve — compartido por el precio, el
+// aviso del modal y el nombre con el que se muestra el producto (ver
+// getExtrasItemLabel): al llegar al umbral, deja de ser "esta patata con
+// un montón de extras" y pasa a ser, sin más, una Al Gusto o una Bomba.
+function extrasAutoUpgradeType(ingredientesExtra, salsasExtra) {
+  const ingCount = (ingredientesExtra || []).length;
+  const salsaCount = (salsasExtra || []).length;
+  if (ingCount + salsaCount >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'bomba';
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'algusto';
+  return null;
+}
 function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickOrder, freePasses) {
   const ingCount = (ingredientesExtra || []).length;
   const salsaCount = (salsasExtra || []).length;
   const totalPicks = ingCount + salsaCount;
   const order = pickOrder && pickOrder.length === totalPicks ? pickOrder : null;
+  const upgrade = extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
 
-  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) {
+  if (upgrade === 'bomba') {
     let core = CUSTOMIZER_CONFIG.bomba.price;
     if (order) order.slice(CUSTOMIZER_CONFIG.bomba.maxTotal).forEach(p => { core += priceOfPick(p); });
     return core;
   }
-  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) {
+  if (upgrade === 'algusto') {
     let core = CUSTOMIZER_CONFIG.algusto.price;
     if (order) {
       order.filter(p => p.type === 'salsa').slice(CUSTOMIZER_CONFIG.algusto.maxSauces).forEach(p => { core += priceOfPick(p); });
@@ -639,11 +669,9 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   return core;
 }
 function extrasAutoUpgradeLabel(ingredientesExtra, salsasExtra) {
-  const ingCount = (ingredientesExtra || []).length;
-  const salsaCount = (salsasExtra || []).length;
-  const totalPicks = ingCount + salsaCount;
-  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'Precio Bomba aplicado (lo que se pase de 9 se cobra aparte)';
-  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'Precio Al Gusto aplicado (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
+  const upgrade = extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
+  if (upgrade === 'bomba') return 'Se convierte en Patata Bomba (lo que se pase de 9 se cobra aparte)';
+  if (upgrade === 'algusto') return 'Se convierte en Patata Al Gusto (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
   return '';
 }
 // Tope 2 cambios "gratis" en total (quitar uno + añadir otro cuenta como
@@ -666,10 +694,7 @@ function getExtrasItemPrice(e) {
   return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
-  const ingCount = (ingredientesExtra || []).length;
-  const salsaCount = (salsasExtra || []).length;
-  return (ingCount + salsaCount) >= CUSTOMIZER_CONFIG.bomba.maxTotal
-    || (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients);
+  return !!extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
 }
 // Precio "base" para la línea principal del ticket (sin queso/gratinado,
 // que se listan aparte). Si se aplicó el precio plano Al Gusto/Bomba, es
@@ -688,6 +713,11 @@ function getExtrasItemLabel(e) {
   const item = MENU.find(m => m.id == e.menuId);
   if (!item) return 'Producto desconocido';
   if (e.cheddarCarne) return item.name + ' (' + (e.cheddarCarne === 'kebab' ? 'Carne Kebab' : 'Carne Picada') + ')';
+  // Al llegar a los ingredientes/salsas de Al Gusto o Bomba ya no se cobra
+  // como esta patata con un montón de extras — se cobra (y se llama) como
+  // esa Al Gusto/Bomba, tanto en el carrito como en el ticket.
+  const upgrade = extrasAutoUpgradeType(e.ingredientesExtra, e.salsasExtra);
+  if (upgrade) return MENU.find(m => m.id == (upgrade === 'bomba' ? 16 : 15)).name;
   return item.name;
 }
 function getExtrasItemDetails(e) {
@@ -761,7 +791,7 @@ function getLineDiscountContextLabel(key) {
     const item = MENU.find(m => m.id == key.slice('simple:'.length));
     return item ? item.name : null;
   }
-  if (custCart[key]) { const item = MENU.find(m => m.id == custCart[key].menuId); return item ? item.name : null; }
+  if (custCart[key]) return getCustCartItemLabel(custCart[key]);
   if (extrasCart[key]) return getExtrasItemLabel(extrasCart[key]);
   if (manualCart[key]) return manualCart[key].name;
   return null;
@@ -1098,7 +1128,7 @@ function renderCart() {
       ...(c.extraIngredients || []).map(n => n + ' (extra +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€)'),
     ].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
-      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(item.name)}</button>
+      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(getCustCartItemLabel(c))}</button>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
         <span>${c.qty}</span>
@@ -2403,8 +2433,9 @@ function buildOrderObject(preview) {
     // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
     // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
     // extra van cada uno en su línea con su propio precio.
+    const displayBasePrice = custCartIsUpgraded(c) ? CUSTOMIZER_CONFIG.bomba.price : item.price;
     items.push(applyLineDiscountToTicketItem(
-      { name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat), _menuId: item.id },
+      { name: getCustCartItemLabel(c), qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: displayBasePrice * c.qty, extras, _rank: categoryRank(item.cat), _menuId: item.id },
       c.key));
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
