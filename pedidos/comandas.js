@@ -574,18 +574,23 @@ function editSimpleItem(id) {
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
 function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : priceOfIngExtra(p.name); }
 
-// Mismo umbral de Bomba (9 en total, mezclando salsas e ingredientes —
-// "Sin salsa" cuenta como una salsa más) aplicado al customizer de Al
-// Gusto/Bomba (custCart): si entre lo incluido en el precio plano y lo
-// que se ha ido añadiendo como extra se llega a 9, se cobra el precio
-// plano de Bomba en vez de seguir sumando cada extra por separado — lo
-// que se pase de 9 se sigue cobrando aparte. Se usa tanto para el precio
-// en vivo del modal como para la línea del carrito y el ticket, así los
-// tres sitios cuadran siempre entre sí.
-function comboCorePrice(basePrice, sauces, extraSauces, ingredients, extraIngredients) {
-  const allSauces = [...sauces, ...(extraSauces || [])];
-  const allIngredients = [...ingredients, ...(extraIngredients || [])];
-  const totalPicks = allSauces.length + allIngredients.length;
+// Precio del customizer de Al Gusto/Bomba (custCart), con los mismos tres
+// escalones que ya usa la carta de extras de un producto normal
+// (computeExtrasCorePrice): mientras no se llegue a 1 salsa + 6
+// ingredientes NO se aplica ninguna oferta — se cobra como una Simple
+// (su base) más cada salsa/ingrediente a su propio precio, nada incluido
+// gratis. Al llegar a 1 salsa + 6 ingredientes se aplica el precio plano
+// de Al Gusto (lo que sobre de ahí se cobra aparte); al llegar a 9 en
+// total (salsas + ingredientes, "Sin salsa" cuenta como una salsa más)
+// se aplica el de Bomba. Se usa tanto para el precio en vivo del modal
+// como para la línea del carrito y el ticket, así los tres cuadran
+// siempre entre sí y con getCustCartItemLabel (que nombra el producto
+// según el mismo escalón alcanzado).
+function comboCorePrice(allSauces, allIngredients) {
+  const salsaCount = allSauces.length;
+  const ingCount = allIngredients.length;
+  const totalPicks = salsaCount + ingCount;
+
   if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) {
     let core = CUSTOMIZER_CONFIG.bomba.price;
     const overflow = totalPicks - CUSTOMIZER_CONFIG.bomba.maxTotal;
@@ -595,26 +600,68 @@ function comboCorePrice(basePrice, sauces, extraSauces, ingredients, extraIngred
     }
     return core;
   }
-  const extraSaucePrice = (extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-  const extraIngPrice = (extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-  return basePrice + extraSaucePrice + extraIngPrice;
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) {
+    let core = CUSTOMIZER_CONFIG.algusto.price;
+    const overflowSauces = salsaCount - CUSTOMIZER_CONFIG.algusto.maxSauces;
+    const overflowIng = ingCount - CUSTOMIZER_CONFIG.algusto.maxIngredients;
+    if (overflowSauces > 0) allSauces.slice(salsaCount - overflowSauces).forEach(name => { core += priceOfSalsaExtra(name); });
+    if (overflowIng > 0) allIngredients.slice(ingCount - overflowIng).forEach(name => { core += priceOfPick({ type: 'ing', name }); });
+    return core;
+  }
+  const simpleBase = (MENU.find(m => m.id == 1) || {}).price || 0;
+  const saucePrice = allSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+  const ingPrice = allIngredients.reduce((s, name) => s + priceOfPick({ type: 'ing', name }), 0);
+  return simpleBase + saucePrice + ingPrice;
 }
-// Si una Al Gusto se carga tanto que llega a los 9 de Bomba, ya no se
-// llama (ni se cobra) como Al Gusto — se convierte sin más en una Bomba,
-// tanto en el carrito como en el ticket (ver comboCorePrice, que ya le
-// aplica el precio). Bomba nunca "baja" a Al Gusto aunque lleve pocos
-// ingredientes: solo hay conversión automática hacia arriba.
-function custCartIsUpgraded(c) {
-  if (c.menuId != 15) return false;
-  const totalPicks = c.sauces.length + (c.extraSauces || []).length + c.ingredients.length + (c.extraIngredients || []).length;
-  return totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal;
+// A qué escalón de precio corresponde una Al Gusto/Bomba (custCart) según
+// cuántas salsas/ingredientes lleve en total, sin importar con qué botón
+// se empezó a construir — 'ninguno' (no llega ni a Al Gusto: se cobra
+// como una Simple, ver comboCorePrice), 'algusto' o 'bomba'.
+function custCartTier(c) {
+  const allSauces = [...c.sauces, ...(c.extraSauces || [])];
+  const allIngredients = [...c.ingredients, ...(c.extraIngredients || [])];
+  const salsaCount = allSauces.length;
+  const ingCount = allIngredients.length;
+  if (salsaCount + ingCount >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'bomba';
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'algusto';
+  return 'ninguno';
 }
+// El nombre con el que se muestra y se imprime siempre sigue al escalón
+// alcanzado, no al botón con el que se empezó a construir — así nunca se
+// ve, por ejemplo, "Patata Bomba" cobrada a precio de Al Gusto (o de
+// Simple) solo porque se empezó a construir desde ahí.
 function getCustCartItemLabel(c) {
-  const item = MENU.find(m => m.id == c.menuId);
-  if (!item) return 'Producto desconocido';
-  if (!custCartIsUpgraded(c)) return item.name;
-  const bomba = MENU.find(m => m.id == 16);
-  return bomba ? bomba.name : item.name;
+  const tier = custCartTier(c);
+  const id = tier === 'bomba' ? 16 : tier === 'algusto' ? 15 : 1;
+  const item = MENU.find(m => m.id == id);
+  return item ? item.name : 'Producto desconocido';
+}
+// Qué salsas/ingredientes de una Al Gusto/Bomba van incluidos en el
+// precio plano del escalón alcanzado (sin precio propio en el ticket) y
+// cuáles se cobran aparte — mismo criterio y mismo orden (salsas
+// primero, ingredientes después) que usa comboCorePrice, así el desglose
+// del ticket siempre cuadra con el total. Si no se llega a ningún
+// escalón (tier 'ninguno'), no hay nada incluido: cada salsa/ingrediente
+// se cobra a su propio precio, igual que en una Simple con extras.
+function custCartPricedLines(c) {
+  const tier = custCartTier(c);
+  const allSauces = [...c.sauces, ...(c.extraSauces || [])];
+  const allIngredients = quesoLastKeepOrder([...c.ingredients, ...(c.extraIngredients || [])]);
+  const priceOfLine = (type, name) => (name === SIN_SALSA ? 0 : type === 'salsa' ? priceOfSalsaExtra(name) : priceOfPick({ type: 'ing', name }));
+  const items = [
+    ...allSauces.map(name => ({ type: 'salsa', name })),
+    ...allIngredients.map(name => ({ type: 'ing', name })),
+  ];
+  let bombaFreeLeft = CUSTOMIZER_CONFIG.bomba.maxTotal;
+  let sauceIdx = 0, ingIdx = 0;
+  return items.map(p => {
+    let included;
+    if (tier === 'ninguno') included = false;
+    else if (tier === 'bomba') { included = bombaFreeLeft > 0; if (included) bombaFreeLeft--; }
+    else { included = p.type === 'salsa' ? sauceIdx < CUSTOMIZER_CONFIG.algusto.maxSauces : ingIdx < CUSTOMIZER_CONFIG.algusto.maxIngredients; }
+    if (p.type === 'salsa') sauceIdx++; else ingIdx++;
+    return { name: p.name, price: (included || p.name === SIN_SALSA) ? null : priceOfLine(p.type, p.name) };
+  });
 }
 
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
@@ -1118,14 +1165,14 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = comboCorePrice(item.price, c.sauces, c.extraSauces, c.ingredients, c.extraIngredients) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
+    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
-      ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'),
-      ...(c.extraIngredients || []).map(n => n + ' (extra +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€)'),
+    const details = [
+      ...custCartPricedLines(c).map(p => p.price == null ? p.name : p.name + ' (+' + fmt(p.price) + '€)'),
+      c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
     ].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
       <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(getCustCartItemLabel(c))}</button>
@@ -1619,87 +1666,10 @@ function updateCustExtraUI(which, on) {
   if (el) el.classList.toggle('on', on);
 }
 function updateCustTotalPrice() {
-  const cfg = CUSTOMIZER_CONFIG[custType];
-  let p = comboCorePrice(cfg.price, custSelSauces, custSelExtraSauces, custSelIngredients, custSelExtraIngredients);
+  let p = comboCorePrice([...custSelSauces, ...custSelExtraSauces], [...custSelIngredients, ...custSelExtraIngredients]);
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
-  renderCustConvertBanner();
-}
-// Divide una lista con posibles nombres repetidos (así es como el
-// customizer guarda un ingrediente doble/triple: el mismo nombre puesto
-// varias veces) en nombres únicos + una lista de "dobles" (una copia por
-// cada unidad de más) — el formato que espera un registro de extrasCart.
-function splitCustDuplicates(list) {
-  const counts = {};
-  list.forEach(n => { counts[n] = (counts[n] || 0) + 1; });
-  const unique = Object.keys(counts).sort();
-  const dobles = [];
-  unique.forEach(n => { for (let i = 1; i < counts[n]; i++) dobles.push(n); });
-  return { unique, dobles };
-}
-// Si con los ingredientes/salsas elegidos en Al Gusto sale más barato
-// cobrarla como Patata Simple + esos mismos extras (precio plano de Al
-// Gusto vs. base de Simple + cada extra a su precio), se puede ofrecer
-// la conversión — solo aplica a Al Gusto (Bomba parte de un precio ya
-// pensado para llenarse de ingredientes, no tiene sentido ahí).
-function custSimpleEquivalent() {
-  if (custType !== 'algusto') return null;
-  // Sin nada elegido todavía no hay nada que comparar (y el pedido ni
-  // siquiera se podría confirmar así) — evita el "sale más barato como
-  // Simple: 3,00€" sin sentido al abrir el customizer vacío.
-  if (custSelTotal() === 0 && custSelExtraSauces.length === 0 && custSelExtraIngredients.length === 0) return null;
-  const simpleItem = MENU.find(m => m.id == 1);
-  if (!simpleItem) return null;
-  const cfg = CUSTOMIZER_CONFIG[custType];
-  const algustoCore = comboCorePrice(cfg.price, custSelSauces, custSelExtraSauces, custSelIngredients, custSelExtraIngredients);
-  const allIngredients = [...custSelIngredients, ...custSelExtraIngredients];
-  const allSauces = [...custSelSauces, ...custSelExtraSauces];
-  const simpleCore = comboCorePrice(simpleItem.price, [], allSauces, [], allIngredients);
-  if (simpleCore >= algustoCore) return null;
-  return { simpleItem, simpleCore, savings: algustoCore - simpleCore, allIngredients, allSauces };
-}
-function renderCustConvertBanner() {
-  const banner = document.getElementById('cust-convert-banner');
-  if (!banner) return;
-  const info = custSimpleEquivalent();
-  if (!info) { banner.style.display = 'none'; return; }
-  const qg = (custExtraQueso ? 1 : 0) + (custExtraGratinado ? 0.5 : 0);
-  banner.style.display = 'flex';
-  document.getElementById('cust-convert-msg').innerHTML =
-    'Con estos ingredientes sale más barato como <b>Patata Simple: ' + fmt(info.simpleCore + qg) + ' €</b> (ahorras ' + fmt(info.savings) + ').';
-}
-// Cierra el customizer añadiendo lo elegido como una Patata Simple (3,00 €
-// de base) con esos mismos ingredientes/salsa como extras, en vez de al
-// precio plano de Al Gusto — reutiliza extrasCart, así el ticket, la
-// edición posterior (incluido quitar el aceite de la base) y el descuento
-// de stock funcionan exactamente igual que en cualquier Simple normal.
-function confirmCustomizerAsSimple() {
-  const info = custSimpleEquivalent();
-  if (!info) return;
-  const { simpleItem, allIngredients, allSauces } = info;
-  const ingSplit = splitCustDuplicates(allIngredients);
-  const salsaSplit = splitCustDuplicates(allSauces);
-  const dobles = [...ingSplit.dobles, ...salsaSplit.dobles].sort();
-  const pickOrder = [
-    ...salsaSplit.unique.map(name => ({ type: 'salsa', name })),
-    ...ingSplit.unique.map(name => ({ type: 'ing', name })),
-  ];
-  const sig = (custExtraQueso ? 'Q' : '') + (custExtraGratinado ? 'G' : '')
-    + (ingSplit.unique.length ? 'I' + ingSplit.unique.join('|') : '')
-    + (salsaSplit.unique.length ? 'S' + salsaSplit.unique.join('|') : '')
-    + (dobles.length ? 'D' + dobles.join('|') : '') || 'BASE';
-  const key = 'ext:' + simpleItem.id + ':' + sig;
-  let qtyToSet = 1;
-  if (custEditKey && custCart[custEditKey]) {
-    qtyToSet = custCart[custEditKey].qty;
-    delete custCart[custEditKey];
-  }
-  if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: simpleItem.id, qty: qtyToSet, queso: custExtraQueso, gratinado: custExtraGratinado, ingredientesExtra: ingSplit.unique, salsasExtra: salsaSplit.unique, quitados: [], dobles, cambios: [], pickOrder, basePrice: simpleItem.price, key };
-  closeCustomizer();
-  renderCart();
-  toast('✅ Convertida a Patata Simple');
 }
 function confirmCustomizer() {
   const cfg = CUSTOMIZER_CONFIG[custType];
@@ -2417,23 +2387,21 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = comboCorePrice(item.price, c.sauces, c.extraSauces, c.ingredients, c.extraIngredients) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
+    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
     // En el ticket el orden es siempre fijo, sin importar en qué momento
-    // se eligió cada cosa: primero todas las salsas (incluidas y extra),
-    // luego los ingredientes (incluidos y extra), y el queso/gratinado
-    // siempre al final.
-    const extras = [
-      ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: s === SIN_SALSA ? null : priceOfSalsaExtra(s), underline: true })),
-      ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
-      ...quesoLastKeepOrder(c.extraIngredients || []).map(n => ({ name: n, price: priceOfPick({ type: 'ing', name: n }), underline: true })),
-    ];
+    // se eligió cada cosa: primero todas las salsas, luego los
+    // ingredientes, y el queso/gratinado siempre al final. Lo que vaya
+    // incluido en el escalón alcanzado sale sin precio propio (ver
+    // custCartPricedLines); si no se llega a ningún escalón, todo se
+    // cobra aparte, igual que en una Simple con extras.
+    const tier = custCartTier(c);
+    const extras = custCartPricedLines(c).map(p => ({ name: p.name, price: p.price, underline: p.price != null }));
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1, underline: true });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5, underline: true });
-    // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
-    // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
-    // extra van cada uno en su línea con su propio precio.
-    const displayBasePrice = custCartIsUpgraded(c) ? CUSTOMIZER_CONFIG.bomba.price : item.price;
+    // La línea principal muestra solo el precio base del escalón
+    // alcanzado (lo incluido ya va ahí); queso/gratinado/lo que se pase
+    // del escalón van cada uno en su línea con su propio precio.
+    const displayBasePrice = tier === 'bomba' ? CUSTOMIZER_CONFIG.bomba.price : tier === 'algusto' ? CUSTOMIZER_CONFIG.algusto.price : (MENU.find(m => m.id == 1) || {}).price || 0;
     items.push(applyLineDiscountToTicketItem(
       { name: getCustCartItemLabel(c), qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: displayBasePrice * c.qty, extras, _rank: categoryRank(item.cat), _menuId: item.id },
       c.key));
