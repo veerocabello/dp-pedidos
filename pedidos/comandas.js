@@ -2882,7 +2882,11 @@ function viewHistorialOrder(index) {
    método de cada comanda desde el panel antes de imprimir. Con selector
    de fecha, para poder cuadrar caja de un día anterior si hizo falta. ── */
 function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || todayISO()); }
-function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? 0 : v; }
+// El fondo de caja con el que se abre siempre son 200€ — se deja como
+// valor por defecto en vez de tener que escribirlo cada día; si algún
+// día se abre con otro importe, se puede cambiar a mano igual que antes.
+const CAJA_FONDO_DEFECTO = 200;
+function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? CAJA_FONDO_DEFECTO : v; }
 function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
 function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
