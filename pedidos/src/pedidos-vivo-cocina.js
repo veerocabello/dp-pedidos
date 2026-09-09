@@ -930,6 +930,20 @@ function checkForNewOrders(statsOverride) {
     console.log('[DPF] NEW ORDER — calling showNewOrderNotification, diff=' + diff);
     // guardar-pedido.php inserta los pedidos nuevos al principio del array (unshift)
     showNewOrderNotification((stats.orders || []).slice(0, diff).map(o => o.num));
+  } else {
+    // Cancelar un pedido quita también de stats.count (ver
+    // _borrarPedidoDeFirebase en antifraude.js), así que el recuento puede
+    // BAJAR de un sondeo a otro, no solo subir. Sin esto, _lastKnownOrderCount
+    // se quedaba "atascado" en el máximo visto hasta ahora: tras cualquier
+    // cancelación, el siguiente pedido nuevo de verdad podía traer un count
+    // igual o menor que ese máximo (p.ej. 5 pedidos, se cancela 1 → count=4,
+    // llega uno nuevo → count=5, pero 5 > 5 es falso) y la alarma/aviso no
+    // saltaba — justo en el único momento en que este sondeo de respaldo
+    // debe funcionar (Firebase caído), que es cuando más falta hace no
+    // perderse un pedido. El listener en tiempo real (nucleo-compartido.js,
+    // _procesarSnapshotStatsPedidos) ya se sincroniza así siempre; este
+    // sondeo de respaldo se queda igual.
+    _lastKnownOrderCount = count;
   }
 }
 
