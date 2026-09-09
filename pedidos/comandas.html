@@ -50,7 +50,8 @@
     <div class="cart-header">
       <h2>Comanda</h2>
       <div style="display:flex;gap:12px;align-items:center">
-        <button class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal()">➕ Añadir</button>
+        <button class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal(null,1)">➕ Añadir</button>
+        <button class="btn-text" style="color:var(--error)" onclick="openManualItemModal(null,-1)">➖ Restar</button>
         <button class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
         <button class="btn-text" onclick="clearOrder()">Vaciar</button>
       </div>
@@ -83,7 +84,10 @@
   <div class="modal-box" style="max-width:660px">
     <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
-    <button type="button" class="btn-text" style="color:var(--amber-dark);margin-bottom:8px" onclick="openManualItemModal()">➕ Añadir gasto/cobro suelto</button>
+    <div style="display:flex;gap:12px;margin-bottom:8px">
+      <button type="button" class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal(null,1)">➕ Añadir gasto/cobro suelto</button>
+      <button type="button" class="btn-text" style="color:var(--error)" onclick="openManualItemModal(null,-1)">➖ Restar del ticket</button>
+    </div>
     <div class="paid-toggle-row" id="paid-toggle-row">
       <button type="button" class="paid-toggle-btn paid-toggle-yes active" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ Pagado</button>
       <button type="button" class="paid-toggle-btn paid-toggle-no" id="paid-btn-no" onclick="setOrderPaid(false)">❌ No pagado</button>
@@ -579,8 +583,8 @@
 <div id="manual-item-modal" class="modal-overlay" onclick="if(event.target===this)closeManualItemModal()">
   <div class="modal-box" style="max-width:380px">
     <button class="modal-close" onclick="closeManualItemModal()">&#x2715;</button>
-    <div class="modal-title">➕ Añadir cobro suelto</div>
-    <div class="modal-subtitle">Para cobrar algo que no está en la carta.</div>
+    <div class="modal-title" id="manual-item-title">➕ Añadir cobro suelto</div>
+    <div class="modal-subtitle" id="manual-item-subtitle">Para cobrar algo que no está en la carta.</div>
     <div class="form-group">
       <label>Descripción</label>
       <input id="manual-item-name" type="text" maxlength="40" placeholder="Ej. Servilletas" readonly onclick="openNameKeyboard('manual-item-name','Ej. Servilletas')">
@@ -591,7 +595,7 @@
     </div>
     <div class="modal-error" id="manual-item-error"></div>
     <div class="modal-footer">
-      <button class="modal-confirm-btn" onclick="confirmManualItem()">→ Añadir a la comanda</button>
+      <button class="modal-confirm-btn" id="manual-item-confirm-btn" onclick="confirmManualItem()">→ Añadir a la comanda</button>
     </div>
   </div>
 </div>

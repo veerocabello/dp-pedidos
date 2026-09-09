@@ -32,13 +32,13 @@ const MENU = [
   { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 9.40, nuevo: true },
 
   { id: 17, cat: "Boniato", name: "Boniato Fries", desc: "Tarrina de boniato fries", price: 4.50 },
-  { id: 18, cat: "Boniato", name: "Boniato Lotus", desc: "Salsa Lotus + bacon + queso mozzarella + galletas Lotus", price: 5.50 },
-  { id: 19, cat: "Boniato", name: "Boniato Bacon", desc: "Salsa a elegir + bacon + queso mozzarella", price: 5.50 },
-  { id: 20, cat: "Boniato", name: "Boniato G.O.A.T.", desc: "Salsa miel mostaza + cebolla crujiente + queso de cabra", price: 5.50 },
-  { id: 21, cat: "Boniato", name: "Boniato Pistacchio", desc: "Crema de pistacho + queso mozzarella + pistacho crujiente", price: 5.50, nuevo: true },
-  { id: 51, cat: "Boniato", name: "Boniato Pulled Pork", desc: "Salsa cheddar + salsa yogur + pulled pork BBQ + cebolla crujiente + caramelo de bacon", price: 5.50, nuevo: true },
+  { id: 18, cat: "Boniato", name: "Boniato Lotus", desc: "Salsa Lotus + bacon + queso mozzarella + galletas Lotus", price: 4.50 },
+  { id: 19, cat: "Boniato", name: "Boniato Bacon", desc: "Salsa a elegir + bacon + queso mozzarella", price: 4.50 },
+  { id: 20, cat: "Boniato", name: "Boniato G.O.A.T.", desc: "Salsa miel mostaza + cebolla crujiente + queso de cabra", price: 4.50 },
+  { id: 21, cat: "Boniato", name: "Boniato Pistacchio", desc: "Crema de pistacho + queso mozzarella + pistacho crujiente", price: 4.50, nuevo: true },
+  { id: 51, cat: "Boniato", name: "Boniato Pulled Pork", desc: "Salsa cheddar + salsa yogur + pulled pork BBQ + cebolla crujiente + caramelo de bacon", price: 4.50, nuevo: true },
 
-  { id: 22, cat: "Paninis", name: "Panini Jamón York y Queso", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
+  { id: 22, cat: "Paninis", name: "Panini York y Queso", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 23, cat: "Paninis", name: "Panini Carbonara", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 24, cat: "Paninis", name: "Panini Barbacoa", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 25, cat: "Paninis", name: "Panini Kebab", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
@@ -46,7 +46,7 @@ const MENU = [
   // "mitadDe" liga cada medio panini con su panini entero para el stock:
   // dos mitades vendidas gastan lo mismo que un panini entero (ver
   // paniniUnidadesVendidasHoy/paniniUnidadesEnCarrito más abajo).
-  { id: 77, cat: "Paninis", name: "Medio Panini Jamón York y Queso", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 22 },
+  { id: 77, cat: "Paninis", name: "Medio Panini York y Queso", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 22 },
   { id: 78, cat: "Paninis", name: "Medio Panini Carbonara", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 23 },
   { id: 79, cat: "Paninis", name: "Medio Panini Barbacoa", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 24 },
   { id: 80, cat: "Paninis", name: "Medio Panini Kebab", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 25 },
@@ -277,7 +277,7 @@ let cart = {};        // id -> qty (productos simples, sin personalizar)
 let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
 let manualCart = {};   // key -> {key, name, price, qty} — cobros sueltos que no están en la carta
-let manualIdSeq = 0, manualItemEditKey = null;
+let manualIdSeq = 0, manualItemEditKey = null, manualItemSign = 1;
 // Por defecto toda comanda arranca como pagada (lo normal), pero en
 // Cobrar se puede marcar "NO PAGADO" a mano para los casos sueltos que sí
 // hace falta llevar aparte (fiado, pedido por teléfono que se cobra al
@@ -509,12 +509,23 @@ function changeExtrasQty(key, delta) {
    reparación, una venta puntual...) sin tener que darlo de alta como
    producto — nombre y precio libres, se añade como una línea más de la
    comanda, con su propio descuento/quitar igual que cualquier otra. ── */
-function openManualItemModal(editKey) {
+// sign: 1 = suma al ticket (cobro suelto), -1 = resta (una incidencia,
+// una devolución parcial... sin tener que montarlo como % o importe fijo
+// de Descuento). Al editar uno ya puesto, el signo se coge del que ya
+// tenía guardado, no del botón con el que se reabra.
+function openManualItemModal(editKey, sign) {
   manualItemEditKey = editKey || null;
   const existing = manualItemEditKey ? manualCart[manualItemEditKey] : null;
+  manualItemSign = existing ? (existing.price < 0 ? -1 : 1) : (sign || 1);
   document.getElementById('manual-item-name').value = existing ? existing.name : '';
-  document.getElementById('manual-item-price').value = existing ? fmt(existing.price) : '';
+  document.getElementById('manual-item-price').value = existing ? fmt(Math.abs(existing.price)) : '';
   document.getElementById('manual-item-error').style.display = 'none';
+  const esResta = manualItemSign < 0;
+  document.getElementById('manual-item-title').textContent = esResta ? '➖ Restar del ticket' : '➕ Añadir cobro suelto';
+  document.getElementById('manual-item-subtitle').textContent = esResta
+    ? 'Para descontar algo del total sin usar el descuento en % o importe fijo.'
+    : 'Para cobrar algo que no está en la carta.';
+  document.getElementById('manual-item-confirm-btn').textContent = esResta ? '→ Restar de la comanda' : '→ Añadir a la comanda';
   document.getElementById('manual-item-modal').classList.add('open');
 }
 function closeManualItemModal() {
@@ -524,10 +535,11 @@ function closeManualItemModal() {
 function editManualItem(key) { openManualItemModal(key); }
 function confirmManualItem() {
   const name = document.getElementById('manual-item-name').value.trim();
-  const price = parseCashNum(document.getElementById('manual-item-price').value);
+  const amount = parseCashNum(document.getElementById('manual-item-price').value);
   const errEl = document.getElementById('manual-item-error');
   if (!name) { errEl.textContent = 'Escribe una descripción'; errEl.style.display = 'block'; return; }
-  if (!price || price <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
+  if (!amount || amount <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
+  const price = amount * manualItemSign;
   if (manualItemEditKey && manualCart[manualItemEditKey]) {
     Object.assign(manualCart[manualItemEditKey], { name, price });
   } else {
@@ -537,7 +549,7 @@ function confirmManualItem() {
   }
   closeManualItemModal();
   renderCart();
-  toast('✅ Añadido a la comanda');
+  toast(manualItemSign < 0 ? '✅ Restado de la comanda' : '✅ Añadido a la comanda');
 }
 function removeManualItem(key) { delete manualCart[key]; clearLineDiscount(key); renderCart(); }
 function changeManualQty(key, delta) {
@@ -4433,13 +4445,10 @@ function closeStockModal() { document.getElementById('stock-modal').classList.re
 // comanda (una merma, un regalo, una que se ha estropeado...) sumando 1
 // a "usado"; el + la deshace. Solo lista lo que ya tiene unidades de hoy
 // puestas — si no se ha configurado nada en 📦 Stock, no sale nada aquí.
-// El nombre completo (p.ej. "Panini Jamón York y Queso") no cabe en el
-// badge — se le quita el prefijo de categoría, que ya da el icono.
+// El nombre completo (p.ej. "Panini York y Queso") no cabe en el badge —
+// se le quita el prefijo de categoría, que ya da el icono.
 function tallyShortName(label, prefix) {
-  // "Jamón" también se quita del nombre corto (p.ej. "Panini Jamón York y
-  // Queso" -> "York y Queso") — es redundante, "york" ya deja claro que
-  // es jamón.
-  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '').replace(/^Jamón\s+/i, '');
+  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '');
   return n || label;
 }
 function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
@@ -4472,10 +4481,15 @@ function renderSidebarStockTally() {
   });
   el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div><div class="tally-badges">${html}</div>` : '';
 }
+// El badge de la barra lateral es siempre de un panini ENTERO (los medios
+// no llevan badge propio, ver renderSidebarStockTally), pero el cupo se
+// guarda en MITADES — tachar uno entero tiene que gastar 2, igual que
+// venderlo por caja (ver paniniUnidadesVendidasHoy). Antes solo gastaba 1
+// y había que tocar el botón dos veces para que cuadrase.
 function tacharPaniniStock(id) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.usado = (entry.usado || 0) + 1;
+  entry.usado = (entry.usado || 0) + 2;
   counts[id] = entry;
   savePaniniCounts(counts);
   renderSidebarStockTally(); renderStockModal(); renderMenu();
@@ -4483,7 +4497,7 @@ function tacharPaniniStock(id) {
 function deshacerPaniniStock(id) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.usado = Math.max(0, (entry.usado || 0) - 1);
+  entry.usado = Math.max(0, (entry.usado || 0) - 2);
   counts[id] = entry;
   savePaniniCounts(counts);
   renderSidebarStockTally(); renderStockModal(); renderMenu();
