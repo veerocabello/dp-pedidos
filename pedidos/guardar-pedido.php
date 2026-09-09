@@ -1401,7 +1401,18 @@ function detectarPosibleDuplicado($databaseURL, $accessToken, $fecha, $phone, $t
 // (premios de ruleta/rasca, expiran a las 48h) o ya alcanzó su máximo de
 // usos, se rechaza el pedido entero para que el cliente lo reintente sin
 // ese descuento.
-function discountCodeInvalido($databaseURL, $accessToken, $discountCode) {
+// $phoneClean: teléfono del pedido que intenta USAR el código — solo se
+// comprueba contra $cupon['telefono'] cuando el propio cupón lo lleva
+// (los premios de ruleta/rasca sí, ver crearCodigoPremio en juegos.php;
+// los códigos que crea el admin a mano en el panel no llevan ese campo,
+// así que no les afecta esta comprobación). Sin esto, un código de
+// premio (de un solo uso, sin verificación SMS al jugar) podía ganarse
+// con cualquier teléfono y luego compartirse/regalarse a cualquiera —
+// el límite de "una vez al día por persona" del juego dejaba de servir
+// de verdad en cuanto el código empezaba a circular. Hallazgo pedido
+// expresamente por la dueña ("detectar quien hace trampa en la ruleta
+// o rasca"): se cierra en vez de solo avisar.
+function discountCodeInvalido($databaseURL, $accessToken, $discountCode, $phoneClean = null) {
     $leido = fbGetConEtag($databaseURL, 'discounts/' . $discountCode, $accessToken);
     $cupon = is_array($leido['data']) ? $leido['data'] : null;
     if (!$cupon) return 'Este código de descuento ya no existe.';
@@ -1409,6 +1420,10 @@ function discountCodeInvalido($databaseURL, $accessToken, $discountCode) {
     $maxUsos = is_numeric($cupon['maxUses'] ?? null) ? (int)$cupon['maxUses'] : null;
     if ($maxUsos !== null && $usos >= $maxUsos) return 'Este código de descuento ya se ha agotado.';
     if (is_numeric($cupon['expiraEn'] ?? null) && (float)$cupon['expiraEn'] < (microtime(true) * 1000)) return 'Este código de descuento ha caducado.';
+    $telefonoGanador = trim((string)($cupon['telefono'] ?? ''));
+    if ($telefonoGanador !== '' && $telefonoGanador !== (string)$phoneClean) {
+        return 'Este código de premio solo se puede usar con el teléfono que lo ganó.';
+    }
     return null;
 }
 
@@ -2228,7 +2243,7 @@ try {
 
     // ── 0a. CÓDIGO DE DESCUENTO (SÍ bloquea si ya no es válido) ──
     if ($discountCode) {
-        $errorDescuento = discountCodeInvalido($databaseURL, $accessToken, $discountCode);
+        $errorDescuento = discountCodeInvalido($databaseURL, $accessToken, $discountCode, $phoneClean);
         if ($errorDescuento) {
             // Un rechazo aquí significa que el cliente ya pasó por SMS y
             // pulsó "confirmar" de verdad — a diferencia de un simple fallo
