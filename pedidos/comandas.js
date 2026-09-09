@@ -192,7 +192,7 @@ const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
   bomba: { name: "Patata Bomba 🆕", price: 9.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
-const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
+const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito", "Mantequilla", "Aceite de oliva"];
 // Pseudo-salsa: no es una salsa real (no cuesta nada y no se imprime como
 // tal), pero ocupa el hueco de salsa igual que una de verdad — así una
 // patata sin salsa y con 6 ingredientes cuenta como "1 salsa + 6
