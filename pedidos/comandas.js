@@ -6,6 +6,11 @@
    una impresora térmica conectada por cable.
    ========================================================================== */
 
+// Sube este número cuando se publiquen cambios de comportamiento (precios,
+// ofertas, carta...) — se ve en la cabecera para que el equipo note que hay
+// una versión nueva sin tener que mirar el código.
+const APP_VERSION = '1.1';
+
 /* ── CARTA ── (mismos productos y precios que pedidos/src/carta.js) */
 const MENU = [
   { id: 1, cat: "Patatas", name: "Patata Simple", desc: "Aceite de oliva o mantequilla (una u otra, no las dos), sal y pimienta", price: 3.00, components: ["Aceite de oliva", "Mantequilla", "sal", "pimienta"] },
@@ -4516,6 +4521,8 @@ function chooseUsbDevicePicker(index) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const versionEl = document.getElementById('app-version');
+  if (versionEl) versionEl.textContent = 'v' + APP_VERSION;
   applyFontChoice(loadFontChoice());
   applyPrintPageSize();
   initTabs();
