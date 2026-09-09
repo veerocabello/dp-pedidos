@@ -2112,33 +2112,28 @@ function renderExtrasBody(item) {
   // Boniato solo en Boniato Fries (base vacía) — el resto de recetas de
   // Boniato van ya cerradas.
   if (puedeAnadirExtras && !soloGratinar) {
-    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+    // Mismo estilo de chips que el customizer de Al Gusto/Bomba (en vez
+    // de las filas con casilla de antes) — aquí todo lo que se toca es
+    // siempre "extra" (esta patata no tiene ninguna incluida gratis), así
+    // que el chip marcado se pinta igual que un ingrediente de más ahí.
+    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
     sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
       const precio = priceOfIngExtra(ing);
       const qty = extrasIngredientes[ing] || 0;
       const on = qty > 0, mult = qty >= 2;
-      const label = mult ? ing + ' (x' + qty + ')' : ing;
-      html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
+      const label = mult ? ing + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? ing + ' +' + fmt(precio) + '€' : ing;
+      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
-    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
     const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
-    html += `<label class="option-row ${sinSalsaOn ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${SIN_SALSA}')">
-      <div><div class="option-title" style="font-size:13px">🚫 Sin salsa</div><div class="option-sub">cuenta como salsa para la oferta de Al Gusto/Bomba</div></div>
-      <div class="option-check ${sinSalsaOn ? 'on' : ''}" style="width:20px;height:20px"></div>
-    </label>`;
+    html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
     CUST_SAUCES.forEach(s => {
       const precio = priceOfSalsaExtra(s);
       const qty = extrasSalsas[s] || 0;
       const on = qty > 0, mult = qty >= 2;
-      const label = mult ? s + ' (x' + qty + ')' : s;
-      html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
+      const label = mult ? s + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? s + ' +' + fmt(precio) + '€' : s;
+      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
   }
