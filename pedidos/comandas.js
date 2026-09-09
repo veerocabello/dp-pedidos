@@ -715,10 +715,22 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   }
   return core;
 }
-function extrasAutoUpgradeLabel(ingredientesExtra, salsasExtra) {
-  const upgrade = extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
-  if (upgrade === 'bomba') return 'Se convierte en Patata Bomba (lo que se pase de 9 se cobra aparte)';
-  if (upgrade === 'algusto') return 'Se convierte en Patata Al Gusto (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
+// Aviso del precio en vivo (modal de extras y customizer de Al
+// Gusto/Bomba): además de avisar cuando YA se ha aplicado una oferta, si
+// falta un solo ingrediente o salsa para llegar a la de Al Gusto/Bomba
+// avisa de antemano — así el empleado puede decírselo al cliente antes
+// de cerrar el pedido ("con un ingrediente más te sale la oferta").
+function offerNote(salsaCount, ingCount) {
+  const A = CUSTOMIZER_CONFIG.algusto, B = CUSTOMIZER_CONFIG.bomba;
+  const totalPicks = salsaCount + ingCount;
+  // Bomba primero: si falta 1 para los 9 en total avisa de esa oferta
+  // aunque ya se haya alcanzado la de Al Gusto — es la más valiosa de
+  // las dos y si no se avisa aquí queda tapada por el aviso de Al Gusto.
+  if (totalPicks >= B.maxTotal) return 'Se convierte en Patata Bomba (lo que se pase de 9 se cobra aparte)';
+  if (totalPicks === B.maxTotal - 1) return '📢 Avísale: con 1 más (ingrediente o salsa) se aplica la oferta de Bomba (' + fmt(B.price) + ' €)';
+  if (salsaCount >= A.maxSauces && ingCount >= A.maxIngredients) return 'Se convierte en Patata Al Gusto (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
+  if (salsaCount >= A.maxSauces && ingCount === A.maxIngredients - 1) return '📢 Avísale: con 1 ingrediente más se aplica la oferta de Al Gusto (' + fmt(A.price) + ' €)';
+  if (ingCount >= A.maxIngredients && salsaCount === 0) return '📢 Avísale: con 1 salsa más (o "Sin salsa") se aplica la oferta de Al Gusto (' + fmt(A.price) + ' €)';
   return '';
 }
 // Tope 2 cambios "gratis" en total (quitar uno + añadir otro cuenta como
@@ -1666,10 +1678,14 @@ function updateCustExtraUI(which, on) {
   if (el) el.classList.toggle('on', on);
 }
 function updateCustTotalPrice() {
-  let p = comboCorePrice([...custSelSauces, ...custSelExtraSauces], [...custSelIngredients, ...custSelExtraIngredients]);
+  const allSauces = [...custSelSauces, ...custSelExtraSauces];
+  const allIngredients = [...custSelIngredients, ...custSelExtraIngredients];
+  let p = comboCorePrice(allSauces, allIngredients);
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
+  const noteEl = document.getElementById('cust-price-note');
+  if (noteEl) noteEl.textContent = offerNote(allSauces.length, allIngredients.length);
 }
 function confirmCustomizer() {
   const cfg = CUSTOMIZER_CONFIG[custType];
@@ -2252,7 +2268,7 @@ function updateExtrasTotalPrice() {
   const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
-  if (noteEl) noteEl.textContent = extrasAutoUpgradeLabel(ingList, salsaList);
+  if (noteEl) noteEl.textContent = offerNote(salsaList.length, ingList.length);
 }
 function confirmExtras() {
   const id = extrasCurrentId;
