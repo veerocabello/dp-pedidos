@@ -11096,7 +11096,18 @@ function _actualizarTrack(id, activo) {
 }
 
 async function guardarJuegoActivo(juego) {
-  if (window.fb_saveJuegoActivo) await window.fb_saveJuegoActivo(juego);
+  try {
+    if (window.fb_saveJuegoActivo) await window.fb_saveJuegoActivo(juego);
+  } catch (e) {
+    // Ver el comentario equivalente en ruletaAdminGuardar() más arriba — sin
+    // esto, un fallo de red aquí (llamado directo desde un onclick, sin
+    // .catch()) era una promesa rechazada sin capturar: como los errores
+    // globales de JS están desactivados a propósito en esta web, el admin no
+    // veía nada — el botón "no hacía nada" en apariencia, sin decir por qué,
+    // y el juego activo real de Firebase se quedaba tal cual estaba antes.
+    _avisarSiFalloGuardado(e, 'juego activo');
+    return;
+  }
   window._juegoActivoActual = juego;
   _actualizarJuegoFab(juego);
   const nombres = { ruleta: 'Ruleta de premios', rasca: 'Rasca y gana', ninguno: 'Ninguno' };
