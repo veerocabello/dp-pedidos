@@ -663,6 +663,13 @@ function extrasAutoUpgradeLabel(ingredientesExtra, salsasExtra) {
 function computeFreeSwapPasses(quitadosCount, cambiosCount) {
   return Math.max(0, Math.min(quitadosCount || 0, 2 - (cambiosCount || 0)));
 }
+// Elegir "Ninguna" en la base de Patata Simple se guarda como un
+// ingrediente quitado más (para que el ticket diga "🚫 Sin Aceite de
+// oliva"), pero no es un cambio real de verdad — no debe regalar un pase
+// gratis de "quitar uno, añadir otro" como si fuera un ingrediente normal.
+function contarQuitadosParaGratis(quitados) {
+  return (quitados || []).filter(c => !isBaseGrasaComp(c)).length;
+}
 // Mismo criterio que computeExtrasCorePrice: los primeros `freePasses`
 // picks por orden de selección van gratis — así el ticket muestra sin
 // precio justo los mismos que no se cobraron en el total.
@@ -673,7 +680,7 @@ function freeSwapPickSet(pickOrder, freePasses) {
   return set;
 }
 function getExtrasItemPrice(e) {
-  const free = computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
+  const free = computeFreeSwapPasses(contarQuitadosParaGratis(e.quitados), (e.cambios || []).length);
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
   return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
@@ -728,7 +735,7 @@ function getExtrasItemTicketExtras(e) {
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
-  const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
+  const free = upgraded ? 0 : computeFreeSwapPasses(contarQuitadosParaGratis(e.quitados), (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
   (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
@@ -1879,9 +1886,12 @@ function renderExtrasBody(item) {
   let html = '';
   if (baseGrasa.length === 2) {
     const esMantequilla = extrasCambios.some(c => c.from === 'Aceite de oliva' && c.to === 'Mantequilla');
+    const esNinguna = extrasQuitados['Aceite de oliva'] === 'quitado';
+    const esAceite = !esMantequilla && !esNinguna;
     html += `<div class="section-label" style="margin-top:0">Base</div><div class="chip-grid">
-      <button class="chip ${esMantequilla ? '' : 'selected'}" onclick="setExtraBase('aceite')">🫒 Aceite de oliva</button>
+      <button class="chip ${esAceite ? 'selected' : ''}" onclick="setExtraBase('aceite')">🫒 Aceite de oliva</button>
       <button class="chip ${esMantequilla ? 'selected' : ''}" onclick="setExtraBase('mantequilla')">🧈 Mantequilla</button>
+      <button class="chip ${esNinguna ? 'selected' : ''}" onclick="setExtraBase('ninguna')">🚫 Ninguna (sin nada)</button>
     </div>`;
   }
   const salsaAElegir = baseComponents.find(isElegirSalsaComp);
@@ -2047,13 +2057,16 @@ function removeExtraCambio(i) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-// Selector "Aceite de oliva" / "Mantequilla" de Patata Simple — se guarda
-// como un cambio (igual que "Cambiar un ingrediente") para que el ticket
-// diga claramente "🔄 Aceite de oliva → Mantequilla" en vez de un simple
-// "Sin aceite" que la cocina podría confundir con "sin nada".
+// Selector de base de Patata Simple: Aceite de oliva (por defecto),
+// Mantequilla (se guarda como un cambio, igual que "Cambiar un
+// ingrediente", para que el ticket diga claramente "🔄 Aceite de oliva →
+// Mantequilla") o Ninguna (se guarda como ingrediente quitado, para que
+// el ticket diga "🚫 Sin Aceite de oliva" y la cocina no le ponga nada).
 function setExtraBase(which) {
   extrasCambios = extrasCambios.filter(c => c.from !== 'Aceite de oliva');
+  delete extrasQuitados['Aceite de oliva'];
   if (which === 'mantequilla') extrasCambios.push({ from: 'Aceite de oliva', to: 'Mantequilla' });
+  else if (which === 'ninguna') extrasQuitados['Aceite de oliva'] = 'quitado';
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -2127,7 +2140,7 @@ function updateExtrasTotalPrice() {
   if (!item) return;
   const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
   const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
-  const quitadosCount = Object.values(extrasQuitados).filter(v => v === 'quitado').length;
+  const quitadosCount = contarQuitadosParaGratis(Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([c]) => c));
   const free = computeFreeSwapPasses(quitadosCount, extrasCambios.length);
   const core = computeExtrasCorePrice(item.price, ingList, salsaList, getOrderedExtrasPicks(), free);
   const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
