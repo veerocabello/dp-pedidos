@@ -446,6 +446,34 @@
       <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
     </div>
     <div id="caja-summary" class="summary-box"></div>
+    <div class="section-label">Efectivo contado en el cajón <span style="font-weight:400;text-transform:none;letter-spacing:0">(para ver si cuadra sola)</span></div>
+    <div class="calc-columns" style="grid-template-columns:1fr;margin-top:4px">
+      <div class="denom-col">
+        <div class="denom-sep" style="margin-top:0">Billetes</div>
+        <div class="denom-grid">
+          <button type="button" class="denom-btn" data-v="50" onclick="tapCajaDenom(this,50)">50€</button>
+          <button type="button" class="denom-btn" data-v="20" onclick="tapCajaDenom(this,20)">20€</button>
+          <button type="button" class="denom-btn" data-v="10" onclick="tapCajaDenom(this,10)">10€</button>
+          <button type="button" class="denom-btn" data-v="5" onclick="tapCajaDenom(this,5)">5€</button>
+        </div>
+        <div class="denom-sep">Monedas</div>
+        <div class="denom-grid">
+          <button type="button" class="denom-btn" data-v="2" onclick="tapCajaDenom(this,2)">2€</button>
+          <button type="button" class="denom-btn" data-v="1" onclick="tapCajaDenom(this,1)">1€</button>
+          <button type="button" class="denom-btn" data-v="0.50" onclick="tapCajaDenom(this,0.50)">0,50€</button>
+          <button type="button" class="denom-btn" data-v="0.20" onclick="tapCajaDenom(this,0.20)">0,20€</button>
+          <button type="button" class="denom-btn" data-v="0.10" onclick="tapCajaDenom(this,0.10)">0,10€</button>
+          <button type="button" class="denom-btn" data-v="0.05" onclick="tapCajaDenom(this,0.05)">0,05€</button>
+          <button type="button" class="denom-btn" data-v="0.02" onclick="tapCajaDenom(this,0.02)">0,02€</button>
+          <button type="button" class="denom-btn" data-v="0.01" onclick="tapCajaDenom(this,0.01)">0,01€</button>
+        </div>
+      </div>
+    </div>
+    <div class="cash-calc-total-row editable" style="margin:8px 0" onclick="openNumpad('caja-contado-manual-input','Efectivo contado')">
+      <label style="flex:1">Contado ✏️</label><b id="caja-contado-total">0,00 €</b>
+    </div>
+    <input type="hidden" id="caja-contado-manual-input" oninput="setCajaContadoManual(this.value)">
+    <div class="clear-link"><button type="button" onclick="limpiarCajaContado()">✕ Limpiar contado</button></div>
     <div class="settings-actions">
       <button class="btn-secondary" onclick="imprimirResumenCaja()">🖨️ Imprimir resumen del día</button>
       <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia</button>

@@ -2887,11 +2887,74 @@ function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), d
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
 function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
 function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX + fecha) === '1'; }
+// ── Efectivo contado en el cajón al cerrar — para que la app diga sola si
+// cuadra, en vez de tener que restar a mano el "esperado" contra lo
+// contado. Se toca cada billete/moneda (igual que en Cobrar) o se
+// escribe el total directamente; se guarda por fecha para poder volver a
+// abrir un día ya cuadrado y ver lo mismo que se contó entonces.
+function getCajaContadoKey(fecha) { return 'dpf_comandas_caja_contado_' + fecha; }
+function loadCajaContadoState(fecha) {
+  try { return JSON.parse(localStorage.getItem(getCajaContadoKey(fecha)) || 'null') || { total: 0, counts: {} }; }
+  catch (e) { return { total: 0, counts: {} }; }
+}
+function saveCajaContadoState() { localStorage.setItem(getCajaContadoKey(cajaFechaSel), JSON.stringify(cajaContado)); }
+let cajaContado = { total: 0, counts: {} };
+function tapCajaDenom(btn, v) {
+  const key = String(v);
+  cajaContado.counts[key] = (cajaContado.counts[key] || 0) + 1;
+  cajaContado.total = Math.round((cajaContado.total + v) * 100) / 100;
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function untapCajaDenom(btn, v) {
+  const key = String(v);
+  const n = (cajaContado.counts[key] || 0) - 1;
+  if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
+  cajaContado.total = Math.max(0, Math.round((cajaContado.total - v) * 100) / 100);
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function limpiarCajaContado() {
+  cajaContado = { total: 0, counts: {} };
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function setCajaContadoManual(valorStr) {
+  cajaContado = { total: Math.max(0, parseCashNum(valorStr)), counts: {} };
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
+function renderCajaContadoUI() {
+  document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
+    const v = btn.dataset.v;
+    const n = cajaContado.counts[v] || 0;
+    btn.classList.toggle('tapped', n > 0);
+    let badge = btn.querySelector('.denom-count');
+    if (n > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'denom-count';
+        badge.title = 'Tocar para quitar uno';
+        badge.onclick = (e) => { e.stopPropagation(); untapCajaDenom(btn, parseFloat(v)); };
+        btn.appendChild(badge);
+      }
+      badge.textContent = '×' + n;
+    } else if (badge) badge.remove();
+  });
+  const totalEl = document.getElementById('caja-contado-total');
+  if (totalEl) totalEl.textContent = fmt(cajaContado.total) + ' €';
+}
 let cajaFechaSel = todayISO();
 function openCaja() {
   cajaFechaSel = todayISO();
   const fechaInput = document.getElementById('caja-fecha-input');
   if (fechaInput) fechaInput.value = cajaFechaSel;
+  cajaContado = loadCajaContadoState(cajaFechaSel);
+  renderCajaContadoUI();
   document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
   const btnOrganizada = document.getElementById('btn-copia-organizada');
   if (btnOrganizada) btnOrganizada.style.display = isDesktopApp() ? '' : 'none';
@@ -2901,6 +2964,8 @@ function openCaja() {
 function setCajaFecha(fecha) {
   cajaFechaSel = fecha || todayISO();
   document.getElementById('caja-fondo').value = loadCajaFondo(cajaFechaSel) || '';
+  cajaContado = loadCajaContadoState(cajaFechaSel);
+  renderCajaContadoUI();
   renderCaja();
 }
 function closeCaja() { document.getElementById('caja-modal').classList.remove('open'); }
@@ -2934,6 +2999,17 @@ function renderCaja() {
         <div style="font-size:11.5px;color:var(--error);margin-top:4px">Si alguno se cobró a mano sin marcarlo pagado en la app, la caja no cuadrará.</div>
       </div>`
     : '';
+  // Descuadre automático: en cuanto se ha contado algo (tocando un
+  // billete/moneda o escribiendo el total a mano), se compara solo contra
+  // "esperado" — antes había que restar a mano cada vez.
+  const hayContado = cajaContado.total > 0 || Object.keys(cajaContado.counts).length > 0;
+  const diferencia = Math.round((cajaContado.total - esperadoCajon) * 100) / 100;
+  const cuadra = Math.abs(diferencia) < 0.005;
+  const avisoDiferencia = hayContado
+    ? `<div style="background:${cuadra ? '#E3F3E9' : '#FBE7E4'};border:1.5px solid ${cuadra ? 'rgba(46,139,87,.35)' : 'rgba(192,57,43,.4)'};border-radius:10px;padding:10px 12px;margin:8px 0">
+        <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadra ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadra ? '✅ Cuadra' : diferencia > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadra ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferencia))} €</b></div>
+      </div>`
+    : '';
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + row('💵 Cobrado en efectivo', efectivo)
@@ -2941,7 +3017,8 @@ function renderCaja() {
     + avisoPendiente
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
-    + row('💰 Efectivo esperado en caja', esperadoCajon, true);
+    + row('💰 Efectivo esperado en caja', esperadoCajon, true)
+    + avisoDiferencia;
 }
 
 /* ── Imprimir resumen del día al cerrar caja — mismo "blocks" y mismo
