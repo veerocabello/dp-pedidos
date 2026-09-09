@@ -612,6 +612,45 @@ let _pp2SearchQuery = '';
 // (con lo que ya hay en localStorage) y se actualiza tras cada guardado y
 // cada vez que llega un cambio remoto — ver openPedidosProvOverlay().
 window._pp2SyncedSnapshots = window._pp2SyncedSnapshots || {};
+// Fusión por id para arrays que son colecciones REALES (custom/hidden/
+// customProvs) — a diferencia de un objeto plano (state/provHab/minimos),
+// un array no tenía ninguna "clave" con la que fusionar campo a campo, así
+// que se aplicaba una regla "todo o nada": si este dispositivo no había
+// cambiado nada desde la última sincronización, se respetaba el array del
+// servidor; si SÍ había cambiado algo (lo que sea), ganaba el array local
+// ENTERO, pisando cualquier cambio de OTRO dispositivo llegado mientras
+// tanto — mismo fallo de fondo que el bug real de las Tartas (sobrescribir
+// un nodo compartido con una copia local que puede estar desactualizada),
+// aquí con productos/proveedores personalizados o predefinidos ocultos en
+// vez de con la carta. Ahora se fusiona id a id: lo que este dispositivo
+// añadió o cambió de verdad desde la última sincronización gana con su
+// valor local; lo que faltara aquí pero SÍ estaba en esa última
+// sincronización se entiende como un borrado real de este dispositivo (los
+// sitios que borran ya lo hacen con un .filter()/.splice() explícito,
+// nunca por inferencia); lo que faltara aquí y TAMPOCO estaba en esa última
+// sincronización (llegado de otro dispositivo mientras este no miraba) se
+// conserva tal cual esté en el servidor.
+function _pp2MergeArrayPorId(remoto, data, antes, idFn) {
+  const base = Array.isArray(remoto) ? remoto : [];
+  const local = Array.isArray(data) ? data : [];
+  const previo = Array.isArray(antes) ? antes : [];
+  const baseById = new Map(base.map(function (x) { return [idFn(x), x]; }));
+  const localById = new Map(local.map(function (x) { return [idFn(x), x]; }));
+  const previoById = new Map(previo.map(function (x) { return [idFn(x), x]; }));
+  const ids = new Set([].concat(Array.from(baseById.keys()), Array.from(localById.keys())));
+  const resultado = [];
+  ids.forEach(function (id) {
+    if (localById.has(id)) {
+      const tocadoAqui = !previoById.has(id) || JSON.stringify(localById.get(id)) !== JSON.stringify(previoById.get(id));
+      resultado.push(tocadoAqui || !baseById.has(id) ? localById.get(id) : baseById.get(id));
+    } else if (!previoById.has(id) && baseById.has(id)) {
+      resultado.push(baseById.get(id)); // de otro dispositivo, se conserva
+    }
+    // Si estaba en mi última sincronización y ya no está en mi copia
+    // local: lo he borrado yo de verdad — no se añade al resultado.
+  });
+  return resultado;
+}
 function pp2TransactSave(key, data) {
   if (!window.fb_transactJsonString) {
     if (window.fb_savePP2) window.fb_savePP2(key, data).catch(function (e) {
@@ -642,16 +681,20 @@ function pp2TransactSave(key, data) {
       });
       return merged;
     }
-    // Arrays (custom/hidden/historial/customProvs/order): no hay una
-    // "clave" con la que fusionar campo a campo, así que se aplica la
-    // regla más simple que sigue siendo real — si este dispositivo no ha
-    // cambiado nada desde la última sincronización, se respeta lo que
-    // haya en el servidor (puede venir de otro dispositivo); si sí ha
-    // cambiado, gana el cambio local.
-    if (remoto !== undefined && remoto !== null && JSON.stringify(data) === JSON.stringify(antes)) {
-      return remoto;
+    // 'order' es solo una preferencia visual (el orden en que se listan
+    // los productos), no una colección con existencia propia — si falta
+    // algún id se autocorrige sola añadiéndolo al final (ver
+    // pp2AllItemsOrdered), así que no hay nada real que perder con la
+    // regla simple de siempre.
+    if (key === 'order') {
+      if (remoto !== undefined && remoto !== null && JSON.stringify(data) === JSON.stringify(antes)) {
+        return remoto;
+      }
+      return data;
     }
-    return data;
+    // custom/customProvs: arrays de objetos con id. hidden: array de ids
+    // sueltos (los ids son su propia identidad).
+    return _pp2MergeArrayPorId(remoto, data, antes, key === 'hidden' ? function (x) { return x; } : function (x) { return x && x.id; });
   }).then(function (finalData) {
     if (finalData !== null && finalData !== undefined) {
       window._pp2SyncedSnapshots[key] = finalData;

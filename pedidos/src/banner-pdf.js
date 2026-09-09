@@ -591,16 +591,50 @@ function borrarHistorialDia(date) {
 // también actualiza lo que ve "En vivo"/Modo Cocina al momento (mismo
 // nodo stats/<fecha>) — normal, ya que el pedido deja de existir de
 // verdad a efectos de caja.
-function borrarPedidoDeHistorial(date, orderNum) {
+// stats/<fecha> de HOY lo sigue escribiendo guardar-pedido.php por cada
+// pedido nuevo que llega mientras tanto (con su propia transacción CAS) —
+// "Historial" solo trae una copia de un momento dado (loadHistorial() lee
+// una vez, no escucha en directo) que puede llevar minutos abierta. Antes
+// esto recalculaba count/total sobre ESA COPIA VIEJA y la volvía a guardar
+// entera con un set() sin condición (saveToHistorial→fb_saveStats) — mismo
+// fallo de fondo que el bug real de las Tartas (sobrescribir un nodo
+// compartido con una copia local que puede estar desactualizada): un
+// pedido nuevo llegado en ese rato de por medio se perdía sin más, sin
+// ningún aviso, al quitar uno viejo. Ahora se quita con una transacción
+// real de Firebase (fb_transactNative) sobre el dato de verdad del
+// servidor en ese instante — mismo patrón que ya usa el servidor para esto
+// mismo (ver 'cancelarPedido'/revertirVentaTiendaDeStats en
+// guardar-pedido.php).
+async function borrarPedidoDeHistorial(date, orderNum) {
   const hist = getHistorial();
   const day = hist.find(d => d.date === date);
   if (!day) return;
   const pedido = (day.orders || []).find(o => o.num === orderNum);
   if (!confirm('¿Quitar el pedido ' + orderNum + (pedido ? ' (' + pedido.name + ', ' + (pedido.total || 0).toFixed(2).replace('.', ',') + ' €)' : '') + ' del historial? Deja de contar en el total y nº de pedidos de ese día. No se puede deshacer.')) return;
-  day.orders = (day.orders || []).filter(o => o.num !== orderNum);
-  day.count = day.orders.length;
-  day.total = day.orders.reduce((s, o) => s + (o.total || 0), 0);
-  saveToHistorial(day);
+  if (!window.fb_transactNative) return; // sin Firebase no hay nada seguro que hacer aquí
+  let finalDay = null;
+  try {
+    finalDay = await window.fb_transactNative('stats/' + date, current => {
+      if (!current || !Array.isArray(current.orders)) return current;
+      const orders = current.orders.filter(o => o.num !== orderNum);
+      return Object.assign({}, current, {
+        orders,
+        count: orders.length,
+        total: parseFloat(orders.reduce((s, o) => s + (o.total || 0), 0).toFixed(2))
+      });
+    });
+  } catch (e) {
+    console.warn('[historial] no se pudo quitar el pedido en Firebase:', e);
+  }
+  if (!finalDay) {
+    alert('⚠️ No se ha podido quitar el pedido (revisa la conexión). Vuelve a intentarlo.');
+    return;
+  }
+  // Reflejar en la copia local el resultado REAL devuelto por la
+  // transacción (no la copia vieja de antes de tocar nada).
+  const idx = hist.findIndex(d => d.date === date);
+  if (idx >= 0) hist[idx] = finalDay; else hist.unshift(finalDay);
+  localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist.slice(0, 30)));
   expandHistorialDay(date);
   _renderHistorial();
 }

@@ -258,13 +258,23 @@ try {
         'respuestas'    => $respuestas,
     ];
 
-    // 4. Guardar en Firebase (nodo "incidencias", con clave única)
+    // 4. Guardar en Firebase (nodo "incidencias") — con clave = submissionId
+    // cuando viene uno válido, en vez de dejar que Firebase genere una
+    // clave nueva al azar (POST/push) cada vez. Tally reintenta el webhook
+    // si no recibe una respuesta 2xx a tiempo (PHP lento en hosting
+    // compartido, corte de red...); con push, un reintento de un envío que
+    // en realidad SÍ se había guardado bien creaba una incidencia
+    // duplicada en la cola de la dueña. Con PUT a una clave fija por
+    // submissionId, un reintento sobrescribe el MISMO registro en vez de
+    // crear otro — igual de bien, sin duplicar nada.
+    $submissionIdSeguro = preg_match('/^[A-Za-z0-9_-]{1,60}$/', (string)$incidencia['submissionId'])
+        ? $incidencia['submissionId'] : null;
     $token = obtenerTokenAcceso($rutaCredenciales);
-    $ch = curl_init($databaseURL . '/incidencias.json');
+    $ch = curl_init($databaseURL . '/incidencias' . ($submissionIdSeguro ? '/' . $submissionIdSeguro : '') . '.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
     curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $submissionIdSeguro ? 'PUT' : 'POST');
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($incidencia));
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Authorization: Bearer ' . $token,

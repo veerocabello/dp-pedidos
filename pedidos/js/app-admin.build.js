@@ -694,6 +694,45 @@ let _pp2SearchQuery = '';
 // (con lo que ya hay en localStorage) y se actualiza tras cada guardado y
 // cada vez que llega un cambio remoto — ver openPedidosProvOverlay().
 window._pp2SyncedSnapshots = window._pp2SyncedSnapshots || {};
+// Fusión por id para arrays que son colecciones REALES (custom/hidden/
+// customProvs) — a diferencia de un objeto plano (state/provHab/minimos),
+// un array no tenía ninguna "clave" con la que fusionar campo a campo, así
+// que se aplicaba una regla "todo o nada": si este dispositivo no había
+// cambiado nada desde la última sincronización, se respetaba el array del
+// servidor; si SÍ había cambiado algo (lo que sea), ganaba el array local
+// ENTERO, pisando cualquier cambio de OTRO dispositivo llegado mientras
+// tanto — mismo fallo de fondo que el bug real de las Tartas (sobrescribir
+// un nodo compartido con una copia local que puede estar desactualizada),
+// aquí con productos/proveedores personalizados o predefinidos ocultos en
+// vez de con la carta. Ahora se fusiona id a id: lo que este dispositivo
+// añadió o cambió de verdad desde la última sincronización gana con su
+// valor local; lo que faltara aquí pero SÍ estaba en esa última
+// sincronización se entiende como un borrado real de este dispositivo (los
+// sitios que borran ya lo hacen con un .filter()/.splice() explícito,
+// nunca por inferencia); lo que faltara aquí y TAMPOCO estaba en esa última
+// sincronización (llegado de otro dispositivo mientras este no miraba) se
+// conserva tal cual esté en el servidor.
+function _pp2MergeArrayPorId(remoto, data, antes, idFn) {
+  const base = Array.isArray(remoto) ? remoto : [];
+  const local = Array.isArray(data) ? data : [];
+  const previo = Array.isArray(antes) ? antes : [];
+  const baseById = new Map(base.map(function (x) { return [idFn(x), x]; }));
+  const localById = new Map(local.map(function (x) { return [idFn(x), x]; }));
+  const previoById = new Map(previo.map(function (x) { return [idFn(x), x]; }));
+  const ids = new Set([].concat(Array.from(baseById.keys()), Array.from(localById.keys())));
+  const resultado = [];
+  ids.forEach(function (id) {
+    if (localById.has(id)) {
+      const tocadoAqui = !previoById.has(id) || JSON.stringify(localById.get(id)) !== JSON.stringify(previoById.get(id));
+      resultado.push(tocadoAqui || !baseById.has(id) ? localById.get(id) : baseById.get(id));
+    } else if (!previoById.has(id) && baseById.has(id)) {
+      resultado.push(baseById.get(id)); // de otro dispositivo, se conserva
+    }
+    // Si estaba en mi última sincronización y ya no está en mi copia
+    // local: lo he borrado yo de verdad — no se añade al resultado.
+  });
+  return resultado;
+}
 function pp2TransactSave(key, data) {
   if (!window.fb_transactJsonString) {
     if (window.fb_savePP2) window.fb_savePP2(key, data).catch(function (e) {
@@ -724,16 +763,20 @@ function pp2TransactSave(key, data) {
       });
       return merged;
     }
-    // Arrays (custom/hidden/historial/customProvs/order): no hay una
-    // "clave" con la que fusionar campo a campo, así que se aplica la
-    // regla más simple que sigue siendo real — si este dispositivo no ha
-    // cambiado nada desde la última sincronización, se respeta lo que
-    // haya en el servidor (puede venir de otro dispositivo); si sí ha
-    // cambiado, gana el cambio local.
-    if (remoto !== undefined && remoto !== null && JSON.stringify(data) === JSON.stringify(antes)) {
-      return remoto;
+    // 'order' es solo una preferencia visual (el orden en que se listan
+    // los productos), no una colección con existencia propia — si falta
+    // algún id se autocorrige sola añadiéndolo al final (ver
+    // pp2AllItemsOrdered), así que no hay nada real que perder con la
+    // regla simple de siempre.
+    if (key === 'order') {
+      if (remoto !== undefined && remoto !== null && JSON.stringify(data) === JSON.stringify(antes)) {
+        return remoto;
+      }
+      return data;
     }
-    return data;
+    // custom/customProvs: arrays de objetos con id. hidden: array de ids
+    // sueltos (los ids son su propia identidad).
+    return _pp2MergeArrayPorId(remoto, data, antes, key === 'hidden' ? function (x) { return x; } : function (x) { return x && x.id; });
   }).then(function (finalData) {
     if (finalData !== null && finalData !== undefined) {
       window._pp2SyncedSnapshots[key] = finalData;
@@ -2094,8 +2137,21 @@ function addSlotTurno() {
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
+  // Igual que updateSlotTurno (justo abajo): si la lista que ve esta
+  // llamada (tras un posible reintento de la transacción, con la más
+  // reciente de otro dispositivo) ya no tiene este turno en la misma
+  // posición porque alguien añadió/quitó/reordenó turnos justo antes, se
+  // busca por su contenido exacto capturado al pulsar, en vez de fiarse
+  // ciegamente del índice — sin esto se podía borrar en silencio un turno
+  // distinto al que el admin tenía delante.
+  const original = getSlotTurnos()[idx];
   const turnos = _mutateSlotTurnos(function (t) {
-    if (idx < t.length) t.splice(idx, 1);
+    let target = idx;
+    if (original && !(t[idx] && t[idx].start === original.start && t[idx].end === original.end && t[idx].interval === original.interval)) {
+      const found = t.findIndex(x => x.start === original.start && x.end === original.end && x.interval === original.interval);
+      if (found >= 0) target = found;
+    }
+    if (target < t.length) t.splice(target, 1);
   });
   renderSlotTurnosList(turnos);
 }
@@ -2940,6 +2996,16 @@ async function setTrustedDevice(val, name) {
       tokenHash: tokenHash,
       name: name || 'Sin nombre',
       createdAt: Date.now(),
+      // La caducidad ("expira en N días") antes solo se guardaba en el
+      // localStorage de ESTE dispositivo (isTrustedDevice() la comprobaba
+      // ella misma antes de ir al servidor) — el servidor (bimba-verify.php,
+      // checkTrustedDevice) nunca la comprobaba de verdad, así que un
+      // localStorage restaurado de una copia vieja (o una llamada directa a
+      // bimba-verify.php con el deviceId+token guardados) seguía siendo
+      // válido para siempre, sin importar los días configurados. Se guarda
+      // aquí también para que el servidor la haga cumplir de verdad, igual
+      // que ya hace con bimbaTokenExpiry.
+      expiresAt: expiry,
     });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');
@@ -8876,16 +8942,50 @@ function borrarHistorialDia(date) {
 // también actualiza lo que ve "En vivo"/Modo Cocina al momento (mismo
 // nodo stats/<fecha>) — normal, ya que el pedido deja de existir de
 // verdad a efectos de caja.
-function borrarPedidoDeHistorial(date, orderNum) {
+// stats/<fecha> de HOY lo sigue escribiendo guardar-pedido.php por cada
+// pedido nuevo que llega mientras tanto (con su propia transacción CAS) —
+// "Historial" solo trae una copia de un momento dado (loadHistorial() lee
+// una vez, no escucha en directo) que puede llevar minutos abierta. Antes
+// esto recalculaba count/total sobre ESA COPIA VIEJA y la volvía a guardar
+// entera con un set() sin condición (saveToHistorial→fb_saveStats) — mismo
+// fallo de fondo que el bug real de las Tartas (sobrescribir un nodo
+// compartido con una copia local que puede estar desactualizada): un
+// pedido nuevo llegado en ese rato de por medio se perdía sin más, sin
+// ningún aviso, al quitar uno viejo. Ahora se quita con una transacción
+// real de Firebase (fb_transactNative) sobre el dato de verdad del
+// servidor en ese instante — mismo patrón que ya usa el servidor para esto
+// mismo (ver 'cancelarPedido'/revertirVentaTiendaDeStats en
+// guardar-pedido.php).
+async function borrarPedidoDeHistorial(date, orderNum) {
   const hist = getHistorial();
   const day = hist.find(d => d.date === date);
   if (!day) return;
   const pedido = (day.orders || []).find(o => o.num === orderNum);
   if (!confirm('¿Quitar el pedido ' + orderNum + (pedido ? ' (' + pedido.name + ', ' + (pedido.total || 0).toFixed(2).replace('.', ',') + ' €)' : '') + ' del historial? Deja de contar en el total y nº de pedidos de ese día. No se puede deshacer.')) return;
-  day.orders = (day.orders || []).filter(o => o.num !== orderNum);
-  day.count = day.orders.length;
-  day.total = day.orders.reduce((s, o) => s + (o.total || 0), 0);
-  saveToHistorial(day);
+  if (!window.fb_transactNative) return; // sin Firebase no hay nada seguro que hacer aquí
+  let finalDay = null;
+  try {
+    finalDay = await window.fb_transactNative('stats/' + date, current => {
+      if (!current || !Array.isArray(current.orders)) return current;
+      const orders = current.orders.filter(o => o.num !== orderNum);
+      return Object.assign({}, current, {
+        orders,
+        count: orders.length,
+        total: parseFloat(orders.reduce((s, o) => s + (o.total || 0), 0).toFixed(2))
+      });
+    });
+  } catch (e) {
+    console.warn('[historial] no se pudo quitar el pedido en Firebase:', e);
+  }
+  if (!finalDay) {
+    alert('⚠️ No se ha podido quitar el pedido (revisa la conexión). Vuelve a intentarlo.');
+    return;
+  }
+  // Reflejar en la copia local el resultado REAL devuelto por la
+  // transacción (no la copia vieja de antes de tocar nada).
+  const idx = hist.findIndex(d => d.date === date);
+  if (idx >= 0) hist[idx] = finalDay; else hist.unshift(finalDay);
+  localStorage.setItem(HISTORIAL_KEY, JSON.stringify(hist.slice(0, 30)));
   expandHistorialDay(date);
   _renderHistorial();
 }
@@ -10867,41 +10967,40 @@ async function saveOrderTotal(orderNum, rawValue) {
     loadLiveOrders();
     return;
   }
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  if (window.fb_getStats) {
+  // Fecha de Madrid, no la UTC del navegador \u2014 cerca de la medianoche
+  // pod\u00edan no coincidir (mismo tipo de bug ya corregido en otros sitios de
+  // esta web), leyendo/escribiendo el d\u00eda equivocado justo en ese margen.
+  const todayKey = (typeof _todayKeyMadrid === 'function') ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+  let oldTotal = null;
+  let finalStats = null;
+  // Antes esto le\u00eda stats/<fecha> una vez (fb_getStats) y lo volv\u00eda a
+  // guardar entero con un set() sin condici\u00f3n (fb_saveStats) \u2014 si un
+  // pedido nuevo llegaba de por medio (nada raro a media jornada, y
+  // guardar-pedido.php escribe aqu\u00ed mismo por cada pedido que entra), ese
+  // pedido nuevo se perd\u00eda sin m\u00e1s al guardar el precio editado de otro.
+  // Ahora se corrige con una transacci\u00f3n real de Firebase sobre el dato de
+  // verdad del servidor en ese instante, igual que ya hace el resto de
+  // "quitar/editar un pedido de stats/<fecha>" en esta web.
+  if (window.fb_transactNative) {
     try {
-      const fb = await window.fb_getStats(todayKey);
-      if (fb) stats = fb;
-    } catch (e) {}
+      finalStats = await window.fb_transactNative('stats/' + todayKey, current => {
+        if (!current || !Array.isArray(current.orders)) return current;
+        const order = current.orders.find(o => o.num === orderNum);
+        if (!order) return current;
+        oldTotal = order.total;
+        const orders = current.orders.map(o => o.num === orderNum ? Object.assign({}, o, { total: newTotal }) : o);
+        return Object.assign({}, current, {
+          orders,
+          total: parseFloat(orders.reduce((s, o) => s + (o.total || 0), 0).toFixed(2))
+        });
+      });
+    } catch (e) { console.warn('Firebase stats error', e); }
   }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {
-      stats = {};
-    }
-  }
-  if (!stats || !stats.orders) {
+  if (oldTotal === null) {
     loadLiveOrders();
     return;
   }
-  const order = stats.orders.find(o => o.num === orderNum);
-  if (!order) {
-    loadLiveOrders();
-    return;
-  }
-  const oldTotal = order.total;
-  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
-  order.total = newTotal;
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
+  if (finalStats) localStorage.setItem(STATS_KEY, JSON.stringify(finalStats));
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();
@@ -11518,8 +11617,17 @@ function _empMinFromHora(hora) {
 function _empHoraSalidaEsperada(emp, horaEntradaAbierta) {
   if (emp.manOut && emp.tarOut && emp.manIn && emp.tarIn && horaEntradaAbierta) {
     var eMin = _empMinFromHora(horaEntradaAbierta);
-    var distMan = Math.abs(eMin - _empMinFromHora(emp.manIn));
-    var distTar = Math.abs(eMin - _empMinFromHora(emp.tarIn));
+    // Distancia circular (24h), no la resta directa — mismo criterio que ya
+    // usa el servidor (fichar-pin-check.php) para esto mismo: si no, un
+    // turno programado a las 00:00 parece estar a "23h y pico" de una
+    // entrada real a las 23:50 en vez de a los ~10 minutos que hay de
+    // verdad, y se elige el turno equivocado como hora de salida esperada
+    // — el aviso de "olvidó fichar salida" podía saltar de más o de menos
+    // para turnos que cruzan la medianoche.
+    var distManDirecta = Math.abs(eMin - _empMinFromHora(emp.manIn));
+    var distTarDirecta = Math.abs(eMin - _empMinFromHora(emp.tarIn));
+    var distMan = Math.min(distManDirecta, 1440 - distManDirecta);
+    var distTar = Math.min(distTarDirecta, 1440 - distTarDirecta);
     return distMan <= distTar ? emp.manOut : emp.tarOut;
   }
   return emp.tarOut || emp.manOut || null;

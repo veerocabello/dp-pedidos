@@ -107,6 +107,12 @@ async function showSuccess(orderNum, slotTime, discountCode) {
         cart: JSON.parse(JSON.stringify(cart)),
         custCart: JSON.parse(JSON.stringify(custCart)),
         extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+        // Faltaba promosCart — si el último pedido llevaba una promo,
+        // "Repetir pedido" (carta.js) nunca podía devolverla al carrito
+        // (ni siquiera intentaba omitirla con aviso: simplemente no existía
+        // este dato), aunque la propia tarjeta la listara y mostrara el
+        // total original con la promo incluida.
+        promosCart: JSON.parse(JSON.stringify(promosCart)),
         ts: Date.now()
       }));
     }

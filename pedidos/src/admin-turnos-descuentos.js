@@ -47,8 +47,21 @@ function addSlotTurno() {
   renderSlotTurnosList(turnos);
 }
 function removeSlotTurno(idx) {
+  // Igual que updateSlotTurno (justo abajo): si la lista que ve esta
+  // llamada (tras un posible reintento de la transacción, con la más
+  // reciente de otro dispositivo) ya no tiene este turno en la misma
+  // posición porque alguien añadió/quitó/reordenó turnos justo antes, se
+  // busca por su contenido exacto capturado al pulsar, en vez de fiarse
+  // ciegamente del índice — sin esto se podía borrar en silencio un turno
+  // distinto al que el admin tenía delante.
+  const original = getSlotTurnos()[idx];
   const turnos = _mutateSlotTurnos(function (t) {
-    if (idx < t.length) t.splice(idx, 1);
+    let target = idx;
+    if (original && !(t[idx] && t[idx].start === original.start && t[idx].end === original.end && t[idx].interval === original.interval)) {
+      const found = t.findIndex(x => x.start === original.start && x.end === original.end && x.interval === original.interval);
+      if (found >= 0) target = found;
+    }
+    if (target < t.length) t.splice(target, 1);
   });
   renderSlotTurnosList(turnos);
 }

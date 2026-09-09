@@ -323,7 +323,15 @@ if ($action === 'checkTrustedDevice') {
         exit();
     }
     $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
-    if ($tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', $token))) {
+    // La caducidad ("expira en N días", configurable desde el panel) antes
+    // solo la comprobaba el propio navegador (isTrustedDevice(), ANTES de
+    // llamar aquí) — este endpoint solo miraba el hash del token, así que
+    // un localStorage restaurado de una copia vieja (o una llamada directa
+    // aquí con el deviceId+token guardados) seguía siendo válido para
+    // siempre, sin importar los días configurados. Mismo criterio que ya
+    // usa checkBimbaToken con bimbaTokenExpiry justo arriba.
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if (!$expiradoDispositivo && $tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', $token))) {
         dpf_bimba_acierto($fp);
     } else {
         dpf_bimba_fallo($fp, $log, $now);

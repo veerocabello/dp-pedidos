@@ -262,6 +262,20 @@ async function _facturacionObtenerTotal(inicio, fin) {
         total += Number(dia.total) || 0;
       });
     }
+    // stats/ solo son los pedidos de la web — los pedidos hechos desde el
+    // mostrador con Comandas se guardan aparte, en statsTienda/<fecha>
+    // (ver la acción registrarVentaTienda en guardar-pedido.php). Sin
+    // esto, cualquier día con ventas reales en tienda física dejaba la
+    // "Facturación real del periodo" por debajo de la de verdad, e
+    // inflaba de más el % de coste de personal sobre facturación que ve
+    // este mismo panel.
+    const snapTienda = await firebase.database().ref('statsTienda').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snapTienda.exists()) {
+      snapTienda.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        total += Number(dia.total) || 0;
+      });
+    }
   } catch (e) {
     console.warn('[equipo] error leyendo facturación real', e);
   }
@@ -487,6 +501,22 @@ async function _estrellasObtenerVentas(inicio, fin) {
         });
       });
     }
+    // ventasProductos/ solo cuenta lo vendido por la web — lo vendido desde
+    // el mostrador con Comandas se guarda aparte, en
+    // ventasProductosTienda/<fecha> (mismo id de producto, resuelto por
+    // nombre en los dos sitios — ver registrarVentasProductos en
+    // guardar-pedido.php). Sin sumar esto, un producto que se vende bien
+    // en tienda pero poco por la web podía salir como "Perdedor" (candidato
+    // a quitar de la carta) sin serlo de verdad.
+    const snapTienda = await firebase.database().ref('ventasProductosTienda').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snapTienda.exists()) {
+      snapTienda.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        Object.keys(dia).forEach(pid => {
+          totales[pid] = (totales[pid] || 0) + dia[pid];
+        });
+      });
+    }
   } catch (e) {
     console.warn('[estrellas] error leyendo ventas', e);
   }
@@ -638,15 +668,20 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
+    // Transacción real (no leer-y-set) — este mismo nodo lo toca cada
+    // pedido real que se guarda ese día (registrarVentasProductos en
+    // guardar-pedido.php); con un simple set() sobre una copia leída
+    // momentos antes, un pedido nuevo llegado justo en ese rato se perdía
+    // sin más al guardar estas ventas manuales.
+    await firebase.database().ref('ventasProductos/' + fecha).transaction(current => {
+      const actual = (current && typeof current === 'object') ? Object.assign({}, current) : {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
     });
-    await ref.set(actual);
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();

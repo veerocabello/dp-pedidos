@@ -81,8 +81,17 @@ function _empMinFromHora(hora) {
 function _empHoraSalidaEsperada(emp, horaEntradaAbierta) {
   if (emp.manOut && emp.tarOut && emp.manIn && emp.tarIn && horaEntradaAbierta) {
     var eMin = _empMinFromHora(horaEntradaAbierta);
-    var distMan = Math.abs(eMin - _empMinFromHora(emp.manIn));
-    var distTar = Math.abs(eMin - _empMinFromHora(emp.tarIn));
+    // Distancia circular (24h), no la resta directa — mismo criterio que ya
+    // usa el servidor (fichar-pin-check.php) para esto mismo: si no, un
+    // turno programado a las 00:00 parece estar a "23h y pico" de una
+    // entrada real a las 23:50 en vez de a los ~10 minutos que hay de
+    // verdad, y se elige el turno equivocado como hora de salida esperada
+    // — el aviso de "olvidó fichar salida" podía saltar de más o de menos
+    // para turnos que cruzan la medianoche.
+    var distManDirecta = Math.abs(eMin - _empMinFromHora(emp.manIn));
+    var distTarDirecta = Math.abs(eMin - _empMinFromHora(emp.tarIn));
+    var distMan = Math.min(distManDirecta, 1440 - distManDirecta);
+    var distTar = Math.min(distTarDirecta, 1440 - distTarDirecta);
     return distMan <= distTar ? emp.manOut : emp.tarOut;
   }
   return emp.tarOut || emp.manOut || null;

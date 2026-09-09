@@ -205,6 +205,16 @@ async function setTrustedDevice(val, name) {
       tokenHash: tokenHash,
       name: name || 'Sin nombre',
       createdAt: Date.now(),
+      // La caducidad ("expira en N días") antes solo se guardaba en el
+      // localStorage de ESTE dispositivo (isTrustedDevice() la comprobaba
+      // ella misma antes de ir al servidor) — el servidor (bimba-verify.php,
+      // checkTrustedDevice) nunca la comprobaba de verdad, así que un
+      // localStorage restaurado de una copia vieja (o una llamada directa a
+      // bimba-verify.php con el deviceId+token guardados) seguía siendo
+      // válido para siempre, sin importar los días configurados. Se guarda
+      // aquí también para que el servidor la haga cumplir de verdad, igual
+      // que ya hace con bimbaTokenExpiry.
+      expiresAt: expiry,
     });
     localStorage.setItem(TRUSTED_KEY, 'yes');
     localStorage.setItem(TRUSTED_NAME_KEY, name || 'Sin nombre');

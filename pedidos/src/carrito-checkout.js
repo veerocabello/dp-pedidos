@@ -1324,8 +1324,18 @@ async function _submitOrderInner() {
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
       name: item.name,
+      // Precio BASE en vivo (item.price, del mismo MENU de arriba), no
+      // c.basePrice — ese se fija una sola vez al añadir el producto al
+      // carrito y nunca se refresca (mismo motivo que ya se corrigió para
+      // getExtrasItemPrice(), que sí usa el precio en vivo para el total y
+      // la vista del carrito): si el admin cambiaba el precio de la patata
+      // mientras el cliente ya la tenía en el carrito, el ticket seguía
+      // mostrando la línea con el precio viejo aunque el total ya reflejara
+      // el nuevo — el servidor corrige el importe real igual
+      // (corregirPreciosCatalogo en guardar-pedido.php), pero el ticket que
+      // ve el cliente/cocina dejaba de sumar con su propio total.
       qty: c.qty,
-      subtotal: c.basePrice * c.qty,
+      subtotal: item.price * c.qty,
       extras: extras.length ? extras : undefined
     };
   }).filter(Boolean);

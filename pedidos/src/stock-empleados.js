@@ -998,41 +998,40 @@ async function saveOrderTotal(orderNum, rawValue) {
     loadLiveOrders();
     return;
   }
-  const todayKey = new Date().toISOString().slice(0, 10);
-  let stats;
-  if (window.fb_getStats) {
+  // Fecha de Madrid, no la UTC del navegador \u2014 cerca de la medianoche
+  // pod\u00edan no coincidir (mismo tipo de bug ya corregido en otros sitios de
+  // esta web), leyendo/escribiendo el d\u00eda equivocado justo en ese margen.
+  const todayKey = (typeof _todayKeyMadrid === 'function') ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+  let oldTotal = null;
+  let finalStats = null;
+  // Antes esto le\u00eda stats/<fecha> una vez (fb_getStats) y lo volv\u00eda a
+  // guardar entero con un set() sin condici\u00f3n (fb_saveStats) \u2014 si un
+  // pedido nuevo llegaba de por medio (nada raro a media jornada, y
+  // guardar-pedido.php escribe aqu\u00ed mismo por cada pedido que entra), ese
+  // pedido nuevo se perd\u00eda sin m\u00e1s al guardar el precio editado de otro.
+  // Ahora se corrige con una transacci\u00f3n real de Firebase sobre el dato de
+  // verdad del servidor en ese instante, igual que ya hace el resto de
+  // "quitar/editar un pedido de stats/<fecha>" en esta web.
+  if (window.fb_transactNative) {
     try {
-      const fb = await window.fb_getStats(todayKey);
-      if (fb) stats = fb;
-    } catch (e) {}
+      finalStats = await window.fb_transactNative('stats/' + todayKey, current => {
+        if (!current || !Array.isArray(current.orders)) return current;
+        const order = current.orders.find(o => o.num === orderNum);
+        if (!order) return current;
+        oldTotal = order.total;
+        const orders = current.orders.map(o => o.num === orderNum ? Object.assign({}, o, { total: newTotal }) : o);
+        return Object.assign({}, current, {
+          orders,
+          total: parseFloat(orders.reduce((s, o) => s + (o.total || 0), 0).toFixed(2))
+        });
+      });
+    } catch (e) { console.warn('Firebase stats error', e); }
   }
-  if (!stats) {
-    try {
-      stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-    } catch {
-      stats = {};
-    }
-  }
-  if (!stats || !stats.orders) {
+  if (oldTotal === null) {
     loadLiveOrders();
     return;
   }
-  const order = stats.orders.find(o => o.num === orderNum);
-  if (!order) {
-    loadLiveOrders();
-    return;
-  }
-  const oldTotal = order.total;
-  stats.total = parseFloat((stats.total - oldTotal + newTotal).toFixed(2));
-  order.total = newTotal;
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  if (window.fb_saveStats) {
-    try {
-      await window.fb_saveStats(stats);
-    } catch (e) {
-      console.warn('Firebase stats error', e);
-    }
-  }
+  if (finalStats) localStorage.setItem(STATS_KEY, JSON.stringify(finalStats));
   logActivity('\u270f\ufe0f Precio editado: pedido ' + orderNum + ' \u2014 ' + oldTotal.toFixed(2) + ' \u20ac \u2192 ' + newTotal.toFixed(2) + ' \u20ac');
   loadLiveOrders();
   if ((_document$getElementB30 = document.getElementById('admin-stats')) !== null && _document$getElementB30 !== void 0 && _document$getElementB30.classList.contains('active')) loadDayStats();

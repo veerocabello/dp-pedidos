@@ -546,6 +546,13 @@ try {
         // confirmar un pedido normal no se manda, y ticketValidoParaSello()
         // usa la fecha de hoy por defecto, que es la correcta en ese caso.
         $fecha = isset($payload['fecha']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $payload['fecha']) ? $payload['fecha'] : null;
+        // Fecha real del pedido que se va a validar (la misma que usará
+        // ticketValidoParaSello) — se necesita aparte para la idempotencia
+        // de más abajo, porque orderNum NO es único para siempre: es un
+        // contador de 4 cifras que se reinicia cada día
+        // (usedOrderNums/<fecha> en guardar-pedido.php), así que el mismo
+        // número puede reaparecer en un pedido real distinto meses después.
+        $fechaPedido = $fecha ?: date('Y-m-d');
 
         if (!$orderNum || !$tienePatata) {
             echo json_encode(['success' => true, 'skipped' => true]);
@@ -610,9 +617,19 @@ try {
 
             // Idempotencia: si este pedido ya sumó su sello (reintento de red,
             // doble clic...) no volver a sumar — solo devolver el estado actual.
+            // orderNum a secas NO basta: se reinicia cada día, así que el
+            // mismo número puede corresponder a un pedido real distinto en
+            // otra fecha (bastante probable con más de un cliente habitual,
+            // solo hay 9000 números posibles por día) — sin comprobar
+            // también la fecha, ese pedido nuevo y de verdad se daba por
+            // "ya registrado" y se quedaba sin su sello, en silencio. Las
+            // entradas antiguas (de antes de este arreglo) no guardan
+            // fechaPedido — para esas se sigue comparando solo por número,
+            // que es lo único que hay.
             $yaRegistrado = false;
             foreach ($historialSellos as $h) {
-                if (($h['orderNum'] ?? null) === $orderNum) { $yaRegistrado = true; break; }
+                if (($h['orderNum'] ?? null) !== $orderNum) continue;
+                if (!isset($h['fechaPedido']) || $h['fechaPedido'] === $fechaPedido) { $yaRegistrado = true; break; }
             }
             if ($yaRegistrado) {
                 echo json_encode(['success' => true, 'sellos' => $cliente['sellos'], 'premiosPendientes' => $cliente['premiosPendientes']]);

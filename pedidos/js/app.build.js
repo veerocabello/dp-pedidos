@@ -5732,6 +5732,14 @@ function repetirUltimoPedido() {
       if (!disponible(c.menuId)) { algoOmitido = true; return; }
       extrasCart[key] = c;
     });
+    // Antes esto no existía: dpf_ultimo_pedido nunca llegó a guardar
+    // promosCart, así que un pedido anterior con una promo se repetía SIN
+    // ella y sin avisar — el toast decía "✅ añadido al carrito" con un
+    // total real por debajo del que la propia tarjeta prometía.
+    Object.entries(data.promosCart || {}).forEach(([key, c]) => {
+      if (!promosLoad().some(p => p.id === c.promoId && p.visible !== false)) { algoOmitido = true; return; }
+      promosCart[key] = c;
+    });
     renderMenu();
     renderCart();
     showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');
@@ -7065,8 +7073,18 @@ async function _submitOrderInner() {
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
       name: item.name,
+      // Precio BASE en vivo (item.price, del mismo MENU de arriba), no
+      // c.basePrice — ese se fija una sola vez al añadir el producto al
+      // carrito y nunca se refresca (mismo motivo que ya se corrigió para
+      // getExtrasItemPrice(), que sí usa el precio en vivo para el total y
+      // la vista del carrito): si el admin cambiaba el precio de la patata
+      // mientras el cliente ya la tenía en el carrito, el ticket seguía
+      // mostrando la línea con el precio viejo aunque el total ya reflejara
+      // el nuevo — el servidor corrige el importe real igual
+      // (corregirPreciosCatalogo en guardar-pedido.php), pero el ticket que
+      // ve el cliente/cocina dejaba de sumar con su propio total.
       qty: c.qty,
-      subtotal: c.basePrice * c.qty,
+      subtotal: item.price * c.qty,
       extras: extras.length ? extras : undefined
     };
   }).filter(Boolean);
@@ -7754,6 +7772,12 @@ async function showSuccess(orderNum, slotTime, discountCode) {
         cart: JSON.parse(JSON.stringify(cart)),
         custCart: JSON.parse(JSON.stringify(custCart)),
         extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+        // Faltaba promosCart — si el último pedido llevaba una promo,
+        // "Repetir pedido" (carta.js) nunca podía devolverla al carrito
+        // (ni siquiera intentaba omitirla con aviso: simplemente no existía
+        // este dato), aunque la propia tarjeta la listara y mostrara el
+        // total original con la promo incluida.
+        promosCart: JSON.parse(JSON.stringify(promosCart)),
         ts: Date.now()
       }));
     }

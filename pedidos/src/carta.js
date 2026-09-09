@@ -1355,6 +1355,14 @@ function repetirUltimoPedido() {
       if (!disponible(c.menuId)) { algoOmitido = true; return; }
       extrasCart[key] = c;
     });
+    // Antes esto no existía: dpf_ultimo_pedido nunca llegó a guardar
+    // promosCart, así que un pedido anterior con una promo se repetía SIN
+    // ella y sin avisar — el toast decía "✅ añadido al carrito" con un
+    // total real por debajo del que la propia tarjeta prometía.
+    Object.entries(data.promosCart || {}).forEach(([key, c]) => {
+      if (!promosLoad().some(p => p.id === c.promoId && p.visible !== false)) { algoOmitido = true; return; }
+      promosCart[key] = c;
+    });
     renderMenu();
     renderCart();
     showCopyToast(algoOmitido ? '⚠️ Algún producto ya no está disponible y se omitió' : '✅ Pedido anterior añadido al carrito');

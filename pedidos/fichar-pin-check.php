@@ -710,8 +710,17 @@ try {
                 return ($f['empId'] ?? '') === $empId;
             }));
             usort($suyos, function ($a, $b) { return strcmp(($a['fecha'] ?? '') . ($a['hora'] ?? ''), ($b['fecha'] ?? '') . ($b['hora'] ?? '')); });
-            $suyosHoy = array_values(array_filter($suyos, function ($f) use ($fecha) { return ($f['fecha'] ?? '') === $fecha; }));
-            $ultimoTipo = count($suyosHoy) ? end($suyosHoy)['tipo'] : null;
+            // Antes esto miraba solo los fichajes de HOY ($suyosHoy) — un
+            // turno que cruza medianoche (entrada antes de las 00:00,
+            // salida ya en la fecha siguiente) veía $suyosHoy vacío para la
+            // fecha nueva y rechazaba la salida con "No tienes una entrada
+            // activa", aunque sí la tuviera (de ayer). Mirar el último
+            // fichaje de TODOS los días (ya ordenado cronológicamente más
+            // arriba) es lo correcto — de paso, también detecta al momento
+            // una entrada duplicada dejada abierta el día anterior, en vez
+            // de dejarla pasar y enterarse solo por el aviso de "entrada
+            // huérfana" de más abajo.
+            $ultimoTipo = count($suyos) ? end($suyos)['tipo'] : null;
             if ($tipo === 'entrada' && $ultimoTipo === 'entrada') {
                 return ['error' => 'Ya tienes una entrada registrada. Registra primero la salida.'];
             }
