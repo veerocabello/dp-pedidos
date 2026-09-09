@@ -157,7 +157,19 @@ async function renderFidelizacionList() {
     _fidelizacionDataCache = await window.fb_loadFidelizacionAll();
     _filtrarYPintarFidelizacion();
   } catch (e) {
-    el.innerHTML = '<div style="font-size:13px;color:#c0392b">Error al cargar: ' + e.message + '</div>';
+    // "permission_denied" aquí no significa que se haya borrado nada — los
+    // sellos siguen intactos en el servidor. Significa que ESTE navegador
+    // ya no tiene una sesión real de administradora (puede pasar si se
+    // limpió parte de los datos del sitio, o en un "dispositivo de
+    // confianza" cuya sesión de Firebase se perdió mientras el aviso de
+    // confianza seguía puesto) — antes esto mostraba el error crudo de
+    // Firebase ("permission_denied at /fidelizacion..."), que sonaba a
+    // pérdida de datos real y asustaba sin necesidad. Mismo motivo por el
+    // que "Reintentar" no basta: hay que volver a entrar con la contraseña.
+    const esPermiso = e && (e.code === 'PERMISSION_DENIED' || /permission_denied/i.test(e.message || ''));
+    el.innerHTML = esPermiso
+      ? '<div style="font-size:13px;color:#c0392b">⚠️ No se ha borrado nada — este dispositivo perdió la sesión de administradora. Pulsa "Quitar" en "Dispositivo de confianza" (arriba) y vuelve a entrar con la contraseña.</div>'
+      : '<div style="font-size:13px;color:#c0392b">Error al cargar: ' + e.message + '</div>';
   }
 }
 function filtrarFidelizacionPorTipo(tipo) {

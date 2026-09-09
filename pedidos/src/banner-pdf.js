@@ -929,7 +929,16 @@ async function renderActiveSessionsList() {
       '</div>';
     }).join('');
   } catch(e) {
-    container.innerHTML = '<div style="color:#c0392b;font-size:13px">Error al cargar sesiones: ' + e.message + '</div>';
+    // Mismo motivo que el aviso equivalente en fidelizacion-admin.js: un
+    // "permission_denied" aquí es que este navegador perdió la sesión real
+    // de administradora (típico en un "dispositivo de confianza" cuya
+    // sesión de Firebase se perdió mientras el aviso de confianza seguía
+    // puesto), no que se haya borrado nada — el mensaje crudo de Firebase
+    // sonaba a fallo grave sin serlo.
+    const esPermiso = e && (e.code === 'PERMISSION_DENIED' || /permission_denied/i.test(e.message || ''));
+    container.innerHTML = esPermiso
+      ? '<div style="color:#c0392b;font-size:13px">⚠️ Este dispositivo perdió la sesión de administradora — pulsa "Quitar" en "Dispositivo de confianza" y vuelve a entrar con la contraseña.</div>'
+      : '<div style="color:#c0392b;font-size:13px">Error al cargar sesiones: ' + e.message + '</div>';
   }
 }
 
