@@ -6441,6 +6441,18 @@ function playNotificationSound(typeOverride) {
         osc.stop(ctx.currentTime + offset + t + d + 0.05);
       });
     }
+    // Sin esto, el AudioContext de cada aviso se quedaba abierto para
+    // siempre (a diferencia de _sonidoCelebracion en nucleo-compartido.js,
+    // que sí se cierra) — y esta es, con diferencia, la función de sonido
+    // que más veces se llama en toda la web: la alarma de "pedido nuevo" se
+    // repite ella sola cada pocos segundos mientras el pedido siga sin
+    // atender (ver startAlertLoop). En un turno con varios pedidos seguidos
+    // se acumulan muchos contextos de audio sin cerrar nunca ninguno — los
+    // navegadores pueden empezar a fallar en silencio al crear audio nuevo
+    // si se acumulan así, lo que encaja con el aviso de "a veces no suena"
+    // reportado desde tienda. Se cierra tras REPEATS*patternDuration (con
+    // margen), una vez terminado de sonar del todo.
+    setTimeout(() => ctx.close(), (REPEATS * patternDuration + 0.5) * 1000);
   } catch (e) {}
 }
 function testNotificationSound() {
