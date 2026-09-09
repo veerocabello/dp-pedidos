@@ -2987,7 +2987,7 @@ function renderCaja() {
   const esHoy = cajaFechaSel === todayISO();
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
-  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
+  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
   const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
     ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
     : '';
@@ -3021,7 +3021,7 @@ function renderCaja() {
     + avisoPendiente
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
-    + row('💰 Efectivo esperado en caja', esperadoCajon, true)
+    + row('💰 Esperado en caja', esperadoCajon, true)
     + avisoDiferencia;
 }
 
@@ -3304,7 +3304,7 @@ function renderResumen() {
     return { fecha: f, ...t };
   }).filter(d => d.count > 0).reverse();
   const facturado = efectivo + tarjeta + pendiente;
-  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px${big ? ';font-size:16px' : ''}"><label style="flex:1">${label}</label><b>${fmt(value)} €</b></div>`;
+  const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
   const tablaDias = dias.length === 0
     ? `<div class="historial-empty">Sin pedidos en ese rango.</div>`
     : dias.map(d => `<div class="historial-item">
