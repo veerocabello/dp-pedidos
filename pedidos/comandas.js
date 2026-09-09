@@ -181,13 +181,20 @@ function saveExtraPrecio(tipo, name, value) {
   localStorage.setItem(EXTRAS_PRECIOS_KEY, JSON.stringify(saved));
 }
 function priceOfIngExtra(name) { return loadExtrasPrecios().ing[name]; }
-function priceOfSalsaExtra(name) { return loadExtrasPrecios().salsa[name]; }
+function priceOfSalsaExtra(name) { return name === SIN_SALSA ? 0 : loadExtrasPrecios().salsa[name]; }
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
   bomba: { name: "Patata Bomba 🆕", price: 9.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
 const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
+// Pseudo-salsa: no es una salsa real (no cuesta nada y no se imprime como
+// tal), pero ocupa el hueco de salsa igual que una de verdad — así una
+// patata sin salsa y con 6 ingredientes cuenta como "1 salsa + 6
+// ingredientes" para la oferta de Al Gusto (7,90€), y con 9 en total
+// (salsa+ingredientes) para la de Bomba (9,40€), igual que si llevara
+// salsa de verdad. Sin esto, pedir sin salsa nunca disparaba la oferta.
+const SIN_SALSA = 'Sin salsa';
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
 // Algunas descripciones de patatas usan la forma corta del ingrediente
 // ("york", "kebab", "tronquitos") o una frase distinta ("carne de kebab
@@ -402,16 +409,28 @@ function renderItemRow(item) {
 // Las tartas se dividen visualmente en Clásicas/Especiales (según el
 // desc empiece por "Clásica"/"Especial", igual que en la web), con un
 // separador sutil — no un bloque de color como en la web de pedidos.
+// Los paninis se dividen igual en enteros/medios (mitadDe) — así las
+// mitades no se mezclan entre los paninis enteros, todas juntas debajo
+// de su propio separador "Medio Panini".
 function renderCategoryItems(cat, items) {
-  if (cat !== 'Tartas') return items.map(renderItemRow).join('');
-  const clasicas = items.filter(i => (i.desc || '').startsWith('Clásica'));
-  const especiales = items.filter(i => (i.desc || '').startsWith('Especial'));
-  const resto = items.filter(i => !clasicas.includes(i) && !especiales.includes(i));
-  let html = '';
-  if (clasicas.length) html += `<div class="menu-subcat-sep">Clásicas</div>` + clasicas.map(renderItemRow).join('');
-  if (especiales.length) html += `<div class="menu-subcat-sep">Especiales</div>` + especiales.map(renderItemRow).join('');
-  html += resto.map(renderItemRow).join('');
-  return html;
+  if (cat === 'Tartas') {
+    const clasicas = items.filter(i => (i.desc || '').startsWith('Clásica'));
+    const especiales = items.filter(i => (i.desc || '').startsWith('Especial'));
+    const resto = items.filter(i => !clasicas.includes(i) && !especiales.includes(i));
+    let html = '';
+    if (clasicas.length) html += `<div class="menu-subcat-sep">Clásicas</div>` + clasicas.map(renderItemRow).join('');
+    if (especiales.length) html += `<div class="menu-subcat-sep">Especiales</div>` + especiales.map(renderItemRow).join('');
+    html += resto.map(renderItemRow).join('');
+    return html;
+  }
+  if (cat === 'Paninis') {
+    const enteros = items.filter(i => !i.mitadDe);
+    const medios = items.filter(i => i.mitadDe);
+    let html = enteros.map(renderItemRow).join('');
+    if (medios.length) html += `<div class="menu-subcat-sep">Medio Panini</div>` + medios.map(renderItemRow).join('');
+    return html;
+  }
+  return items.map(renderItemRow).join('');
 }
 
 function renderMenu() {
@@ -555,6 +574,32 @@ function editSimpleItem(id) {
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
 function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : priceOfIngExtra(p.name); }
 
+// Mismo umbral de Bomba (9 en total, mezclando salsas e ingredientes —
+// "Sin salsa" cuenta como una salsa más) aplicado al customizer de Al
+// Gusto/Bomba (custCart): si entre lo incluido en el precio plano y lo
+// que se ha ido añadiendo como extra se llega a 9, se cobra el precio
+// plano de Bomba en vez de seguir sumando cada extra por separado — lo
+// que se pase de 9 se sigue cobrando aparte. Se usa tanto para el precio
+// en vivo del modal como para la línea del carrito y el ticket, así los
+// tres sitios cuadran siempre entre sí.
+function comboCorePrice(basePrice, sauces, extraSauces, ingredients, extraIngredients) {
+  const allSauces = [...sauces, ...(extraSauces || [])];
+  const allIngredients = [...ingredients, ...(extraIngredients || [])];
+  const totalPicks = allSauces.length + allIngredients.length;
+  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) {
+    let core = CUSTOMIZER_CONFIG.bomba.price;
+    const overflow = totalPicks - CUSTOMIZER_CONFIG.bomba.maxTotal;
+    if (overflow > 0) {
+      const order = [...allSauces.map(name => ({ type: 'salsa', name })), ...allIngredients.map(name => ({ type: 'ing', name }))];
+      order.slice(order.length - overflow).forEach(p => { core += priceOfPick(p); });
+    }
+    return core;
+  }
+  const extraSaucePrice = (extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+  const extraIngPrice = (extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
+  return basePrice + extraSaucePrice + extraIngPrice;
+}
+
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
 // precio plano de esa patata; lo que se elija POR ENCIMA del umbral se
@@ -653,7 +698,7 @@ function getExtrasItemDetails(e) {
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push(s === SIN_SALSA ? '🚫 Sin salsa' : '+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -673,7 +718,7 @@ function getExtrasItemTicketExtras(e) {
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses((e.quitados || []).length, (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
@@ -1043,9 +1088,7 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
+    const unitPrice = comboCorePrice(item.price, c.sauces, c.extraSauces, c.ingredients, c.extraIngredients) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
@@ -1445,7 +1488,8 @@ function renderCustChips() {
   const cfg = CUSTOMIZER_CONFIG[custType];
   const sEl = document.getElementById('cust-sauces');
   const iEl = document.getElementById('cust-ingredients');
-  sEl.innerHTML = CUST_SAUCES.map(n => {
+  const sinSalsaChip = `<button class="chip ${custSelSauces.includes(SIN_SALSA) ? 'selected' : ''}" onclick="toggleCustSauce('${SIN_SALSA}')">🚫 Sin salsa</button>`;
+  sEl.innerHTML = sinSalsaChip + CUST_SAUCES.map(n => {
     const sel = custSelSauces.includes(n);
     const extra = custSelExtraSauces.includes(n);
     const label = extra ? n + ' +' + fmt(priceOfSalsaExtra(n)) + '€' : n;
@@ -1462,8 +1506,21 @@ function renderCustChips() {
     return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
+// "Sin salsa" es excluyente con cualquier salsa de verdad: elegirla quita
+// las que hubiera puestas (ocupa ella sola el hueco de salsa) y, al
+// revés, elegir una salsa de verdad la quita a ella. No tiene "extra"
+// propio — siempre cabe en el hueco incluido, nunca se cobra aparte.
 function toggleCustSauce(n) {
   const cfg = CUSTOMIZER_CONFIG[custType];
+  if (n === SIN_SALSA) {
+    const wasOn = custSelSauces.includes(SIN_SALSA);
+    custSelSauces = [];
+    custSelExtraSauces = custSelExtraSauces.filter(s => s !== SIN_SALSA);
+    if (!wasOn) custSelSauces.push(SIN_SALSA);
+    renderCustChips(); updateCustBadges(); updateCustTotalPrice();
+    return;
+  }
+  custSelSauces = custSelSauces.filter(s => s !== SIN_SALSA);
   const iN = custSelSauces.indexOf(n);
   const iE = custSelExtraSauces.indexOf(n);
   if (iN >= 0) custSelSauces.splice(iN, 1);
@@ -1533,11 +1590,9 @@ function updateCustExtraUI(which, on) {
 }
 function updateCustTotalPrice() {
   const cfg = CUSTOMIZER_CONFIG[custType];
-  let p = cfg.price;
+  let p = comboCorePrice(cfg.price, custSelSauces, custSelExtraSauces, custSelIngredients, custSelExtraIngredients);
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
-  p += custSelExtraSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-  p += custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
   renderCustConvertBanner();
 }
@@ -1560,17 +1615,17 @@ function splitCustDuplicates(list) {
 // pensado para llenarse de ingredientes, no tiene sentido ahí).
 function custSimpleEquivalent() {
   if (custType !== 'algusto') return null;
+  // Sin nada elegido todavía no hay nada que comparar (y el pedido ni
+  // siquiera se podría confirmar así) — evita el "sale más barato como
+  // Simple: 3,00€" sin sentido al abrir el customizer vacío.
+  if (custSelTotal() === 0 && custSelExtraSauces.length === 0 && custSelExtraIngredients.length === 0) return null;
   const simpleItem = MENU.find(m => m.id == 1);
   if (!simpleItem) return null;
   const cfg = CUSTOMIZER_CONFIG[custType];
-  const algustoCore = cfg.price
-    + custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0)
-    + custSelExtraSauces.reduce((s, n) => s + priceOfSalsaExtra(n), 0);
+  const algustoCore = comboCorePrice(cfg.price, custSelSauces, custSelExtraSauces, custSelIngredients, custSelExtraIngredients);
   const allIngredients = [...custSelIngredients, ...custSelExtraIngredients];
   const allSauces = [...custSelSauces, ...custSelExtraSauces];
-  const simpleCore = simpleItem.price
-    + allIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0)
-    + allSauces.reduce((s, n) => s + priceOfSalsaExtra(n), 0);
+  const simpleCore = comboCorePrice(simpleItem.price, [], allSauces, [], allIngredients);
   if (simpleCore >= algustoCore) return null;
   return { simpleItem, simpleCore, savings: algustoCore - simpleCore, allIngredients, allSauces };
 }
@@ -2037,6 +2092,11 @@ function renderExtrasBody(item) {
     });
     html += `</div>`;
     html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+    const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
+    html += `<label class="option-row ${sinSalsaOn ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${SIN_SALSA}')">
+      <div><div class="option-title" style="font-size:13px">🚫 Sin salsa</div><div class="option-sub">cuenta como salsa para la oferta de Al Gusto/Bomba</div></div>
+      <div class="option-check ${sinSalsaOn ? 'on' : ''}" style="width:20px;height:20px"></div>
+    </label>`;
     CUST_SAUCES.forEach(s => {
       const precio = priceOfSalsaExtra(s);
       const qty = extrasSalsas[s] || 0;
@@ -2145,6 +2205,18 @@ function toggleExtraIng(ing) {
 // primera vez que se elige, igual que con los ingredientes — doblar/
 // triplicar no cuenta más de una vez para el umbral de Al Gusto/Bomba.
 function toggleExtraSalsa(s) {
+  // "Sin salsa" no dobla/triplica (no tiene sentido) y es excluyente con
+  // cualquier salsa de verdad — solo sirve para marcar "sin salsa" y que
+  // cuente igualmente como salsa de cara a la oferta de Al Gusto/Bomba.
+  if (s === SIN_SALSA) {
+    const wasOn = !!extrasSalsas[SIN_SALSA];
+    Object.keys(extrasSalsas).forEach(k => { delete extrasSalsas[k]; delete extrasSalsaOrder[k]; });
+    if (!wasOn) { extrasSalsas[SIN_SALSA] = 1; extrasPickSeq++; extrasSalsaOrder[SIN_SALSA] = extrasPickSeq; }
+    renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+    updateExtrasTotalPrice();
+    return;
+  }
+  if (extrasSalsas[SIN_SALSA]) { delete extrasSalsas[SIN_SALSA]; delete extrasSalsaOrder[SIN_SALSA]; }
   const cur = extrasSalsas[s] || 0;
   const next = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
   extrasSalsas[s] = next;
@@ -2315,16 +2387,14 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
+    const unitPrice = comboCorePrice(item.price, c.sauces, c.extraSauces, c.ingredients, c.extraIngredients) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas (incluidas y extra),
     // luego los ingredientes (incluidos y extra), y el queso/gratinado
     // siempre al final.
     const extras = [
       ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: priceOfSalsaExtra(s), underline: true })),
+      ...(c.extraSauces || []).map(s => ({ name: s, price: s === SIN_SALSA ? null : priceOfSalsaExtra(s), underline: true })),
       ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
       ...quesoLastKeepOrder(c.extraIngredients || []).map(n => ({ name: n, price: priceOfPick({ type: 'ing', name: n }), underline: true })),
     ];
