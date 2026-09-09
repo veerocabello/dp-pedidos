@@ -4094,20 +4094,20 @@ function loadPaniniCounts() {
 }
 function savePaniniCounts(counts) { localStorage.setItem(getPaniniCountsKey(), JSON.stringify(counts)); }
 function getPaniniEntry(id) { return loadPaniniCounts()[id] || { inicial: 0, usado: 0 }; }
-// El panini entero y su "medio" comparten el mismo cupo de stock (el de
-// "wholeId") — cada medio vendido gasta solo 0,5 unidades, así dos
-// mitades gastan lo mismo que un panini entero.
+// Los paninis se cuentan por mitades: "unidades hoy" son mitades, no
+// paninis enteros (si se prepan 10 enteros, se ponen 20 aquí). Vender un
+// entero gasta 2 mitades del mismo cupo que su "medio" (que gasta 1).
 function paniniMedioIdFor(wholeId) { const m = MENU.find(x => x.mitadDe === wholeId); return m ? m.id : null; }
 function paniniUnidadesVendidasHoy(wholeId) {
   const medioId = paniniMedioIdFor(wholeId);
-  let sum = unidadesVendidasHoyPorMenuId(wholeId);
-  if (medioId) sum += unidadesVendidasHoyPorMenuId(medioId) * 0.5;
+  let sum = unidadesVendidasHoyPorMenuId(wholeId) * 2;
+  if (medioId) sum += unidadesVendidasHoyPorMenuId(medioId);
   return sum;
 }
 function paniniUnidadesEnCarrito(wholeId) {
   const medioId = paniniMedioIdFor(wholeId);
-  let sum = unidadesEnCarritoPorMenuId(wholeId, true);
-  if (medioId) sum += unidadesEnCarritoPorMenuId(medioId, true) * 0.5;
+  let sum = unidadesEnCarritoPorMenuId(wholeId, true) * 2;
+  if (medioId) sum += unidadesEnCarritoPorMenuId(medioId, true);
   return sum;
 }
 function paniniUsadoTotal(wholeId) {
@@ -4193,14 +4193,13 @@ function getStockRestanteForItem(item) {
   if (BONIATO_IDS.has(item.id)) return boniatoRestante(item.id === BONIATO_GOAT_ID ? 'goat' : 'normal');
   return null;
 }
-// Un "medio panini" solo necesita 0,5 unidades libres del panini entero
-// para poder venderse — si se comparara contra 1 entera, el último medio
-// del día saldría agotado sin motivo (con 0,5 restante ya no cabe un
-// entero, pero sí otro medio).
+// Los paninis se cuentan por mitades: un medio necesita 1 mitad libre,
+// un entero necesita 2 — si solo queda 1 mitad, el entero ya no cabe
+// pero sí otro medio.
 function isItemAgotado(item) {
   const r = getStockRestanteForItem(item);
   if (r === null) return false;
-  const min = item.mitadDe ? 0.5 : 1;
+  const min = item.mitadDe ? 1 : 2;
   return r < min - 1e-9;
 }
 
@@ -4210,14 +4209,11 @@ function isItemAgotado(item) {
 // pueden tocar bien en la pantalla táctil del mostrador — ahora el − / +
 // (grandes, táctiles) ajustan "unidades hoy" directamente; el número
 // sigue siendo editable a mano si hace falta poner uno exacto de golpe.
-function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus) {
+function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, unidadLabel) {
   const restante = entry.inicial ? Math.max(0, entry.inicial - (entry.usado + vendidoAuto)) : null;
-  // Los paninis pueden quedar en cantidades sueltas (2,5) por las
-  // mitades — se muestran con coma en vez de con punto.
-  const restanteFmt = restante !== null ? String(restante).replace('.', ',') : '';
   const restanteHtml = restante === null
     ? `<span class="stock-restante sin-limite">Sin límite</span>`
-    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restanteFmt}</span>`;
+    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restante}</span>`;
   return `<div class="stock-row">
     <div class="stock-row-head">
       <span class="stock-row-label">${escapeHtml(label)}</span>
@@ -4228,23 +4224,25 @@ function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus) 
         <button class="stock-btn" onclick="${onMinus}">−</button>
         <div class="stock-inicial-box">
           <input type="tel" inputmode="numeric" class="stock-inicial-input" value="${entry.inicial || 0}" onchange="${onInicial}this.value)">
-          <label>Unidades hoy</label>
+          <label>${unidadLabel || 'Unidades hoy'}</label>
         </div>
         <button class="stock-btn" onclick="${onPlus}">+</button>
       </div>
-      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${String(vendidoAuto).replace('.', ',')} vendidas hoy</div>` : ''}
+      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${vendidoAuto} vendidas hoy</div>` : ''}
     </div>
   </div>`;
 }
 function renderStockModal() {
   // Los "medio panini" no llevan fila propia — comparten cupo con su
   // panini entero (ver paniniUnidadesVendidasHoy/paniniUnidadesEnCarrito).
+  // Se cuenta en MITADES: un entero vendido gasta 2.
   const paninis = MENU.filter(m => m.cat === 'Paninis' && !m.mitadDe);
   document.getElementById('stock-paninis-rows').innerHTML = paninis.map(item => stockCounterRow(
     item.name, getPaniniEntry(item.id),
     paniniUnidadesVendidasHoy(item.id) + paniniUnidadesEnCarrito(item.id),
     `setPaniniInicial(${item.id},`,
-    `changePaniniInicial(${item.id},-1)`, `changePaniniInicial(${item.id},1)`
+    `changePaniniInicial(${item.id},-1)`, `changePaniniInicial(${item.id},1)`,
+    'Mitades hoy'
   )).join('');
   const boniato = loadBoniatoCounts();
   document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => {
@@ -4283,7 +4281,7 @@ function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTacha
   return `<div class="tally-badge" title="${escapeHtml(fullLabel)}">
     ${icon} ${escapeHtml(shortLabel)}
     <button class="tally-btn" onclick="${onTachar}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
-    <span class="tally-num ${cls}">${String(restante).replace('.', ',')}</span>
+    <span class="tally-num ${cls}">${restante}</span>
     <button class="tally-btn" onclick="${onDeshacer}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
   </div>`;
 }
