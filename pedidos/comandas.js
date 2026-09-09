@@ -1728,7 +1728,6 @@ function openExtrasModal(id, editKey) {
   extrasSalsas = {};
   extrasQuitados = {};
   extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to })) : [] : [];
-  extrasCambioPick = null;
   extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
     (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = 1);
@@ -1824,9 +1823,14 @@ function renderExtrasBody(item) {
       html += `<div class="section-label" style="margin-top:0">Salsa elegida</div>
         <div class="swap-list"><div class="swap-chip"><span>${escapeHtml(elegida.to)}</span><button onclick="removeExtraCambio(${extrasCambios.indexOf(elegida)})" title="Cambiar de salsa">✕</button></div></div>`;
     } else {
-      html += `<div class="section-label" style="margin-top:0">Elige la salsa</div><div class="chip-grid">`
-        + CUST_SAUCES.map(c => `<button class="chip" onclick="elegirSalsaObligatoria('${c.replace(/'/g, "\\'")}')">${escapeHtml(c)}</button>`).join('')
-        + `</div>`;
+      html += `<div class="section-label" style="margin-top:0">Elige la salsa</div>
+        <div class="swap-card">
+          <select id="cambio-salsa-from" class="swap-select" style="display:none">
+            <option value="${escapeHtml(salsaAElegir)}" selected>${escapeHtml(salsaAElegir)}</option>
+          </select>
+          <select id="cambio-salsa-to" class="swap-select" style="width:100%">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          <button class="swap-add-btn" onclick="addExtraCambio('salsa')">✓ Elegir salsa</button>
+        </div>`;
     }
   }
   if (canQuitar) {
@@ -1843,8 +1847,33 @@ function renderExtrasBody(item) {
       html += `</div>`;
     }
     if (!isBoniato) {
-      if (ingComponents.length) html += renderSwapChips('Cambiar un ingrediente', ingComponents, sortIngredientsQuesoLast(CUST_INGREDIENTS));
-      if (salsaComponents.length) html += renderSwapChips('Cambiar salsa', salsaComponents, CUST_SAUCES);
+      if (ingComponents.length) {
+        html += `<div class="section-label">Cambiar un ingrediente</div>`;
+        html += `<div class="swap-card">
+          <div class="swap-row">
+            <select id="cambio-ing-from" class="swap-select">${ingComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            <span class="swap-arrow">→</span>
+            <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+          <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Añadir cambio</button>
+        </div>`;
+      }
+      if (salsaComponents.length) {
+        html += `<div class="section-label">Cambiar salsa</div>`;
+        html += `<div class="swap-card">
+          <div class="swap-row">
+            <select id="cambio-salsa-from" class="swap-select">${salsaComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            <span class="swap-arrow">→</span>
+            <select id="cambio-salsa-to" class="swap-select">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+          <button class="swap-add-btn" onclick="addExtraCambio('salsa')">+ Añadir cambio</button>
+        </div>`;
+      }
+      if (extrasCambios.length) {
+        html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
+          `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
+        ).join('') + `</div>`;
+      }
     } else {
       // Boniato: las recetas van ya preparadas tal cual, así que solo se
       // puede cambiar el bacon (si lo lleva) — el resto de ingredientes de
@@ -1854,15 +1883,36 @@ function renderExtrasBody(item) {
         const elegido = extrasCambios.find(c => c.from === baconComp);
         html += `<div class="section-label">Cambiar el bacon</div>`;
         if (elegido) {
-          html += `<div class="chip-grid"><button class="chip doble" onclick="elegirBaconCambio(null)">🔄 ${escapeHtml(elegido.to)} ✕</button></div>`;
+          html += `<div class="swap-list"><div class="swap-chip"><span>${escapeHtml(baconComp)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(elegido.to)}</span><button onclick="removeExtraCambio(${extrasCambios.indexOf(elegido)})" title="Quitar cambio">✕</button></div></div>`;
         } else {
-          html += `<div class="chip-grid">` + sortIngredientsQuesoLast(CUST_INGREDIENTS.filter(n => n.toLowerCase() !== 'bacon')).map(c => `<button class="chip" onclick="elegirBaconCambio('${c.replace(/'/g, "\\'")}')">${escapeHtml(c)}</button>`).join('') + `</div>`;
+          html += `<div class="swap-card">
+            <div class="swap-row">
+              <select id="cambio-ing-from" class="swap-select" style="display:none"><option value="${escapeHtml(baconComp)}" selected>${escapeHtml(baconComp)}</option></select>
+              <span style="font-weight:600;padding:0 4px;white-space:nowrap">${escapeHtml(baconComp)}</span>
+              <span class="swap-arrow">→</span>
+              <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS.filter(n => n.toLowerCase() !== 'bacon')).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            </div>
+            <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Cambiar bacon</button>
+          </div>`;
         }
       }
     }
   } else if (canCambiarSalsaBloqueado) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva los quesos ya preparados · solo se puede cambiar la salsa.</div>`;
-    html += renderSwapChips('Cambiar salsa', salsaComponents, CUST_SAUCES);
+    html += `<div class="section-label">Cambiar salsa</div>`;
+    html += `<div class="swap-card">
+      <div class="swap-row">
+        <select id="cambio-salsa-from" class="swap-select">${salsaComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        <span class="swap-arrow">→</span>
+        <select id="cambio-salsa-to" class="swap-select">${CUST_SAUCES.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+      </div>
+      <button class="swap-add-btn" onclick="addExtraCambio('salsa')">+ Añadir cambio</button>
+    </div>`;
+    if (extrasCambios.length) {
+      html += `<div class="swap-list">` + extrasCambios.map((c, i) =>
+        `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
+      ).join('') + `</div>`;
+    }
   } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
@@ -1957,80 +2007,14 @@ function setExtraBase(which) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
-// ── Cambiar ingrediente/salsa a base de toques, sin diálogos nativos de
-// por medio (un <select> abre el picker del sistema — mucho más lento en
-// una pantalla táctil, sobre todo para un "cambio raro" con la lista
-// larga). Se toca el que se quiere cambiar y luego por cuál, y queda
-// aplicado al momento; tocarlo otra vez reabre la rejilla para elegir
-// otro o quitarlo. ──
-let extrasCambioPick = null; // { from } del componente que espera un "a cambio de qué", o null
-function pickExtraCambioFrom(from) {
-  extrasCambioPick = (extrasCambioPick && extrasCambioPick.from === from) ? null : { from };
-  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
-}
-function pickExtraCambioTo(to) {
-  if (!extrasCambioPick) return;
-  const from = extrasCambioPick.from;
-  if (from !== to) {
-    if (!extrasCambios.some(c => c.from === from) && extrasCambios.length >= 2) {
-      toast('⚠️ Máximo 2 cambios de ingrediente');
-    } else {
-      extrasCambios = extrasCambios.filter(c => c.from !== from);
-      extrasCambios.push({ from, to });
-    }
-  }
-  extrasCambioPick = null;
-  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
-  updateExtrasTotalPrice();
-}
-function revertExtraCambio(from) {
-  extrasCambios = extrasCambios.filter(c => c.from !== from);
-  extrasCambioPick = null;
-  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
-  updateExtrasTotalPrice();
-}
-// Rejilla de "de qué a qué" para una sección de cambio (ingrediente o
-// salsa): un chip por cada componente cambiable, con el destino ya
-// elegido en el propio chip ("🔄 X → Y"); tocarlo abre debajo la rejilla
-// de posibles sustitutos, con un "✕ Sin cambio" de más si ya tenía uno.
-function renderSwapChips(title, fromOptions, toOptions) {
-  let h = `<div class="section-label">${title} <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca cuál y luego por qué)</span></div><div class="chip-grid">`;
-  fromOptions.forEach(c => {
-    const cambiado = extrasCambios.find(cb => cb.from === c);
-    const activo = extrasCambioPick && extrasCambioPick.from === c;
-    const label = cambiado ? `🔄 ${escapeHtml(c)} → ${escapeHtml(cambiado.to)}` : escapeHtml(c);
-    h += `<button class="chip ${activo ? 'doble' : ''}" onclick="pickExtraCambioFrom('${c.replace(/'/g, "\\'")}')">${label}</button>`;
-  });
-  h += `</div>`;
-  if (extrasCambioPick && fromOptions.includes(extrasCambioPick.from)) {
-    const from = extrasCambioPick.from;
-    const yaTiene = extrasCambios.some(cb => cb.from === from);
-    h += `<div class="chip-grid" style="margin-top:6px">`;
-    if (yaTiene) h += `<button class="chip quitado" onclick="revertExtraCambio('${from.replace(/'/g, "\\'")}')">✕ Sin cambio</button>`;
-    h += toOptions.filter(c => c !== from).map(c => `<button class="chip" onclick="pickExtraCambioTo('${c.replace(/'/g, "\\'")}')">${escapeHtml(c)}</button>`).join('');
-    h += `</div>`;
-  }
-  return h;
-}
-// "Elige la salsa" (obligatoria, p.ej. Boniato Bacon) y "Cambiar el
-// bacon" (Boniato) tienen un único "de qué" fijo — no hace falta tocarlo
-// primero, la rejilla de sustitutos ya sale directa.
-function elegirSalsaObligatoria(to) {
-  const item = MENU.find(m => m.id == extrasCurrentId);
-  const from = parseBaseComponents(item).find(isElegirSalsaComp);
-  if (!from) return;
-  extrasCambios = extrasCambios.filter(c => c.from !== from);
+function addExtraCambio(tipo) {
+  const from = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-from' : 'cambio-ing-from').value;
+  const to = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-to' : 'cambio-ing-to').value;
+  if (!from || !to || from === to) return;
+  if (extrasCambios.some(c => c.from === from)) return; // ya hay un cambio para ese ingrediente
+  if (extrasCambios.length >= 2) { toast('⚠️ Máximo 2 cambios de ingrediente'); return; }
   extrasCambios.push({ from, to });
-  renderExtrasBody(item);
-  updateExtrasTotalPrice();
-}
-function elegirBaconCambio(to) {
-  const item = MENU.find(m => m.id == extrasCurrentId);
-  const baconComp = parseBaseComponents(item).find(c => c.trim().toLowerCase() === 'bacon');
-  if (!baconComp) return;
-  extrasCambios = extrasCambios.filter(c => c.from !== baconComp);
-  if (to) extrasCambios.push({ from: baconComp, to });
-  renderExtrasBody(item);
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
 function removeExtraCambio(i) {
