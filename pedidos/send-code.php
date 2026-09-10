@@ -30,6 +30,17 @@ $max_phone_pre = 3; // antes de leer el teléfono limpiamos la IP
 // la misma IP puede repetir peticiones sin ningún límite justo cuando más
 // falta hace uno.
 $max_ip_raw = 20;
+// Tope GLOBAL diario, sin distinguir IP ni teléfono — los límites de
+// arriba son por IP/teléfono, así que alguien dispuesto a rotar de IP
+// (proxies, VPN, una red de bots) podría sortearlos uno a uno y seguir
+// gastando SMS reales (y saldo de Twilio) sin ningún freno de conjunto.
+// 300/día es varias veces el volumen real de un negocio de este tamaño,
+// así que no debería notarlo un día normal, pero corta en seco un
+// intento sostenido de vaciar el saldo. Se gasta solo con envíos que
+// Twilio confirma (igual que $ip_file/$phone_file, no como
+// $ip_file_raw) — lo que de verdad cuesta dinero.
+$max_global_dia = 300;
+$window_dia = 86400; // 24 horas
 
 // NOTA DE SEGURIDAD: X-Forwarded-For lo puede poner cualquiera a lo que
 // quiera (no hay proxy/CDN de confianza delante en Hostinger que lo
@@ -41,6 +52,7 @@ $ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
 
 $ip_file = $tmp_dir . '/dpf_sms_ip_' . md5($ip) . '.json';
 $ip_file_raw = $tmp_dir . '/dpf_sms_ip_raw_' . md5($ip) . '.json';
+$global_file = $tmp_dir . '/dpf_sms_global_dia.json';
 
 // Limpieza ocasional: sin esto se acumula un archivo por cada IP/teléfono
 // distinto para siempre (solo se filtran las entradas de dentro, nunca se
@@ -142,6 +154,14 @@ if ($marcaIpRaw === false) {
     echo json_encode(['error' => 'Demasiados intentos. Espera unos minutos.']);
     exit();
 }
+$marcaGlobal = dpf_reservar_intento($global_file, $max_global_dia, $window_dia);
+if ($marcaGlobal === false) {
+    dpf_liberar_intento($ip_file, $marcaIp);
+    http_response_code(429);
+    error_log('[' . date('Y-m-d H:i:s') . "] [send-code] Tope GLOBAL diario de SMS alcanzado (posible abuso rotando de IP) — última IP=$ip" . PHP_EOL, 3, __DIR__ . '/twilio-errores.log');
+    echo json_encode(['error' => 'No se pueden enviar más códigos por ahora. Inténtalo más tarde o llama al restaurante.']);
+    exit();
+}
 
 // ── FIN RATE LIMITING IP ───────────────────────────────────
 
@@ -175,6 +195,7 @@ $phone_file = $tmp_dir . '/dpf_sms_phone_' . md5($phone) . '.json';
 $marcaPhone = dpf_reservar_intento($phone_file, $max_phone_pre, $window);
 if ($marcaPhone === false) {
     dpf_liberar_intento($ip_file, $marcaIp);
+    dpf_liberar_intento($global_file, $marcaGlobal);
     http_response_code(429);
     echo json_encode(['error' => 'Demasiados intentos para este número. Espera unos minutos.']);
     exit();
@@ -205,15 +226,16 @@ $result = json_decode($response, true);
 // emergencia se gasta SIEMPRE, éxito o fallo — ver el comentario junto a
 // $max_ip_raw más arriba); aquí ya no hace falta tocarlo.
 if ($http_code === 201 && isset($result['status']) && $result['status'] === 'pending') {
-    // $ip_file y $phone_file ya quedaron reservados/gastados arriba —
-    // Twilio ha confirmado el envío, así que no hay nada que liberar.
+    // $ip_file, $phone_file y $global_file ya quedaron reservados/gastados
+    // arriba — Twilio ha confirmado el envío, así que no hay nada que liberar.
     echo json_encode(['success' => true]);
 } else {
-    // Twilio no ha confirmado el envío — liberar las reservas de $ip_file y
-    // $phone_file para que este fallo no le cueste a un cliente real
-    // ninguno de sus intentos.
+    // Twilio no ha confirmado el envío — liberar las reservas de $ip_file,
+    // $phone_file y $global_file para que este fallo no le cueste a un
+    // cliente real ninguno de sus intentos.
     dpf_liberar_intento($ip_file, $marcaIp);
     dpf_liberar_intento($phone_file, $marcaPhone);
+    dpf_liberar_intento($global_file, $marcaGlobal);
     $log_line = '[' . date('Y-m-d H:i:s') . "] [send-code] Twilio ERROR — phone=$phone http_code=$http_code response=$response" . PHP_EOL;
     error_log($log_line, 3, __DIR__ . '/twilio-errores.log');
     echo json_encode(['error' => 'No se pudo enviar el código. Inténtalo de nuevo.']);

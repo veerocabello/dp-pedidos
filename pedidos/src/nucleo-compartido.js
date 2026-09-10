@@ -3223,24 +3223,32 @@ function _applyBannerDia(data) {
     el.style.display = 'none';
   }
 }
-function _updateBannerToggleBtn(active) {
+// hasText avisa del caso "activado pero sin nada que mostrar": el
+// interruptor rápido de aquí arriba (Estado del día) solo cambia
+// data.active, el texto se escribe aparte en la sección "📢 Banner del
+// día" más abajo — si nunca se ha rellenado (o se ha vaciado), el
+// banner se queda activo sin que _applyBannerDia() pinte nada en
+// ningún dispositivo, y antes no había ninguna pista visual de por qué.
+function _updateBannerToggleBtn(active, hasText) {
   const btn = document.getElementById('banner-toggle-btn');
   if (!btn) return;
-  btn.textContent = active ? '🟢 Banner activo' : '🔴 Banner inactivo';
-  btn.style.background = active ? '#27855a' : '#c0392b';
+  const sinTexto = active && !hasText;
+  btn.textContent = sinTexto ? '⚠️ Activo sin texto' : active ? '🟢 Banner activo' : '🔴 Banner inactivo';
+  btn.style.background = sinTexto ? '#b36a00' : active ? '#27855a' : '#c0392b';
   btn.style.color = '#fff';
   btn.style.border = 'none';
+  btn.title = sinTexto ? 'Activado pero sin texto guardado — no se muestra a nadie. Rellena "📢 Banner del día" más abajo y pulsa "Guardar banner".' : '';
 }
 function loadBannerDia() {
   // Mostrar estado local inmediatamente mientras carga Firebase
   const localBanner = getBannerDia();
-  _updateBannerToggleBtn(localBanner.active);
+  _updateBannerToggleBtn(localBanner.active, !!localBanner.text);
   if (window.fb_listenBannerDia) {
     window.fb_listenBannerDia(data => {
       if (data) localStorage.setItem(BANNER_KEY, JSON.stringify(data));
       const d = data || getBannerDia();
       _applyBannerDia(d);
-      _updateBannerToggleBtn(d.active);
+      _updateBannerToggleBtn(d.active, !!d.text);
       const input = document.getElementById('banner-dia-input');
       const subIn = document.getElementById('banner-dia-sub-input');
       const tipoIn = document.getElementById('banner-dia-tipo');
@@ -3270,7 +3278,7 @@ function loadBannerDia() {
   }
   // Último fallback: localStorage
   _applyBannerDia(getBannerDia());
-  _updateBannerToggleBtn(getBannerDia().active);
+  _updateBannerToggleBtn(getBannerDia().active, !!getBannerDia().text);
 }
 
 // ── PEDIDOS EN VIVO — estado de cocina (leído por el aviso de saturación,

@@ -8356,14 +8356,26 @@ if (navigator.usb || navigator.bluetooth) {
 // solo para admin.
 async function toggleBannerDia() {
   const data = getBannerDia();
-  data.active = !data.active;
+  const vaAActivarse = !data.active;
+  // Este interruptor rápido (Estado del día) solo cambia data.active — el
+  // texto se escribe aparte, en "📢 Banner del día" más abajo. Activarlo
+  // sin texto dejaba el banner "activo" en el panel pero sin nada que
+  // _applyBannerDia() pudiera pintar en ningún dispositivo, sin ningún
+  // aviso de por qué no se veía.
+  if (vaAActivarse && !data.text) {
+    const msg = 'Todavía no hay texto guardado para el banner — actívalo desde "📢 Banner del día" (más abajo), escribe el título y pulsa "Guardar banner" (eso ya lo activa).';
+    if (typeof showAlert === 'function') showAlert(msg, 'Falta el texto del banner');
+    else alert(msg);
+    return;
+  }
+  data.active = vaAActivarse;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
   // Antes el .catch() se quedaba vacío — si esta escritura fallaba, este
   // dispositivo seguía mostrando el banner como guardado/activo, pero
   // ningún otro dispositivo ni el sitio de cara al cliente (que lee de
   // Firebase) lo recibía nunca, sin ningún aviso visible.
   if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
-  _updateBannerToggleBtn(data.active);
+  _updateBannerToggleBtn(data.active, !!data.text);
   _applyBannerDia(data);
 }
 async function saveBannerDia() {
@@ -8375,8 +8387,15 @@ async function saveBannerDia() {
   data.text = text;
   data.sub = sub;
   data.tipo = tipo;
+  // Guardar un título de verdad activa el banner (si no, "Guardar banner"
+  // no coincidía con lo que decía el botón — quedaba guardado pero
+  // invisible hasta acordarse de ir también a activarlo en Estado del
+  // día); guardar vacío (para quitarlo) lo desactiva, coherente con que
+  // ya no hay nada que mostrar.
+  data.active = !!text;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
   if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
+  _updateBannerToggleBtn(data.active, !!data.text);
   _applyBannerDia(data);
   showToast('banner-toast');
 }
