@@ -1113,6 +1113,15 @@ function bimbaPintarTicketConfig() {
 
   const esperaEl = document.getElementById('tc-tienda-espera');
   if (esperaEl) esperaEl.value = String(getTiendaEsperaMinutos());
+
+  // Interruptor "este es el dispositivo de la impresora" — es de este
+  // dispositivo en concreto (localStorage, no viaja por Firebase), así que
+  // se pinta con lo que ya haya guardado _ptEsDispositivoPrincipal en
+  // impresora-termica.js.
+  const dispPrincipalEl = document.getElementById('pt-dispositivo-principal-toggle');
+  if (dispPrincipalEl && typeof _ptEsDispositivoPrincipal === 'function') {
+    dispPrincipalEl.checked = _ptEsDispositivoPrincipal();
+  }
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');

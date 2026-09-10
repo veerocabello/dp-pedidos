@@ -67,7 +67,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1789038504033">
+<link rel="stylesheet" href="css/style.min.css?v=1789039747086">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">

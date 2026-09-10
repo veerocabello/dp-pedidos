@@ -2391,3 +2391,8 @@
     font-family: 'Anton', sans-serif; font-size: 15px; letter-spacing: 0.02em;
     text-transform: uppercase; text-decoration: none; padding: 12px;
   }
+  /* Oculta los avisos de impresora/tickets pendientes en dispositivos que
+     no están marcados como "el de la impresora" (ver _ptAplicarVisibilidadEstadoLive
+     en impresora-termica.js) — !important porque otro código sigue tocando
+     el display inline de estos mismos elementos (mostrar/ocultar banners). */
+  .pt-oculto-no-principal { display: none !important; }

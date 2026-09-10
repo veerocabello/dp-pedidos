@@ -4626,6 +4626,15 @@ function bimbaPintarTicketConfig() {
 
   const esperaEl = document.getElementById('tc-tienda-espera');
   if (esperaEl) esperaEl.value = String(getTiendaEsperaMinutos());
+
+  // Interruptor "este es el dispositivo de la impresora" — es de este
+  // dispositivo en concreto (localStorage, no viaja por Firebase), así que
+  // se pinta con lo que ya haya guardado _ptEsDispositivoPrincipal en
+  // impresora-termica.js.
+  const dispPrincipalEl = document.getElementById('pt-dispositivo-principal-toggle');
+  if (dispPrincipalEl && typeof _ptEsDispositivoPrincipal === 'function') {
+    dispPrincipalEl.checked = _ptEsDispositivoPrincipal();
+  }
 }
 function openTicketConfigOverlay() {
   document.getElementById('ticket-config-overlay').classList.add('open');
@@ -7165,10 +7174,49 @@ function _ptResetConexion() {
   _ptTransporte = null;
 }
 
+// "Dispositivo de la impresora" — interruptor manual, guardado solo en
+// ESTE dispositivo (localStorage, no viaja por Firebase ni entre
+// dispositivos), para que la tablet de la tienda se distinga de cualquier
+// otro sitio donde alguien tenga el panel abierto (el móvil o el PC de la
+// dueña, por ejemplo). Antes, cualquier dispositivo con el panel de admin
+// abierto veía los mismos avisos de "impresora no conectada"/tickets
+// pendientes que la propia tablet, aunque ese dispositivo nunca fuera a
+// tener una impresora conectada — confuso y alarmante sin necesidad. La
+// sección "Configuración del ticket → Impresora térmica" sigue funcionando
+// igual en CUALQUIER dispositivo a propósito, sin mirar este interruptor:
+// si la tablet se estropea, hace falta poder conectar la impresora desde
+// otro sitio sin tener antes que activar nada aquí.
+const PT_DISPOSITIVO_PRINCIPAL_KEY = 'dpf_pt_dispositivo_principal';
+function _ptEsDispositivoPrincipal() {
+  try { return localStorage.getItem(PT_DISPOSITIVO_PRINCIPAL_KEY) === '1'; } catch (e) { return false; }
+}
+function _ptSetDispositivoPrincipal(valor) {
+  try { localStorage.setItem(PT_DISPOSITIVO_PRINCIPAL_KEY, valor ? '1' : '0'); } catch (e) {}
+  _ptAplicarVisibilidadEstadoLive();
+}
+// Oculta, fuera de Configuración del ticket, los avisos de "impresora no
+// conectada"/tickets pendientes en la pestaña "En vivo" y en Modo Cocina
+// si este dispositivo no está marcado como el de la impresora. Se llama
+// junto a _ptUpdateDebugStatus() (mismos sitios: cada refresco de "En
+// vivo"/Modo Cocina) para que la visibilidad se mantenga correcta aunque
+// otro código vuelva a tocar el display de estos mismos elementos.
+function _ptAplicarVisibilidadEstadoLive() {
+  const ocultar = !_ptEsDispositivoPrincipal();
+  const selector = '#admin-pedidos .pt-conn-status, #pt-debug-status,' +
+    ' #admin-pedidos .pt-cola-contador, #admin-pedidos .pt-cola-antigua-lista,' +
+    ' #admin-pedidos .pt-papel-aviso, #admin-pedidos .pt-desconexion-aviso,' +
+    ' #kitchen-mode .pt-papel-aviso, #kitchen-mode .pt-desconexion-aviso,' +
+    ' #kitchen-mode .pt-cola-contador, #pt-debug-status-kitchen';
+  document.querySelectorAll(selector).forEach(el => {
+    el.classList.toggle('pt-oculto-no-principal', ocultar);
+  });
+}
+
 // Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
 // para diagnosticar por qué no imprime sola: si el admin no está "activo" en este
 // dispositivo, o el auto-imprimir está apagado, aquí sale sin tener que adivinar.
 function _ptUpdateDebugStatus() {
+  _ptAplicarVisibilidadEstadoLive();
   const el = document.getElementById('pt-debug-status');
   const elKitchen = document.getElementById('pt-debug-status-kitchen');
   if (!el && !elKitchen) return;

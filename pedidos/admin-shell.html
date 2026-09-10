@@ -1733,6 +1733,14 @@
       </div>
       <p style="font-size:11px;color:var(--muted);margin:-6px 0 14px">Solo funciona en Chrome/Edge (ni Safari ni Firefox). Por USB necesitas adaptador OTG en la tablet; por Bluetooth solo tu impresora ya emparejada. Pulsa el botón del que uses una sola vez — luego imprimirá sola y se reconecta sola.</p>
 
+      <div onclick="(function(){var c=document.getElementById('pt-dispositivo-principal-toggle');c.checked=!c.checked;_ptSetDispositivoPrincipal(c.checked);})()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:16px;cursor:pointer">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">📍 Este es el dispositivo de la impresora</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Actívalo solo en la tablet de la tienda — así el móvil/PC no muestra avisos de "impresora desconectada" ni tickets pendientes que no le tocan. Esta sección de arriba sigue funcionando en cualquier dispositivo, por si hay que conectar la impresora desde otro sitio.</div>
+        </div>
+        <input type="checkbox" id="pt-dispositivo-principal-toggle" onclick="event.stopPropagation()" onchange="_ptSetDispositivoPrincipal(this.checked)" style="width:20px;height:20px;flex-shrink:0">
+      </div>
+
       <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:11px 12px;margin-bottom:16px">
         <div class="pt-papel-contador" style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px">🧻 Papel restante — calculando...</div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
