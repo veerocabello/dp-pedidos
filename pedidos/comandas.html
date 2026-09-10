@@ -6,7 +6,19 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comandas · Dulce Patata Food (sin conexión)</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
-<link rel="stylesheet" href="comandas.css?v=1788974133044">
+<!-- ── Instalable en el iPhone (o Android) desde "Añadir a pantalla de
+     inicio" en Safari: icono propio, abre a pantalla completa sin la
+     barra de Safari, como una app. No lleva Service Worker propio para
+     no interferir con el de la web de pedidos (pedidos/sw.js) — como
+     todo el estado va en localStorage, ya funciona sin conexión en
+     cuanto se ha cargado una vez. ── -->
+<link rel="manifest" href="comandas-manifest.json">
+<meta name="theme-color" content="#3D1F0D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Comandas">
+<link rel="apple-touch-icon" href="img/icon-192.png">
+<link rel="stylesheet" href="comandas.css">
 </head>
 <body>
 
@@ -15,16 +27,16 @@
     <img src="img/logo.png" alt="" class="topbar-logo">
     <div>
       <div class="topbar-title">Comandas</div>
-      <span class="topbar-sub">Dulce Patata Food · funciona sin internet</span>
+      <span class="topbar-sub">Dulce Patata Food · funciona sin internet · <span id="app-version"></span></span>
     </div>
   </div>
   <div class="topbar-actions">
-    <span id="printer-status" class="printer-status" onclick="printerStatusClick()" title="Toca para conectar la impresora por Bluetooth" style="cursor:pointer">comprobando impresora…</span>
-    <button class="btn-ghost" onclick="openHistorial()">🧾 Pedidos de hoy</button>
-    <button class="btn-ghost" onclick="openCaja()">🧮 Hacer caja</button>
-    <button class="btn-ghost" onclick="openResumen()">📈 Resumen</button>
-    <button class="btn-ghost" onclick="openCartaAdmin()">🍽️ Carta</button>
-    <button class="btn-ghost" onclick="openSettings()">⚙️ Ajustes</button>
+    <span id="printer-status" class="printer-status">comprobando impresora…</span>
+    <button class="btn-ghost" onclick="openHistorial()">🧾 <span class="btn-ghost-label">Pedidos de hoy</span></button>
+    <button class="btn-ghost" onclick="openCaja()">🧮 <span class="btn-ghost-label">Hacer caja</span></button>
+    <button class="btn-ghost" onclick="openResumen()">📈 <span class="btn-ghost-label">Resumen</span></button>
+    <button class="btn-ghost" onclick="openCartaAdmin()">🍽️ <span class="btn-ghost-label">Carta</span></button>
+    <button class="btn-ghost" onclick="openSettings()">⚙️ <span class="btn-ghost-label">Ajustes</span></button>
   </div>
 </header>
 
@@ -38,7 +50,8 @@
     <div class="cart-header">
       <h2>Comanda</h2>
       <div style="display:flex;gap:12px;align-items:center">
-        <button class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal()">➕ Añadir</button>
+        <button class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal(null,1)">➕ Añadir</button>
+        <button class="btn-text" style="color:var(--error)" onclick="openManualItemModal(null,-1)">➖ Restar</button>
         <button class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
         <button class="btn-text" onclick="clearOrder()">Vaciar</button>
       </div>
@@ -67,16 +80,19 @@
      modal a pantalla completa (no dentro de la barra lateral, que se
      quedaba corta y no dejaba ver el teclado por mucho que se
      deslizara). ── -->
-<div id="cobrar-modal" class="modal-overlay" onclick="if(event.target===this)cancelCobrarModal()">
+<div id="cobrar-modal" class="modal-overlay" onclick="if(event.target===this)closeCobrarModal()">
   <div class="modal-box" style="max-width:660px">
-    <button class="modal-close" onclick="cancelCobrarModal()">&#x2715;</button>
+    <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
-    <button type="button" class="btn-text" style="color:var(--amber-dark);margin-bottom:8px" onclick="openManualItemModal()">➕ Añadir gasto/cobro suelto</button>
-    <div class="paid-toggle-row" id="paid-toggle-row">
-      <button type="button" class="paid-toggle-btn paid-toggle-no active" id="paid-btn-no" onclick="setOrderPaid(false)">NO PAGADO</button>
-      <button type="button" class="paid-toggle-btn paid-toggle-yes" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ PAGADO</button>
+    <div style="display:flex;gap:12px;margin-bottom:8px">
+      <button type="button" class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal(null,1)">➕ Añadir gasto/cobro suelto</button>
+      <button type="button" class="btn-text" style="color:var(--error)" onclick="openManualItemModal(null,-1)">➖ Restar del ticket</button>
     </div>
-    <div class="payment-method-row" id="payment-method-row" style="display:none">
+    <div class="paid-toggle-row" id="paid-toggle-row">
+      <button type="button" class="paid-toggle-btn paid-toggle-yes active" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ Pagado</button>
+      <button type="button" class="paid-toggle-btn paid-toggle-no" id="paid-btn-no" onclick="setOrderPaid(false)">❌ No pagado</button>
+    </div>
+    <div class="payment-method-row" id="payment-method-row" style="display:flex">
       <button type="button" class="payment-method-btn active" id="pay-method-cash" onclick="setPaymentMethod('efectivo')">💵 Efectivo</button>
       <button type="button" class="payment-method-btn" id="pay-method-card" onclick="setPaymentMethod('tarjeta')">💳 Tarjeta</button>
     </div>
@@ -147,7 +163,7 @@
     <div class="modal-subtitle" id="cust-subtitle">Hasta 1 salsa y hasta 6 ingredientes a elegir</div>
     <div class="section-label" style="margin-top:0">Salsas <span id="cust-sauce-badge">0/1</span></div>
     <div class="chip-grid" id="cust-sauces"></div>
-    <div class="section-label">Ingredientes <span id="cust-ing-badge">0/6</span></div>
+    <div class="section-label">Ingredientes <span id="cust-ing-badge">0/6</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div>
     <div class="chip-grid" id="cust-ingredients"></div>
     <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px">
       <div class="section-label" style="margin-top:0">Extras opcionales</div>
@@ -161,7 +177,10 @@
       </label>
     </div>
     <div class="modal-footer">
-      <div class="modal-price" id="cust-price">6,90 €</div>
+      <div>
+        <div class="modal-price" id="cust-price">6,90 €</div>
+        <div id="cust-price-note" style="font-size:11.5px;font-weight:700;color:var(--amber-dark)"></div>
+      </div>
       <button class="modal-confirm-btn" id="cust-confirm-btn" onclick="confirmCustomizer()">&#x2192; Añadir al pedido</button>
     </div>
     <div class="modal-error" id="cust-error"></div>
@@ -254,15 +273,7 @@
       <div><div class="option-title" style="font-size:13.5px">Imprimir automáticamente al confirmar</div><div class="option-sub">Si lo desactivas, la comanda no se vacía sola tras imprimir (para revisar o sacar copias antes de empezar la siguiente)</div></div>
       <input type="checkbox" id="set-auto-imprimir" style="width:20px;height:20px;flex-shrink:0" checked>
     </label>
-    <!-- Ocultos a petición: solo se quiere conectar por Bluetooth
-         automático, como en el panel de Admin — sin elegir modo de
-         impresión ni impresora de Windows. Se dejan en el DOM (ocultos, no
-         quitados) para no tener que tocar cada sitio de comandas.js que
-         los lee — el valor se queda fijo en "auto" (su opción por
-         defecto), que sigue teniendo su propio plan B (app de escritorio /
-         diálogo) si la conexión directa falla, aunque ya no se pueda
-         elegir a mano. -->
-    <div class="form-group" style="display:none">
+    <div class="form-group">
       <label>Modo de impresión (propio de esta herramienta offline)</label>
       <select id="set-modo-impresion" onchange="updatePrinterNameVisibility()">
         <option value="auto">Directa a la impresora — si falla, imprime igualmente sin diálogo (app de escritorio) o abre el diálogo</option>
@@ -296,7 +307,7 @@
           <input id="set-backup-folder" type="text" readonly placeholder="Sin configurar" style="flex:1;background:var(--warm)">
           <button class="btn-secondary" style="flex:0 0 auto;padding:9px 14px" onclick="chooseBackupFolder()">📁 Elegir…</button>
         </div>
-        <div class="option-sub" style="margin-top:4px">Con esto configurado, al pulsar "📥 Descargar copia" en Hacer Caja también se guarda sola una copia ahí, organizada en carpetas.</div>
+        <div class="option-sub" id="set-backup-folder-hint" style="margin-top:4px">Con esto configurado, la copia automática diaria (y "📥 Descargar copia" en Hacer Caja) se guarda sola ahí, organizada en carpetas — sin esto, la copia automática solo llega a Descargas.</div>
       </div>
       <label class="option-row" style="padding:10px 14px">
         <div><div class="option-title" style="font-size:13.5px">Abrir automáticamente al encender este ordenador</div><div class="option-sub">Así no hay que buscarla ni abrirla a mano cada mañana</div></div>
@@ -317,12 +328,12 @@
     </div>
 
     <div class="settings-actions">
-      <button class="btn-secondary" onclick="pairPrinterBluetooth()">📶 Conectar impresora por Bluetooth</button>
+      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
     </div>
 
     <div class="settings-help">
-      <b>¿Cómo funciona?</b> Pulsa "Conectar impresora por Bluetooth" una vez, elige la impresora en la lista que aparece y ya queda emparejada — se reconecta sola las siguientes veces que abras Comandas, igual que en el panel de Admin. Solo funciona en Chrome sobre Android — en iPhone/iPad o Safari no está disponible, es un límite del propio sistema, no de esta herramienta.
+      <b>¿Cómo funciona?</b> "Directa a la impresora" manda el ticket por USB sin abrir ningún diálogo (necesita Chrome o Edge, y pulsar "Conectar impresora directa" una vez) — la mayoría de impresoras no lo permiten (Chrome lo bloquea por seguridad), así que casi siempre acaba usando la alternativa. "Silenciosa" (solo en la app de escritorio) manda el ticket directo a tu impresora ya instalada en Windows, sin ningún diálogo ni paso previo — es la opción recomendada si usas la app de escritorio. "Siempre usar el diálogo" abre el diálogo de impresión normal de Windows/Chrome cada vez, para elegir la impresora a mano; la primera vez configura ahí el tamaño de papel (58/80&nbsp;mm) y "sin márgenes".
     </div>
   </div>
 </div>
@@ -471,7 +482,7 @@
     <input type="hidden" id="caja-contado-manual-input" oninput="setCajaContadoManual(this.value)">
     <div class="clear-link"><button type="button" onclick="limpiarCajaContado()">✕ Limpiar contado</button></div>
     <div class="settings-actions">
-      <button class="btn-secondary" onclick="imprimirResumenCaja()">🖨️ Imprimir resumen</button>
+      <button class="btn-secondary" onclick="imprimirResumenCaja()">🖨️ Imprimir resumen del día</button>
       <button class="btn-secondary" onclick="exportarCopiaHoyJSON()">📥 Descargar copia</button>
       <button class="btn-secondary" onclick="exportarVentasHoyCSV()">📊 Exportar a Excel (CSV)</button>
       <button class="btn-secondary" id="btn-copia-organizada" style="display:none" onclick="guardarCopiaOrganizadaManual()">📁 Guardar copia organizada</button>
@@ -537,28 +548,6 @@
   </div>
 </div>
 
-<!-- ── COBRO SUELTO — para cobrar algo que no está en la carta (una
-     reparación, un extra puntual...) sin darlo de alta como producto. ── -->
-<div id="manual-item-modal" class="modal-overlay" onclick="if(event.target===this)closeManualItemModal()">
-  <div class="modal-box" style="max-width:380px">
-    <button class="modal-close" onclick="closeManualItemModal()">&#x2715;</button>
-    <div class="modal-title">➕ Añadir cobro suelto</div>
-    <div class="modal-subtitle">Para cobrar algo que no está en la carta.</div>
-    <div class="form-group">
-      <label>Descripción</label>
-      <input id="manual-item-name" type="text" maxlength="40" placeholder="Ej. Servilletas" readonly onclick="openNameKeyboard('manual-item-name','Ej. Servilletas')">
-    </div>
-    <div class="form-group">
-      <label>Precio</label>
-      <input id="manual-item-price" type="text" inputmode="none" readonly placeholder="0,00" onclick="openNumpad('manual-item-price','Precio')">
-    </div>
-    <div class="modal-error" id="manual-item-error"></div>
-    <div class="modal-footer">
-      <button class="modal-confirm-btn" onclick="confirmManualItem()">→ Añadir a la comanda</button>
-    </div>
-  </div>
-</div>
-
 <!-- ── DESCUENTO / OFERTA ── -->
 <div id="discount-modal" class="modal-overlay" onclick="if(event.target===this)closeDiscountModal()">
   <div class="modal-box" style="max-width:400px">
@@ -585,6 +574,28 @@
     <div class="modal-footer">
       <button class="btn-secondary" id="discount-remove-btn" onclick="removeDiscount()" style="display:none">🗑️ Quitar descuento</button>
       <button class="modal-confirm-btn" onclick="applyDiscount()">→ Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── COBRO SUELTO — para cobrar algo que no está en la carta (una
+     reparación, un extra puntual...) sin darlo de alta como producto. ── -->
+<div id="manual-item-modal" class="modal-overlay" onclick="if(event.target===this)closeManualItemModal()">
+  <div class="modal-box" style="max-width:380px">
+    <button class="modal-close" onclick="closeManualItemModal()">&#x2715;</button>
+    <div class="modal-title" id="manual-item-title">➕ Añadir cobro suelto</div>
+    <div class="modal-subtitle" id="manual-item-subtitle">Para cobrar algo que no está en la carta.</div>
+    <div class="form-group">
+      <label>Descripción (opcional)</label>
+      <input id="manual-item-name" type="text" maxlength="40" placeholder="Ej. Servilletas" readonly onclick="openNameKeyboard('manual-item-name','Ej. Servilletas')">
+    </div>
+    <div class="form-group">
+      <label>Precio</label>
+      <input id="manual-item-price" type="text" inputmode="none" readonly placeholder="0,00" onclick="openNumpad('manual-item-price','Precio')">
+    </div>
+    <div class="modal-error" id="manual-item-error"></div>
+    <div class="modal-footer">
+      <button class="modal-confirm-btn" id="manual-item-confirm-btn" onclick="confirmManualItem()">→ Añadir a la comanda</button>
     </div>
   </div>
 </div>
@@ -727,12 +738,6 @@
   <button onclick="undoClearOrder()">↩️ Deshacer</button>
 </div>
 
-<!-- Solo para sincronizar precios con la carta online (ver comandas.js,
-     "Sincronización de precios") — si no hay internet, estos dos scripts
-     sencillamente no cargan y la herramienta sigue funcionando igual que
-     siempre con los últimos precios conocidos. -->
-<script src="js/firebase-auth-compat.js"></script>
-<script src="js/config.js"></script>
-<script src="comandas.js?v=1788974133044"></script>
+<script src="comandas.js"></script>
 </body>
 </html>

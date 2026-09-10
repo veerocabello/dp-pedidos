@@ -3,9 +3,13 @@
    Herramienta offline de mostrador: misma carta y formato que la web de
    pedidos, pero funciona sin internet (todo el código y los datos están en
    este archivo, no depende de Firebase ni de ningún servidor) e imprime en
-   una impresora térmica conectada por Bluetooth (pensado para tablet) o
-   por cable (USB, si se usa desde un ordenador).
+   una impresora térmica conectada por cable.
    ========================================================================== */
+
+// Sube este número cuando se publiquen cambios de comportamiento (precios,
+// ofertas, carta...) — se ve en la cabecera para que el equipo note que hay
+// una versión nueva sin tener que mirar el código.
+const APP_VERSION = '1.1';
 
 /* ── CARTA ── (mismos productos y precios que pedidos/src/carta.js) */
 const MENU = [
@@ -28,33 +32,45 @@ const MENU = [
   { id: 16, cat: "Patatas", name: "Patata Bomba", desc: "9 ingredientes y/o salsas al gusto ¡sin límite!", price: 9.40, nuevo: true },
 
   { id: 17, cat: "Boniato", name: "Boniato Fries", desc: "Tarrina de boniato fries", price: 4.50 },
-  { id: 18, cat: "Boniato", name: "Boniato Lotus", desc: "Salsa Lotus + bacon + queso mozzarella + galletas Lotus", price: 5.50 },
-  { id: 19, cat: "Boniato", name: "Boniato Bacon", desc: "Salsa a elegir + bacon + queso mozzarella", price: 5.50 },
-  { id: 20, cat: "Boniato", name: "Boniato G.O.A.T.", desc: "Salsa miel mostaza + cebolla crujiente + queso de cabra", price: 5.50 },
-  { id: 21, cat: "Boniato", name: "Boniato Pistacchio", desc: "Crema de pistacho + queso mozzarella + pistacho crujiente", price: 5.50, nuevo: true },
-  { id: 51, cat: "Boniato", name: "Boniato Pulled Pork", desc: "Salsa cheddar + salsa yogur + pulled pork BBQ + cebolla crujiente + caramelo de bacon", price: 5.50, nuevo: true },
+  { id: 18, cat: "Boniato", name: "Boniato Lotus", desc: "Salsa Lotus + bacon + queso mozzarella + galletas Lotus", price: 4.50 },
+  { id: 19, cat: "Boniato", name: "Boniato Bacon", desc: "Salsa a elegir + bacon + queso mozzarella", price: 4.50 },
+  { id: 20, cat: "Boniato", name: "Boniato G.O.A.T.", desc: "Salsa miel mostaza + cebolla crujiente + queso de cabra", price: 4.50 },
+  { id: 21, cat: "Boniato", name: "Boniato Pistacchio", desc: "Crema de pistacho + queso mozzarella + pistacho crujiente", price: 4.50, nuevo: true },
+  { id: 51, cat: "Boniato", name: "Boniato Pulled Pork", desc: "Salsa cheddar + salsa yogur + pulled pork BBQ + cebolla crujiente + caramelo de bacon", price: 4.50, nuevo: true },
 
-  { id: 22, cat: "Paninis", name: "Panini Jamón York y Queso", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
+  { id: 22, cat: "Paninis", name: "Panini York y Queso", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 23, cat: "Paninis", name: "Panini Carbonara", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 24, cat: "Paninis", name: "Panini Barbacoa", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 25, cat: "Paninis", name: "Panini Kebab", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
   { id: 26, cat: "Paninis", name: "Panini 4 Quesos", desc: "Pan de leña crujiente · medio metro", price: 5.50 },
+  // "mitadDe" liga cada medio panini con su panini entero para el stock:
+  // dos mitades vendidas gastan lo mismo que un panini entero (ver
+  // paniniUnidadesVendidasHoy/paniniUnidadesEnCarrito más abajo).
+  { id: 77, cat: "Paninis", name: "Medio Panini York y Queso", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 22 },
+  { id: 78, cat: "Paninis", name: "Medio Panini Carbonara", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 23 },
+  { id: 79, cat: "Paninis", name: "Medio Panini Barbacoa", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 24 },
+  { id: 80, cat: "Paninis", name: "Medio Panini Kebab", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 25 },
+  { id: 81, cat: "Paninis", name: "Medio Panini 4 Quesos", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 26 },
 
-  { id: 27, cat: "Cookies", name: "Crumbl Cookie Pistacho", desc: "Recién horneada", price: 3.99 },
-  { id: 28, cat: "Cookies", name: "Crumbl Cookie Lotus", desc: "Recién horneada", price: 3.99 },
-  { id: 29, cat: "Cookies", name: "Crumbl Cookie Oreo", desc: "Recién horneada", price: 3.99 },
-  { id: 30, cat: "Cookies", name: "Crumbl Cookie Kit Kat", desc: "Recién horneada", price: 3.99 },
-  { id: 31, cat: "Cookies", name: "Crumbl Cookie Nutella", desc: "Recién horneada", price: 3.99 },
-  { id: 32, cat: "Cookies", name: "Crumbl Cookie Kinder", desc: "Recién horneada", price: 3.99 },
-  { id: 33, cat: "Cookies", name: "Crumbl Cookie Huesitos Blanco", desc: "Recién horneada", price: 3.99 },
+  { id: 27, cat: "Cookies", name: "Crumbl Cookie Pistacho", desc: "Recién horneada", price: 3.20 },
+  { id: 28, cat: "Cookies", name: "Crumbl Cookie Lotus", desc: "Recién horneada", price: 3.20 },
+  { id: 29, cat: "Cookies", name: "Crumbl Cookie Oreo", desc: "Recién horneada", price: 3.20 },
+  { id: 30, cat: "Cookies", name: "Crumbl Cookie Kit Kat", desc: "Recién horneada", price: 3.20 },
+  { id: 31, cat: "Cookies", name: "Crumbl Cookie Nutella", desc: "Recién horneada", price: 3.20 },
+  { id: 32, cat: "Cookies", name: "Crumbl Cookie Kinder", desc: "Recién horneada", price: 3.20 },
+  { id: 33, cat: "Cookies", name: "Crumbl Cookie Huesitos Blanco", desc: "Recién horneada", price: 3.20 },
 
   { id: 34, cat: "Tartas", name: "Tarta de Queso La Viña", desc: "Clásica · elaboración propia", price: 3.40 },
   { id: 35, cat: "Tartas", name: "Tarta Tres Chocolates", desc: "Clásica · elaboración propia", price: 3.40 },
   { id: 36, cat: "Tartas", name: "Tarta de la Abuela", desc: "Clásica · elaboración propia", price: 3.40 },
+  { id: 73, cat: "Tartas", name: "Tarta del Abuelo", desc: "Clásica · elaboración propia", price: 3.40 },
   { id: 37, cat: "Tartas", name: "Tarta de Queso Lotus", desc: "Especial · elaboración propia", price: 3.90 },
   { id: 38, cat: "Tartas", name: "Tarta de Queso Pistacho", desc: "Especial · elaboración propia", price: 3.90 },
   { id: 39, cat: "Tartas", name: "Tarta de Queso Dinosaurio", desc: "Especial · elaboración propia", price: 3.90 },
   { id: 40, cat: "Tartas", name: "Tarta de Queso Kinder", desc: "Especial · elaboración propia", price: 3.90 },
+  { id: 74, cat: "Tartas", name: "Tarta Filipinos Blancos", desc: "Especial · elaboración propia", price: 3.90 },
+  { id: 75, cat: "Tartas", name: "Tarta Cereales Rellenos de Leche", desc: "Especial · elaboración propia", price: 3.90 },
+  { id: 76, cat: "Tartas", name: "Tarta de Donuts", desc: "Especial · elaboración propia", price: 3.90 },
 
   { id: 41, cat: "Bebidas", name: "Refresco lata", desc: "", price: 1.30 },
   { id: 42, cat: "Bebidas", name: "Cerveza lata", desc: "", price: 1.40 },
@@ -129,86 +145,15 @@ function saveMenuOrder() { localStorage.setItem(MENU_ORDER_KEY, JSON.stringify(M
   }
 })();
 
-/* ── Sincronización de precios con la carta online ──────────────────
-   Los precios de MENU (arriba) eran, hasta ahora, una copia fija: si
-   cambiabas un precio desde el panel de administración de la web, esta
-   herramienta no se enteraba sola, había que venir a editar este archivo
-   a mano cada vez. Ahora, si el dispositivo tiene internet, se lee el
-   precio/nombre/descripción real desde Firebase (el mismo dato que ya usa
-   el panel para editar la carta — ver admin-config.js / nucleo-compartido.js
-   en pedidos/src/) y se sobreescribe aquí encima.
-
-   A propósito, SOLO se tocan esos tres campos, y SOLO sobre productos que
-   YA existen en la lista de arriba (por id) — no se añaden productos
-   nuevos solos: uno nuevo en la web puede necesitar su propio modal de
-   personalización, que aquí no se puede montar automáticamente sin
-   riesgo de romper algo al tocarlo. Si algún día se añade un producto
-   nuevo también aquí, hay que seguir haciéndolo a mano (o desde
-   "🍽️ Carta" si es un producto sencillo sin personalización).
-
-   Si no hay internet (o Firebase tarda/falla), no pasa nada: se sigue
-   usando el último precio conocido, guardado la última vez que sí hubo
-   conexión — y si esta es la primera vez que se abre esta herramienta y
-   nunca ha sincronizado, el precio de fábrica de arriba. Es una mejora
-   encima, no una dependencia nueva: todo lo demás sigue funcionando
-   exactamente igual sin conexión. ── */
-const MENU_FB_SYNC_KEY = 'comandas_menu_fb_sync_v1';
-(function aplicarUltimoPrecioSincronizado() {
-  try {
-    const guardado = JSON.parse(localStorage.getItem(MENU_FB_SYNC_KEY) || 'null');
-    const items = guardado && Array.isArray(guardado.items) ? guardado.items : null;
-    if (!items) return;
-    items.forEach(saved => {
-      const item = MENU.find(m => m.id == saved.id);
-      if (!item) return;
-      if (saved.price !== undefined) item.price = saved.price;
-      if (saved.name) item.name = saved.name;
-      if (saved.desc !== undefined) item.desc = saved.desc;
-    });
-  } catch (e) { /* sin copia guardada todavía, o corrupta — se ignora */ }
-})();
-function _sincronizarPreciosConWeb(data) {
-  const items = Array.isArray(data) ? data : (data && Array.isArray(data.items) ? data.items : null);
-  if (!items || !items.length) return;
-  let huboCambios = false;
-  items.forEach(saved => {
-    const item = MENU.find(m => m.id == saved.id);
-    if (!item) return;
-    if (saved.price !== undefined && item.price !== saved.price) { item.price = saved.price; huboCambios = true; }
-    if (saved.name && item.name !== saved.name) { item.name = saved.name; huboCambios = true; }
-    if (saved.desc !== undefined && item.desc !== saved.desc) { item.desc = saved.desc; huboCambios = true; }
-  });
-  try { localStorage.setItem(MENU_FB_SYNC_KEY, JSON.stringify({ items: items, ts: Date.now() })); } catch (e) {}
-  // Solo se vuelve a pintar si de verdad ha cambiado algo — evita un
-  // parpadeo/reseteo de scroll cada vez que el listener de Firebase
-  // manda el mismo menú sin ningún cambio real.
-  if (huboCambios && typeof renderMenu === 'function' && document.readyState !== 'loading') {
-    renderMenu();
-    if (typeof renderCart === 'function') renderCart();
-  }
-}
-function _iniciarSyncPreciosWeb() {
-  if (window.fb_loadMenu) {
-    window.fb_loadMenu().then(data => { if (data) _sincronizarPreciosConWeb(data); }).catch(() => {});
-  }
-  if (window.fb_listenMenu) {
-    window.fb_listenMenu(_sincronizarPreciosConWeb);
-  }
-}
-if (window._firebaseReady) {
-  _iniciarSyncPreciosWeb();
-} else {
-  document.addEventListener('firebaseReady', _iniciarSyncPreciosWeb);
-  // Por si firebase-auth-compat.js/config.js no han cargado (sin
-  // internet en la primera visita, bloqueados, etc.) — sin esto el
-  // listener de arriba se quedaría esperando un evento que nunca llega.
-  setTimeout(function () { if (!window._firebaseReady) _iniciarSyncPreciosWeb(); }, 4000);
-}
-
 const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
+// Carbonara y Boloñesa llevan la mezcla ya preparada (no se puede quitar
+// ni cambiar), pero SÍ se puede añadir algo más encima — igual que
+// cualquier otra patata. El resto de "solo gratinar" (4 Quesos, Ranchera,
+// Philadelphia, Granollers, Pulled Pork) se queda igual.
+const EXTRAS_ANADIR_AUNQUE_PREPARADA = new Set([4, 5]);
 // Todos los ingredientes extra cuestan lo mismo (antes había dos precios
 // distintos, 1€/0,70€ según el ingrediente); estas dos listas se
 // conservan solo para agrupar/ordenar el desplegable, ya no para el precio.
@@ -241,13 +186,20 @@ function saveExtraPrecio(tipo, name, value) {
   localStorage.setItem(EXTRAS_PRECIOS_KEY, JSON.stringify(saved));
 }
 function priceOfIngExtra(name) { return loadExtrasPrecios().ing[name]; }
-function priceOfSalsaExtra(name) { return loadExtrasPrecios().salsa[name]; }
+function priceOfSalsaExtra(name) { return name === SIN_SALSA ? 0 : loadExtrasPrecios().salsa[name]; }
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
   bomba: { name: "Patata Bomba 🆕", price: 9.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
-const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito"];
+const CUST_SAUCES = ["Aceite de oliva", "Alioli", "BBQ", "Brava", "Ketchup", "Mantequilla", "Mayonesa", "Philadelphia", "Ranchera", "Roquefort", "Rosa", "Tomate Frito", "Yogur"];
+// Pseudo-salsa: no es una salsa real (no cuesta nada y no se imprime como
+// tal), pero ocupa el hueco de salsa igual que una de verdad — así una
+// patata sin salsa y con 6 ingredientes cuenta como "1 salsa + 6
+// ingredientes" para la oferta de Al Gusto (7,90€), y con 9 en total
+// (salsa+ingredientes) para la de Bomba (9,40€), igual que si llevara
+// salsa de verdad. Sin esto, pedir sin salsa nunca disparaba la oferta.
+const SIN_SALSA = 'Sin salsa';
 const CUST_INGREDIENTS = ["4 Quesos", "Aceitunas", "Atún", "Bacon", "Carne Kebab", "Carne Picada", "Cebolla", "Champiñón", "Gambas", "Huevo", "Jamón York", "Maíz", "Piña", "Pollo", "Queso Mozzarella", "Remolacha", "Tomate Natural", "Tronquitos de Mar", "Zanahoria"];
 // Algunas descripciones de patatas usan la forma corta del ingrediente
 // ("york", "kebab", "tronquitos") o una frase distinta ("carne de kebab
@@ -320,23 +272,29 @@ function categoryRank(cat) {
   return idx === -1 ? CATEGORY_ORDER.length : idx;
 }
 
-/* ── Estado del carrito (3 capas, igual que en la web) ── */
+/* ── Estado del carrito (3 capas, igual que en la web, + cobros sueltos) ── */
 let cart = {};        // id -> qty (productos simples, sin personalizar)
 let custCart = {};    // key -> {menuId, qty, sauces[], ingredients[], extraQueso, extraGratinado, extraSauces[]}
 let extrasCart = {};  // key -> {menuId, qty, queso, gratinado, ingredientesExtra[], salsasExtra[], basePrice, cheddarCarne?}
 let manualCart = {};   // key -> {key, name, price, qty} — cobros sueltos que no están en la carta
-let manualIdSeq = 0, manualItemEditKey = null;
-let orderPaid = false;
+let manualIdSeq = 0, manualItemEditKey = null, manualItemSign = 1;
+// Por defecto toda comanda arranca como pagada (lo normal), pero en
+// Cobrar se puede marcar "NO PAGADO" a mano para los casos sueltos que sí
+// hace falta llevar aparte (fiado, pedido por teléfono que se cobra al
+// entregar...) — luego aparecen en el aviso de "pendiente de cobro" de
+// Hacer Caja y en el desplegable de "no pagados" del historial.
+let orderPaid = true;
 let paymentMethod = 'efectivo';
-// Pedido por teléfono cargado desde "Pedidos no pagados" (ver
-// payHistorialOrder): su comanda para cocina YA se imprimió cuando se hizo
-// el pedido, así que al cobrarlo ahora no hay que volver a imprimir nada —
-// solo marcarlo como pagado y que desaparezca de la lista de pendientes.
+// Pedido por teléfono recuperado de un historial antiguo que se guardó
+// como no pagado (de antes de quitar esa distinción): su comanda para
+// cocina YA se imprimió, así que al cobrarlo ahora no hay que volver a
+// imprimir nada — solo marcarlo como pagado.
 let pedidoACobrarSinImprimir = null;
 function setOrderPaid(v) {
   orderPaid = v;
-  document.getElementById('paid-btn-no').classList.toggle('active', !orderPaid);
-  document.getElementById('paid-btn-yes').classList.toggle('active', orderPaid);
+  const btnYes = document.getElementById('paid-btn-yes'), btnNo = document.getElementById('paid-btn-no');
+  if (btnYes) btnYes.classList.toggle('active', orderPaid);
+  if (btnNo) btnNo.classList.toggle('active', !orderPaid);
   document.getElementById('payment-method-row').style.display = orderPaid ? 'flex' : 'none';
   const printBtn = document.getElementById('print-btn');
   if (printBtn) {
@@ -344,11 +302,7 @@ function setOrderPaid(v) {
       // Ya impreso de antes: el botón solo registra el cobro, no imprime.
       printBtn.textContent = '✅ Marcar como cobrado';
     } else {
-      // El botón de abajo del todo de Cobrar siempre imprime — solo cambia
-      // el texto según si ya está marcado como pagado o no: "IMPRIMIR
-      // COMANDA" antes de cobrar (para la cocina) y "Imprimir ticket" una
-      // vez pagado.
-      printBtn.textContent = orderPaid ? '🖨️ Imprimir ticket' : 'IMPRIMIR COMANDA';
+      printBtn.textContent = 'IMPRIMIR COMANDA';
     }
     printBtn.className = 'btn-print';
   }
@@ -460,16 +414,28 @@ function renderItemRow(item) {
 // Las tartas se dividen visualmente en Clásicas/Especiales (según el
 // desc empiece por "Clásica"/"Especial", igual que en la web), con un
 // separador sutil — no un bloque de color como en la web de pedidos.
+// Los paninis se dividen igual en enteros/medios (mitadDe) — así las
+// mitades no se mezclan entre los paninis enteros, todas juntas debajo
+// de su propio separador "Medio Panini".
 function renderCategoryItems(cat, items) {
-  if (cat !== 'Tartas') return items.map(renderItemRow).join('');
-  const clasicas = items.filter(i => (i.desc || '').startsWith('Clásica'));
-  const especiales = items.filter(i => (i.desc || '').startsWith('Especial'));
-  const resto = items.filter(i => !clasicas.includes(i) && !especiales.includes(i));
-  let html = '';
-  if (clasicas.length) html += `<div class="menu-subcat-sep">Clásicas</div>` + clasicas.map(renderItemRow).join('');
-  if (especiales.length) html += `<div class="menu-subcat-sep">Especiales</div>` + especiales.map(renderItemRow).join('');
-  html += resto.map(renderItemRow).join('');
-  return html;
+  if (cat === 'Tartas') {
+    const clasicas = items.filter(i => (i.desc || '').startsWith('Clásica'));
+    const especiales = items.filter(i => (i.desc || '').startsWith('Especial'));
+    const resto = items.filter(i => !clasicas.includes(i) && !especiales.includes(i));
+    let html = '';
+    if (clasicas.length) html += `<div class="menu-subcat-sep">Clásicas</div>` + clasicas.map(renderItemRow).join('');
+    if (especiales.length) html += `<div class="menu-subcat-sep">Especiales</div>` + especiales.map(renderItemRow).join('');
+    html += resto.map(renderItemRow).join('');
+    return html;
+  }
+  if (cat === 'Paninis') {
+    const enteros = items.filter(i => !i.mitadDe);
+    const medios = items.filter(i => i.mitadDe);
+    let html = enteros.map(renderItemRow).join('');
+    if (medios.length) html += `<div class="menu-subcat-sep">Medio Panini</div>` + medios.map(renderItemRow).join('');
+    return html;
+  }
+  return items.map(renderItemRow).join('');
 }
 
 function renderMenu() {
@@ -484,7 +450,7 @@ function renderMenu() {
   } else {
     grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory && !m.hidden));
   }
-  if (typeof renderSidebarStockTally === 'function') renderSidebarStockTally();
+  renderSidebarStockTally();
 }
 
 function animateAdd(id) {
@@ -538,16 +504,28 @@ function changeExtrasQty(key, delta) {
   if (c.qty <= 0) { delete extrasCart[key]; clearLineDiscount(key); }
   renderCart();
 }
+
 /* ── Cobro suelto: para cobrar algo que no está en la carta (una
    reparación, una venta puntual...) sin tener que darlo de alta como
    producto — nombre y precio libres, se añade como una línea más de la
    comanda, con su propio descuento/quitar igual que cualquier otra. ── */
-function openManualItemModal(editKey) {
+// sign: 1 = suma al ticket (cobro suelto), -1 = resta (una incidencia,
+// una devolución parcial... sin tener que montarlo como % o importe fijo
+// de Descuento). Al editar uno ya puesto, el signo se coge del que ya
+// tenía guardado, no del botón con el que se reabra.
+function openManualItemModal(editKey, sign) {
   manualItemEditKey = editKey || null;
   const existing = manualItemEditKey ? manualCart[manualItemEditKey] : null;
+  manualItemSign = existing ? (existing.price < 0 ? -1 : 1) : (sign || 1);
   document.getElementById('manual-item-name').value = existing ? existing.name : '';
-  document.getElementById('manual-item-price').value = existing ? fmt(existing.price) : '';
+  document.getElementById('manual-item-price').value = existing ? fmt(Math.abs(existing.price)) : '';
   document.getElementById('manual-item-error').style.display = 'none';
+  const esResta = manualItemSign < 0;
+  document.getElementById('manual-item-title').textContent = esResta ? '➖ Restar del ticket' : '➕ Añadir cobro suelto';
+  document.getElementById('manual-item-subtitle').textContent = esResta
+    ? 'Para descontar algo del total sin usar el descuento en % o importe fijo.'
+    : 'Para cobrar algo que no está en la carta.';
+  document.getElementById('manual-item-confirm-btn').textContent = esResta ? '→ Restar de la comanda' : '→ Añadir a la comanda';
   document.getElementById('manual-item-modal').classList.add('open');
 }
 function closeManualItemModal() {
@@ -556,11 +534,14 @@ function closeManualItemModal() {
 }
 function editManualItem(key) { openManualItemModal(key); }
 function confirmManualItem() {
-  const name = document.getElementById('manual-item-name').value.trim();
-  const price = parseCashNum(document.getElementById('manual-item-price').value);
+  // La descripción es opcional — si no se escribe nada, se pone un
+  // nombre genérico según sea sumar o restar, para no obligar a teclear
+  // algo cuando solo hace falta ajustar el importe.
+  const name = document.getElementById('manual-item-name').value.trim() || (manualItemSign < 0 ? 'Descuento suelto' : 'Cobro suelto');
+  const amount = parseCashNum(document.getElementById('manual-item-price').value);
   const errEl = document.getElementById('manual-item-error');
-  if (!name) { errEl.textContent = 'Escribe una descripción'; errEl.style.display = 'block'; return; }
-  if (!price || price <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
+  if (!amount || amount <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
+  const price = amount * manualItemSign;
   if (manualItemEditKey && manualCart[manualItemEditKey]) {
     Object.assign(manualCart[manualItemEditKey], { name, price });
   } else {
@@ -570,7 +551,7 @@ function confirmManualItem() {
   }
   closeManualItemModal();
   renderCart();
-  toast('✅ Añadido a la comanda');
+  toast(manualItemSign < 0 ? '✅ Restado de la comanda' : '✅ Añadido a la comanda');
 }
 function removeManualItem(key) { delete manualCart[key]; clearLineDiscount(key); renderCart(); }
 function changeManualQty(key, delta) {
@@ -612,6 +593,96 @@ function editSimpleItem(id) {
 // ingrediente, lo mismo que ya sale más barato como Al Gusto/Bomba).
 function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) : priceOfIngExtra(p.name); }
 
+// Precio del customizer de Al Gusto/Bomba (custCart), con los mismos tres
+// escalones que ya usa la carta de extras de un producto normal
+// (computeExtrasCorePrice): mientras no se llegue a 1 salsa + 6
+// ingredientes NO se aplica ninguna oferta — se cobra como una Simple
+// (su base) más cada salsa/ingrediente a su propio precio, nada incluido
+// gratis. Al llegar a 1 salsa + 6 ingredientes se aplica el precio plano
+// de Al Gusto (lo que sobre de ahí se cobra aparte); al llegar a 9 en
+// total (salsas + ingredientes, "Sin salsa" cuenta como una salsa más)
+// se aplica el de Bomba. Se usa tanto para el precio en vivo del modal
+// como para la línea del carrito y el ticket, así los tres cuadran
+// siempre entre sí y con getCustCartItemLabel (que nombra el producto
+// según el mismo escalón alcanzado).
+function comboCorePrice(allSauces, allIngredients) {
+  const salsaCount = allSauces.length;
+  const ingCount = allIngredients.length;
+  const totalPicks = salsaCount + ingCount;
+
+  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) {
+    let core = CUSTOMIZER_CONFIG.bomba.price;
+    const overflow = totalPicks - CUSTOMIZER_CONFIG.bomba.maxTotal;
+    if (overflow > 0) {
+      const order = [...allSauces.map(name => ({ type: 'salsa', name })), ...allIngredients.map(name => ({ type: 'ing', name }))];
+      order.slice(order.length - overflow).forEach(p => { core += priceOfPick(p); });
+    }
+    return core;
+  }
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) {
+    let core = CUSTOMIZER_CONFIG.algusto.price;
+    const overflowSauces = salsaCount - CUSTOMIZER_CONFIG.algusto.maxSauces;
+    const overflowIng = ingCount - CUSTOMIZER_CONFIG.algusto.maxIngredients;
+    if (overflowSauces > 0) allSauces.slice(salsaCount - overflowSauces).forEach(name => { core += priceOfSalsaExtra(name); });
+    if (overflowIng > 0) allIngredients.slice(ingCount - overflowIng).forEach(name => { core += priceOfPick({ type: 'ing', name }); });
+    return core;
+  }
+  const simpleBase = (MENU.find(m => m.id == 1) || {}).price || 0;
+  const saucePrice = allSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
+  const ingPrice = allIngredients.reduce((s, name) => s + priceOfPick({ type: 'ing', name }), 0);
+  return simpleBase + saucePrice + ingPrice;
+}
+// A qué escalón de precio corresponde una Al Gusto/Bomba (custCart) según
+// cuántas salsas/ingredientes lleve en total, sin importar con qué botón
+// se empezó a construir — 'ninguno' (no llega ni a Al Gusto: se cobra
+// como una Simple, ver comboCorePrice), 'algusto' o 'bomba'.
+function custCartTier(c) {
+  const allSauces = [...c.sauces, ...(c.extraSauces || [])];
+  const allIngredients = [...c.ingredients, ...(c.extraIngredients || [])];
+  const salsaCount = allSauces.length;
+  const ingCount = allIngredients.length;
+  if (salsaCount + ingCount >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'bomba';
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'algusto';
+  return 'ninguno';
+}
+// El nombre con el que se muestra y se imprime siempre sigue al escalón
+// alcanzado, no al botón con el que se empezó a construir — así nunca se
+// ve, por ejemplo, "Patata Bomba" cobrada a precio de Al Gusto (o de
+// Simple) solo porque se empezó a construir desde ahí.
+function getCustCartItemLabel(c) {
+  const tier = custCartTier(c);
+  const id = tier === 'bomba' ? 16 : tier === 'algusto' ? 15 : 1;
+  const item = MENU.find(m => m.id == id);
+  return item ? item.name : 'Producto desconocido';
+}
+// Qué salsas/ingredientes de una Al Gusto/Bomba van incluidos en el
+// precio plano del escalón alcanzado (sin precio propio en el ticket) y
+// cuáles se cobran aparte — mismo criterio y mismo orden (salsas
+// primero, ingredientes después) que usa comboCorePrice, así el desglose
+// del ticket siempre cuadra con el total. Si no se llega a ningún
+// escalón (tier 'ninguno'), no hay nada incluido: cada salsa/ingrediente
+// se cobra a su propio precio, igual que en una Simple con extras.
+function custCartPricedLines(c) {
+  const tier = custCartTier(c);
+  const allSauces = [...c.sauces, ...(c.extraSauces || [])];
+  const allIngredients = quesoLastKeepOrder([...c.ingredients, ...(c.extraIngredients || [])]);
+  const priceOfLine = (type, name) => (name === SIN_SALSA ? 0 : type === 'salsa' ? priceOfSalsaExtra(name) : priceOfPick({ type: 'ing', name }));
+  const items = [
+    ...allSauces.map(name => ({ type: 'salsa', name })),
+    ...allIngredients.map(name => ({ type: 'ing', name })),
+  ];
+  let bombaFreeLeft = CUSTOMIZER_CONFIG.bomba.maxTotal;
+  let sauceIdx = 0, ingIdx = 0;
+  return items.map(p => {
+    let included;
+    if (tier === 'ninguno') included = false;
+    else if (tier === 'bomba') { included = bombaFreeLeft > 0; if (included) bombaFreeLeft--; }
+    else { included = p.type === 'salsa' ? sauceIdx < CUSTOMIZER_CONFIG.algusto.maxSauces : ingIdx < CUSTOMIZER_CONFIG.algusto.maxIngredients; }
+    if (p.type === 'salsa') sauceIdx++; else ingIdx++;
+    return { name: p.name, price: (included || p.name === SIN_SALSA) ? null : priceOfLine(p.type, p.name) };
+  });
+}
+
 // Umbrales EXACTOS de Al Gusto (1 salsa + 6 ingredientes) y Bomba (9 en
 // total, mezclando salsas e ingredientes). Al alcanzarlos se cobra el
 // precio plano de esa patata; lo que se elija POR ENCIMA del umbral se
@@ -621,18 +692,31 @@ function priceOfPick(p) { return p.type === 'salsa' ? priceOfSalsaExtra(p.name) 
 // lugar, en vez de usar el selector de "Cambiar un ingrediente") — se
 // aplica a los primeros picks por orden de selección, tope 2 en total
 // entre esto y los cambios explícitos (ver confirmExtras/updateExtrasTotalPrice).
+// A qué precio plano se ha subido automáticamente (si a alguno) según
+// cuántos ingredientes/salsas extra lleve — compartido por el precio, el
+// aviso del modal y el nombre con el que se muestra el producto (ver
+// getExtrasItemLabel): al llegar al umbral, deja de ser "esta patata con
+// un montón de extras" y pasa a ser, sin más, una Al Gusto o una Bomba.
+function extrasAutoUpgradeType(ingredientesExtra, salsasExtra) {
+  const ingCount = (ingredientesExtra || []).length;
+  const salsaCount = (salsasExtra || []).length;
+  if (ingCount + salsaCount >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'bomba';
+  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'algusto';
+  return null;
+}
 function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickOrder, freePasses) {
   const ingCount = (ingredientesExtra || []).length;
   const salsaCount = (salsasExtra || []).length;
   const totalPicks = ingCount + salsaCount;
   const order = pickOrder && pickOrder.length === totalPicks ? pickOrder : null;
+  const upgrade = extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
 
-  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) {
+  if (upgrade === 'bomba') {
     let core = CUSTOMIZER_CONFIG.bomba.price;
     if (order) order.slice(CUSTOMIZER_CONFIG.bomba.maxTotal).forEach(p => { core += priceOfPick(p); });
     return core;
   }
-  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) {
+  if (upgrade === 'algusto') {
     let core = CUSTOMIZER_CONFIG.algusto.price;
     if (order) {
       order.filter(p => p.type === 'salsa').slice(CUSTOMIZER_CONFIG.algusto.maxSauces).forEach(p => { core += priceOfPick(p); });
@@ -650,12 +734,22 @@ function computeExtrasCorePrice(basePrice, ingredientesExtra, salsasExtra, pickO
   }
   return core;
 }
-function extrasAutoUpgradeLabel(ingredientesExtra, salsasExtra) {
-  const ingCount = (ingredientesExtra || []).length;
-  const salsaCount = (salsasExtra || []).length;
-  const totalPicks = ingCount + salsaCount;
-  if (totalPicks >= CUSTOMIZER_CONFIG.bomba.maxTotal) return 'Precio Bomba aplicado (lo que se pase de 9 se cobra aparte)';
-  if (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients) return 'Precio Al Gusto aplicado (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
+// Aviso del precio en vivo (modal de extras y customizer de Al
+// Gusto/Bomba): además de avisar cuando YA se ha aplicado una oferta, si
+// falta un solo ingrediente o salsa para llegar a la de Al Gusto/Bomba
+// avisa de antemano — así el empleado puede decírselo al cliente antes
+// de cerrar el pedido ("con un ingrediente más te sale la oferta").
+function offerNote(salsaCount, ingCount) {
+  const A = CUSTOMIZER_CONFIG.algusto, B = CUSTOMIZER_CONFIG.bomba;
+  const totalPicks = salsaCount + ingCount;
+  // Bomba primero: si falta 1 para los 9 en total avisa de esa oferta
+  // aunque ya se haya alcanzado la de Al Gusto — es la más valiosa de
+  // las dos y si no se avisa aquí queda tapada por el aviso de Al Gusto.
+  if (totalPicks >= B.maxTotal) return 'Se convierte en Patata Bomba (lo que se pase de 9 se cobra aparte)';
+  if (totalPicks === B.maxTotal - 1) return '📢 Avísale: con 1 más (ingrediente o salsa) se aplica la oferta de Bomba (' + fmt(B.price) + ' €)';
+  if (salsaCount >= A.maxSauces && ingCount >= A.maxIngredients) return 'Se convierte en Patata Al Gusto (lo que se pase de 1 salsa / 6 ingredientes se cobra aparte)';
+  if (salsaCount >= A.maxSauces && ingCount === A.maxIngredients - 1) return '📢 Avísale: con 1 ingrediente más se aplica la oferta de Al Gusto (' + fmt(A.price) + ' €)';
+  if (ingCount >= A.maxIngredients && salsaCount === 0) return '📢 Avísale: con 1 salsa más (o "Sin salsa") se aplica la oferta de Al Gusto (' + fmt(A.price) + ' €)';
   return '';
 }
 // Tope 2 cambios "gratis" en total (quitar uno + añadir otro cuenta como
@@ -685,10 +779,7 @@ function getExtrasItemPrice(e) {
   return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
-  const ingCount = (ingredientesExtra || []).length;
-  const salsaCount = (salsasExtra || []).length;
-  return (ingCount + salsaCount) >= CUSTOMIZER_CONFIG.bomba.maxTotal
-    || (salsaCount >= CUSTOMIZER_CONFIG.algusto.maxSauces && ingCount >= CUSTOMIZER_CONFIG.algusto.maxIngredients);
+  return !!extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
 }
 // Precio "base" para la línea principal del ticket (sin queso/gratinado,
 // que se listan aparte). Si se aplicó el precio plano Al Gusto/Bomba, es
@@ -707,6 +798,11 @@ function getExtrasItemLabel(e) {
   const item = MENU.find(m => m.id == e.menuId);
   if (!item) return 'Producto desconocido';
   if (e.cheddarCarne) return item.name + ' (' + (e.cheddarCarne === 'kebab' ? 'Carne Kebab' : 'Carne Picada') + ')';
+  // Al llegar a los ingredientes/salsas de Al Gusto o Bomba ya no se cobra
+  // como esta patata con un montón de extras — se cobra (y se llama) como
+  // esa Al Gusto/Bomba, tanto en el carrito como en el ticket.
+  const upgrade = extrasAutoUpgradeType(e.ingredientesExtra, e.salsasExtra);
+  if (upgrade) return MENU.find(m => m.id == (upgrade === 'bomba' ? 16 : 15)).name;
   return item.name;
 }
 function getExtrasItemDetails(e) {
@@ -717,7 +813,7 @@ function getExtrasItemDetails(e) {
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push('+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push(s === SIN_SALSA ? '🚫 Sin salsa' : '+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -737,7 +833,7 @@ function getExtrasItemTicketExtras(e) {
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses(contarQuitadosParaGratis(e.quitados), (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
@@ -780,7 +876,7 @@ function getLineDiscountContextLabel(key) {
     const item = MENU.find(m => m.id == key.slice('simple:'.length));
     return item ? item.name : null;
   }
-  if (custCart[key]) { const item = MENU.find(m => m.id == custCart[key].menuId); return item ? item.name : null; }
+  if (custCart[key]) return getCustCartItemLabel(custCart[key]);
   if (extrasCart[key]) return getExtrasItemLabel(extrasCart[key]);
   if (manualCart[key]) return manualCart[key].name;
   return null;
@@ -823,9 +919,11 @@ function numpadConfirm() {
   closeNumpad();
 }
 
-// Teclado alfabético táctil para "Nombre para avisar" — el mostrador no
-// tiene teclado físico, así que este campo también necesitaba su propio
-// teclado en pantalla (igual que el numérico de arriba, pero de letras).
+// Teclado alfabético táctil, genérico para cualquier campo de texto — el
+// mostrador no tiene teclado físico. Nació para "Nombre para avisar", pero
+// sirve igual para cualquier otro input de texto (p.ej. la descripción del
+// cobro suelto) pasando su id; sin argumentos mantiene el comportamiento
+// de siempre sobre "order-name".
 let nameKbBuffer = '';
 let nameKbShiftOn = true;
 let nameKbTargetId = 'order-name';
@@ -1060,6 +1158,10 @@ function renderCart() {
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0 && manualLines.length === 0) {
     bodyEl.innerHTML = `<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Añade productos de la carta</div>`;
     totalRowEl.style.display = 'none';
+    // "0,00 €" también en el texto (no solo ocultando la fila) para que
+    // currentOrderTotal() no se quede leyendo el importe del pedido
+    // anterior si se abre Cobrar con la comanda vacía.
+    document.getElementById('cart-total').textContent = '0,00 €';
     // El botón de Cobrar se queda siempre a la vista aunque la comanda esté
     // vacía (pedidos por teléfono que se cobran después, sin haber tocado
     // aún el carrito).
@@ -1101,19 +1203,17 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
+    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
     total += subtotal;
-    const details = [...c.sauces, ...c.ingredients, c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
-      ...(c.extraSauces || []).map(s => s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'),
-      ...(c.extraIngredients || []).map(n => n + ' (extra +' + fmt(priceOfPick({ type: 'ing', name: n })) + '€)'),
+    const details = [
+      ...custCartPricedLines(c).map(p => p.price == null ? p.name : p.name + ' (+' + fmt(p.price) + '€)'),
+      c.extraQueso ? 'Queso mozzarella' : '', c.extraGratinado ? 'Gratinado' : '',
     ].filter(Boolean).join(', ');
     rows.push({ rank: categoryRank(item.cat), html: wrapSwipe('cust', c.key, `<div class="cart-line">
-      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(item.name)}</button>
+      <button type="button" class="cart-line-name cart-line-name-btn" onclick="editCustItem('${c.key}')" title="Editar">${escapeHtml(getCustCartItemLabel(c))}</button>
       <div class="cart-qty-mini">
         <button class="qty-btn-sm" onclick="changeCustQty('${c.key}',-1)">−</button>
         <span>${c.qty}</span>
@@ -1277,24 +1377,6 @@ function setCobrarTotalManual(v) {
 function closeCobrarModal() {
   document.getElementById('cobrar-modal').classList.remove('open');
 }
-// Cerrar Cobrar con la X o tocando fuera (a diferencia del botón de abajo,
-// que siempre completa el cobro) — si el pedido venía de "Pedidos no
-// pagados" (payHistorialOrder ya lo había quitado de esa lista y descontado
-// de la caja para cargarlo aquí), cerrar sin cobrar lo dejaría perdido sin
-// ningún rastro: ni en "Pedidos no pagados" ni cobrado. Se devuelve tal
-// cual a la lista (mismo camino que un cobro normal, saveToHistorial) antes
-// de cerrar.
-function cancelCobrarModal() {
-  if (pedidoACobrarSinImprimir) {
-    const order = pedidoACobrarSinImprimir;
-    if (!confirm('¿Cerrar sin cobrar el pedido ' + order.num + '? Volverá a "Pedidos no pagados".')) return;
-    saveToHistorial(order);
-    pedidoACobrarSinImprimir = null;
-    clearOrder(true);
-    toast('↩️ Pedido ' + order.num + ' devuelto a "Pedidos no pagados"');
-  }
-  closeCobrarModal();
-}
 
 // Entregado se compone de lo entregado por billetes/monedas tocados
 // (cashEntregado) más lo que se esté escribiendo en el teclado sin
@@ -1434,7 +1516,7 @@ function clearOrder(silent) {
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
   pedidoACobrarSinImprimir = null;
-  setOrderPaid(false);
+  setOrderPaid(true);
   setPaymentMethod('efectivo');
   renderMenu();
   renderCart();
@@ -1521,7 +1603,8 @@ function renderCustChips() {
   const cfg = CUSTOMIZER_CONFIG[custType];
   const sEl = document.getElementById('cust-sauces');
   const iEl = document.getElementById('cust-ingredients');
-  sEl.innerHTML = CUST_SAUCES.map(n => {
+  const sinSalsaChip = `<button class="chip ${custSelSauces.includes(SIN_SALSA) ? 'selected' : ''}" onclick="toggleCustSauce('${SIN_SALSA}')">🚫 Sin salsa</button>`;
+  sEl.innerHTML = sinSalsaChip + CUST_SAUCES.map(n => {
     const sel = custSelSauces.includes(n);
     const extra = custSelExtraSauces.includes(n);
     const label = extra ? n + ' +' + fmt(priceOfSalsaExtra(n)) + '€' : n;
@@ -1538,8 +1621,21 @@ function renderCustChips() {
     return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustIng('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
 }
+// "Sin salsa" es excluyente con cualquier salsa de verdad: elegirla quita
+// las que hubiera puestas (ocupa ella sola el hueco de salsa) y, al
+// revés, elegir una salsa de verdad la quita a ella. No tiene "extra"
+// propio — siempre cabe en el hueco incluido, nunca se cobra aparte.
 function toggleCustSauce(n) {
   const cfg = CUSTOMIZER_CONFIG[custType];
+  if (n === SIN_SALSA) {
+    const wasOn = custSelSauces.includes(SIN_SALSA);
+    custSelSauces = [];
+    custSelExtraSauces = custSelExtraSauces.filter(s => s !== SIN_SALSA);
+    if (!wasOn) custSelSauces.push(SIN_SALSA);
+    renderCustChips(); updateCustBadges(); updateCustTotalPrice();
+    return;
+  }
+  custSelSauces = custSelSauces.filter(s => s !== SIN_SALSA);
   const iN = custSelSauces.indexOf(n);
   const iE = custSelExtraSauces.indexOf(n);
   if (iN >= 0) custSelSauces.splice(iN, 1);
@@ -1608,13 +1704,14 @@ function updateCustExtraUI(which, on) {
   if (el) el.classList.toggle('on', on);
 }
 function updateCustTotalPrice() {
-  const cfg = CUSTOMIZER_CONFIG[custType];
-  let p = cfg.price;
+  const allSauces = [...custSelSauces, ...custSelExtraSauces];
+  const allIngredients = [...custSelIngredients, ...custSelExtraIngredients];
+  let p = comboCorePrice(allSauces, allIngredients);
   if (custExtraQueso) p += 1;
   if (custExtraGratinado) p += 0.5;
-  p += custSelExtraSauces.reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-  p += custSelExtraIngredients.reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
+  const noteEl = document.getElementById('cust-price-note');
+  if (noteEl) noteEl.textContent = offerNote(allSauces.length, allIngredients.length);
 }
 function confirmCustomizer() {
   const cfg = CUSTOMIZER_CONFIG[custType];
@@ -1770,6 +1867,7 @@ function isQuitarBlocked(id) {
 }
 const BONIATO_IDS = new Set([17, 18, 19, 20, 21, 51]); // no llevan queso/gratinado como extra, solo quitar ingredientes
 const BONIATO_GOAT_ID = 20; // Boniato G.O.A.T. — el único con queso de cabra, va aparte en el stock
+const BONIATO_FRIES_ID = 17; // el único Boniato "vacío" (sin receta cerrada) — el único que admite ingredientes/salsas extra
 function parseBaseComponents(item) {
   if (item.components) return item.components;
   if (!item.desc) return [];
@@ -1868,6 +1966,15 @@ function isBaseGrasaComp(comp) { return ['aceite de oliva', 'mantequilla'].inclu
 // 4 Quesos lleva los quesos ya mezclados (no se pueden quitar ni cambiar),
 // pero la salsa base sí es un ingrediente suelto que se puede cambiar.
 const SALSA_CAMBIABLE_AUNQUE_BLOQUEADO_IDS = new Set([8]);
+// Insignia con el nº de ingredientes/salsas marcados, junto al título de
+// cada sección — para verlo de un vistazo sin contar los chips resaltados
+// uno a uno, sobre todo para saber si ya toca la oferta de Al Gusto (1
+// salsa + 6 ingredientes) o Bomba (9 en total). Solo se pinta si hay algo
+// marcado, para no ensuciar el título cuando aún no se ha tocado nada.
+function extrasSectionCounterHtml(count) {
+  if (!count) return '';
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;background:var(--brown);color:var(--gold);border-radius:999px;font-size:11px;font-weight:700;vertical-align:middle">${count}</span>`;
+}
 function renderExtrasBody(item) {
   const isBoniato = BONIATO_IDS.has(item.id);
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
@@ -1891,7 +1998,7 @@ function renderExtrasBody(item) {
     html += `<div class="section-label" style="margin-top:0">Base</div><div class="chip-grid">
       <button class="chip ${esAceite ? 'selected' : ''}" onclick="setExtraBase('aceite')">🫒 Aceite de oliva</button>
       <button class="chip ${esMantequilla ? 'selected' : ''}" onclick="setExtraBase('mantequilla')">🧈 Mantequilla</button>
-      <button class="chip ${esNinguna ? 'selected' : ''}" onclick="setExtraBase('ninguna')">🚫 Ninguna (sin nada)</button>
+      <button class="chip ${esNinguna ? 'quitado' : ''}" onclick="setExtraBase('ninguna')">🚫 Ninguna</button>
     </div>`;
   }
   const salsaAElegir = baseComponents.find(isElegirSalsaComp);
@@ -1925,11 +2032,17 @@ function renderExtrasBody(item) {
       html += `</div>`;
     }
     if (!isBoniato) {
-      if (ingComponents.length) {
+      // En la Simple, "Cambiar un ingrediente" ofrece el Aceite de oliva
+      // en vez de sal/pimienta (que no tiene sentido "cambiar" por un
+      // ingrediente normal) — el Aceite ya se puede quitar/pasar a
+      // Mantequilla arriba en Base, esto es para cambiarlo por cualquier
+      // otro ingrediente de la carta.
+      const ingComponentsSwap = item.id == 1 ? ['Aceite de oliva'] : ingComponents;
+      if (ingComponentsSwap.length) {
         html += `<div class="section-label">Cambiar un ingrediente</div>`;
         html += `<div class="swap-card">
           <div class="swap-row">
-            <select id="cambio-ing-from" class="swap-select">${ingComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            <select id="cambio-ing-from" class="swap-select">${ingComponentsSwap.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
             <span class="swap-arrow">→</span>
             <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
           </div>
@@ -1952,6 +2065,28 @@ function renderExtrasBody(item) {
           `<div class="swap-chip"><span>${escapeHtml(c.from)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(c.to)}</span><button onclick="removeExtraCambio(${i})" title="Quitar cambio">✕</button></div>`
         ).join('') + `</div>`;
       }
+    } else {
+      // Boniato: las recetas van ya preparadas tal cual, así que solo se
+      // puede cambiar el bacon (si lo lleva) — el resto de ingredientes de
+      // cada receta (salsa Lotus, pistacho, pulled pork...) no se tocan.
+      const baconComp = ingComponents.find(c => c.trim().toLowerCase() === 'bacon');
+      if (baconComp) {
+        const elegido = extrasCambios.find(c => c.from === baconComp);
+        html += `<div class="section-label">Cambiar el bacon</div>`;
+        if (elegido) {
+          html += `<div class="swap-list"><div class="swap-chip"><span>${escapeHtml(baconComp)}</span><span class="swap-chip-arrow">→</span><span>${escapeHtml(elegido.to)}</span><button onclick="removeExtraCambio(${extrasCambios.indexOf(elegido)})" title="Quitar cambio">✕</button></div></div>`;
+        } else {
+          html += `<div class="swap-card">
+            <div class="swap-row">
+              <select id="cambio-ing-from" class="swap-select" style="display:none"><option value="${escapeHtml(baconComp)}" selected>${escapeHtml(baconComp)}</option></select>
+              <span style="font-weight:600;padding:0 4px;white-space:nowrap">${escapeHtml(baconComp)}</span>
+              <span class="swap-arrow">→</span>
+              <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS.filter(n => n.toLowerCase() !== 'bacon')).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            </div>
+            <button class="swap-add-btn" onclick="addExtraCambio('ing')">+ Cambiar bacon</button>
+          </div>`;
+        }
+      }
     }
   } else if (canCambiarSalsaBloqueado) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva los quesos ya preparados · solo se puede cambiar la salsa.</div>`;
@@ -1972,6 +2107,18 @@ function renderExtrasBody(item) {
   } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
+  // Las patatas con la mezcla ya preparada (4 Quesos y similares) no
+  // admiten nada más que gratinarlas — no tiene sentido añadir
+  // ingredientes o salsas sueltas encima de una receta ya cerrada. Nunca
+  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO). Carbonara y
+  // Boloñesa son la excepción: no se puede tocar su mezcla, pero sí
+  // añadir algo más encima (ver EXTRAS_ANADIR_AUNQUE_PREPARADA).
+  const soloGratinar = isQuitarBlocked(item.id) && soloGratinado && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id);
+  // El resto de recetas de Boniato (Lotus, Bacon, G.O.A.T., Pistacchio,
+  // Pulled Pork) van ya cerradas — solo Boniato Fries es una base vacía
+  // donde sí tiene sentido añadir ingredientes/salsas sueltas encima,
+  // igual que en una patata normal.
+  const puedeAnadirExtras = !isBoniato || item.id === BONIATO_FRIES_ID;
   if (!isBoniato) {
     const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
     if (!yaLlevaQueso) {
@@ -1984,34 +2131,38 @@ function renderExtrasBody(item) {
       <div><div class="option-title">🔥 Gratinar${yaLlevaQueso ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${yaLlevaQueso ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
-    // Ingredientes/salsas extra: siempre disponibles, igual que en la web
-    // (nucleo-compartido.js/openExtrasModal) — antes aquí se bloqueaban
-    // para Carbonara/Boloñesa/4 Quesos ("mezcla ya preparada") pensando
-    // que no tenía sentido añadir nada encima de una receta cerrada, pero
-    // la web sí lo permite para esos mismos productos y Comandas se había
-    // quedado desincronizada de eso.
-    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+  }
+  // Ingredientes/salsas extra: para todas las patatas normales, y para
+  // Boniato solo en Boniato Fries (base vacía) — el resto de recetas de
+  // Boniato van ya cerradas.
+  if (puedeAnadirExtras && !soloGratinar) {
+    // Mismo estilo de chips que el customizer de Al Gusto/Bomba (en vez
+    // de las filas con casilla de antes) — aquí todo lo que se toca es
+    // siempre "extra" (esta patata no tiene ninguna incluida gratis), así
+    // que el chip marcado se pinta igual que un ingrediente de más ahí.
+    // Contador junto al título — para ver de un vistazo cuántos lleva
+    // marcados sin tener que contar los chips resaltados uno a uno (útil
+    // sobre todo para saber si ya toca la oferta de Al Gusto/Bomba).
+    const ingCountExtra = Object.values(extrasIngredientes).filter(q => q > 0).length;
+    const salsaCountExtra = Object.values(extrasSalsas).filter(q => q > 0).length;
+    html += `<div class="section-label">Ingredientes extra ${extrasSectionCounterHtml(ingCountExtra)} <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
     sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
       const precio = priceOfIngExtra(ing);
       const qty = extrasIngredientes[ing] || 0;
       const on = qty > 0, mult = qty >= 2;
-      const label = mult ? ing + ' (x' + qty + ')' : ing;
-      html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
+      const label = mult ? ing + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? ing + ' +' + fmt(precio) + '€' : ing;
+      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
-    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="ing-grid">`;
+    html += `<div class="section-label">Salsas extra ${extrasSectionCounterHtml(salsaCountExtra)} <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+    const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
+    html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
     CUST_SAUCES.forEach(s => {
       const precio = priceOfSalsaExtra(s);
       const qty = extrasSalsas[s] || 0;
       const on = qty > 0, mult = qty >= 2;
-      const label = mult ? s + ' (x' + qty + ')' : s;
-      html += `<label class="option-row ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">
-        <div><div class="option-title" style="font-size:13px">${escapeHtml(label)}</div><div class="option-sub">+${fmt(precio * Math.max(qty, 1))} €</div></div>
-        <div class="option-check ${on ? 'on' : ''}${mult ? ' doble' : ''}" style="width:20px;height:20px"></div>
-      </label>`;
+      const label = mult ? s + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? s + ' +' + fmt(precio) + '€' : s;
+      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
   }
@@ -2042,6 +2193,19 @@ function toggleExtraQuitar(comp) {
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
+// Selector de base de Patata Simple: aceite (por defecto), mantequilla —
+// se guarda como un cambio para que el ticket diga claramente "🔄 Aceite
+// de oliva → Mantequilla" en vez de un simple "Sin aceite" que la cocina
+// podría confundir con "sin nada" — o "ninguna" (de verdad sin nada),
+// que sí se guarda como un quitado normal.
+function setExtraBase(which) {
+  extrasCambios = extrasCambios.filter(c => c.from !== 'Aceite de oliva');
+  delete extrasQuitados['Aceite de oliva'];
+  if (which === 'mantequilla') extrasCambios.push({ from: 'Aceite de oliva', to: 'Mantequilla' });
+  else if (which === 'ninguna') extrasQuitados['Aceite de oliva'] = 'quitado';
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+  updateExtrasTotalPrice();
+}
 function addExtraCambio(tipo) {
   const from = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-from' : 'cambio-ing-from').value;
   const to = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-to' : 'cambio-ing-to').value;
@@ -2054,19 +2218,6 @@ function addExtraCambio(tipo) {
 }
 function removeExtraCambio(i) {
   extrasCambios.splice(i, 1);
-  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
-  updateExtrasTotalPrice();
-}
-// Selector de base de Patata Simple: Aceite de oliva (por defecto),
-// Mantequilla (se guarda como un cambio, igual que "Cambiar un
-// ingrediente", para que el ticket diga claramente "🔄 Aceite de oliva →
-// Mantequilla") o Ninguna (se guarda como ingrediente quitado, para que
-// el ticket diga "🚫 Sin Aceite de oliva" y la cocina no le ponga nada).
-function setExtraBase(which) {
-  extrasCambios = extrasCambios.filter(c => c.from !== 'Aceite de oliva');
-  delete extrasQuitados['Aceite de oliva'];
-  if (which === 'mantequilla') extrasCambios.push({ from: 'Aceite de oliva', to: 'Mantequilla' });
-  else if (which === 'ninguna') extrasQuitados['Aceite de oliva'] = 'quitado';
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -2111,6 +2262,18 @@ function toggleExtraIng(ing) {
 // primera vez que se elige, igual que con los ingredientes — doblar/
 // triplicar no cuenta más de una vez para el umbral de Al Gusto/Bomba.
 function toggleExtraSalsa(s) {
+  // "Sin salsa" no dobla/triplica (no tiene sentido) y es excluyente con
+  // cualquier salsa de verdad — solo sirve para marcar "sin salsa" y que
+  // cuente igualmente como salsa de cara a la oferta de Al Gusto/Bomba.
+  if (s === SIN_SALSA) {
+    const wasOn = !!extrasSalsas[SIN_SALSA];
+    Object.keys(extrasSalsas).forEach(k => { delete extrasSalsas[k]; delete extrasSalsaOrder[k]; });
+    if (!wasOn) { extrasSalsas[SIN_SALSA] = 1; extrasPickSeq++; extrasSalsaOrder[SIN_SALSA] = extrasPickSeq; }
+    renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+    updateExtrasTotalPrice();
+    return;
+  }
+  if (extrasSalsas[SIN_SALSA]) { delete extrasSalsas[SIN_SALSA]; delete extrasSalsaOrder[SIN_SALSA]; }
   const cur = extrasSalsas[s] || 0;
   const next = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
   extrasSalsas[s] = next;
@@ -2146,7 +2309,7 @@ function updateExtrasTotalPrice() {
   const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
-  if (noteEl) noteEl.textContent = extrasAutoUpgradeLabel(ingList, salsaList);
+  if (noteEl) noteEl.textContent = offerNote(salsaList.length, ingList.length);
 }
 function confirmExtras() {
   const id = extrasCurrentId;
@@ -2209,14 +2372,7 @@ const TICKET_CONFIG_DEFAULTS = {
   nif: '77558832A',
   despedida: '¡Gracias por tu pedido! 🥔',
   textoPago: 'Pagar en caja',
-  // 58mm (32 columnas) a propósito, no 80 — es el ancho real del papel de
-  // la impresora de la tienda (la misma que usa el panel de administración,
-  // donde ya está puesta así en Ajustes). Como cada herramienta guarda esta
-  // configuración por dispositivo, un dispositivo nuevo sin configurar
-  // (como una tablet recién estrenada con Comandas) tiene que arrancar ya
-  // con el valor correcto, no con el de fábrica de 80mm — si no, las líneas
-  // se descuadran y se cortan igual que si se hubiera puesto mal a mano.
-  anchoPapel: 58,
+  anchoPapel: 80,
   // Ajuste fino (+/-) sobre las columnas de texto del ticket — cada
   // impresora/fuente cabe un pelín distinto en el mismo ancho de papel.
   // +4 de partida porque en la tienda, con 58mm/32 columnas "de libro", el
@@ -2288,26 +2444,23 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const extraIngPrice = (c.extraIngredients || []).reduce((s, n) => s + priceOfPick({ type: 'ing', name: n }), 0);
-    const extraSaucePrice = (c.extraSauces || []).reduce((s, name) => s + priceOfSalsaExtra(name), 0);
-    const unitPrice = item.price + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0) + extraSaucePrice + extraIngPrice;
+    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
     // En el ticket el orden es siempre fijo, sin importar en qué momento
-    // se eligió cada cosa: primero todas las salsas (incluidas y extra),
-    // luego los ingredientes (incluidos y extra), y el queso/gratinado
-    // siempre al final.
-    const extras = [
-      ...c.sauces.map(n => ({ name: n })),
-      ...(c.extraSauces || []).map(s => ({ name: s, price: priceOfSalsaExtra(s), underline: true })),
-      ...quesoLastKeepOrder(c.ingredients).map(n => ({ name: n })),
-      ...quesoLastKeepOrder(c.extraIngredients || []).map(n => ({ name: n, price: priceOfPick({ type: 'ing', name: n }), underline: true })),
-    ];
+    // se eligió cada cosa: primero todas las salsas, luego los
+    // ingredientes, y el queso/gratinado siempre al final. Lo que vaya
+    // incluido en el escalón alcanzado sale sin precio propio (ver
+    // custCartPricedLines); si no se llega a ningún escalón, todo se
+    // cobra aparte, igual que en una Simple con extras.
+    const tier = custCartTier(c);
+    const extras = custCartPricedLines(c).map(p => ({ name: p.name, price: p.price, underline: p.price != null }));
     if (c.extraQueso) extras.push({ name: 'Queso', price: 1, underline: true });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5, underline: true });
-    // La línea principal muestra solo el precio de la Al Gusto/Bomba en sí
-    // (sus salsas/ingredientes ya van incluidos); queso/gratinado/salsa
-    // extra van cada uno en su línea con su propio precio.
+    // La línea principal muestra solo el precio base del escalón
+    // alcanzado (lo incluido ya va ahí); queso/gratinado/lo que se pase
+    // del escalón van cada uno en su línea con su propio precio.
+    const displayBasePrice = tier === 'bomba' ? CUSTOMIZER_CONFIG.bomba.price : tier === 'algusto' ? CUSTOMIZER_CONFIG.algusto.price : (MENU.find(m => m.id == 1) || {}).price || 0;
     items.push(applyLineDiscountToTicketItem(
-      { name: item.name, qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: item.price * c.qty, extras, _rank: categoryRank(item.cat), _menuId: item.id },
+      { name: getCustCartItemLabel(c), qty: c.qty, subtotal: unitPrice * c.qty, displaySubtotal: displayBasePrice * c.qty, extras, _rank: categoryRank(item.cat), _menuId: item.id },
       c.key));
   });
   Object.values(extrasCart).filter(c => c.qty > 0).forEach(c => {
@@ -2436,14 +2589,6 @@ function buildTicketBlocks(order) {
   B.push({ text: foldAccents(order.time), align: 'center' });
   if (order.pickupTime) B.push({ text: foldAccents('RECOGIDA: ' + order.pickupTime), align: 'center', big: true });
   B.push({ text: divider, align: 'center' });
-  // Nota del cliente arriba, justo debajo de la cabecera — es lo primero
-  // que se lee, antes de tocar ningún producto, en vez de ir al final
-  // junto al total (decidido tras probar en papel real las 3 opciones).
-  if (order.notes) {
-    B.push({ text: '*** NOTA CLIENTE ***', align: 'center', big: true, notesHeader: true });
-    B.push({ text: foldAccents(order.notes), align: 'left', notesText: true });
-    B.push({ text: divider, align: 'center' });
-  }
   order.items.forEach(it => {
     formatItemLines(it, width).forEach(line => B.push({ text: line.text, align: 'left', underlineStart: line.underlineStart, underlineLen: line.underlineLen }));
   });
@@ -2454,16 +2599,60 @@ function buildTicketBlocks(order) {
     B.push({ text: '(' + (order.paymentMethod === 'tarjeta' ? 'Tarjeta' : 'Efectivo') + ')', align: 'center' });
   }
   B.push({ text: foldAccents(cfg.textoPago), align: 'center' });
+  if (order.notes) {
+    B.push({ text: divider, align: 'left' });
+    B.push({ text: 'NOTAS: ' + foldAccents(order.notes), align: 'left', notesLabel: true });
+  }
   B.push({ text: divider, align: 'center' });
   B.push({ text: foldAccents(cfg.despedida), align: 'center' });
   B.push({ text: 'IVA incluido 10%', align: 'center' });
   return B;
 }
 
-/* ── Vista previa en pantalla / diálogo de impresión (HTML) ── Separada de
-   buildTicketBlocks() en dos pasos ("blocks" del pedido → HTML) para poder
-   reutilizar el mismo dibujado con otros "blocks" que no son un pedido —
-   ver buildCajaResumenBlocks()/imprimirResumenCaja() más abajo. ── */
+/* ── Resumen de caja (fin de día) — usa el mismo formato de "blocks" que
+   buildTicketBlocks(), así que reutiliza sin cambios toda la maquinaria de
+   vista previa / ESC-POS / impresión de un pedido normal. No toca el
+   historial ni la numeración de pedidos: es solo un ticket informativo. ── */
+function buildCajaResumenBlocks(fecha) {
+  const cfg = getTicketConfig();
+  const width = getPaperWidthChars();
+  const divider = '-'.repeat(width);
+  const fondo = loadCajaFondo(fecha);
+  const t = loadCajaTotales(fecha);
+  const facturado = t.efectivo + t.tarjeta + t.pendiente;
+  const esperadoCajon = fondo + t.efectivo;
+  const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+  const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const B = [];
+  B.push({ logo: true });
+  B.push({ text: foldAccents(cfg.nombre), align: 'center', big: true });
+  B.push({ text: divider, align: 'center' });
+  B.push({ text: 'RESUMEN DE CAJA', align: 'center', big: true });
+  B.push({ text: fechaFmt, align: 'center' });
+  B.push({ text: 'Impreso a las ' + horaFmt, align: 'center' });
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'Pedidos: ' + t.count, align: 'left' });
+  B.push({ text: 'Fondo inicial: ' + fmtEur(fondo), align: 'left' });
+  B.push({ text: 'Efectivo cobrado: ' + fmtEur(t.efectivo), align: 'left' });
+  B.push({ text: 'Tarjeta cobrada: ' + fmtEur(t.tarjeta), align: 'left' });
+  if (t.pendiente > 0) {
+    B.push({ text: 'PENDIENTE DE COBRO: ' + fmtEur(t.pendiente), align: 'left', paidStatus: 'no' });
+  }
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'TOTAL FACTURADO: ' + fmtEur(facturado), align: 'left', big: true });
+  B.push({ text: 'EFECTIVO ESPERADO EN CAJA:', align: 'center' });
+  B.push({ text: fmtEur(esperadoCajon), align: 'center', big: true });
+  if (t.pendiente > 0) {
+    B.push({ text: divider, align: 'center' });
+    B.push({ text: 'Ojo: hay pedidos sin cobrar.', align: 'center' });
+    B.push({ text: 'Si se cobraron a mano sin marcarlos', align: 'center' });
+    B.push({ text: 'pagados aqui, la caja no cuadrara.', align: 'center' });
+  }
+  B.push({ text: divider, align: 'center' });
+  return B;
+}
+
+/* ── Vista previa en pantalla / diálogo de impresión (HTML) ── */
 function blocksToPreviewHTML(blocks) {
   let html = '';
   blocks.forEach(b => {
@@ -2471,12 +2660,9 @@ function blocksToPreviewHTML(blocks) {
       html += '<div style="text-align:center;margin-bottom:2px"><img src="img/logo.png" alt="" style="width:110px;height:110px;object-fit:contain"></div>';
       return;
     }
-    if (b.notesHeader) {
-      html += '<div style="text-align:center;font-weight:900;font-size:1.3em;margin-top:4px">' + escapeHtml(b.text) + '</div>';
-      return;
-    }
-    if (b.notesText) {
-      html += '<div style="text-align:left;font-weight:700;font-size:1.05em;white-space:pre-wrap;border:1.5px dashed #3D1F0D;border-radius:6px;padding:4px 8px;margin:2px 0 4px">' + escapeHtml(b.text) + '</div>';
+    if (b.notesLabel) {
+      const idx = b.text.indexOf(': ') + 2;
+      html += '<div style="text-align:' + b.align + '"><b>' + escapeHtml(b.text.slice(0, idx)) + '</b>' + escapeHtml(b.text.slice(idx)) + '</div>';
       return;
     }
     let style = 'text-align:' + b.align + ';font-weight:' + (b.big ? 'bold' : 'normal') + ';font-size:' + (b.big ? '1.5em' : '1em') + ';white-space:pre';
@@ -2566,9 +2752,6 @@ function bytesToBase64(bytes) {
   }
   return btoa(binary);
 }
-// Mismo motivo que blocksToPreviewHTML(): separado en dos pasos para poder
-// convertir a bytes ESC/POS cualquier lista de "blocks", no solo la de un
-// pedido — lo usa también imprimirResumenCaja() más abajo.
 function blocksToEscPosBytes(blocks) {
   const b = new EscPosBuilder();
   b.init();
@@ -2576,8 +2759,9 @@ function blocksToEscPosBytes(blocks) {
     if (blk.logo) { b.logo(); return; }
     blk.align === 'center' ? b.center() : b.left();
     blk.big ? b.big() : b.normal();
-    if (blk.notesHeader || blk.notesText) {
-      b.bold(true); b.text(blk.text); b.bold(false);
+    if (blk.notesLabel) {
+      const idx = blk.text.indexOf(': ') + 2;
+      b.bold(true); b.text(blk.text.slice(0, idx)); b.bold(false); b.text(blk.text.slice(idx));
     } else if (blk.underlineLen) {
       // Solo se subraya el nombre del extra (underlineStart..+underlineLen)
       // — ni el "  - " de delante, ni los espacios de relleno, ni el
@@ -2717,63 +2901,6 @@ function _cajaTotalesAplicar(order, signo, fecha) {
   _acumularEnTotales(t, order, signo);
   saveCajaTotales(t, fecha);
 }
-// Id fijo por aparato (no por persona) — se genera una vez y se queda en
-// localStorage. Sirve para que el servidor pueda distinguir un "C001" del
-// móvil de un "C001" del mostrador: cada aparato lleva su propio contador
-// de comandas reiniciado cada día (ver getNextOrderNum), así que dos
-// aparatos sueltos a la vez pueden repetir el mismo número sin ser el
-// mismo pedido — ver registrarVentaTienda en guardar-pedido.php.
-function getComandasDeviceId() {
-  let id = localStorage.getItem('dpf_comandas_device_id');
-  if (!id) {
-    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem('dpf_comandas_device_id', id);
-  }
-  return id;
-}
-// Manda una venta ya cobrada de tienda a Firebase (statsTienda/ y
-// ventasProductosTienda/), para que se sume aparte del total de la web en
-// Finanzas — best-effort, en segundo plano: si falla (sin internet, el
-// servidor no responde...) no pasa nada, el pedido ya está a salvo en el
-// historial local del aparato, solo se pierde ese dato para el resumen de
-// facturación de tienda, nunca la comanda en sí.
-function enviarVentaTiendaAFirebase(order) {
-  try {
-    fetch('guardar-pedido.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'registrarVentaTienda',
-        num: order.num,
-        deviceId: getComandasDeviceId(),
-        total: order.total,
-        items: order.items.map(it => ({ name: it.name, qty: it.qty, subtotal: it.subtotal })),
-      }),
-    }).catch(() => {});
-  } catch (e) { /* no debe romper el cobro si esto falla */ }
-}
-// Deshace el envío de arriba — se llama al recuperar ("Modificar") o
-// borrar del historial un pedido que ya estaba pagado (y por tanto ya
-// sincronizado): sin esto, modificar un pedido pagado y reimprimirlo
-// generaba un número de comanda nuevo (getNextOrderNum) y lo volvía a
-// mandar como venta aparte sin quitar la original, duplicando esa venta en
-// la facturación de tienda. Mismo best-effort que el envío: si falla, el
-// dato queda desincronizado (la venta revertida localmente sigue sumada
-// en Firebase) pero nunca bloquea la acción del usuario.
-function revertirVentaTiendaFirebase(order, fecha) {
-  try {
-    fetch('guardar-pedido.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'revertirVentaTienda',
-        num: order.num,
-        deviceId: getComandasDeviceId(),
-        fecha: fecha || todayISO(),
-      }),
-    }).catch(() => {});
-  } catch (e) { /* no debe romper la acción local si esto falla */ }
-}
 function saveToHistorial(order) {
   let list;
   try { list = JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { list = []; }
@@ -2782,7 +2909,6 @@ function saveToHistorial(order) {
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
   _cajaTotalesAplicar(order, 1);
   maybeAutoBackup(todayISO());
-  if (order.paid) enviarVentaTiendaAFirebase(order);
 }
 function getHistorial(fecha) {
   try { return JSON.parse(localStorage.getItem(getHistorialKey(fecha)) || '[]'); } catch (e) { return []; }
@@ -2878,7 +3004,6 @@ function deleteHistorialOrder(index) {
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
   _cajaTotalesAplicar(order, -1, historialFechaSel);
-  if (order.paid) revertirVentaTiendaFirebase(order, historialFechaSel);
   renderHistorial();
   toast('🗑️ Pedido borrado del historial');
 }
@@ -2908,7 +3033,6 @@ function modifyHistorialOrder(index) {
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
   _cajaTotalesAplicar(order, -1, historialFechaSel);
-  if (order.paid) revertirVentaTiendaFirebase(order, historialFechaSel);
   closeHistorial();
   renderMenu();
   renderCart();
@@ -3109,53 +3233,9 @@ function renderCaja() {
     + avisoDiferencia;
 }
 
-/* ── Resumen de caja (fin de día) en papel — usa el mismo formato de
-   "blocks" que buildTicketBlocks(), así que reutiliza sin cambios toda la
-   maquinaria de vista previa / ESC-POS / impresión de un pedido normal
-   (blocksToPreviewHTML/blocksToEscPosBytes). No toca el historial ni la
-   numeración de pedidos: es solo un ticket informativo. ── */
-function buildCajaResumenBlocks(fecha) {
-  const cfg = getTicketConfig();
-  const width = getPaperWidthChars();
-  const divider = '-'.repeat(width);
-  const fondo = loadCajaFondo(fecha);
-  const t = loadCajaTotales(fecha);
-  const facturado = t.efectivo + t.tarjeta + t.pendiente;
-  const esperadoCajon = fondo + t.efectivo;
-  const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
-  const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-  const B = [];
-  B.push({ logo: true });
-  B.push({ text: foldAccents(cfg.nombre), align: 'center', big: true });
-  B.push({ text: divider, align: 'center' });
-  B.push({ text: 'RESUMEN DE CAJA', align: 'center', big: true });
-  B.push({ text: fechaFmt, align: 'center' });
-  B.push({ text: 'Impreso a las ' + horaFmt, align: 'center' });
-  B.push({ text: divider, align: 'left' });
-  B.push({ text: 'Pedidos: ' + t.count, align: 'left' });
-  B.push({ text: 'Fondo inicial: ' + fmtEur(fondo), align: 'left' });
-  B.push({ text: 'Efectivo cobrado: ' + fmtEur(t.efectivo), align: 'left' });
-  B.push({ text: 'Tarjeta cobrada: ' + fmtEur(t.tarjeta), align: 'left' });
-  if (t.pendiente > 0) {
-    B.push({ text: 'PENDIENTE DE COBRO: ' + fmtEur(t.pendiente), align: 'left', paidStatus: 'no' });
-  }
-  B.push({ text: divider, align: 'left' });
-  B.push({ text: 'TOTAL FACTURADO: ' + fmtEur(facturado), align: 'left', big: true });
-  B.push({ text: 'EFECTIVO ESPERADO EN CAJA:', align: 'center' });
-  B.push({ text: fmtEur(esperadoCajon), align: 'center', big: true });
-  if (t.pendiente > 0) {
-    B.push({ text: divider, align: 'center' });
-    B.push({ text: 'Ojo: hay pedidos sin cobrar.', align: 'center' });
-    B.push({ text: 'Si se cobraron a mano sin marcarlos', align: 'center' });
-    B.push({ text: 'pagados aqui, la caja no cuadrara.', align: 'center' });
-  }
-  B.push({ text: divider, align: 'center' });
-  return B;
-}
-
-/* ── Imprimir resumen del día al cerrar caja — mismo pipeline de tres
-   intentos (impresión directa → silenciosa app de escritorio → diálogo)
-   que ya usa printOrder() para las comandas, pero sin guardar nada en el
+/* ── Imprimir resumen del día al cerrar caja — mismo "blocks" y mismo
+   pipeline WebUSB → impresión silenciosa (app de escritorio) → diálogo que
+   ya usa printOrder() para las comandas, pero sin guardar nada en el
    historial ni tocar la numeración: es solo un ticket informativo. ── */
 async function imprimirResumenCaja() {
   const fecha = cajaFechaSel;
@@ -3172,7 +3252,6 @@ async function imprimirResumenCaja() {
     } catch (e) {
       console.warn('[comandas] impresión directa del resumen falló:', e);
       anyFailure = true;
-      failReason = e.message || 'motivo desconocido';
     }
   }
 
@@ -3194,12 +3273,10 @@ async function imprimirResumenCaja() {
     }
   }
 
-  if (!printedOk) {
-    if (anyFailure) toast('⚠️ No se pudo imprimir directo (' + (failReason || 'sin conexión con la impresora') + ') — se abre el diálogo de impresión', 6000);
-    window.print();
-  }
+  if (!printedOk) window.print();
   playPrintSound(printedOk || !anyFailure);
   if (printedOk) toast('✅ Resumen del día impreso');
+  else toast((failReason ? '⚠️ Impresión silenciosa falló: ' + failReason + '. ' : '') + '🖨️ Abriendo diálogo de impresión…', failReason ? 8000 : undefined);
 }
 
 /* ── Copia de seguridad / exportación (del día seleccionado en "Hacer
@@ -3279,11 +3356,26 @@ async function guardarCopiaOrganizadaManual() {
    no se repite hasta que toque de nuevo. Con la opción "cada día"
    (recomendada) cae siempre en el primer pedido de cada jornada. ── */
 const AUTO_BACKUP_ULTIMA_FECHA_KEY = 'dpf_comandas_autobackup_ultima_fecha';
-function exportarCopiaAutomatica(fecha) {
+async function exportarCopiaAutomatica(fecha) {
+  marcarBackupHecho(fecha);
+  // En la app de escritorio, si hay carpeta de copias configurada, la
+  // automática se guarda ahí directamente (organizada por año/mes/semana,
+  // igual que "📁 Guardar copia organizada") en vez de en Descargas —así no
+  // se pierde entre archivos sueltos ni hay que acordarse de nada. Si
+  // todavía no hay carpeta configurada, se cae al descargable de siempre
+  // para que la copia no falte igualmente, avisando de paso que conviene
+  // configurar una carpeta en Ajustes.
+  if (isDesktopApp()) {
+    const res = await guardarCopiaOrganizada(fecha);
+    if (res.ok) { toast('📥 Copia automática guardada', 3200); return; }
+  }
   const horaCorta = new Date().toTimeString().slice(0, 5).replace(':', '');
   _descargarArchivo('dulce-patata-auto-' + fecha + '-' + horaCorta + '.json', JSON.stringify(construirCopiaJSON(fecha), null, 2), 'application/json');
-  marcarBackupHecho(fecha);
-  toast('📥 Copia automática guardada en Descargas', 3200);
+  if (isDesktopApp()) {
+    toast('📥 Copia automática guardada en Descargas — configura una carpeta de copias en Ajustes para que se guarde organizada sola', 5000);
+  } else {
+    toast('📥 Copia automática guardada en Descargas', 3200);
+  }
 }
 function maybeAutoBackup(fecha) {
   const cadaDias = parseInt(getTicketConfig().copiaAutoCadaDias, 10) || 0;
@@ -3438,20 +3530,9 @@ function renderResumen() {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   IMPRESIÓN — directa por Bluetooth o USB (ESC/POS), con respaldo
-   de diálogo. Bluetooth es la vía pensada para la tablet (no hace
-   falta cable); USB se deja disponible igual para cuando se
-   imprime desde un ordenador con la impresora enchufada.
+   IMPRESIÓN — directa por USB (ESC/POS) con respaldo de diálogo
    ══════════════════════════════════════════════════════════════ */
 let printerDevice = null, printerEndpoint = null;
-// 'usb' | 'ble' | null — qué transporte está activo ahora mismo. Lo decide
-// cuál de los dos se ha conectado el último (o reconectado solo al abrir).
-let printerTransport = null;
-function isPrinterConnected() {
-  if (printerTransport === 'ble') return !!(bleDevice && bleDevice.gatt && bleDevice.gatt.connected && bleCharacteristic);
-  if (printerTransport === 'usb') return !!printerDevice;
-  return false;
-}
 
 /* ── Qué dispositivo USB coger cuando hay que reconectar (recarga de
    página, timeout, desconexión...): antes se cogía a ciegas el primero
@@ -3459,10 +3540,10 @@ function isPrinterConnected() {
    USB emparejado (lector de códigos de barras, báscula, etc.) podía
    intentar imprimir en el dispositivo equivocado. Ahora se recuerda el
    vendorId/productId de la impresora la primera vez que se empareja con
-   "🔌 Conectar impresora por cable (USB)" y se busca por eso; solo si no
-   hay nada guardado (primer uso de siempre) se cae a buscar un
-   dispositivo con interfaz de clase impresora (7), y como último recurso
-   al primero de la lista, igual que antes. ── */
+   "🔌 Conectar impresora directa" y se busca por eso; solo si no hay nada
+   guardado (primer uso de siempre) se cae a buscar un dispositivo con
+   interfaz de clase impresora (7), y como último recurso al primero de
+   la lista, igual que antes. ── */
 const PRINTER_IDS_KEY = 'dpf_comandas_printer_ids';
 function savePrinterIds(device) {
   try { localStorage.setItem(PRINTER_IDS_KEY, JSON.stringify({ vendorId: device.vendorId, productId: device.productId })); } catch (e) {}
@@ -3490,11 +3571,8 @@ function pickPrinterDevice(list) {
 
 function updatePrinterStatusUI() {
   const el = document.getElementById('printer-status');
-  if (printerTransport === 'ble' && isPrinterConnected()) {
-    el.textContent = '🖨️ Impresora conectada (Bluetooth)';
-    el.className = 'printer-status ok';
-  } else if (printerTransport === 'usb' && printerDevice) {
-    el.textContent = '🖨️ Impresora conectada (cable)';
+  if (printerDevice) {
+    el.textContent = '🖨️ Impresora conectada';
     el.className = 'printer-status ok';
   } else if (isDesktopApp() && window.comandasDesktop.printRaw && getTicketConfig().modoImpresion !== 'dialog') {
     // La impresión RAW de la app de escritorio (PowerShell+WinSpool en
@@ -3503,169 +3581,13 @@ function updatePrinterStatusUI() {
     // aunque la impresión directa sí estuviera funcionando de verdad.
     el.textContent = '🖨️ Impresión directa activa (app de escritorio)';
     el.className = 'printer-status ok';
-  } else if (!navigator.usb && !navigator.bluetooth) {
+  } else if (!navigator.usb) {
     el.textContent = '🖨️ Sin impresión directa (usa Chrome/Edge) — diálogo de impresión';
     el.className = 'printer-status warn';
   } else {
-    el.textContent = '🖨️ Sin impresora conectada — usará el diálogo de impresión';
+    el.textContent = '🖨️ Sin impresora directa — usará el diálogo de impresión';
     el.className = 'printer-status warn';
   }
-}
-
-/* ── BLUETOOTH (BLE) — vía pensada para la tablet, sin cable. Solo vale
-   para impresoras Bluetooth de BAJO CONSUMO (BLE) — la mayoría de
-   impresoras térmicas baratas llevan Bluetooth "clásico" (SPP), que
-   ningún navegador puede usar, pero es la misma impresora que ya se usa
-   por Bluetooth en "Pedidos en vivo" del panel de administración (ver
-   pedidos/src/impresora-termica.js), así que ya sabemos que esta sí es
-   compatible. Misma lista de servicios GATT candidatos que ese módulo,
-   a propósito — no hay un ID de fabricante fijo que buscar en Bluetooth
-   (a diferencia de USB), así que se prueban los UUID más habituales
-   entre impresoras térmicas ESC/POS BLE genéricas. ── */
-const BLE_SERVICIOS_CANDIDATOS = [
-  '000018f0-0000-1000-8000-00805f9b34fb', // el más habitual en clones ESC/POS BLE
-  '0000ff00-0000-1000-8000-00805f9b34fb',
-  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'  // Nordic UART Service (otro habitual)
-];
-let bleDevice = null, bleCharacteristic = null;
-let bleDisconnectHandler = null;
-
-async function bleBuscarCaracteristicaEscritura(server) {
-  for (const uuidServicio of BLE_SERVICIOS_CANDIDATOS) {
-    try {
-      const servicio = await server.getPrimaryService(uuidServicio);
-      const caracteristicas = await servicio.getCharacteristics();
-      const escribible = caracteristicas.find(c => c.properties.write || c.properties.writeWithoutResponse);
-      if (escribible) return escribible;
-    } catch (e) {
-      // Este servicio candidato no existe en el dispositivo — se prueba el siguiente.
-    }
-  }
-  return null;
-}
-
-async function bleConectarDispositivo(device) {
-  const server = await device.gatt.connect();
-  const characteristic = await bleBuscarCaracteristicaEscritura(server);
-  if (!characteristic) {
-    server.disconnect();
-    throw new Error('Se encontró la impresora por Bluetooth pero no un canal de escritura reconocido.');
-  }
-  bleDevice = device;
-  bleCharacteristic = characteristic;
-  printerTransport = 'ble';
-  // Muchas impresoras Bluetooth baratas todavía no están listas para
-  // recibir datos de verdad justo al terminar de conectar — se manda
-  // primero un "pulso" inofensivo (no imprime nada) y se espera un
-  // margen antes de dar la conexión por lista, para no perder en
-  // silencio el primer ticket real (mismo motivo que en USB).
-  try { await blePulso(); } catch (e) {}
-  await new Promise(r => setTimeout(r, 800));
-  if (bleDisconnectHandler) device.removeEventListener('gattserverdisconnected', bleDisconnectHandler);
-  bleDisconnectHandler = () => {
-    if (printerTransport === 'ble') { bleDevice = null; bleCharacteristic = null; printerTransport = null; }
-    updatePrinterStatusUI();
-    toast('⚠️ Se ha desconectado la impresora', 5000);
-    playDisconnectAlert();
-  };
-  device.addEventListener('gattserverdisconnected', bleDisconnectHandler);
-  updatePrinterStatusUI();
-}
-
-// Pide permiso al navegador — debe llamarse desde un click (gesto del
-// usuario), el navegador no deja hacerlo en segundo plano.
-async function pairPrinterBluetooth() {
-  if (!navigator.bluetooth) { toast('Este navegador no soporta Bluetooth. Usa Chrome en Android (no funciona en iPhone/iPad ni en Safari).'); return; }
-  try {
-    let nombreGuardado = null;
-    try { nombreGuardado = localStorage.getItem('dpf_comandas_bt_printer_name') || null; } catch (e) {}
-    let device;
-    if (nombreGuardado) {
-      try {
-        device = await navigator.bluetooth.requestDevice({ filters: [{ name: nombreGuardado }], optionalServices: BLE_SERVICIOS_CANDIDATOS });
-      } catch (e) {
-        device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICIOS_CANDIDATOS });
-      }
-    } else {
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICIOS_CANDIDATOS });
-    }
-    await bleConectarDispositivo(device);
-    try { localStorage.setItem('dpf_comandas_bt_printer_name', device.name || ''); } catch (e) {}
-    toast('✅ Impresora conectada por Bluetooth: ' + (device.name || 'dispositivo'));
-    if (!navigator.bluetooth.getDevices) {
-      console.warn('[comandas] Este navegador no soporta navigator.bluetooth.getDevices() — no podrá reconectar sola tras recargar la página, solo mientras esta pestaña siga abierta.');
-    }
-  } catch (e) {
-    console.warn('[comandas] conexión Bluetooth cancelada o fallida', e);
-    if (e && e.name !== 'NotFoundError') toast('No se pudo conectar por Bluetooth: ' + e.message);
-  }
-}
-
-// Toca el indicador de la cabecera ("🖨️ ...") para conectar sin tener que
-// entrar antes en ⚙️ Ajustes — un atajo directo al mismo botón que ya
-// existe ahí, para el caso más habitual (Bluetooth, en la tablet). Si ya
-// hay una impresora conectada, no vuelve a pedir emparejar (eso abriría
-// el selector de dispositivos sin necesidad); solo confirma el estado.
-function printerStatusClick() {
-  if (isPrinterConnected()) {
-    toast(printerTransport === 'ble' ? '🖨️ Ya conectada por Bluetooth' : '🖨️ Ya conectada por cable (USB)');
-    return;
-  }
-  pairPrinterBluetooth();
-}
-
-// Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
-// se llama sola al cargar la página y, dentro de sendToPrinter, cada vez
-// que hay que imprimir y no hay conexión activa (mismo patrón que USB).
-async function bleReconectar() {
-  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
-  const dispositivos = await navigator.bluetooth.getDevices().catch(() => []);
-  if (!dispositivos.length) return false;
-  // Dos intentos con una pequeña espera entre medias — algunas impresoras
-  // Bluetooth baratas de batería "duermen" tras un rato sin usarse, y el
-  // primer intento de reconexión justo después de despertar puede fallar
-  // aunque la segunda vez, un segundo más tarde, sí funcione. Sin este
-  // reintento, ese primer fallo pasaba directo al diálogo de impresión de
-  // Chrome sin haber probado de verdad si la impresora ya estaba lista.
-  for (let intento = 0; intento < 2; intento++) {
-    try {
-      await _conTimeout(bleConectarDispositivo(dispositivos[0]), 6000, 'timeout reconectando Bluetooth');
-      return true;
-    } catch (e) {
-      console.warn('[comandas] reconexión Bluetooth fallida (intento ' + (intento + 1) + '/2)', e);
-      if (intento === 0) await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-  return false;
-}
-
-// Se prefiere "con respuesta" (writeValue): cada trozo espera la
-// confirmación real de la impresora antes de mandar el siguiente. Solo si
-// la característica no soporta escritura con respuesta se usa
-// writeValueWithoutResponse con una pequeña espera manual de por medio.
-async function bleEnviarBytes(bytes) {
-  const TAMANO_TROZO = 100;
-  const conRespuesta = !!bleCharacteristic.properties.write;
-  for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
-    const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
-    if (conRespuesta) {
-      await _conTimeout(bleCharacteristic.writeValue(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
-    } else {
-      await _conTimeout(bleCharacteristic.writeValueWithoutResponse(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
-      await new Promise(r => setTimeout(r, 45));
-    }
-  }
-}
-
-// "Pulso" de mantenimiento — un comando de estado en tiempo real (no
-// imprime nada en el papel), ver bleConectarDispositivo().
-async function blePulso() {
-  if (printerTransport !== 'ble' || !bleCharacteristic) return;
-  try {
-    const bytes = new Uint8Array([0x10, 0x04, 0x01]);
-    if (bleCharacteristic.properties.writeWithoutResponse) await bleCharacteristic.writeValueWithoutResponse(bytes);
-    else if (bleCharacteristic.properties.write) await bleCharacteristic.writeValue(bytes);
-  } catch (e) { /* si de verdad se cayó la conexión, el próximo intento de imprimir lo detecta */ }
 }
 
 async function openAndClaim(device) {
@@ -3679,7 +3601,6 @@ async function openAndClaim(device) {
   if (!ep) throw new Error('La impresora no tiene un endpoint de salida compatible');
   printerDevice = device;
   printerEndpoint = ep.endpointNumber;
-  printerTransport = 'usb';
 }
 
 async function pairPrinter() {
@@ -3696,18 +3617,12 @@ async function pairPrinter() {
 }
 
 async function trySilentReconnect() {
-  // Bluetooth primero — es la vía pensada para la tablet. Si no hay
-  // ninguna impresora Bluetooth ya emparejada antes, se prueba USB (por
-  // si se abre esta misma herramienta desde un ordenador con la
-  // impresora enchufada por cable).
-  const okBle = await bleReconectar();
-  if (!okBle && navigator.usb) {
-    try {
-      const list = await navigator.usb.getDevices();
-      const elegido = pickPrinterDevice(list);
-      if (elegido) await openAndClaim(elegido);
-    } catch (e) { /* se usará el diálogo de impresión */ }
-  }
+  if (!navigator.usb) { updatePrinterStatusUI(); return; }
+  try {
+    const list = await navigator.usb.getDevices();
+    const elegido = pickPrinterDevice(list);
+    if (elegido) await openAndClaim(elegido);
+  } catch (e) { /* se usará el diálogo de impresión */ }
   updatePrinterStatusUI();
 }
 
@@ -3726,31 +3641,12 @@ function _conTimeout(promise, ms, mensaje) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 async function sendToPrinter(bytes) {
-  if (!isPrinterConnected()) {
-    // Igual que en trySilentReconnect: Bluetooth primero, USB como
-    // alternativa si no hay ninguna impresora Bluetooth ya emparejada.
-    const okBle = await bleReconectar();
-    if (!okBle) {
-      if (!navigator.usb) throw new Error('No hay impresora conectada (ni Bluetooth ni USB disponibles)');
-      const list = await navigator.usb.getDevices();
-      const elegido = pickPrinterDevice(list);
-      if (!elegido) throw new Error('No hay impresora emparejada');
-      await openAndClaim(elegido);
-    }
-  }
-  if (printerTransport === 'ble') {
-    try {
-      await bleEnviarBytes(bytes);
-    } catch (e) {
-      // Si falla, se olvida esta conexión — el próximo intento reconecta
-      // de cero en vez de reintentar sobre una conexión en mal estado.
-      bleDevice = null;
-      bleCharacteristic = null;
-      printerTransport = null;
-      updatePrinterStatusUI();
-      throw e;
-    }
-    return;
+  if (!printerDevice) {
+    if (!navigator.usb) throw new Error('WebUSB no disponible');
+    const list = await navigator.usb.getDevices();
+    const elegido = pickPrinterDevice(list);
+    if (!elegido) throw new Error('No hay impresora emparejada');
+    await openAndClaim(elegido);
   }
   try {
     // 15s de margen (no 8s): WebUSB no deja cancelar transferOut() una vez
@@ -3767,7 +3663,6 @@ async function sendToPrinter(bytes) {
     // sobre una conexión que puede haber quedado en mal estado.
     printerDevice = null;
     printerEndpoint = null;
-    printerTransport = null;
     updatePrinterStatusUI();
     throw e;
   }
@@ -3783,7 +3678,6 @@ if (navigator.usb) {
     if (printerDevice && e.device === printerDevice) {
       printerDevice = null;
       printerEndpoint = null;
-      printerTransport = null;
       updatePrinterStatusUI();
       toast('⚠️ Se ha desconectado la impresora', 5000);
       playDisconnectAlert();
@@ -3833,42 +3727,6 @@ function playPrintSound(ok) {
   } catch (e) { /* sin sonido, no pasa nada */ }
 }
 
-// Manda el ticket a la cola del panel de Admin (que ya está conectado a
-// la impresora — el "punto único") en vez de que Comandas se conecte
-// ella misma. Solo la PRIMERA copia decide si se sigue este camino o el
-// de siempre: si esa falla, no se ha encolado nada todavía y se puede
-// caer al plan B (imprimir aquí) sin riesgo de que salga el ticket
-// duplicado; si esa sale bien, las copias siguientes se intentan igual
-// pero un fallo suyo solo se avisa por consola (mejor perder una copia
-// de más que arriesgarse a duplicar la comanda entera).
-async function intentarEncolarEnAdmin(bytes, copies) {
-  let bytesBase64;
-  try { bytesBase64 = bytesToBase64(bytes); } catch (e) { return false; }
-  let primeraOk = false;
-  for (let i = 0; i < copies; i++) {
-    try {
-      const res = await _conTimeout(
-        fetch('guardar-pedido.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'encolarImpresionComandas', bytesBase64 })
-        }).then(r => r.json()),
-        4000,
-        'timeout avisando a Admin'
-      );
-      if (res && res.success) {
-        primeraOk = true;
-      } else if (i === 0) {
-        return false;
-      }
-    } catch (e) {
-      if (i === 0) return false;
-      console.warn('[comandas] copia adicional no se pudo encolar en Admin', e);
-    }
-  }
-  return primeraOk;
-}
-
 async function printOrder(order) {
   renderTicketPreview(order);
   const cfg = getTicketConfig();
@@ -3880,21 +3738,11 @@ async function printOrder(order) {
     try {
       const bytes = buildEscPosBytes(order);
       const copies = Math.max(1, parseInt(cfg.copias, 10) || 1);
-      // Primero se intenta que lo imprima Admin — evita que Comandas toque
-      // el Bluetooth y se lo quite. Solo si esto falla del todo (sin
-      // internet, el servidor no responde...) se cae al camino de siempre:
-      // imprimir aquí mismo.
-      const okAdmin = await intentarEncolarEnAdmin(bytes, copies);
-      if (okAdmin) {
-        printedOk = true;
-      } else {
-        for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
-        printedOk = true;
-      }
+      for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
+      printedOk = true;
     } catch (e) {
-      console.warn('[comandas] impresión directa falló:', e);
+      console.warn('[comandas] impresión directa por USB falló:', e);
       anyFailure = true;
-      failReason = e.message || 'motivo desconocido';
     }
   }
 
@@ -3924,16 +3772,7 @@ async function printOrder(order) {
     }
   }
 
-  if (!printedOk) {
-    // Antes esto se caía al diálogo de impresión de Chrome sin decir por
-    // qué — desde fuera parecía que "antes iba directo y ahora no", sin
-    // ninguna pista de qué había pasado (impresora fuera de alcance,
-    // apagada, Bluetooth tardó en reconectar...). Con el motivo real
-    // delante, al menos se puede actuar (acercar/encender la impresora,
-    // volver a intentarlo) en vez de solo ver aparecer el diálogo.
-    if (anyFailure) toast('⚠️ No se pudo imprimir directo (' + (failReason || 'sin conexión con la impresora') + ') — se abre el diálogo de impresión', 6000);
-    window.print();
-  }
+  if (!printedOk) window.print();
   updatePrinterStatusUI();
   playPrintSound(printedOk || !anyFailure);
   return { printedOk, failReason };
@@ -4087,13 +3926,26 @@ async function initDesktopSettingsSection() {
   document.getElementById('set-kiosk').checked = !!kiosk;
   document.getElementById('set-update-path').value = updatePath || '';
   document.getElementById('set-backup-folder').value = backupFolder || '';
+  updateBackupFolderHint(!!backupFolder);
   loadPrinterNameOptions();
+}
+// Resalta el aviso mientras no haya carpeta configurada — la copia
+// automática diaria solo llega a Descargas hasta que se elija una.
+function updateBackupFolderHint(configurada) {
+  const hint = document.getElementById('set-backup-folder-hint');
+  if (!hint) return;
+  hint.textContent = configurada
+    ? 'La copia automática diaria (y "📥 Descargar copia" en Hacer Caja) se guarda sola aquí, organizada en carpetas.'
+    : '⚠️ Sin configurar: la copia automática diaria solo llega a Descargas, no queda organizada aparte. Recomendado elegir una carpeta.';
+  hint.style.color = configurada ? '' : 'var(--error)';
+  hint.style.fontWeight = configurada ? '' : '600';
 }
 async function chooseBackupFolder() {
   if (!isDesktopApp()) return;
   const res = await window.comandasDesktop.chooseBackupFolder();
   if (res && res.ok) {
     document.getElementById('set-backup-folder').value = res.folder;
+    updateBackupFolderHint(true);
     toast('✅ Carpeta de copias configurada');
   }
 }
@@ -4444,14 +4296,30 @@ function loadPaniniCounts() {
 }
 function savePaniniCounts(counts) { localStorage.setItem(getPaniniCountsKey(), JSON.stringify(counts)); }
 function getPaniniEntry(id) { return loadPaniniCounts()[id] || { inicial: 0, usado: 0 }; }
-function paniniUsadoTotal(id) {
-  const e = getPaniniEntry(id);
-  return e.usado + unidadesVendidasHoyPorMenuId(id) + unidadesEnCarritoPorMenuId(id, true);
+// Los paninis se cuentan por mitades: "unidades hoy" son mitades, no
+// paninis enteros (si se prepan 10 enteros, se ponen 20 aquí). Vender un
+// entero gasta 2 mitades del mismo cupo que su "medio" (que gasta 1).
+function paniniMedioIdFor(wholeId) { const m = MENU.find(x => x.mitadDe === wholeId); return m ? m.id : null; }
+function paniniUnidadesVendidasHoy(wholeId) {
+  const medioId = paniniMedioIdFor(wholeId);
+  let sum = unidadesVendidasHoyPorMenuId(wholeId) * 2;
+  if (medioId) sum += unidadesVendidasHoyPorMenuId(medioId);
+  return sum;
 }
-function paniniRestante(id) {
-  const e = getPaniniEntry(id);
+function paniniUnidadesEnCarrito(wholeId) {
+  const medioId = paniniMedioIdFor(wholeId);
+  let sum = unidadesEnCarritoPorMenuId(wholeId, true) * 2;
+  if (medioId) sum += unidadesEnCarritoPorMenuId(medioId, true);
+  return sum;
+}
+function paniniUsadoTotal(wholeId) {
+  const e = getPaniniEntry(wholeId);
+  return e.usado + paniniUnidadesVendidasHoy(wholeId) + paniniUnidadesEnCarrito(wholeId);
+}
+function paniniRestante(wholeId) {
+  const e = getPaniniEntry(wholeId);
   if (!e.inicial) return null; // sin límite puesto hoy
-  return Math.max(0, e.inicial - paniniUsadoTotal(id));
+  return Math.max(0, e.inicial - paniniUsadoTotal(wholeId));
 }
 // El − / + de aquí abajo ajustan directamente "unidades hoy" (antes eran
 // para un contador de mermas/regalos aparte que no se usaba, con las
@@ -4466,10 +4334,18 @@ function changePaniniInicial(id, delta) {
   renderStockModal();
   renderMenu();
 }
+// Por dentro el cupo de paninis siempre se guarda en mitades (ver
+// paniniUnidadesVendidasHoy), pero se lee y se escribe en paninis
+// enteros con decimales (2,5 en vez de 5 mitades) — así no hay que
+// hacer la cuenta a mano al mirar o al escribir cuántos quedan.
+function fmtHalfUnits(mitades) {
+  const wholes = Math.floor(mitades / 2);
+  return (mitades % 2 === 1) ? (wholes + ',5') : String(wholes);
+}
 function setPaniniInicial(id, valor) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.inicial = Math.max(0, parseInt(valor, 10) || 0);
+  entry.inicial = Math.max(0, Math.round(parseCashNum(valor) * 2));
   counts[id] = entry;
   savePaniniCounts(counts);
   renderStockModal();
@@ -4522,13 +4398,19 @@ function setBoniatoInicial(tipo, valor) {
 // límite puesto hoy, nunca agotado. Se usa tanto en el modal de stock
 // como al pintar la carta (para bloquear "+ Añadir" y mostrar AGOTADO).
 function getStockRestanteForItem(item) {
+  if (item.mitadDe) return paniniRestante(item.mitadDe);
   if (item.cat === 'Paninis') return paniniRestante(item.id);
   if (BONIATO_IDS.has(item.id)) return boniatoRestante(item.id === BONIATO_GOAT_ID ? 'goat' : 'normal');
   return null;
 }
+// Los paninis se cuentan por mitades: un medio necesita 1 mitad libre,
+// un entero necesita 2 — si solo queda 1 mitad, el entero ya no cabe
+// pero sí otro medio.
 function isItemAgotado(item) {
   const r = getStockRestanteForItem(item);
-  return r !== null && r <= 0;
+  if (r === null) return false;
+  const min = item.mitadDe ? 1 : 2;
+  return r < min - 1e-9;
 }
 
 // Antes: un <input type=number> con flechitas nativas diminutas para
@@ -4537,11 +4419,12 @@ function isItemAgotado(item) {
 // pueden tocar bien en la pantalla táctil del mostrador — ahora el − / +
 // (grandes, táctiles) ajustan "unidades hoy" directamente; el número
 // sigue siendo editable a mano si hace falta poner uno exacto de golpe.
-function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus) {
+function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, unidadLabel, esMitades) {
   const restante = entry.inicial ? Math.max(0, entry.inicial - (entry.usado + vendidoAuto)) : null;
+  const fmtNum = n => esMitades ? fmtHalfUnits(n) : String(n);
   const restanteHtml = restante === null
     ? `<span class="stock-restante sin-limite">Sin límite</span>`
-    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restante}</span>`;
+    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + fmtNum(restante)}</span>`;
   return `<div class="stock-row">
     <div class="stock-row-head">
       <span class="stock-row-label">${escapeHtml(label)}</span>
@@ -4551,22 +4434,26 @@ function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus) 
       <div class="stock-inicial-row">
         <button class="stock-btn" onclick="${onMinus}">−</button>
         <div class="stock-inicial-box">
-          <input type="tel" inputmode="numeric" class="stock-inicial-input" value="${entry.inicial || 0}" onchange="${onInicial}this.value)">
-          <label>Unidades hoy</label>
+          <input type="tel" inputmode="${esMitades ? 'decimal' : 'numeric'}" class="stock-inicial-input" value="${fmtNum(entry.inicial || 0)}" onchange="${onInicial}this.value)">
+          <label>${unidadLabel || 'Unidades hoy'}</label>
         </div>
         <button class="stock-btn" onclick="${onPlus}">+</button>
       </div>
-      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${vendidoAuto} vendidas hoy</div>` : ''}
+      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${fmtNum(vendidoAuto)} vendidas hoy</div>` : ''}
     </div>
   </div>`;
 }
 function renderStockModal() {
-  const paninis = MENU.filter(m => m.cat === 'Paninis');
+  // Los "medio panini" no llevan fila propia — comparten cupo con su
+  // panini entero (ver paniniUnidadesVendidasHoy/paniniUnidadesEnCarrito).
+  // Se cuenta en MITADES: un entero vendido gasta 2.
+  const paninis = MENU.filter(m => m.cat === 'Paninis' && !m.mitadDe);
   document.getElementById('stock-paninis-rows').innerHTML = paninis.map(item => stockCounterRow(
     item.name, getPaniniEntry(item.id),
-    unidadesVendidasHoyPorMenuId(item.id) + unidadesEnCarritoPorMenuId(item.id, true),
+    paniniUnidadesVendidasHoy(item.id) + paniniUnidadesEnCarrito(item.id),
     `setPaniniInicial(${item.id},`,
-    `changePaniniInicial(${item.id},-1)`, `changePaniniInicial(${item.id},1)`
+    `changePaniniInicial(${item.id},-1)`, `changePaniniInicial(${item.id},1)`,
+    'Paninis hoy', true
   )).join('');
   const boniato = loadBoniatoCounts();
   document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => {
@@ -4585,43 +4472,57 @@ function openStockModal() {
 }
 function closeStockModal() { document.getElementById('stock-modal').classList.remove('open'); }
 
-// Solo muestra productos con un límite puesto en 📦 Stock. El − tacha una
-// unidad usada fuera de una comanda (merma, regalo...) sumando 1 a "usado"
-// (ver paniniUsadoTotal/boniatoUsadoTotal); el + lo deshace.
+// ── Mini contador de "quedan hoy" en el hueco de la barra lateral (bajo
+// Cobrar/Ver ticket) — misma cuenta que 📦 Stock, pero a mano y siempre a
+// la vista. El − de cada badge "tacha" una unidad usada fuera de una
+// comanda (una merma, un regalo, una que se ha estropeado...) sumando 1
+// a "usado"; el + la deshace. Solo lista lo que ya tiene unidades de hoy
+// puestas — si no se ha configurado nada en 📦 Stock, no sale nada aquí.
+// El nombre completo (p.ej. "Panini York y Queso") no cabe en el badge —
+// se le quita el prefijo de categoría, que ya da el icono.
 function tallyShortName(label, prefix) {
-  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '').replace(/^Jamón\s+/i, '');
+  const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '');
   return n || label;
 }
-function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
+function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer, displayNum) {
   const cls = restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok';
   return `<div class="tally-badge" title="${escapeHtml(fullLabel)}">
     ${icon} ${escapeHtml(shortLabel)}
-    <button type="button" class="tally-btn" onclick="${onTachar}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
-    <span class="tally-num ${cls}">${restante <= 0 ? 'AGOTADO' : restante}</span>
-    <button type="button" class="tally-btn" onclick="${onDeshacer}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
+    <button class="tally-btn" onclick="${onTachar}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
+    <span class="tally-num ${cls}">${displayNum != null ? displayNum : restante}</span>
+    <button class="tally-btn" onclick="${onDeshacer}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
   </div>`;
 }
 function renderSidebarStockTally() {
   const el = document.getElementById('sidebar-stock-tally');
   if (!el) return;
   let html = '';
-  MENU.filter(m => m.cat === 'Paninis').forEach(item => {
+  // Los "medio panini" comparten cupo con su entero — no llevan badge
+  // propio (ver paniniMedioIdFor).
+  MENU.filter(m => m.cat === 'Paninis' && !m.mitadDe).forEach(item => {
     const e = getPaniniEntry(item.id);
     if (!e.inicial) return;
-    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), paniniRestante(item.id), e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`);
+    const restante = paniniRestante(item.id);
+    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), restante, e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`, fmtHalfUnits(restante));
   });
   const boniato = loadBoniatoCounts();
   Object.entries(BONIATO_STOCK_TIPOS).forEach(([tipo, label]) => {
     const e = boniato[tipo];
     if (!e.inicial) return;
-    html += sidebarTallyBadge('🍠', label, tallyShortName(label, 'Boniato'), boniatoRestante(tipo), e.usado, `tacharBoniatoStock('${tipo}')`, `deshacerBoniatoStock('${tipo}')`);
+    const restante = boniatoRestante(tipo);
+    html += sidebarTallyBadge('🍠', label, tallyShortName(label, 'Boniato'), restante, e.usado, `tacharBoniatoStock('${tipo}')`, `deshacerBoniatoStock('${tipo}')`);
   });
   el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div><div class="tally-badges">${html}</div>` : '';
 }
+// El badge de la barra lateral es siempre de un panini ENTERO (los medios
+// no llevan badge propio, ver renderSidebarStockTally), pero el cupo se
+// guarda en MITADES — tachar uno entero tiene que gastar 2, igual que
+// venderlo por caja (ver paniniUnidadesVendidasHoy). Antes solo gastaba 1
+// y había que tocar el botón dos veces para que cuadrase.
 function tacharPaniniStock(id) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.usado = (entry.usado || 0) + 1;
+  entry.usado = (entry.usado || 0) + 2;
   counts[id] = entry;
   savePaniniCounts(counts);
   renderSidebarStockTally(); renderStockModal(); renderMenu();
@@ -4629,7 +4530,7 @@ function tacharPaniniStock(id) {
 function deshacerPaniniStock(id) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.usado = Math.max(0, (entry.usado || 0) - 1);
+  entry.usado = Math.max(0, (entry.usado || 0) - 2);
   counts[id] = entry;
   savePaniniCounts(counts);
   renderSidebarStockTally(); renderStockModal(); renderMenu();
@@ -4667,11 +4568,14 @@ function chooseUsbDevicePicker(index) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const versionEl = document.getElementById('app-version');
+  if (versionEl) versionEl.textContent = 'v' + APP_VERSION;
   applyFontChoice(loadFontChoice());
   applyPrintPageSize();
   initTabs();
   renderMenu();
   initCartSwipeToDelete();
+  setOrderPaid(orderPaid); // sincroniza el estado "pagado" por defecto en el DOM
   restoreCartDraftIfAny();
   renderCart();
   trySilentReconnect();
