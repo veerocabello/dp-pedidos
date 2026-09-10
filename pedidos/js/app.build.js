@@ -4552,6 +4552,36 @@ const MENU = [
   name: "Panini 4 Quesos",
   desc: "Pan de leña crujiente · medio metro",
   price: 5.50
+}, {
+  id: 55,
+  cat: "Paninis",
+  name: "Medio Panini Jamón York y Queso",
+  desc: "La mitad de un panini entero",
+  price: 3.30
+}, {
+  id: 56,
+  cat: "Paninis",
+  name: "Medio Panini Carbonara",
+  desc: "La mitad de un panini entero",
+  price: 3.30
+}, {
+  id: 57,
+  cat: "Paninis",
+  name: "Medio Panini Barbacoa",
+  desc: "La mitad de un panini entero",
+  price: 3.30
+}, {
+  id: 58,
+  cat: "Paninis",
+  name: "Medio Panini Kebab",
+  desc: "La mitad de un panini entero",
+  price: 3.30
+}, {
+  id: 59,
+  cat: "Paninis",
+  name: "Medio Panini 4 Quesos",
+  desc: "La mitad de un panini entero",
+  price: 3.30
 },
 // ── COOKIES ──
 {
