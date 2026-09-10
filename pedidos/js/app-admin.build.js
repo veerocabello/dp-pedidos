@@ -3592,7 +3592,28 @@ function marcarPatatasAlergenosQuitables() {
 // Firebase para todo el mundo sin que nadie los hubiera borrado de
 // verdad — bug real reportado por la dueña con las Tartas. Ahora solo se
 // borra lo que de verdad pasó por el botón de eliminar.
-window._menuDeletedIds = window._menuDeletedIds || new Set();
+// _menuDeletedIds vivía SOLO en memoria — al recargar la página (o en
+// cualquier otra pestaña/dispositivo) se reiniciaba vacío. Si esa
+// pestaña recién abierta todavía tenía en su copia local el producto ya
+// borrado (por no haber sincronizado a tiempo) y disparaba un guardado
+// por cualquier otro motivo, la rama "nadie lo ha borrado de verdad" de
+// saveMenu() lo resucitaba — el borrado "no se quedaba puesto". Ahora se
+// guarda también en localStorage, así que este dispositivo recuerda sus
+// propios borrados aunque recargue o pasen días.
+const MENU_DELETED_IDS_KEY = 'dpf_menu_deleted_ids';
+window._menuDeletedIds = window._menuDeletedIds || (function () {
+  try {
+    const guardados = JSON.parse(localStorage.getItem(MENU_DELETED_IDS_KEY) || '[]');
+    return new Set(Array.isArray(guardados) ? guardados : []);
+  } catch {
+    return new Set();
+  }
+})();
+function _persistirMenuDeletedIds() {
+  try {
+    localStorage.setItem(MENU_DELETED_IDS_KEY, JSON.stringify(Array.from(window._menuDeletedIds)));
+  } catch {}
+}
 function saveMenu() {
   localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
   localStorage.setItem(MENU_KEY + '_ts', Date.now());
@@ -3836,6 +3857,7 @@ function confirmDeleteProduct(id, name) {
     const idx = MENU.findIndex(m => m.id == id);
     if (idx >= 0) MENU.splice(idx, 1);
     window._menuDeletedIds.add(String(id));
+    _persistirMenuDeletedIds();
     saveMenu();
     initTabs();
     renderMenu();
