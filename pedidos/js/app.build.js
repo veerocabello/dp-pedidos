@@ -1165,6 +1165,19 @@ function loadSavedMenu() {
     saved.forEach(i => MENU.push(i));
   }
 }
+// El "medio" de un panini se detecta por NOMBRE, no por un id fijo en el
+// código — así funciona sea cual sea el id que Firebase le haya dado al
+// crearlo desde el panel (Carta → Añadir producto), sin tener que tocar
+// código para cada uno nuevo. Ver comentario junto a los Paninis en
+// carta.js.
+function _esMedioPanini(item) {
+  return item.cat === 'Paninis' && /^Medio Panini /i.test(item.name || '');
+}
+function _medioPaniniDe(item) {
+  if (item.cat !== 'Paninis' || _esMedioPanini(item)) return null;
+  var nombreMedio = ('Medio ' + item.name).toLowerCase();
+  return MENU.find(function (m) { return _esMedioPanini(m) && !m.hidden && m.name.toLowerCase() === nombreMedio; }) || null;
+}
 function renderMenu() {
   window._tartaLastSub = null;
   // El aviso de "toca un icono de alérgeno" solo tiene sentido si ALGÚN
@@ -1175,7 +1188,7 @@ function renderMenu() {
     var hayAlergenos = MENU.some(function (i) { return Array.isArray(i.tags) && i.tags.length; });
     allergenHintEl.style.display = hayAlergenos ? 'block' : 'none';
   }
-  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden && !i.esVariante);
+  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden && !_esMedioPanini(i));
   // Ordenar tartas: clásicas primero, especiales después
   var tartasClasicas = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1);
   var tartasEspeciales = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('especial') !== -1);
@@ -1203,7 +1216,7 @@ function renderMenu() {
   };
   const catCounts = {};
   if (showSeparators) {
-    MENU.filter(i => !i.hidden && !i.esVariante).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
+    MENU.filter(i => !i.hidden && !_esMedioPanini(i)).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
   }
   let lastCat = null;
   const html = filtered.map(item => {
@@ -1214,7 +1227,8 @@ function renderMenu() {
               : cart[item.id] || 0;
     // Un panini con "medio" enlazado cuenta como "en el carrito" si hay
     // cantidad en cualquiera de los dos tamaños, no solo en el entero.
-    const qtyConMedio = item.medioId ? qty + (cart[item.medioId] || 0) : qty;
+    const _medioParaCarrito = _medioPaniniDe(item);
+    const qtyConMedio = _medioParaCarrito ? qty + (cart[_medioParaCarrito.id] || 0) : qty;
     const soldout = item.soldout;
     let sep = '';
     if (showSeparators && item.cat !== lastCat) {
@@ -1268,12 +1282,12 @@ function renderMenu() {
     let priceHtml = _precioOferta < item.price
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2).replace('.', ',') + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2).replace('.', ',') + ' € ⚡</span>'
       : item.price.toFixed(2).replace('.', ',') + ' €';
-    // Panini con "medio" enlazado (ver medioId en carta.js): en vez del
-    // precio único, dos botones Entero/Medio dentro de la MISMA tarjeta —
-    // el medio no tiene tarjeta propia en la carta. Los +/- de abajo
-    // actúan sobre el tamaño seleccionado (window._paniniSize), cada uno
-    // con su propia cantidad en el carrito.
-    const medioItem = (!soldout && item.medioId) ? MENU.find(m => m.id === item.medioId && !m.hidden) : null;
+    // Panini con "medio" enlazado por nombre (ver _medioPaniniDe arriba):
+    // en vez del precio único, dos botones Entero/Medio dentro de la
+    // MISMA tarjeta — el medio no tiene tarjeta propia en la carta. Los
+    // +/- de abajo actúan sobre el tamaño seleccionado
+    // (window._paniniSize), cada uno con su propia cantidad en el carrito.
+    const medioItem = !soldout ? _medioPaniniDe(item) : null;
     if (medioItem) {
       window._paniniSize = window._paniniSize || {};
       const sel = window._paniniSize[item.id] === 'medio' ? 'medio' : 'entero';
@@ -4551,84 +4565,47 @@ const MENU = [
   desc: "Crema de pistacho + queso mozzarella + pistacho crujiente",
   price: 5.50
 },
-// ── PANINIS ── cada entero lleva su "medio" enlazado por medioId — el
-// medio NO se pinta como tarjeta propia en la carta (ver esVariante en
-// renderMenu, nucleo-compartido.js): aparece como un segundo precio
-// dentro de la MISMA tarjeta del panini entero, no como otro panini
-// suelto en la lista. Sigue siendo un producto normal del catálogo (con
-// su propio id/nombre/precio) para que el ticket, la validación de
-// precio del servidor y las estadísticas lo traten exactamente igual
-// que cualquier otro producto.
+// ── PANINIS ── el "medio" de cada uno NO es un id fijo aquí — se
+// engancha por NOMBRE en tiempo real (ver medioPaniniLink en
+// nucleo-compartido.js: busca en MENU un producto de cat "Paninis"
+// llamado exactamente "Medio " + el nombre del panini entero). Así
+// funciona igual sea cual sea el id que le haya tocado en Firebase al
+// crearlo desde el panel (Carta → Añadir producto) — no hace falta
+// tocar código para dar de alta un "medio" nuevo, ni arriesgarse a que
+// el id que pusiéramos aquí no coincida con el real. Cualquier producto
+// que empiece por "Medio Panini " se oculta de la rejilla de tarjetas
+// (no sale suelto en la lista) y aparece como segundo precio dentro de
+// la tarjeta del panini entero correspondiente.
 {
   id: 22,
   cat: "Paninis",
   name: "Panini Jamón York y Queso",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 55
+  price: 5.50
 }, {
   id: 23,
   cat: "Paninis",
   name: "Panini Carbonara",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 56
+  price: 5.50
 }, {
   id: 24,
   cat: "Paninis",
   name: "Panini Barbacoa",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 57
+  price: 5.50
 }, {
   id: 25,
   cat: "Paninis",
   name: "Panini Kebab",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 58
+  price: 5.50
 }, {
   id: 26,
   cat: "Paninis",
   name: "Panini 4 Quesos",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 59
-}, {
-  id: 55,
-  cat: "Paninis",
-  name: "Medio Panini Jamón York y Queso",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 56,
-  cat: "Paninis",
-  name: "Medio Panini Carbonara",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 57,
-  cat: "Paninis",
-  name: "Medio Panini Barbacoa",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 58,
-  cat: "Paninis",
-  name: "Medio Panini Kebab",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 59,
-  cat: "Paninis",
-  name: "Medio Panini 4 Quesos",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
+  price: 5.50
 },
 // ── COOKIES ──
 {

@@ -144,84 +144,47 @@ const MENU = [
   desc: "Crema de pistacho + queso mozzarella + pistacho crujiente",
   price: 5.50
 },
-// ── PANINIS ── cada entero lleva su "medio" enlazado por medioId — el
-// medio NO se pinta como tarjeta propia en la carta (ver esVariante en
-// renderMenu, nucleo-compartido.js): aparece como un segundo precio
-// dentro de la MISMA tarjeta del panini entero, no como otro panini
-// suelto en la lista. Sigue siendo un producto normal del catálogo (con
-// su propio id/nombre/precio) para que el ticket, la validación de
-// precio del servidor y las estadísticas lo traten exactamente igual
-// que cualquier otro producto.
+// ── PANINIS ── el "medio" de cada uno NO es un id fijo aquí — se
+// engancha por NOMBRE en tiempo real (ver medioPaniniLink en
+// nucleo-compartido.js: busca en MENU un producto de cat "Paninis"
+// llamado exactamente "Medio " + el nombre del panini entero). Así
+// funciona igual sea cual sea el id que le haya tocado en Firebase al
+// crearlo desde el panel (Carta → Añadir producto) — no hace falta
+// tocar código para dar de alta un "medio" nuevo, ni arriesgarse a que
+// el id que pusiéramos aquí no coincida con el real. Cualquier producto
+// que empiece por "Medio Panini " se oculta de la rejilla de tarjetas
+// (no sale suelto en la lista) y aparece como segundo precio dentro de
+// la tarjeta del panini entero correspondiente.
 {
   id: 22,
   cat: "Paninis",
   name: "Panini Jamón York y Queso",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 55
+  price: 5.50
 }, {
   id: 23,
   cat: "Paninis",
   name: "Panini Carbonara",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 56
+  price: 5.50
 }, {
   id: 24,
   cat: "Paninis",
   name: "Panini Barbacoa",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 57
+  price: 5.50
 }, {
   id: 25,
   cat: "Paninis",
   name: "Panini Kebab",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 58
+  price: 5.50
 }, {
   id: 26,
   cat: "Paninis",
   name: "Panini 4 Quesos",
   desc: "Pan de leña crujiente · medio metro",
-  price: 5.50,
-  medioId: 59
-}, {
-  id: 55,
-  cat: "Paninis",
-  name: "Medio Panini Jamón York y Queso",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 56,
-  cat: "Paninis",
-  name: "Medio Panini Carbonara",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 57,
-  cat: "Paninis",
-  name: "Medio Panini Barbacoa",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 58,
-  cat: "Paninis",
-  name: "Medio Panini Kebab",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
-}, {
-  id: 59,
-  cat: "Paninis",
-  name: "Medio Panini 4 Quesos",
-  desc: "La mitad de un panini entero",
-  price: 3.30,
-  esVariante: true
+  price: 5.50
 },
 // ── COOKIES ──
 {
