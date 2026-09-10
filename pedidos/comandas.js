@@ -52,13 +52,13 @@ const MENU = [
   { id: 80, cat: "Paninis", name: "Medio Panini Kebab", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 25 },
   { id: 81, cat: "Paninis", name: "Medio Panini 4 Quesos", desc: "La mitad de un panini entero", price: 3.30, mitadDe: 26 },
 
-  { id: 27, cat: "Cookies", name: "Crumbl Cookie Pistacho", desc: "Recién horneada", price: 2.99 },
-  { id: 28, cat: "Cookies", name: "Crumbl Cookie Lotus", desc: "Recién horneada", price: 2.99 },
-  { id: 29, cat: "Cookies", name: "Crumbl Cookie Oreo", desc: "Recién horneada", price: 2.99 },
-  { id: 30, cat: "Cookies", name: "Crumbl Cookie Kit Kat", desc: "Recién horneada", price: 2.99 },
-  { id: 31, cat: "Cookies", name: "Crumbl Cookie Nutella", desc: "Recién horneada", price: 2.99 },
-  { id: 32, cat: "Cookies", name: "Crumbl Cookie Kinder", desc: "Recién horneada", price: 2.99 },
-  { id: 33, cat: "Cookies", name: "Crumbl Cookie Huesitos Blanco", desc: "Recién horneada", price: 2.99 },
+  { id: 27, cat: "Cookies", name: "Crumbl Cookie Pistacho", desc: "Recién horneada", price: 3.20 },
+  { id: 28, cat: "Cookies", name: "Crumbl Cookie Lotus", desc: "Recién horneada", price: 3.20 },
+  { id: 29, cat: "Cookies", name: "Crumbl Cookie Oreo", desc: "Recién horneada", price: 3.20 },
+  { id: 30, cat: "Cookies", name: "Crumbl Cookie Kit Kat", desc: "Recién horneada", price: 3.20 },
+  { id: 31, cat: "Cookies", name: "Crumbl Cookie Nutella", desc: "Recién horneada", price: 3.20 },
+  { id: 32, cat: "Cookies", name: "Crumbl Cookie Kinder", desc: "Recién horneada", price: 3.20 },
+  { id: 33, cat: "Cookies", name: "Crumbl Cookie Huesitos Blanco", desc: "Recién horneada", price: 3.20 },
 
   { id: 34, cat: "Tartas", name: "Tarta de Queso La Viña", desc: "Clásica · elaboración propia", price: 3.40 },
   { id: 35, cat: "Tartas", name: "Tarta Tres Chocolates", desc: "Clásica · elaboración propia", price: 3.40 },
@@ -192,7 +192,7 @@ const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
   bomba: { name: "Patata Bomba 🆕", price: 9.40, maxSauces: null, maxIngredients: null, maxTotal: 9, subtitle: "Hasta 9 ingredientes y/o salsas a elegir" },
 };
-const CUST_SAUCES = ["Alioli", "Ketchup", "Mayonesa", "Philadelphia", "BBQ", "Brava", "Yogur", "Ranchera", "Roquefort", "Rosa", "Tomate Frito", "Mantequilla", "Aceite de oliva"];
+const CUST_SAUCES = ["Aceite de oliva", "Alioli", "BBQ", "Brava", "Ketchup", "Mantequilla", "Mayonesa", "Philadelphia", "Ranchera", "Roquefort", "Rosa", "Tomate Frito", "Yogur"];
 // Pseudo-salsa: no es una salsa real (no cuesta nada y no se imprime como
 // tal), pero ocupa el hueco de salsa igual que una de verdad — así una
 // patata sin salsa y con 6 ingredientes cuenta como "1 salsa + 6
@@ -4305,10 +4305,18 @@ function changePaniniInicial(id, delta) {
   renderStockModal();
   renderMenu();
 }
+// Por dentro el cupo de paninis siempre se guarda en mitades (ver
+// paniniUnidadesVendidasHoy), pero se lee y se escribe en paninis
+// enteros con decimales (2,5 en vez de 5 mitades) — así no hay que
+// hacer la cuenta a mano al mirar o al escribir cuántos quedan.
+function fmtHalfUnits(mitades) {
+  const wholes = Math.floor(mitades / 2);
+  return (mitades % 2 === 1) ? (wholes + ',5') : String(wholes);
+}
 function setPaniniInicial(id, valor) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.inicial = Math.max(0, parseInt(valor, 10) || 0);
+  entry.inicial = Math.max(0, Math.round(parseCashNum(valor) * 2));
   counts[id] = entry;
   savePaniniCounts(counts);
   renderStockModal();
@@ -4382,11 +4390,12 @@ function isItemAgotado(item) {
 // pueden tocar bien en la pantalla táctil del mostrador — ahora el − / +
 // (grandes, táctiles) ajustan "unidades hoy" directamente; el número
 // sigue siendo editable a mano si hace falta poner uno exacto de golpe.
-function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, unidadLabel) {
+function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, unidadLabel, esMitades) {
   const restante = entry.inicial ? Math.max(0, entry.inicial - (entry.usado + vendidoAuto)) : null;
+  const fmtNum = n => esMitades ? fmtHalfUnits(n) : String(n);
   const restanteHtml = restante === null
     ? `<span class="stock-restante sin-limite">Sin límite</span>`
-    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + restante}</span>`;
+    : `<span class="stock-restante ${restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok'}">${restante <= 0 ? 'AGOTADO' : 'Quedan ' + fmtNum(restante)}</span>`;
   return `<div class="stock-row">
     <div class="stock-row-head">
       <span class="stock-row-label">${escapeHtml(label)}</span>
@@ -4396,12 +4405,12 @@ function stockCounterRow(label, entry, vendidoAuto, onInicial, onMinus, onPlus, 
       <div class="stock-inicial-row">
         <button class="stock-btn" onclick="${onMinus}">−</button>
         <div class="stock-inicial-box">
-          <input type="tel" inputmode="numeric" class="stock-inicial-input" value="${entry.inicial || 0}" onchange="${onInicial}this.value)">
+          <input type="tel" inputmode="${esMitades ? 'decimal' : 'numeric'}" class="stock-inicial-input" value="${fmtNum(entry.inicial || 0)}" onchange="${onInicial}this.value)">
           <label>${unidadLabel || 'Unidades hoy'}</label>
         </div>
         <button class="stock-btn" onclick="${onPlus}">+</button>
       </div>
-      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${vendidoAuto} vendidas hoy</div>` : ''}
+      ${vendidoAuto > 0 ? `<div class="stock-auto-note" title="Vendidos hoy en comandas — se cuentan solos">🛒 ${fmtNum(vendidoAuto)} vendidas hoy</div>` : ''}
     </div>
   </div>`;
 }
@@ -4415,7 +4424,7 @@ function renderStockModal() {
     paniniUnidadesVendidasHoy(item.id) + paniniUnidadesEnCarrito(item.id),
     `setPaniniInicial(${item.id},`,
     `changePaniniInicial(${item.id},-1)`, `changePaniniInicial(${item.id},1)`,
-    'Mitades hoy'
+    'Paninis hoy', true
   )).join('');
   const boniato = loadBoniatoCounts();
   document.getElementById('stock-boniato-rows').innerHTML = Object.entries(BONIATO_STOCK_TIPOS).map(([tipo, label]) => {
@@ -4446,12 +4455,12 @@ function tallyShortName(label, prefix) {
   const n = label.replace(new RegExp('^' + prefix + '\\s+', 'i'), '');
   return n || label;
 }
-function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer) {
+function sidebarTallyBadge(icon, fullLabel, shortLabel, restante, usado, onTachar, onDeshacer, displayNum) {
   const cls = restante <= 0 ? 'agotado' : restante <= 2 ? 'bajo' : 'ok';
   return `<div class="tally-badge" title="${escapeHtml(fullLabel)}">
     ${icon} ${escapeHtml(shortLabel)}
     <button class="tally-btn" onclick="${onTachar}" ${restante <= 0 ? 'disabled' : ''} title="Tachar una unidad usada">−</button>
-    <span class="tally-num ${cls}">${restante}</span>
+    <span class="tally-num ${cls}">${displayNum != null ? displayNum : restante}</span>
     <button class="tally-btn" onclick="${onDeshacer}" ${usado > 0 ? '' : 'disabled'} title="Deshacer">+</button>
   </div>`;
 }
@@ -4465,7 +4474,7 @@ function renderSidebarStockTally() {
     const e = getPaniniEntry(item.id);
     if (!e.inicial) return;
     const restante = paniniRestante(item.id);
-    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), restante, e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`);
+    html += sidebarTallyBadge('🍕', item.name, tallyShortName(item.name, 'Panini'), restante, e.usado, `tacharPaniniStock(${item.id})`, `deshacerPaniniStock(${item.id})`, fmtHalfUnits(restante));
   });
   const boniato = loadBoniatoCounts();
   Object.entries(BONIATO_STOCK_TIPOS).forEach(([tipo, label]) => {
