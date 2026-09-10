@@ -8697,26 +8697,48 @@ applyAutoDelete(); // auto-borrado del historial al cargar
 // Esto evita que cuentas/dispositivos nuevos vean "cerrado" por tener localStorage vacío
 (function initConHorarioFirebase() {
   function aplicarEstadoInicial() {
+    // Banner PRIMERO y envuelto en su propio try/catch — antes iba al
+    // final de esta función, así que si CUALQUIER otro paso de aquí
+    // abajo (horario, hero dot, aviso de saturación...) lanzaba una
+    // excepción con datos raros de un dispositivo/localStorage
+    // concreto, el banner ni siquiera llegaba a intentarse, sin ningún
+    // rastro visible del motivo. Independizarlo así asegura que el
+    // banner se aplique siempre, pase lo que pase con el resto.
+    try {
+      _applyBannerDia(getBannerDia());
+    } catch (e) {
+      console.warn('[banner] fallo al aplicar desde localStorage:', e);
+    }
+    // Cargar banner desde Firebase con delay como seguro para Safari iOS
+    // donde firebaseReady puede dispararse tarde o no dispararse
+    setTimeout(() => loadBannerDia(), 1500);
+    setTimeout(() => loadBannerDia(), 4000);
     // Horario footer
     try {
       const h = JSON.parse(localStorage.getItem(HORARIO_KEY) || '{}');
       if (h.manOpen) updateFooterHorario(h);
     } catch {}
     // Dot y estado visual
-    if (!isTodayOpen()) {
-      updateHeroDot(false);
-    } else {
-      const open = localStorage.getItem(OPEN_KEY) !== 'false';
-      updateHeroDot(open);
+    try {
+      if (!isTodayOpen()) {
+        updateHeroDot(false);
+      } else {
+        const open = localStorage.getItem(OPEN_KEY) !== 'false';
+        updateHeroDot(open);
+      }
+    } catch (e) {
+      console.warn('[init] fallo al aplicar estado de apertura:', e);
     }
-    checkAutoCloseWarning();
-    loadOrdersStatus();
-    // Aplicar banner desde localStorage inmediatamente (antes de Firebase)
-    _applyBannerDia(getBannerDia());
-    // Cargar banner desde Firebase con delay como seguro para Safari iOS
-    // donde firebaseReady puede dispararse tarde o no dispararse
-    setTimeout(() => loadBannerDia(), 1500);
-    setTimeout(() => loadBannerDia(), 4000);
+    try {
+      checkAutoCloseWarning();
+    } catch (e) {
+      console.warn('[init] fallo en checkAutoCloseWarning:', e);
+    }
+    try {
+      loadOrdersStatus();
+    } catch (e) {
+      console.warn('[init] fallo en loadOrdersStatus:', e);
+    }
 
     // Re-chequeo automático cada minuto: apertura y cierre sin necesidad de refrescar
     // Usa visibilitychange para recrear el intervalo si la PWA volvió de segundo plano
