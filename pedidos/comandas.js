@@ -4493,15 +4493,15 @@ function renderSidebarStockTally() {
   });
   el.innerHTML = html ? `<div class="tally-title">📦 Quedan hoy</div><div class="tally-badges">${html}</div>` : '';
 }
-// El badge de la barra lateral es siempre de un panini ENTERO (los medios
-// no llevan badge propio, ver renderSidebarStockTally), pero el cupo se
-// guarda en MITADES — tachar uno entero tiene que gastar 2, igual que
-// venderlo por caja (ver paniniUnidadesVendidasHoy). Antes solo gastaba 1
-// y había que tocar el botón dos veces para que cuadrase.
+// El cupo se guarda en MITADES — cada toque de − tacha media unidad
+// (empezando en 0,5), así se puede apuntar tanto una merma de medio
+// panini como de uno entero (dos toques). El número ya se muestra en
+// paninis enteros con decimales (ver fmtHalfUnits), no hace falta hacer
+// la cuenta a mano al mirarlo.
 function tacharPaniniStock(id) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.usado = (entry.usado || 0) + 2;
+  entry.usado = (entry.usado || 0) + 1;
   counts[id] = entry;
   savePaniniCounts(counts);
   renderSidebarStockTally(); renderStockModal(); renderMenu();
@@ -4509,7 +4509,7 @@ function tacharPaniniStock(id) {
 function deshacerPaniniStock(id) {
   const counts = loadPaniniCounts();
   const entry = counts[id] || { inicial: 0, usado: 0 };
-  entry.usado = Math.max(0, (entry.usado || 0) - 2);
+  entry.usado = Math.max(0, (entry.usado || 0) - 1);
   counts[id] = entry;
   savePaniniCounts(counts);
   renderSidebarStockTally(); renderStockModal(); renderMenu();
