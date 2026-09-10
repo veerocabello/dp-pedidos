@@ -360,7 +360,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <!-- BANNER DEL DÍA -->
 <div id="banner-dia" style="display:none;padding:16px 20px;background:var(--cream)">
   <div id="banner-dia-inner" style="max-width:600px;margin:0 auto;border-radius:20px;padding:22px 28px;display:flex;align-items:center">
-    <div id="banner-dia-icon" style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0"></div>
+    <div id="banner-dia-icon" style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;margin-right:16px"></div>
     <div style="flex:1;min-width:0">
       <div id="banner-dia-label" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px"></div>
       <div id="banner-dia-text" style="font-size:17px;font-weight:500;line-height:1.3"></div>
