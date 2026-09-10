@@ -216,6 +216,18 @@ function _initFirebase() {
   window.fb_saveHorario = async function(h) { await jset("config/horario",h); };
   window.fb_loadHorario = async function() { var sn=await jget("config/horario"); return sn.exists()?sn.val():null; };
   window.fb_listenHorario = function(cb) { return jlisten("config/horario",function(sn){cb(sn.exists()?sn.val():null);}); };
+  // BANNER DEL DÍA — faltaban por completo (nucleo-compartido.js/banner-pdf.js
+  // ya las llamaban, pero window.fb_saveBannerDia/fb_listenBannerDia nunca
+  // existieron aquí): toggleBannerDia()/saveBannerDia() comprueban
+  // "if (window.fb_saveBannerDia)" antes de llamarla, así que con la función
+  // inexistente ese guardado en Firebase se saltaba en silencio sin ningún
+  // error — el banner solo llegaba a guardarse en el localStorage de ESE
+  // dispositivo/navegador, nunca en el servidor. Por eso no aparecía nunca
+  // en ningún otro dispositivo (aunque en el panel se viera "guardado" y
+  // "activo" sin problema, con su toast de confirmación y todo).
+  window.fb_saveBannerDia = async function(b) { await jset("config/bannerDia",b); };
+  window.fb_loadBannerDia = async function() { var sn=await jget("config/bannerDia"); return sn.exists()?sn.val():null; };
+  window.fb_listenBannerDia = function(cb) { return jlisten("config/bannerDia",function(sn){cb(sn.exists()?sn.val():null);}); };
   // MENU
   window.fb_saveMenu = async function(d) { await jset("config/menu",jstr(d)); };
   window.fb_loadMenu = async function() { var sn=await jget("config/menu"); return sn.exists()?jparse(sn.val()):null; };
