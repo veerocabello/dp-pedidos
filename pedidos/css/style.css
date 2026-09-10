@@ -661,10 +661,26 @@
     white-space: nowrap;
   }
   /* Panini con "medio" enlazado (ver _medioPaniniDe en
-     nucleo-compartido.js): los chips solo informan de los precios (y de
-     lo que ya hay en el carrito de cada tamaño) — un único "+" abre el
-     desplegable (.pan-size-popover) para elegir Entero o Medio. */
-  .pan-size-chips { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+     nucleo-compartido.js): tarjeta en dos filas — nombre/descripción
+     arriba a todo lo ancho (.pan-row-top), chips + "+" abajo
+     (.pan-row-bottom) — para que los chips nunca aprieten el texto
+     compartiendo una sola fila con él, como pasaba antes. Los chips
+     solo informan de los precios (y de lo que ya hay en el carrito de
+     cada tamaño); un único "+" abre el desplegable (.pan-size-popover)
+     para elegir Entero o Medio. */
+  .item-card.pan-stack { flex-direction: column; align-items: stretch; }
+  .pan-row-top { width: 100%; }
+  .pan-row-bottom {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 9px;
+    border-top: 1px dashed var(--gold);
+  }
+  .pan-size-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .pan-size-chip {
     font-size: 11.5px;
     font-weight: 600;

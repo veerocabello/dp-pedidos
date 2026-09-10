@@ -1214,6 +1214,10 @@ function renderMenu() {
     "Tartas": "todas caseras y de elaboración propia",
     "Bebidas": "para acompañar tu pedido"
   };
+  // Solo cambia el título grande de la sección (este banner) — la
+  // categoría real (item.cat, usada para filtrar/contar) sigue siendo
+  // "Paninis" sin más, no se toca.
+  const catLabelOverride = { "Paninis": "PANINIS (ENTEROS O MITAD)" };
   const catCounts = {};
   if (showSeparators) {
     MENU.filter(i => !i.hidden && !_esMedioPanini(i)).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
@@ -1238,7 +1242,7 @@ function renderMenu() {
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
           + '<div class="menu-cat-left">'
-          + '<h3 class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</h3>'
+          + '<h3 class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + (catLabelOverride[item.cat] || item.cat.toUpperCase()) + '</h3>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
@@ -1293,23 +1297,37 @@ function renderMenu() {
     // posicionado por JS sobre el botón que lo abrió.
     // Los chips de precio son solo informativos (muestran lo que ya hay
     // de cada tamaño en el carrito); la elección se hace siempre en el
-    // desplegable.
+    // desplegable. La tarjeta se apila en dos filas (nombre/descripción
+    // arriba, chips + "+" abajo) para que el nombre nunca se quede
+    // apretado por los chips, como pasaba compartiendo una sola fila con
+    // el resto de productos.
     const medioItem = !soldout ? _medioPaniniDe(item) : null;
+    const tagsHtml = dietaryTagsHtml(item);
     if (medioItem) {
       const qtyEntero = qty;
       const qtyMedio = cart[medioItem.id] || 0;
       const qtyTotal = qtyEntero + qtyMedio;
-      priceHtml = '<div class="pan-size-chips">'
+      const chipsHtml = '<div class="pan-size-chips">'
         + '<span class="pan-size-chip">Entero ' + item.price.toFixed(2).replace('.', ',') + '€' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '') + '</span>'
         + '<span class="pan-size-chip">Medio ' + medioItem.price.toFixed(2).replace('.', ',') + '€' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '') + '</span>'
         + '</div>';
-      controls = qtyTotal > 0
+      const panControls = qtyTotal > 0
         ? '<button class="qty-btn" onclick="paniniQuitar(' + item.id + ',' + medioItem.id + ')">−</button>'
           + '<span class="qty-num">' + qtyTotal + '</span>'
           + '<button class="qty-btn pan-size-trigger" onclick="event.stopPropagation();paniniTogglePopover(' + item.id + ')">+</button>'
         : '<button class="add-btn pan-size-trigger" onclick="event.stopPropagation();paniniTogglePopover(' + item.id + ')" title="Añadir">+</button>';
+      return sep
+        + '<div class="item-card pan-stack ' + (qtyConMedio > 0 ? 'in-cart' : '') + '"'
+        + ' id="card-' + item.id + '"'
+        + ' data-name="' + escapeAttr(item.name) + '"'
+        + ' data-desc="' + escapeAttr(item.desc||'') + '">'
+        + '<div class="pan-row-top"><div class="item-info">'
+        + '<div class="item-name">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
+        + '<div class="item-desc">' + item.desc + '</div>'
+        + '</div></div>'
+        + '<div class="pan-row-bottom">' + chipsHtml + '<div class="item-controls">' + panControls + '</div></div>'
+        + '</div>';
     }
-    const tagsHtml = dietaryTagsHtml(item);
     return sep
       + '<div class="item-card ' + (qtyConMedio > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
