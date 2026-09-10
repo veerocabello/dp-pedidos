@@ -2016,11 +2016,17 @@ function renderExtrasBody(item) {
       html += `</div>`;
     }
     if (!isBoniato) {
-      if (ingComponents.length) {
+      // En la Simple, "Cambiar un ingrediente" ofrece el Aceite de oliva
+      // en vez de sal/pimienta (que no tiene sentido "cambiar" por un
+      // ingrediente normal) — el Aceite ya se puede quitar/pasar a
+      // Mantequilla arriba en Base, esto es para cambiarlo por cualquier
+      // otro ingrediente de la carta.
+      const ingComponentsSwap = item.id == 1 ? ['Aceite de oliva'] : ingComponents;
+      if (ingComponentsSwap.length) {
         html += `<div class="section-label">Cambiar un ingrediente</div>`;
         html += `<div class="swap-card">
           <div class="swap-row">
-            <select id="cambio-ing-from" class="swap-select">${ingComponents.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+            <select id="cambio-ing-from" class="swap-select">${ingComponentsSwap.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
             <span class="swap-arrow">→</span>
             <select id="cambio-ing-to" class="swap-select">${sortIngredientsQuesoLast(CUST_INGREDIENTS).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
           </div>
