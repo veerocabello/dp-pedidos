@@ -8373,20 +8373,50 @@ async function _guardarBannerDiaServidor(data) {
   const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
   const token = localStorage.getItem('dpf_trusted_token');
   if (deviceId && token) {
-    const res = await fetch('bimba-verify.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'guardarBannerDia', deviceId, token, banner: data })
-    });
+    let res;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'guardarBannerDia', deviceId, token, banner: data })
+      });
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor (bimba-verify.php): ' + e.message);
+    }
+    if (!res.ok && res.status !== 429) {
+      throw new Error('El servidor devolvió un error (HTTP ' + res.status + ') al guardar el banner.');
+    }
     const r = await res.json().catch(() => ({ success: false }));
     if (r.success) return;
-    throw new Error(r.error || 'guardarBannerDia: fallo del servidor');
+    if (res.status === 429) throw new Error('Demasiados intentos seguidos — espera un minuto y vuelve a intentarlo.');
+    // dpf_bimba_fallo() (bimba-verify.php) no distingue "dispositivo
+    // caducado" de "token no coincide" — cualquiera de los dos cae aquí.
+    throw new Error('Este dispositivo ya no está reconocido como de confianza (puede haber caducado, o se quitó desde el panel). Ve a "Dispositivo de confianza" arriba, pulsa "Quitar" si lo ves puesto y vuelve a entrar con tu contraseña real para renovarlo.');
   }
   // Sin dispositivo de confianza guardado (p.ej. primera vez, con sesión
   // real de Firebase Auth recién iniciada) — la escritura directa sí
   // funciona en ese caso, así que se mantiene como alternativa.
-  if (window.fb_saveBannerDia) return window.fb_saveBannerDia(data);
-  throw new Error('No hay forma de guardar el banner en este dispositivo');
+  if (window.fb_saveBannerDia) {
+    try {
+      await window.fb_saveBannerDia(data);
+      return;
+    } catch (e) {
+      throw new Error('Este dispositivo no tiene guardado un "dispositivo de confianza" y el guardado directo también ha fallado (' + (e && e.message ? e.message : e) + '). Entra con tu contraseña real de administradora y vuelve a intentarlo.');
+    }
+  }
+  throw new Error('No hay forma de guardar el banner en este dispositivo (ni dispositivo de confianza guardado, ni conexión directa a Firebase disponible).');
+}
+// A diferencia de _avisarSiFalloGuardado (mensaje genérico, igual para
+// cualquier guardado), aquí el motivo concreto SÍ va en el aviso — los
+// posibles fallos de _guardarBannerDiaServidor ya vienen explicados
+// (dispositivo no reconocido, sin conexión, error del servidor...), y
+// mostrar ese texto tal cual evita tener que mirar la consola para
+// saber qué ha pasado de verdad.
+function _avisarFalloBannerEspecifico(e) {
+  console.warn('[banner] fallo al guardar:', e);
+  const msg = (e && e.message) ? e.message : 'Fallo desconocido al guardar el banner.';
+  if (typeof showAlert === 'function') showAlert(msg, 'No se ha guardado el banner');
+  else alert(msg);
 }
 async function toggleBannerDia() {
   const data = getBannerDia();
@@ -8404,7 +8434,7 @@ async function toggleBannerDia() {
   }
   data.active = vaAActivarse;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  await _guardarBannerDiaServidor(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
+  await _guardarBannerDiaServidor(data).catch(e => _avisarFalloBannerEspecifico(e));
   _updateBannerToggleBtn(data.active, !!data.text);
   _applyBannerDia(data);
 }
@@ -8424,7 +8454,7 @@ async function saveBannerDia() {
   // ya no hay nada que mostrar.
   data.active = !!text;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  await _guardarBannerDiaServidor(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
+  await _guardarBannerDiaServidor(data).catch(e => _avisarFalloBannerEspecifico(e));
   _updateBannerToggleBtn(data.active, !!data.text);
   _applyBannerDia(data);
   showToast('banner-toast');
