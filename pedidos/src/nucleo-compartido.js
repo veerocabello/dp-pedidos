@@ -1283,31 +1283,30 @@ function renderMenu() {
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2).replace('.', ',') + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2).replace('.', ',') + ' € ⚡</span>'
       : item.price.toFixed(2).replace('.', ',') + ' €';
     // Panini con "medio" enlazado por nombre (ver _medioPaniniDe arriba):
-    // en vez del precio único, dos botones Entero/Medio dentro de la
-    // MISMA tarjeta — el medio no tiene tarjeta propia en la carta. Los
-    // +/- de abajo actúan sobre el tamaño seleccionado
-    // (window._paniniSize), cada uno con su propia cantidad en el carrito.
+    // en vez de un precio + un "+" únicos, DOS filas dentro de la MISMA
+    // tarjeta (Entero / Medio), cada una con su propio precio y su
+    // propio "+"/contador — así se elige el tamaño al mismo toque de
+    // añadir, sin un selector previo que se pudiera pasar por alto (con
+    // uno solo compartido, tocar "+" añadía "Entero" sin más si no se
+    // había tocado antes el botón de tamaño).
     const medioItem = !soldout ? _medioPaniniDe(item) : null;
+    let panRowsHtml = null;
     if (medioItem) {
-      window._paniniSize = window._paniniSize || {};
-      const sel = window._paniniSize[item.id] === 'medio' ? 'medio' : 'entero';
-      const activeId = sel === 'medio' ? medioItem.id : item.id;
-      const qtyActive = cart[activeId] || 0;
       const qtyEntero = qty;
       const qtyMedio = cart[medioItem.id] || 0;
-      priceHtml = '<div class="pan-size-toggle">'
-        + '<button type="button" class="pan-size-btn' + (sel === 'entero' ? ' active' : '') + '" onclick="setPaniniSize(' + item.id + ',\'entero\')">'
-        + 'Entero ' + item.price.toFixed(2).replace('.', ',') + '€' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '')
-        + '</button>'
-        + '<button type="button" class="pan-size-btn' + (sel === 'medio' ? ' active' : '') + '" onclick="setPaniniSize(' + item.id + ',\'medio\')">'
-        + 'Medio ' + medioItem.price.toFixed(2).replace('.', ',') + '€' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '')
-        + '</button>'
-        + '</div>';
-      controls = qtyActive > 0
-        ? '<button class="qty-btn" onclick="changeQty(' + activeId + ',-1)">−</button>'
-          + '<span class="qty-num">' + qtyActive + '</span>'
-          + '<button class="qty-btn" onclick="changeQty(' + activeId + ',+1)">+</button>'
-        : '<button class="add-btn" onclick="changeQty(' + activeId + ',+1)" title="Añadir">+</button>';
+      const _panRow = function (id, label, precio, qtyFila) {
+        const ctrl = qtyFila > 0
+          ? '<button class="qty-btn qty-btn-sm" onclick="changeQty(' + id + ',-1)">−</button>'
+            + '<span class="qty-num">' + qtyFila + '</span>'
+            + '<button class="qty-btn qty-btn-sm" onclick="changeQty(' + id + ',+1)">+</button>'
+          : '<button class="add-btn add-btn-sm" onclick="changeQty(' + id + ',+1)" title="Añadir">+</button>';
+        return '<div class="pan-size-row">'
+          + '<span class="pan-size-label">' + label + ' <b>' + precio.toFixed(2).replace('.', ',') + '€</b></span>'
+          + '<span class="pan-size-ctrl">' + ctrl + '</span>'
+          + '</div>';
+      };
+      panRowsHtml = _panRow(item.id, 'Entero', item.price, qtyEntero)
+        + _panRow(medioItem.id, 'Medio', medioItem.price, qtyMedio);
     }
     const tagsHtml = dietaryTagsHtml(item);
     return sep
@@ -1320,8 +1319,9 @@ function renderMenu() {
       + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
-      + '<div class="item-price">' + priceHtml + '</div>'
-      + '<div class="item-controls">' + controls + '</div>'
+      + (panRowsHtml
+          ? '<div class="pan-size-rows">' + panRowsHtml + '</div>'
+          : '<div class="item-price">' + priceHtml + '</div><div class="item-controls">' + controls + '</div>')
       + '</div>';
   }).join('');
   grid.innerHTML = html;

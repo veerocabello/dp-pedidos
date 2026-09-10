@@ -708,14 +708,6 @@ function _actualizarOfertaRelampago(oferta) {
     }, 1000);
   }
 }
-// Elegir Entero/Medio en una tarjeta de panini (ver medioId en MENU) —
-// solo decide sobre cuál de los dos tamaños actúan los +/- de la
-// tarjeta, no toca el carrito.
-function setPaniniSize(idEntero, size) {
-  window._paniniSize = window._paniniSize || {};
-  window._paniniSize[idEntero] = size;
-  renderMenu();
-}
 function changeQty(id, delta) {
   // Bloquear añadir al carrito si hoy es día cerrado o pedidos pausados
   if (delta > 0 && isShopBlocked()) {
