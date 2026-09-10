@@ -1283,48 +1283,39 @@ function renderMenu() {
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2).replace('.', ',') + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2).replace('.', ',') + ' € ⚡</span>'
       : item.price.toFixed(2).replace('.', ',') + ' €';
     // Panini con "medio" enlazado por nombre (ver _medioPaniniDe arriba):
-    // un solo "+" — al tocarlo se abre un desplegable pequeño (elemento
-    // compartido, fuera de la tarjeta — ver paniniTogglePopover en
-    // carta.js) para elegir Entero o Medio, en vez de añadir un tamaño
-    // por defecto sin preguntar. Un popover anidado DENTRO de la tarjeta
-    // se quedaba atrapado por el stacking context que crea
-    // .item-card:hover (transform) y aparecía debajo de la tarjeta
-    // siguiente, sin poder tocarse — por eso vive fuera, en <body>,
-    // posicionado por JS sobre el botón que lo abrió.
-    // Los chips de precio son solo informativos (muestran lo que ya hay
-    // de cada tamaño en el carrito); la elección se hace siempre en el
-    // desplegable. La tarjeta se apila en dos filas (nombre/descripción
-    // arriba, chips + "+" abajo) para que el nombre nunca se quede
-    // apretado por los chips, como pasaba compartiendo una sola fila con
-    // el resto de productos.
+    // tarjeta normal (una sola fila, como cualquier otro producto), pero
+    // en vez de un precio + un "+" únicos, dos filas en la columna de la
+    // derecha — Entero y Medio — cada una con su propio precio y su
+    // propio "+"/contador, para que se elija el tamaño en el mismo
+    // toque de añadir sin desplegable ni selector previo.
     const medioItem = !soldout ? _medioPaniniDe(item) : null;
     const tagsHtml = dietaryTagsHtml(item);
     if (medioItem) {
       const qtyEntero = qty;
       const qtyMedio = cart[medioItem.id] || 0;
-      const qtyTotal = qtyEntero + qtyMedio;
-      // El precio va FUERA del chip, con el mismo estilo que usa
-      // cualquier otro producto (.item-price) — el chip solo etiqueta
-      // el tamaño (y, si ya hay alguno en el carrito, cuántos).
-      const chipsHtml = '<div class="pan-size-chips">'
-        + '<span class="pan-size-pair"><span class="pan-size-chip">Entero' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '') + '</span><span class="pan-size-price">' + item.price.toFixed(2).replace('.', ',') + ' €</span></span>'
-        + '<span class="pan-size-pair"><span class="pan-size-chip">Medio' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '') + '</span><span class="pan-size-price">' + medioItem.price.toFixed(2).replace('.', ',') + ' €</span></span>'
-        + '</div>';
-      const panControls = qtyTotal > 0
-        ? '<button class="qty-btn" onclick="paniniQuitar(' + item.id + ',' + medioItem.id + ')">−</button>'
-          + '<span class="qty-num">' + qtyTotal + '</span>'
-          + '<button class="qty-btn pan-size-trigger" onclick="event.stopPropagation();paniniTogglePopover(' + item.id + ')">+</button>'
-        : '<button class="add-btn pan-size-trigger" onclick="event.stopPropagation();paniniTogglePopover(' + item.id + ')" title="Añadir">+</button>';
+      const _panRow = function (id, label, precio, qtyFila) {
+        const ctrl = qtyFila > 0
+          ? '<button class="qty-btn qty-btn-sm" onclick="changeQty(' + id + ',-1)">−</button>'
+            + '<span class="qty-num">' + qtyFila + '</span>'
+            + '<button class="qty-btn qty-btn-sm" onclick="changeQty(' + id + ',+1)">+</button>'
+          : '<button class="add-btn add-btn-sm" onclick="changeQty(' + id + ',+1)" title="Añadir">+</button>';
+        return '<div class="pan-size-row">'
+          + '<span class="pan-size-label">' + label + ' <b>' + precio.toFixed(2).replace('.', ',') + '€</b></span>'
+          + '<span class="pan-size-ctrl">' + ctrl + '</span>'
+          + '</div>';
+      };
+      const panRowsHtml = _panRow(item.id, 'Entero', item.price, qtyEntero)
+        + _panRow(medioItem.id, 'Medio', medioItem.price, qtyMedio);
       return sep
-        + '<div class="item-card pan-stack ' + (qtyConMedio > 0 ? 'in-cart' : '') + '"'
+        + '<div class="item-card ' + (qtyConMedio > 0 ? 'in-cart' : '') + '"'
         + ' id="card-' + item.id + '"'
         + ' data-name="' + escapeAttr(item.name) + '"'
         + ' data-desc="' + escapeAttr(item.desc||'') + '">'
-        + '<div class="pan-row-top"><div class="item-info">'
+        + '<div class="item-info">'
         + '<div class="item-name">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
         + '<div class="item-desc">' + item.desc + '</div>'
-        + '</div></div>'
-        + '<div class="pan-row-bottom">' + chipsHtml + '<div class="item-controls">' + panControls + '</div></div>'
+        + '</div>'
+        + '<div class="pan-size-rows">' + panRowsHtml + '</div>'
         + '</div>';
     }
     return sep

@@ -661,79 +661,24 @@
     white-space: nowrap;
   }
   /* Panini con "medio" enlazado (ver _medioPaniniDe en
-     nucleo-compartido.js): tarjeta en dos filas — nombre/descripción
-     arriba a todo lo ancho (.pan-row-top), chips + "+" abajo
-     (.pan-row-bottom) — para que los chips nunca aprieten el texto
-     compartiendo una sola fila con él, como pasaba antes. Los chips
-     solo informan de los precios (y de lo que ya hay en el carrito de
-     cada tamaño); un único "+" abre el desplegable (.pan-size-popover)
-     para elegir Entero o Medio. */
-  .item-card.pan-stack { flex-direction: column; align-items: stretch; }
-  .pan-row-top { width: 100%; }
-  .pan-row-bottom {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 9px;
-    border-top: 1px dashed var(--gold);
-  }
-  .pan-size-chips { display: flex; flex-wrap: wrap; gap: 12px; }
-  .pan-size-pair { display: flex; align-items: center; gap: 6px; }
-  .pan-size-chip {
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--amber-dark);
-    white-space: nowrap;
-    background: var(--amber-light);
-    border: 1.5px solid var(--gold);
-    border-radius: 99px;
-    padding: 2px 9px;
-  }
-  .pan-size-chip b { color: var(--brown); font-weight: 800; }
-  /* Precio fuera del chip, mismo estilo que .item-price en el resto de
-     productos — para que se lea igual que en cualquier otra tarjeta. */
-  .pan-size-price {
-    font-weight: 700;
-    font-size: 15px;
-    color: var(--brown);
-    white-space: nowrap;
-  }
-  .item-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  /* Elemento único colgado de <body> (ver _paniniPopoverEl en carta.js),
-     no anidado en la tarjeta — así no lo atrapa el stacking context que
-     crea .item-card:hover (transform), que dejaría el desplegable
-     tapado por la tarjeta siguiente en vez de flotando por encima.
-     Posición (top/left) puesta por JS según el botón que lo abrió. */
-  .pan-size-popover {
-    display: none;
-    position: fixed;
-    z-index: 500;
-    background: var(--white);
-    border: 1.5px solid var(--gold);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(61,31,13,0.22);
-    padding: 6px;
-    min-width: 150px;
-  }
-  .pan-size-popover.open { display: flex; flex-direction: column; gap: 4px; }
-  .pan-size-opt {
-    font-family: 'DM Sans', sans-serif;
+     nucleo-compartido.js): tarjeta normal, una sola fila, como
+     cualquier otro producto — solo que en vez de un precio y un "+"
+     únicos, la columna de la derecha lleva dos filas compactas, Entero
+     y Medio, cada una con su propio precio y su propio "+"/contador.
+     Botones más pequeños (32px) y texto ajustado para que cada fila
+     quepa en una sola línea sin estrechar la tarjeta. */
+  .pan-size-rows { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .pan-size-row { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+  .pan-size-label {
     font-size: 13px;
     font-weight: 600;
-    color: var(--text);
-    background: none;
-    border: none;
-    border-radius: 8px;
-    padding: 9px 10px;
-    text-align: left;
-    cursor: pointer;
-    transition: background .15s;
+    color: var(--muted);
+    white-space: nowrap;
   }
-  .pan-size-opt:hover { background: var(--amber-light); }
-  .pan-size-opt b { color: var(--amber-dark); }
+  .pan-size-label b { color: var(--brown); font-weight: 700; }
+  .qty-btn.qty-btn-sm { width: 32px; height: 32px; font-size: 15px; }
+  .add-btn.add-btn-sm { width: 32px; height: 32px; font-size: 18px; }
+  .item-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .qty-btn {
     /* 44x44 = mínimo táctil WCAG 2.5.5. Antes eran 32px: en el pedido
        real, con el pulgar y muchas veces caminando, provocaba toques
