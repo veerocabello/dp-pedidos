@@ -3146,9 +3146,28 @@ function aplicarPremioRasca() { _aplicarPremioComun('rasca'); }
 
 // ── BANNER DEL DÍA ───────────────────────────────────────────────────────────
 const BANNER_KEY = 'dpf_banner_dia';
+// Por algún guardado de hace tiempo, config/bannerDia llegó a quedar
+// guardado como un STRING que contiene el JSON en vez de como objeto
+// nativo (confirmado leyendo directo del servidor, sin el navegador de
+// por medio) — y una vez así, cualquier intento de "arreglarlo" escribiendo
+// encima (data.campo = valor sobre un string primitivo) no hace NADA en
+// silencio, así que el dato se quedaba congelado para siempre por mucho
+// que se guardara. Esta función deshace cualquier nivel de ese
+// "doble/triple JSON" hasta llegar a un objeto de verdad — se usa en
+// cualquier sitio que reciba un dato de banner (localStorage, Firebase),
+// así que aunque algún día se cuele un string otra vez, no se vuelve a
+// congelar en silencio.
+function _normalizarBannerDia(data) {
+  let intentos = 0;
+  while (typeof data === 'string' && intentos < 5) {
+    try { data = JSON.parse(data); } catch { return {}; }
+    intentos++;
+  }
+  return (data && typeof data === 'object') ? data : {};
+}
 function getBannerDia() {
   try {
-    return JSON.parse(localStorage.getItem(BANNER_KEY) || '{}');
+    return _normalizarBannerDia(JSON.parse(localStorage.getItem(BANNER_KEY) || '{}'));
   } catch {
     return {};
   }
@@ -3212,7 +3231,9 @@ function _debugBannerBox(source, data) {
   box.textContent = linea + box.textContent;
 }
 function _applyBannerDia(data) {
-  _debugBannerBox('_applyBannerDia', data);
+  _debugBannerBox('_applyBannerDia (antes de normalizar)', data);
+  data = _normalizarBannerDia(data);
+  _debugBannerBox('_applyBannerDia (normalizado)', data);
   const el = document.getElementById('banner-dia');
   const inner = document.getElementById('banner-dia-inner');
   const iconEl = document.getElementById('banner-dia-icon');
@@ -3263,8 +3284,13 @@ function loadBannerDia() {
   _debugBannerBox('localStorage RAW', localStorage.getItem(BANNER_KEY));
   _updateBannerToggleBtn(localBanner.active, !!localBanner.text);
   if (window.fb_listenBannerDia) {
-    window.fb_listenBannerDia(data => {
-      _debugBannerBox('fb_listenBannerDia RAW callback', data);
+    window.fb_listenBannerDia(rawData => {
+      _debugBannerBox('fb_listenBannerDia RAW callback', rawData);
+      // Normalizar ANTES de re-guardar en localStorage — si no, un dato
+      // que llegara como string (ver _normalizarBannerDia más arriba)
+      // se seguía re-guardando tal cual, perpetuando el problema en
+      // este dispositivo cada vez que el listener volviera a disparar.
+      const data = rawData ? _normalizarBannerDia(rawData) : null;
       if (data) localStorage.setItem(BANNER_KEY, JSON.stringify(data));
       const d = data || getBannerDia();
       _applyBannerDia(d);

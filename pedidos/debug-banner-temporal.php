@@ -50,6 +50,30 @@ function obtenerTokenAcceso($rutaCredenciales) {
 
 try {
     $accessToken = obtenerTokenAcceso($rutaCredenciales);
+
+    // ?fix=1 — sobrescribe config/bannerDia con un objeto nativo correcto
+    // (un solo json_encode, sin doble codificar) en vez de leer, para
+    // arreglar el dato que quedó guardado como string. Solo se ejecuta
+    // si se pide explícitamente.
+    if (isset($_GET['fix'])) {
+        $bannerCorregido = [
+            'active' => true,
+            'text' => 'NOVEDAD',
+            'sub' => 'patata nueva',
+            'tipo' => 'promo'
+        ];
+        $ch = curl_init($databaseURL . '/config/bannerDia.json');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($bannerCorregido));
+        $rawFix = curl_exec($ch);
+        $httpCodeFix = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        echo "FIX aplicado. HTTP code: $httpCodeFix\n";
+        echo "Respuesta: $rawFix\n\n";
+    }
+
     $ch = curl_init($databaseURL . '/config/bannerDia.json');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
