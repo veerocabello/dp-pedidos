@@ -1214,10 +1214,6 @@ function renderMenu() {
     "Tartas": "todas caseras y de elaboración propia",
     "Bebidas": "para acompañar tu pedido"
   };
-  // Solo cambia el título grande de la sección (este banner) — la
-  // categoría real (item.cat, usada para filtrar/contar) sigue siendo
-  // "Paninis" sin más, no se toca.
-  const catLabelOverride = { "Paninis": "PANINIS (ENTEROS O MITAD)" };
   const catCounts = {};
   if (showSeparators) {
     MENU.filter(i => !i.hidden && !_esMedioPanini(i)).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
@@ -1242,7 +1238,7 @@ function renderMenu() {
       const emoji = emojiMap2[item.cat] || '';
       sep = '<div class="menu-cat-sep">'
           + '<div class="menu-cat-left">'
-          + '<h3 class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + (catLabelOverride[item.cat] || item.cat.toUpperCase()) + '</h3>'
+          + '<h3 class="menu-cat-name">' + (emoji ? emoji + ' ' : '') + item.cat.toUpperCase() + '</h3>'
           + (sub ? '<div class="menu-cat-sub">' + sub + '</div>' : '')
           + '</div>'
           + (count ? '<div class="menu-cat-badge">' + count + ' opciones</div>' : '')
