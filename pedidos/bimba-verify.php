@@ -188,6 +188,31 @@ function fbEliminarNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales)
     curl_close($ch);
     return $httpCode === 200;
 }
+// Escribe un nodo (objeto nativo, no un string JSON doblemente
+// codificado) con la cuenta de servicio — para action=guardarBannerDia
+// más abajo. config/bannerDia hereda el ".write" de "config" (exige
+// auth.uid de una de las 2 cuentas de admin) sin tener su propio
+// override, a diferencia de su ".read" (público) — un dispositivo con
+// solo la sesión "de confianza" (sin sesión real de Firebase Auth
+// activa en ese momento) podía leer el banner pero no guardarlo, y el
+// guardado desde el navegador fallaba en silencio sin más aviso que
+// "no se ha podido sincronizar". Pasarlo por aquí, verificado con el
+// mismo dispositivo de confianza que ya usa checkTrustedDevice, evita
+// depender de si hay o no una sesión de Firebase Auth viva en concreto.
+function fbSetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales, $valor) {
+    $accessToken = obtenerTokenAcceso($rutaCredenciales);
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($valor));
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $httpCode === 200;
+}
 
 // ── LÍMITE DE INTENTOS: máximo 5 intentos por IP cada 10 minutos ──
 // Compartido entre el PIN y los tokens de URL — todos son intentos de
@@ -335,6 +360,59 @@ if ($action === 'checkTrustedDevice') {
         dpf_bimba_acierto($fp);
     } else {
         dpf_bimba_fallo($fp, $log, $now);
+    }
+}
+
+// ── Guardar el banner del día pasando por el servidor (ver comentario
+// junto a fbSetNodoConCuentaServicio arriba) — misma comprobación de
+// dispositivo de confianza que checkTrustedDevice, así que no depende
+// de si hay una sesión de Firebase Auth realmente viva en el navegador
+// en ese momento concreto. Los campos se sanean aquí (tipo/longitud) —
+// nunca se reenvía tal cual lo que mande el cliente.
+if ($action === 'guardarBannerDia') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $banner = isset($data['banner']) && is_array($data['banner']) ? $data['banner'] : null;
+    if ($deviceId === '' || $token === '' || $banner === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $tiposValidos = ['promo', 'aviso', 'urgente', 'info'];
+    $tipo = isset($banner['tipo']) && is_string($banner['tipo']) && in_array($banner['tipo'], $tiposValidos, true) ? $banner['tipo'] : 'promo';
+    $text = isset($banner['text']) && is_string($banner['text']) ? mb_substr($banner['text'], 0, 200) : '';
+    $sub = isset($banner['sub']) && is_string($banner['sub']) ? mb_substr($banner['sub'], 0, 200) : '';
+    $active = !empty($banner['active']);
+    $bannerSaneado = ['active' => $active, 'text' => $text, 'sub' => $sub, 'tipo' => $tipo];
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/bannerDia', $rutaCredenciales, $bannerSaneado);
+    } catch (Exception $e) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        dpf_bimba_acierto($fp);
+    } else {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
     }
 }
 

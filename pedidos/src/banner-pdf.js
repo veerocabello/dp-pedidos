@@ -3,6 +3,40 @@
 // _updateBannerToggleBtn y loadBannerDia viven en nucleo-compartido.js
 // (bundle de cliente) — el banner se pinta para cualquier visitante, no
 // solo para admin.
+
+// config/bannerDia hereda el ".write" de "config" en las reglas de
+// Firebase (exige auth.uid de una de las 2 cuentas de admin) — solo su
+// ".read" tiene override a público. window.fb_saveBannerDia (escritura
+// directa desde el navegador) necesita entonces una sesión de Firebase
+// Auth REALMENTE viva en ese momento, y "dispositivo de confianza" (ver
+// admin-accesos.js) NO la garantiza: concede acceso al panel sin volver
+// a llamar a firebase.auth().signInWith...(), así que si esa sesión de
+// Auth ya había caducado, el guardado fallaba en silencio (o con el
+// aviso de "no se ha podido sincronizar") — el dato se quedaba SOLO en
+// este dispositivo, nunca en el servidor, así que no aparecía en
+// ningún otro sitio. Pasarlo por bimba-verify.php (acción
+// guardarBannerDia), verificado con el mismo dispositivo de confianza
+// que ya usa el resto del panel, no depende de esa sesión de Auth en
+// concreto — igual que el resto de escrituras server-side de esta web.
+async function _guardarBannerDiaServidor(data) {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'guardarBannerDia', deviceId, token, banner: data })
+    });
+    const r = await res.json().catch(() => ({ success: false }));
+    if (r.success) return;
+    throw new Error(r.error || 'guardarBannerDia: fallo del servidor');
+  }
+  // Sin dispositivo de confianza guardado (p.ej. primera vez, con sesión
+  // real de Firebase Auth recién iniciada) — la escritura directa sí
+  // funciona en ese caso, así que se mantiene como alternativa.
+  if (window.fb_saveBannerDia) return window.fb_saveBannerDia(data);
+  throw new Error('No hay forma de guardar el banner en este dispositivo');
+}
 async function toggleBannerDia() {
   const data = getBannerDia();
   const vaAActivarse = !data.active;
@@ -19,11 +53,7 @@ async function toggleBannerDia() {
   }
   data.active = vaAActivarse;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  // Antes el .catch() se quedaba vacío — si esta escritura fallaba, este
-  // dispositivo seguía mostrando el banner como guardado/activo, pero
-  // ningún otro dispositivo ni el sitio de cara al cliente (que lee de
-  // Firebase) lo recibía nunca, sin ningún aviso visible.
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
+  await _guardarBannerDiaServidor(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _updateBannerToggleBtn(data.active, !!data.text);
   _applyBannerDia(data);
 }
@@ -43,7 +73,7 @@ async function saveBannerDia() {
   // ya no hay nada que mostrar.
   data.active = !!text;
   localStorage.setItem(BANNER_KEY, JSON.stringify(data));
-  if (window.fb_saveBannerDia) await window.fb_saveBannerDia(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
+  await _guardarBannerDiaServidor(data).catch(e => _avisarSiFalloGuardado(e, 'banner del día'));
   _updateBannerToggleBtn(data.active, !!data.text);
   _applyBannerDia(data);
   showToast('banner-toast');
