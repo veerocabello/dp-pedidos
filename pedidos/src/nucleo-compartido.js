@@ -3195,7 +3195,23 @@ const BANNER_TIPOS = {
     emoji: '📢'
   }
 };
+// Cuadro de diagnóstico TEMPORAL (solo con ?debugbanner=1 en la URL) —
+// muestra en la propia pantalla el dato exacto que está llegando aquí,
+// para poder ver de un vistazo (sin consola del navegador) por qué
+// _applyBannerDia() decide pintar o no pintar el banner.
+function _debugBannerBox(data) {
+  if (typeof location === 'undefined' || location.search.indexOf('debugbanner') === -1) return;
+  var box = document.getElementById('debug-banner-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'debug-banner-box';
+    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:8px;white-space:pre-wrap;word-break:break-all;max-height:40vh;overflow:auto';
+    document.body.appendChild(box);
+  }
+  box.textContent = '[debugbanner] ' + new Date().toLocaleTimeString() + '\n' + JSON.stringify(data, null, 2);
+}
 function _applyBannerDia(data) {
+  _debugBannerBox(data);
   const el = document.getElementById('banner-dia');
   const inner = document.getElementById('banner-dia-inner');
   const iconEl = document.getElementById('banner-dia-icon');
