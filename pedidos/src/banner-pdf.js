@@ -93,8 +93,20 @@ async function toggleBannerDia() {
   // _applyBannerDia() pudiera pintar en ningún dispositivo, sin ningún
   // aviso de por qué no se veía.
   if (vaAActivarse && !data.text) {
-    const msg = 'Todavía no hay texto guardado para el banner — actívalo desde "📢 Banner del día" (más abajo), escribe el título y pulsa "Guardar banner" (eso ya lo activa).';
-    if (typeof showAlert === 'function') showAlert(msg, 'Falta el texto del banner');
+    // En vez de solo avisar y dejar que sea la propia persona quien
+    // encuentre la sección "📢 Banner del día" más abajo (el aviso solo
+    // se leía y se volvía a tocar el mismo botón, sin llegar nunca a esa
+    // sección), la llevamos directamente ahí y ponemos el cursor listo
+    // para escribir.
+    const inputTitulo = document.getElementById('banner-dia-input');
+    if (inputTitulo) {
+      inputTitulo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      inputTitulo.focus();
+      inputTitulo.style.outline = '3px solid #c0392b';
+      setTimeout(() => { inputTitulo.style.outline = ''; }, 2000);
+    }
+    const msg = 'Este botón de arriba solo enciende o apaga el banner — el texto se escribe aquí abajo, en "📢 Banner del día". Escribe el título y pulsa "Guardar banner": eso ya lo activa, no hace falta volver a tocar el botón de arriba.';
+    if (typeof showAlert === 'function') showAlert(msg, 'Escribe el texto aquí abajo');
     else alert(msg);
     return;
   }
