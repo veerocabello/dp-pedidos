@@ -534,10 +534,12 @@ function closeManualItemModal() {
 }
 function editManualItem(key) { openManualItemModal(key); }
 function confirmManualItem() {
-  const name = document.getElementById('manual-item-name').value.trim();
+  // La descripción es opcional — si no se escribe nada, se pone un
+  // nombre genérico según sea sumar o restar, para no obligar a teclear
+  // algo cuando solo hace falta ajustar el importe.
+  const name = document.getElementById('manual-item-name').value.trim() || (manualItemSign < 0 ? 'Descuento suelto' : 'Cobro suelto');
   const amount = parseCashNum(document.getElementById('manual-item-price').value);
   const errEl = document.getElementById('manual-item-error');
-  if (!name) { errEl.textContent = 'Escribe una descripción'; errEl.style.display = 'block'; return; }
   if (!amount || amount <= 0) { errEl.textContent = 'Escribe un precio mayor que 0'; errEl.style.display = 'block'; return; }
   const price = amount * manualItemSign;
   if (manualItemEditKey && manualCart[manualItemEditKey]) {
