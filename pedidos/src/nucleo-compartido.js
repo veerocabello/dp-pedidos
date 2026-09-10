@@ -1283,30 +1283,31 @@ function renderMenu() {
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2).replace('.', ',') + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2).replace('.', ',') + ' € ⚡</span>'
       : item.price.toFixed(2).replace('.', ',') + ' €';
     // Panini con "medio" enlazado por nombre (ver _medioPaniniDe arriba):
-    // en vez de un precio + un "+" únicos, DOS filas dentro de la MISMA
-    // tarjeta (Entero / Medio), cada una con su propio precio y su
-    // propio "+"/contador — así se elige el tamaño al mismo toque de
-    // añadir, sin un selector previo que se pudiera pasar por alto (con
-    // uno solo compartido, tocar "+" añadía "Entero" sin más si no se
-    // había tocado antes el botón de tamaño).
+    // un solo "+" — al tocarlo se abre un desplegable pequeño (elemento
+    // compartido, fuera de la tarjeta — ver paniniTogglePopover en
+    // carta.js) para elegir Entero o Medio, en vez de añadir un tamaño
+    // por defecto sin preguntar. Un popover anidado DENTRO de la tarjeta
+    // se quedaba atrapado por el stacking context que crea
+    // .item-card:hover (transform) y aparecía debajo de la tarjeta
+    // siguiente, sin poder tocarse — por eso vive fuera, en <body>,
+    // posicionado por JS sobre el botón que lo abrió.
+    // Los chips de precio son solo informativos (muestran lo que ya hay
+    // de cada tamaño en el carrito); la elección se hace siempre en el
+    // desplegable.
     const medioItem = !soldout ? _medioPaniniDe(item) : null;
-    let panRowsHtml = null;
     if (medioItem) {
       const qtyEntero = qty;
       const qtyMedio = cart[medioItem.id] || 0;
-      const _panRow = function (id, label, precio, qtyFila) {
-        const ctrl = qtyFila > 0
-          ? '<button class="qty-btn qty-btn-sm" onclick="changeQty(' + id + ',-1)">−</button>'
-            + '<span class="qty-num">' + qtyFila + '</span>'
-            + '<button class="qty-btn qty-btn-sm" onclick="changeQty(' + id + ',+1)">+</button>'
-          : '<button class="add-btn add-btn-sm" onclick="changeQty(' + id + ',+1)" title="Añadir">+</button>';
-        return '<div class="pan-size-row">'
-          + '<span class="pan-size-label">' + label + ' <b>' + precio.toFixed(2).replace('.', ',') + '€</b></span>'
-          + '<span class="pan-size-ctrl">' + ctrl + '</span>'
-          + '</div>';
-      };
-      panRowsHtml = _panRow(item.id, 'Entero', item.price, qtyEntero)
-        + _panRow(medioItem.id, 'Medio', medioItem.price, qtyMedio);
+      const qtyTotal = qtyEntero + qtyMedio;
+      priceHtml = '<div class="pan-size-chips">'
+        + '<span class="pan-size-chip">Entero ' + item.price.toFixed(2).replace('.', ',') + '€' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '') + '</span>'
+        + '<span class="pan-size-chip">Medio ' + medioItem.price.toFixed(2).replace('.', ',') + '€' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '') + '</span>'
+        + '</div>';
+      controls = qtyTotal > 0
+        ? '<button class="qty-btn" onclick="paniniQuitar(' + item.id + ',' + medioItem.id + ')">−</button>'
+          + '<span class="qty-num">' + qtyTotal + '</span>'
+          + '<button class="qty-btn pan-size-trigger" onclick="event.stopPropagation();paniniTogglePopover(' + item.id + ')">+</button>'
+        : '<button class="add-btn pan-size-trigger" onclick="event.stopPropagation();paniniTogglePopover(' + item.id + ')" title="Añadir">+</button>';
     }
     const tagsHtml = dietaryTagsHtml(item);
     return sep
@@ -1319,9 +1320,8 @@ function renderMenu() {
       + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
-      + (panRowsHtml
-          ? '<div class="pan-size-rows">' + panRowsHtml + '</div>'
-          : '<div class="item-price">' + priceHtml + '</div><div class="item-controls">' + controls + '</div>')
+      + '<div class="item-price">' + priceHtml + '</div>'
+      + '<div class="item-controls">' + controls + '</div>'
       + '</div>';
   }).join('');
   grid.innerHTML = html;
