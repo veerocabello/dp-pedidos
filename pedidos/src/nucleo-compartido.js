@@ -3954,10 +3954,22 @@ function initFirebaseListeners() {
           // (array_unshift), no al final — por eso se cogen los primeros "diff"
           // elementos, no los últimos (si no, siempre se coge el pedido más viejo).
           const _nuevosPedidos = (stats.orders || []).slice(0, diff);
-          if (getTicketConfig().autoImprimir) {
+          // Solo entran en el reparto de "quién imprime" los dispositivos
+          // que tienen la impresora térmica conectada AHORA MISMO — antes,
+          // cualquier sesión de admin con "auto-imprimir" activado (el
+          // móvil de la dueña, por ejemplo, que nunca tiene impresora
+          // conectada) podía "ganar" el reparto igual que la tablet de la
+          // tienda. Si ganaba un dispositivo sin impresora, el ticket se
+          // perdía en silencio: ese dispositivo no puede imprimir (falla
+          // al momento), y solo consigue avisar a los demás por la cola
+          // compartida si tiene sesión REAL de Firebase Auth — no basta con
+          // "dispositivo de confianza" (ver _ptColaAgregar en
+          // impresora-termica.js) — así que en un móvil normal el ticket
+          // simplemente no salía en ningún sitio.
+          if (getTicketConfig().autoImprimir && typeof _ptIsConnected === 'function' && _ptIsConnected()) {
             // Cada pedido se reclama por su cuenta (ver _reclamarImpresionAuto
             // en historial-export.js) — evita que dos dispositivos con
-            // auto-imprimir activado impriman el mismo pedido dos veces.
+            // impresora conectada impriman el mismo pedido dos veces.
             _nuevosPedidos.forEach(async o => {
               if (typeof _reclamarImpresionAuto !== 'function' || await _reclamarImpresionAuto(o.num)) {
                 _autoImprimirPedido(o);
