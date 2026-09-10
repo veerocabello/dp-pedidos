@@ -40,7 +40,24 @@ async function _guardarBannerDiaServidor(data) {
     if (res.status === 429) throw new Error('Demasiados intentos seguidos — espera un minuto y vuelve a intentarlo.');
     // dpf_bimba_fallo() (bimba-verify.php) no distingue "dispositivo
     // caducado" de "token no coincide" — cualquiera de los dos cae aquí.
-    throw new Error('Este dispositivo ya no está reconocido como de confianza (puede haber caducado, o se quitó desde el panel). Ve a "Dispositivo de confianza" arriba, pulsa "Quitar" si lo ves puesto y vuelve a entrar con tu contraseña real para renovarlo.');
+    // El token guardado en este dispositivo ya no sirve para nada (el
+    // servidor lo acaba de rechazar) — lo limpiamos aquí mismo, igual
+    // que hace el botón "Quitar", para no quedarse en un bucle
+    // reintentando siempre el mismo token roto. Si en este momento SÍ
+    // hay una sesión real de Firebase Auth (p.ej. acaba de volver a
+    // entrar con la contraseña), fb_saveBannerDia todavía puede
+    // funcionar de inmediato, en el mismo intento — sin eso, habría
+    // que darle otra vez a "Guardar banner" después de limpiar.
+    localStorage.removeItem('dpf_trusted_device');
+    localStorage.removeItem('dpf_trusted_device_name');
+    localStorage.removeItem('dpf_trusted_token');
+    if (window.fb_saveBannerDia) {
+      try {
+        await window.fb_saveBannerDia(data);
+        return;
+      } catch (e) {}
+    }
+    throw new Error('Este dispositivo ya no está reconocido como de confianza (puede haber caducado, o se quitó desde el panel) — se ha quitado aquí también. Cierra sesión y vuelve a entrar con tu contraseña real: en la pantalla de entrada, marca la casilla "Dispositivo de confianza" ANTES de pulsar entrar, para que quede guardado uno nuevo válido.');
   }
   // Sin dispositivo de confianza guardado (p.ej. primera vez, con sesión
   // real de Firebase Auth recién iniciada) — la escritura directa sí
