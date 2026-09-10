@@ -5518,7 +5518,15 @@ function renderCart() {
   }, 0) + custLines.reduce((s, c) => s + c.qty, 0) + extLines.reduce((s, c) => s + c.qty, 0) + promoLines.reduce((s, c) => s + c.qty, 0);
   countEl.textContent = totalItems;
   if (lines.length === 0 && custLines.length === 0 && extLines.length === 0 && promoLines.length === 0) {
-    bodyEl.innerHTML = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
+    const emptyHtml = "<div class=\"cart-empty\"><div class=\"cart-empty-icon\">\uD83D\uDED2</div><div class=\"cart-empty-title\">Tu carrito est\xE1 en ayunas</div><div class=\"cart-empty-sub\">dale algo de comer, anda...</div></div>" + _bimbaTarjetaRepetirPedido();
+    bodyEl.innerHTML = emptyHtml;
+    // El drawer m\u00F3vil normalmente se sincroniza m\u00E1s abajo v\u00EDa
+    // _syncCartDrawer(), pero ese paso no se alcanza con este "return"
+    // anticipado \u2014 sin esto, vaciar la cesta desde el propio drawer (con
+    // el nuevo bot\u00F3n "\u2212" o la papelera) dejaba la l\u00EDnea y el formulario
+    // antiguos visibles ah\u00ED aunque el carrito ya estuviera vac\u00EDo.
+    const drawerBodyEl = document.getElementById('cart-drawer-body');
+    if (drawerBodyEl) drawerBodyEl.innerHTML = emptyHtml;
     totalRowEl.style.display = "none";
     if (formEl) formEl.style.display = "none";
     _updateCartFab(0, 0);
@@ -5536,7 +5544,7 @@ function renderCart() {
     }
     const subtotal = _precioConOferta(item) * qty;
     total += subtotal;
-    return "\n    <div class=\"cart-line\">\n      <span class=\"cart-line-name\">".concat(item.name, "</span>\n      <span class=\"cart-line-qty\">x").concat(qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeItem(").concat(id, ")\" title=\"Quitar\">&#128465;</button>\n    </div>");
+    return "\n    <div class=\"cart-line\">\n      <span class=\"cart-line-name\">".concat(item.name, "</span>\n      <span class=\"cart-line-qty-ctrl\">\n        <button class=\"cart-qty-btn\" onclick=\"changeQty(").concat(id, ",-1)\" title=\"Quitar uno\">\u2212</button>\n        <span class=\"cart-line-qty\">x").concat(qty, "</span>\n        <button class=\"cart-qty-btn\" onclick=\"changeQty(").concat(id, ",+1)\" title=\"A\xF1adir uno\">+</button>\n      </span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2).replace('.', ','), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"removeItem(").concat(id, ")\" title=\"Quitar todos\">&#128465;</button>\n    </div>");
   }).join('');
   const custLinesHtml = custLines.map(c => {
     const item = MENU.find(m => m.id == c.menuId);

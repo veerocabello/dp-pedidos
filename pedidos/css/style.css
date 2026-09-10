@@ -902,6 +902,27 @@
   .cart-line:last-of-type { border-bottom: none; }
   .cart-line-qty-prefix { color: var(--amber-dark); font-weight: 700; }
   .cart-line-name { flex: 1; min-width: 0; overflow-wrap: break-word; color: var(--text); font-weight: 500; }
+  /* Antes el carrito solo dejaba quitar la línea entera (el icono de
+     papelera) — para bajar de 6 a 5 unidades había que borrarlo todo y
+     volver a añadir uno a uno desde la carta. Este +/- deja ajustar la
+     cantidad sin salir del carrito. */
+  .cart-line-qty-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .cart-qty-btn {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 1.5px solid var(--amber);
+    background: transparent;
+    color: var(--amber-dark);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+    font-family: 'DM Sans', sans-serif;
+    transition: all .15s;
+    flex-shrink: 0;
+  }
+  .cart-qty-btn:hover { background: var(--amber); color: var(--white); }
   .cart-line-price { font-weight: 700; color: var(--brown); white-space: nowrap; }
   .cart-remove {
     /* El icono se queda pequeño (encaja mejor en la línea del carrito),
