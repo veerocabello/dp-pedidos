@@ -1175,7 +1175,7 @@ function renderMenu() {
     var hayAlergenos = MENU.some(function (i) { return Array.isArray(i.tags) && i.tags.length; });
     allergenHintEl.style.display = hayAlergenos ? 'block' : 'none';
   }
-  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden);
+  var rawFiltered = (activeCategory === "Todos" ? MENU : MENU.filter(i => i.cat === activeCategory)).filter(i => !i.hidden && !i.esVariante);
   // Ordenar tartas: clásicas primero, especiales después
   var tartasClasicas = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1);
   var tartasEspeciales = rawFiltered.filter(i => i.cat === 'Tartas' && i.desc && i.desc.toLowerCase().indexOf('especial') !== -1);
@@ -1203,7 +1203,7 @@ function renderMenu() {
   };
   const catCounts = {};
   if (showSeparators) {
-    MENU.filter(i => !i.hidden).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
+    MENU.filter(i => !i.hidden && !i.esVariante).forEach(i => { catCounts[i.cat] = (catCounts[i.cat] || 0) + 1; });
   }
   let lastCat = null;
   const html = filtered.map(item => {
@@ -1212,6 +1212,9 @@ function renderMenu() {
     const qty = isCustom ? Object.values(custCart).filter(c => c.menuId === item.id).reduce((s,c) => s+c.qty, 0)
               : isExtras ? Object.values(extrasCart).filter(c => c.menuId === item.id).reduce((s,c) => s+c.qty, 0)
               : cart[item.id] || 0;
+    // Un panini con "medio" enlazado cuenta como "en el carrito" si hay
+    // cantidad en cualquiera de los dos tamaños, no solo en el entero.
+    const qtyConMedio = item.medioId ? qty + (cart[item.medioId] || 0) : qty;
     const soldout = item.soldout;
     let sep = '';
     if (showSeparators && item.cat !== lastCat) {
@@ -1262,12 +1265,39 @@ function renderMenu() {
     // concreto (ver _precioConOferta en carta.js) — se muestra el original
     // tachado junto al rebajado, para que se note el "chollo" de un vistazo.
     const _precioOferta = (typeof _precioConOferta === 'function') ? _precioConOferta(item) : item.price;
-    const priceHtml = _precioOferta < item.price
+    let priceHtml = _precioOferta < item.price
       ? '<span style="text-decoration:line-through;opacity:.55;font-size:12px;margin-right:4px">' + item.price.toFixed(2).replace('.', ',') + ' €</span><span style="color:#c0392b">' + _precioOferta.toFixed(2).replace('.', ',') + ' € ⚡</span>'
       : item.price.toFixed(2).replace('.', ',') + ' €';
+    // Panini con "medio" enlazado (ver medioId en carta.js): en vez del
+    // precio único, dos botones Entero/Medio dentro de la MISMA tarjeta —
+    // el medio no tiene tarjeta propia en la carta. Los +/- de abajo
+    // actúan sobre el tamaño seleccionado (window._paniniSize), cada uno
+    // con su propia cantidad en el carrito.
+    const medioItem = (!soldout && item.medioId) ? MENU.find(m => m.id === item.medioId && !m.hidden) : null;
+    if (medioItem) {
+      window._paniniSize = window._paniniSize || {};
+      const sel = window._paniniSize[item.id] === 'medio' ? 'medio' : 'entero';
+      const activeId = sel === 'medio' ? medioItem.id : item.id;
+      const qtyActive = cart[activeId] || 0;
+      const qtyEntero = qty;
+      const qtyMedio = cart[medioItem.id] || 0;
+      priceHtml = '<div class="pan-size-toggle">'
+        + '<button type="button" class="pan-size-btn' + (sel === 'entero' ? ' active' : '') + '" onclick="setPaniniSize(' + item.id + ',\'entero\')">'
+        + 'Entero ' + item.price.toFixed(2).replace('.', ',') + '€' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '')
+        + '</button>'
+        + '<button type="button" class="pan-size-btn' + (sel === 'medio' ? ' active' : '') + '" onclick="setPaniniSize(' + item.id + ',\'medio\')">'
+        + 'Medio ' + medioItem.price.toFixed(2).replace('.', ',') + '€' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '')
+        + '</button>'
+        + '</div>';
+      controls = qtyActive > 0
+        ? '<button class="qty-btn" onclick="changeQty(' + activeId + ',-1)">−</button>'
+          + '<span class="qty-num">' + qtyActive + '</span>'
+          + '<button class="qty-btn" onclick="changeQty(' + activeId + ',+1)">+</button>'
+        : '<button class="add-btn" onclick="changeQty(' + activeId + ',+1)" title="Añadir">+</button>';
+    }
     const tagsHtml = dietaryTagsHtml(item);
     return sep
-      + '<div class="item-card ' + (qty > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
+      + '<div class="item-card ' + (qtyConMedio > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
       + ' data-name="' + escapeAttr(item.name) + '"'
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'

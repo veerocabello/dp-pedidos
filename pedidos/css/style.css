@@ -660,6 +660,26 @@
     color: #3D1F0D;
     white-space: nowrap;
   }
+  .pan-size-toggle { display: flex; flex-direction: column; gap: 4px; }
+  .pan-size-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    background: transparent;
+    border: 1.5px solid var(--gold);
+    border-radius: 99px;
+    padding: 3px 9px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .pan-size-btn b { font-weight: 800; }
+  .pan-size-btn.active {
+    color: var(--white);
+    background: #3D1F0D;
+    border-color: #3D1F0D;
+  }
   .item-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .qty-btn {
     /* 44x44 = mínimo táctil WCAG 2.5.5. Antes eran 32px: en el pedido
