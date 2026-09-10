@@ -15,7 +15,7 @@
 // de subir este número a mano cada vez que cambiaba una imagen; si se
 // olvidaba, el Service Worker seguía sirviendo la versión vieja
 // indefinidamente a quien ya hubiera visitado la web.
-const CACHE_NAME = 'dpf-static-v1789029572046';
+const CACHE_NAME = 'dpf-static-v1789029791435';
 const CACHEABLE_PATHS = ['/css/', '/fonts/', '/img/', '/js/', '/src/'];
 
 // Página de "sin conexión" — autocontenida (estilos inline, sin depender de

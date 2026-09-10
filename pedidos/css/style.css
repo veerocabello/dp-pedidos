@@ -680,7 +680,8 @@
     padding-top: 9px;
     border-top: 1px dashed var(--gold);
   }
-  .pan-size-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pan-size-chips { display: flex; flex-wrap: wrap; gap: 12px; }
+  .pan-size-pair { display: flex; align-items: center; gap: 6px; }
   .pan-size-chip {
     font-size: 11.5px;
     font-weight: 600;
@@ -692,6 +693,14 @@
     padding: 2px 9px;
   }
   .pan-size-chip b { color: var(--brown); font-weight: 800; }
+  /* Precio fuera del chip, mismo estilo que .item-price en el resto de
+     productos — para que se lea igual que en cualquier otra tarjeta. */
+  .pan-size-price {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--brown);
+    white-space: nowrap;
+  }
   .item-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   /* Elemento único colgado de <body> (ver _paniniPopoverEl en carta.js),
      no anidado en la tarjeta — así no lo atrapa el stacking context que

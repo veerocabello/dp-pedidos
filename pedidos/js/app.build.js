@@ -1307,9 +1307,12 @@ function renderMenu() {
       const qtyEntero = qty;
       const qtyMedio = cart[medioItem.id] || 0;
       const qtyTotal = qtyEntero + qtyMedio;
+      // El precio va FUERA del chip, con el mismo estilo que usa
+      // cualquier otro producto (.item-price) — el chip solo etiqueta
+      // el tamaño (y, si ya hay alguno en el carrito, cuántos).
       const chipsHtml = '<div class="pan-size-chips">'
-        + '<span class="pan-size-chip">Entero ' + item.price.toFixed(2).replace('.', ',') + '€' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '') + '</span>'
-        + '<span class="pan-size-chip">Medio ' + medioItem.price.toFixed(2).replace('.', ',') + '€' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '') + '</span>'
+        + '<span class="pan-size-pair"><span class="pan-size-chip">Entero' + (qtyEntero > 0 ? ' <b>×' + qtyEntero + '</b>' : '') + '</span><span class="pan-size-price">' + item.price.toFixed(2).replace('.', ',') + ' €</span></span>'
+        + '<span class="pan-size-pair"><span class="pan-size-chip">Medio' + (qtyMedio > 0 ? ' <b>×' + qtyMedio + '</b>' : '') + '</span><span class="pan-size-price">' + medioItem.price.toFixed(2).replace('.', ',') + ' €</span></span>'
         + '</div>';
       const panControls = qtyTotal > 0
         ? '<button class="qty-btn" onclick="paniniQuitar(' + item.id + ',' + medioItem.id + ')">−</button>'
