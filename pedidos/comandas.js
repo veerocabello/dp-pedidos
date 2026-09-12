@@ -3179,6 +3179,34 @@ function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || 
 const CAJA_FONDO_DEFECTO = 200;
 function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? CAJA_FONDO_DEFECTO : v; }
 function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
+// ── Total según el datáfono, escrito a mano — la app calcula "Cobrado con
+// tarjeta" a partir de lo marcado pedido a pedido, así que si alguno se
+// marcó mal (efectivo en vez de tarjeta, o al revés) no se nota hasta que
+// se compara con el ticket resumen del propio datáfono. Igual que con el
+// efectivo contado, en cuanto se escribe algo aquí se avisa solo si cuadra.
+// null (a diferencia de 0) significa "todavía no se ha escrito nada".
+function getCajaDatafonoKey(fecha) { return 'dpf_comandas_caja_datafono_' + (fecha || todayISO()); }
+function loadCajaDatafono(fecha) {
+  const raw = localStorage.getItem(getCajaDatafonoKey(fecha));
+  if (raw === null) return null;
+  const v = parseFloat(raw);
+  return isFinite(v) ? v : null;
+}
+function saveCajaDatafono(fecha, valor) {
+  if (valor == null) localStorage.removeItem(getCajaDatafonoKey(fecha));
+  else localStorage.setItem(getCajaDatafonoKey(fecha), String(valor));
+}
+function editCajaDatafono() {
+  const actual = loadCajaDatafono(cajaFechaSel);
+  const input = document.getElementById('caja-datafono-manual-input');
+  input.value = actual != null ? String(actual).replace('.', ',') : '';
+  openNumpad('caja-datafono-manual-input', 'Total según el datáfono');
+}
+function setCajaDatafonoManual(valorStr) {
+  const trimmed = String(valorStr || '').trim();
+  saveCajaDatafono(cajaFechaSel, trimmed === '' ? null : Math.max(0, parseCashNum(trimmed)));
+  renderCaja();
+}
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
 function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
 function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX + fecha) === '1'; }
@@ -3297,6 +3325,7 @@ function renderCaja() {
   const efectivo = t.efectivo, tarjeta = t.tarjeta, pendiente = t.pendiente, nPedidos = t.count;
   const facturado = efectivo + tarjeta + pendiente;
   const esperadoCajon = fondo + efectivo;
+  const datafono = loadCajaDatafono(cajaFechaSel);
   const esHoy = cajaFechaSel === todayISO();
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
@@ -3327,10 +3356,19 @@ function renderCaja() {
         <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadra ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadra ? '✅ Cuadra' : diferencia > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadra ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferencia))} €</b></div>
       </div>`
     : '';
+  const diferenciaTarjeta = datafono != null ? Math.round((datafono - tarjeta) * 100) / 100 : 0;
+  const cuadraTarjeta = Math.abs(diferenciaTarjeta) < 0.005;
+  const filaDatafono = `<div class="cash-calc-total-row editable" style="margin:4px 0 0" onclick="editCajaDatafono()"><label style="flex:1">💳 Según el datáfono ✏️</label><b${datafono == null ? ' style="color:var(--muted);font-weight:400"' : ''}>${datafono == null ? 'Escribir' : fmt(datafono) + ' €'}</b></div>`
+    + (datafono != null
+      ? `<div style="background:${cuadraTarjeta ? '#E3F3E9' : '#FBE7E4'};border:1.5px solid ${cuadraTarjeta ? 'rgba(46,139,87,.35)' : 'rgba(192,57,43,.4)'};border-radius:10px;padding:10px 12px;margin:6px 0 10px">
+          <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadraTarjeta ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadraTarjeta ? '✅ Cuadra' : diferenciaTarjeta > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadraTarjeta ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferenciaTarjeta))} €</b></div>
+        </div>`
+      : '<div style="margin-bottom:10px"></div>');
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + row('💵 Cobrado en efectivo', efectivo)
     + row('💳 Cobrado con tarjeta', tarjeta)
+    + filaDatafono
     + avisoPendiente
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
