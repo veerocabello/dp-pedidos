@@ -792,10 +792,10 @@ function countFreeSwapQuitados(quitadosNames) {
 // alguno, con el que quede. En la Simple nunca hay nada que emparejar:
 // sal/pimienta no cuentan para el cupo (countFreeSwapQuitados), así que
 // sus extras se quedan siempre como extras sueltos, nunca como cambio.
-function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder) {
+function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder, doblesList) {
   const freePasses = computeFreeSwapPasses(countFreeSwapQuitados(quitadosList), explicitCambios.length);
   if (freePasses <= 0) {
-    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder };
+    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder, dobles: doblesList || [] };
   }
   const comps = parseBaseComponents(item);
   const realIngComponents = new Set(comps.filter(c => !esComponenteSalsa(c) && !isBaseGrasaComp(c) && !isElegirSalsaComp(c)));
@@ -803,6 +803,7 @@ function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambi
   let remainingQuitados = [...quitadosList];
   let remainingIng = [...ingList];
   let remainingSalsa = [...salsaList];
+  let remainingDobles = [...(doblesList || [])];
   const newCambios = [];
   const consumed = new Set(); // "type:name" de picks ya emparejados, para limpiar pickOrder
   (pickOrder || []).slice(0, freePasses).forEach(pick => {
@@ -817,7 +818,26 @@ function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambi
     else remainingSalsa = remainingSalsa.filter(n => n !== pick.name);
   });
   const newPickOrder = (pickOrder || []).filter(p => !consumed.has(p.type + ':' + p.name));
-  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder };
+  // Si sobra cupo de cambio gratis y queda algún ingrediente/salsa pedido
+  // doble/triple (ya estaba en la receta, no es un extra nuevo), se
+  // empareja igual: quitar uno de base y pedir el doble de otro cuesta lo
+  // mismo que un cambio de verdad, así que esa unidad de más sale gratis
+  // en vez de cobrarse aparte con dobleSurcharge.
+  let freeLeft = freePasses - newCambios.length;
+  const dobleIdxConsumidos = [];
+  for (let i = 0; i < remainingDobles.length && freeLeft > 0 && remainingQuitados.length > 0; i++) {
+    const name = remainingDobles[i];
+    const isIng = realIngComponents.has(name);
+    let qIdx = remainingQuitados.findIndex(q => isIng ? realIngComponents.has(q) : realSalsaComponents.has(q));
+    if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
+    if (qIdx === -1) continue;
+    const from = remainingQuitados.splice(qIdx, 1)[0];
+    newCambios.push({ from, to: name });
+    dobleIdxConsumidos.push(i);
+    freeLeft--;
+  }
+  dobleIdxConsumidos.reverse().forEach(i => remainingDobles.splice(i, 1));
+  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder, dobles: remainingDobles };
 }
 // Mismo criterio que computeExtrasCorePrice: los primeros `freePasses`
 // picks por orden de selección van gratis — así el ticket muestra sin
@@ -2349,18 +2369,39 @@ function currentDoblesList() {
   });
   return dobles;
 }
+// Reúne el estado en vivo del modal de extras y le aplica el
+// emparejamiento de cambios gratis (autoPairFreeSwaps) — lo usan tanto el
+// precio en vivo (updateExtrasTotalPrice) como la confirmación
+// (confirmExtras), para que lo que se ve mientras se personaliza sea
+// exactamente lo que se acaba cobrando.
+function pairCurrentExtras(item) {
+  return autoPairFreeSwaps(
+    item,
+    Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q),
+    Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing),
+    Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s),
+    extrasCambios.map(c => ({ from: c.from, to: c.to })),
+    getOrderedExtrasPicks(),
+    currentDoblesList()
+  );
+}
 function updateExtrasTotalPrice() {
   const item = MENU.find(m => m.id == extrasCurrentId);
   if (!item) return;
-  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
-  const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
-  const quitadosNames = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([name]) => name);
-  const free = computeFreeSwapPasses(countFreeSwapQuitados(quitadosNames), extrasCambios.length);
-  const core = computeExtrasCorePrice(item.price, ingList, salsaList, getOrderedExtrasPicks(), free);
-  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
+  const paired = pairCurrentExtras(item);
+  // paired.ingredientesExtra/salsasExtra/pickOrder ya vienen sin los que se
+  // acaban de emparejar como cambio gratis (ver autoPairFreeSwaps), así que
+  // aquí no queda ningún "free" que restar aparte — todo lo que queda en
+  // esas listas se cobra entero.
+  const core = computeExtrasCorePrice(item.price, paired.ingredientesExtra, paired.salsasExtra, paired.pickOrder, 0);
+  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
-  if (noteEl) noteEl.textContent = offerNote(salsaList.length, ingList.length);
+  if (noteEl) {
+    const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
+    const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
+    noteEl.textContent = offerNote(salsaList.length, ingList.length);
+  }
 }
 function confirmExtras() {
   const id = extrasCurrentId;
@@ -2371,20 +2412,13 @@ function confirmExtras() {
     toast('🚫 Elige una salsa antes de añadir ' + item.name);
     return;
   }
-  const dobles = currentDoblesList().sort();
-  const paired = autoPairFreeSwaps(
-    item,
-    Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q),
-    Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing),
-    Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s),
-    extrasCambios.map(c => ({ from: c.from, to: c.to })),
-    getOrderedExtrasPicks()
-  );
+  const paired = pairCurrentExtras(item);
   const ingList = paired.ingredientesExtra.sort();
   const salsaList = paired.salsasExtra.sort();
   const quitadosList = paired.quitados.sort();
   const cambiosList = paired.cambios;
   const pickOrder = paired.pickOrder;
+  const dobles = paired.dobles.sort();
   const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
@@ -3284,7 +3318,7 @@ function setCajaContadoManual(valorStr) {
 // vez, en vez de tener que tocar el botón esa cantidad de veces.
 let cajaDenomNumpadValue = null;
 function formatDenomLabel(v) {
-  return v >= 1 ? fmt(v) + ' €' : Math.round(v * 100) + ' cent';
+  return v >= 1 ? Math.round(v) + ' euros' : Math.round(v * 100) + ' céntimos';
 }
 function openCajaDenomNumpad(v) {
   cajaDenomNumpadValue = v;
@@ -3311,7 +3345,14 @@ function setCajaDenomCantidad(v, valorStr) {
 }
 function renderCajaContadoUI() {
   document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
-    const v = btn.dataset.v;
+    // OJO: btn.dataset.v es el texto tal cual del HTML ("0.20", "0.10",
+    // "0.50" — con el cero final) pero tapCajaDenom/setCajaDenomCantidad
+    // guardan la clave con String(v) de un NÚMERO de JS, que para esos
+    // mismos valores da "0.2"/"0.1"/"0.5" (sin el cero final) — sin pasar
+    // por parseFloat aquí, esos tres círculos nunca encontraban su
+    // contador guardado y se quedaban siempre en "×0" aunque sí se hubiera
+    // escrito una cantidad y el total ya la sumara.
+    const v = String(parseFloat(btn.dataset.v));
     const n = cajaContado.counts[v] || 0;
     btn.classList.toggle('tapped', n > 0);
     let badge = btn.querySelector('.denom-count');
