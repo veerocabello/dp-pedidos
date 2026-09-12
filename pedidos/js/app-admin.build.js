@@ -5039,16 +5039,22 @@ async function reintentarSelloFidelizacion(ts, orderNum, telefono, nombre, fecha
 // mismo botón de Alertas que reintentarSelloFidelizacion pero en sentido
 // contrario. Sin esto el cliente se quedaba con un sello (o una patata
 // gratis ya canjeada) de un pedido que ya no existe, para siempre.
-async function reintentarRevertirSelloFidelizacion(ts, orderNum, telefono) {
+async function reintentarRevertirSelloFidelizacion(ts, orderNum, telefono, fecha) {
   const card = document.getElementById(_alertaDomId(ts));
   const statusEl = card && card.querySelector('.alerta-retry-status');
   const btn = card && card.querySelector('.alerta-retry-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Reintentando…'; }
   try {
+    // "fecha" es la fecha real del pedido (guardada en la propia alerta,
+    // ver revertirSello en fidelizacion.php) — antes no se mandaba y el
+    // servidor siempre buscaba el ticket en el día de HOY, así que
+    // reintentar un día después de que ocurriera el fallo fallaba siempre
+    // (se trataba como "nada que revertir"), aunque el ticket sí existiera
+    // bajo su fecha real. Mismo fix que ya tenía registrarSello arriba.
     const res = await fetch('fidelizacion.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'revertirSello', telefono, orderNum })
+      body: JSON.stringify({ action: 'revertirSello', telefono, orderNum, fecha: fecha || '' })
     });
     const data = await res.json();
     if (data.success) {
@@ -5185,7 +5191,7 @@ function renderAlertas() {
       } else if (e.tipo === 'sello_no_registrado' && e.orderNum && e.telefono) {
         retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
       } else if (e.tipo === 'sello_no_revertido' && e.orderNum && e.telefono) {
-        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarRevertirSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">↩️ Reintentar anular</button>");
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarRevertirSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">↩️ Reintentar anular</button>");
       }
       return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
     }).join('');

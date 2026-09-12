@@ -744,7 +744,16 @@ try {
             echo json_encode(['success' => true, 'skipped' => true]);
             exit;
         }
-        $todayKey = date('Y-m-d');
+        // Igual que registrarSello: por defecto es hoy (al cancelar un
+        // pedido normal, el ticket siempre está bajo la fecha de hoy), pero
+        // el botón "Reintentar anular" del panel de Alertas puede pulsarse
+        // cualquier día después — antes esto siempre buscaba en el día de
+        // HOY del servidor, así que si se reintentaba al día siguiente el
+        // ticket ya no estaba ahí, se trataba como "nada que revertir" y el
+        // cliente se quedaba con un sello/patata gratis de un pedido
+        // cancelado, sin ningún aviso.
+        $fecha = isset($payload['fecha']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $payload['fecha']) ? $payload['fecha'] : null;
+        $todayKey = $fecha ?: date('Y-m-d');
         $ticketKey = normOrderKey($orderNum);
         $ch = curl_init($databaseURL . '/tickets/' . $todayKey . '/' . $ticketKey . '.json');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -766,6 +775,7 @@ try {
                 'tipo'     => 'sello_no_revertido',
                 'orderNum' => $orderNum,
                 'telefono' => $telefono,
+                'fecha'    => $todayKey,
             ]);
             echo json_encode(['success' => false, 'error' => 'Fallo de conexión, inténtalo de nuevo.']);
             exit;
@@ -858,6 +868,7 @@ try {
             'tipo'     => 'sello_no_revertido',
             'orderNum' => $orderNum,
             'telefono' => $telefono,
+            'fecha'    => $todayKey,
         ]);
         echo json_encode(['success' => false, 'error' => 'No se pudo revertir, inténtalo de nuevo.']);
         exit;

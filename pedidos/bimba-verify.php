@@ -296,12 +296,68 @@ function dpf_bimba_fallo($fp, $log, $now) {
     echo json_encode(['success' => false]);
     exit();
 }
+// ── Variantes "sin lock mantenido" para las acciones que hacen una llamada
+// de red a Google/Firebase (obtenerTokenAcceso, fbGet*ConCuentaServicio,
+// fbSetNodoConCuentaServicio) entre medias — hasta 8s cada una según
+// CURLOPT_TIMEOUT. Antes, TODAS esas acciones se procesaban con el lock de
+// dpf_bimba_acierto/dpf_bimba_fallo abierto desde el principio (línea 263)
+// hasta el final, así que una llamada lenta a Firebase bloqueaba con
+// flock(LOCK_EX) cualquier OTRA petición de la MISMA IP mientras tanto —
+// incluida una totalmente distinta (p.ej. guardarBannerDia mientras
+// checkTrustedDevice seguía esperando a Firebase). En un hosting compartido
+// con pocos workers, unas pocas peticiones lentas desde una IP podían
+// encadenarse y agotar el cupo de esa IP sin que fuera un ataque real.
+// Aquí solo se mantiene el lock durante la comprobación del límite (rápida,
+// sin red) y se libera antes de la llamada de red; el resultado se anota
+// reabriendo el archivo un instante al final, igual que antes pero sin
+// tener el lock de por medio mientras se espera a Firebase.
+function dpf_bimba_liberar_lock_temprano($fp) {
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+function dpf_bimba_acierto_tras_red($ip_file) {
+    $fp2 = @fopen($ip_file, 'c+');
+    if ($fp2 !== false) {
+        flock($fp2, LOCK_EX);
+        ftruncate($fp2, 0);
+        flock($fp2, LOCK_UN);
+        fclose($fp2);
+    }
+    echo json_encode(['success' => true]);
+    exit();
+}
+function dpf_bimba_fallo_tras_red($ip_file, $window) {
+    $fp2 = @fopen($ip_file, 'c+');
+    if ($fp2 !== false) {
+        flock($fp2, LOCK_EX);
+        $now2 = time();
+        $size2 = filesize($ip_file) ?: 0;
+        $raw2 = $size2 > 0 ? fread($fp2, $size2) : '';
+        $log2 = json_decode($raw2, true) ?: [];
+        $log2 = array_values(array_filter($log2, function ($ts) use ($now2, $window) {
+            return ($now2 - $ts) < $window;
+        }));
+        $log2[] = $now2;
+        ftruncate($fp2, 0);
+        rewind($fp2);
+        fwrite($fp2, json_encode($log2));
+        fflush($fp2);
+        flock($fp2, LOCK_UN);
+        fclose($fp2);
+    }
+    echo json_encode(['success' => false]);
+    exit();
+}
 
 if ($action === 'checkBimbaToken' || $action === 'checkAdminUrlToken') {
     $token = isset($data['token']) ? (string)$data['token'] : '';
     if ($token === '' || strlen($token) > 200) {
         dpf_bimba_fallo($fp, $log, $now);
     }
+    // Liberar el lock ANTES de las llamadas de red de abajo (ver comentario
+    // junto a dpf_bimba_acierto_tras_red más arriba) — el resultado se
+    // anota al final reabriendo el archivo un instante.
+    dpf_bimba_liberar_lock_temprano($fp);
     try {
         $path = $action === 'checkBimbaToken' ? 'config/bimbaToken' : 'config/urlToken';
         $real = fbGetStringConCuentaServicio($databaseURL, $path, $rutaCredenciales);
@@ -314,16 +370,14 @@ if ($action === 'checkBimbaToken' || $action === 'checkAdminUrlToken') {
             if (is_numeric($expiry) && (float)$expiry < (microtime(true) * 1000)) $expirado = true;
         }
     } catch (Exception $e) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Error interno']);
         exit();
     }
     if (!$expirado && $real !== '' && hash_equals($real, $token)) {
-        dpf_bimba_acierto($fp);
+        dpf_bimba_acierto_tras_red($ip_file);
     } else {
-        dpf_bimba_fallo($fp, $log, $now);
+        dpf_bimba_fallo_tras_red($ip_file, $window);
     }
 }
 
@@ -338,11 +392,10 @@ if ($action === 'checkTrustedDevice') {
     if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
         dpf_bimba_fallo($fp, $log, $now);
     }
+    dpf_bimba_liberar_lock_temprano($fp);
     try {
         $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
     } catch (Exception $e) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Error interno']);
         exit();
@@ -357,9 +410,9 @@ if ($action === 'checkTrustedDevice') {
     // usa checkBimbaToken con bimbaTokenExpiry justo arriba.
     $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
     if (!$expiradoDispositivo && $tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', $token))) {
-        dpf_bimba_acierto($fp);
+        dpf_bimba_acierto_tras_red($ip_file);
     } else {
-        dpf_bimba_fallo($fp, $log, $now);
+        dpf_bimba_fallo_tras_red($ip_file, $window);
     }
 }
 
@@ -382,11 +435,13 @@ if ($action === 'guardarBannerDia') {
     $sub = isset($banner['sub']) && is_string($banner['sub']) ? mb_substr($banner['sub'], 0, 200) : '';
     $active = !empty($banner['active']);
     $bannerSaneado = ['active' => $active, 'text' => $text, 'sub' => $sub, 'tipo' => $tipo];
+    // Liberar el lock antes de las DOS llamadas de red de abajo (get del
+    // dispositivo de confianza + set del banner) — juntas pueden tardar
+    // hasta 16s.
+    dpf_bimba_liberar_lock_temprano($fp);
     try {
         $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
     } catch (Exception $e) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Error interno']);
         exit();
@@ -394,22 +449,18 @@ if ($action === 'guardarBannerDia') {
     $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
     $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
     if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
-        dpf_bimba_fallo($fp, $log, $now);
+        dpf_bimba_fallo_tras_red($ip_file, $window);
     }
     try {
         $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/bannerDia', $rutaCredenciales, $bannerSaneado);
     } catch (Exception $e) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Error interno']);
         exit();
     }
     if ($ok) {
-        dpf_bimba_acierto($fp);
+        dpf_bimba_acierto_tras_red($ip_file);
     } else {
-        flock($fp, LOCK_UN);
-        fclose($fp);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
         exit();
@@ -436,11 +487,10 @@ if ($action === 'removerDispositivoConfianza') {
     if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
         dpf_bimba_fallo($fp, $log, $now);
     }
+    dpf_bimba_liberar_lock_temprano($fp);
     try {
         $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
     } catch (Exception $e) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Error interno']);
         exit();
@@ -449,12 +499,12 @@ if ($action === 'removerDispositivoConfianza') {
     if ($tokenHashReal === '') {
         // Ya no había nada que borrar (se borró antes, o nunca existió) —
         // no es un fallo del que se deba culpar a quien llama.
-        dpf_bimba_acierto($fp);
+        dpf_bimba_acierto_tras_red($ip_file);
     } elseif (hash_equals($tokenHashReal, hash('sha256', $token))) {
         fbEliminarNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
-        dpf_bimba_acierto($fp);
+        dpf_bimba_acierto_tras_red($ip_file);
     } else {
-        dpf_bimba_fallo($fp, $log, $now);
+        dpf_bimba_fallo_tras_red($ip_file, $window);
     }
 }
 

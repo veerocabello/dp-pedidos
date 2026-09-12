@@ -1896,7 +1896,19 @@ try {
         $totalRedondeado = round($total, 2);
         $newOrder = ['num' => $num, 'syncKey' => $deviceId . '_' . $num, 'items' => $items, 'total' => $totalRedondeado];
         $ok = guardarVentaEnStatsTienda($databaseURL, $accessToken, $fecha, $newOrder, $totalRedondeado);
-        registrarVentasProductos($databaseURL, $accessToken, $fecha, $items, 'ventasProductosTienda');
+        // Solo contar los productos vendidos si la venta en sí se guardó de
+        // verdad — antes esto se llamaba pase lo que pase: si
+        // guardarVentaEnStatsTienda fallaba (contención tras varios
+        // reintentos, o timeout), la venta no quedaba registrada en ningún
+        // sitio pero los productos SÍ se sumaban a "Estrellas y perdedores",
+        // descuadrando esas estadísticas sin ninguna venta real detrás. Y si
+        // Comandas reintentaba el mismo syncKey y esta vez sí se guardaba,
+        // los productos se sumaban una SEGUNDA vez (statsTienda sí evita el
+        // duplicado por syncKey, pero registrarVentasProductos no tiene esa
+        // protección).
+        if ($ok) {
+            registrarVentasProductos($databaseURL, $accessToken, $fecha, $items, 'ventasProductosTienda');
+        }
         echo json_encode(['success' => $ok]);
         exit;
     }

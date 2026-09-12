@@ -1893,7 +1893,11 @@ function loadStudentDiscountFromFirebase() {
 const LOCAL_FEE_CODE_KEY = 'dpf_local_fee_code';
 let _codigoLocalValidado = false;
 function _todayKeyLocal() {
-  return new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC, el
+  // código "de hoy" que pone la dueña dejaba de coincidir durante la 1-2h
+  // de desfase tras la medianoche de Madrid, y el código dejaba de
+  // funcionar justo cuando más se usa (cerca del cierre).
+  return typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
 }
 function _localFeeCodeObj() {
   try {
@@ -3577,7 +3581,15 @@ function scheduleSlotMidnightReset() {
   setTimeout(() => {
     // Comprobar si los datos de slots son de un día anterior; si no, limpiar
     const data = getSlotsData();
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // _todayKeyMadrid() en vez de toISOString(): este setTimeout está
+    // calculado para saltar justo a medianoche EN HORA DE MADRID (ver
+    // msToMidnight arriba, que usa getHours()/getMinutes() del dispositivo),
+    // pero toISOString() da la fecha en UTC — durante 1-2h cada noche (según
+    // horario de verano/invierno) UTC todavía va con la fecha de AYER,
+    // así que todo lo de abajo (limpiar slots, archivar a historial, el
+    // "ayerKey" del cierre automático de fichajes) comparaba/archivaba con
+    // la fecha equivocada justo en el momento en que se ejecuta.
+    const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
     if (data.date !== todayKey) {
       localStorage.removeItem(SLOTS_KEY);
     }
@@ -3604,7 +3616,12 @@ function scheduleSlotMidnightReset() {
     } catch {}
     // Salida automática: registrar salida a los empleados que olvidaron fichar
     try {
-      const ayerKey = new Date(Date.now() - 86400000).toISOString().slice(0, 10); // ayer (resta 1 día completo)
+      // Mismo criterio Madrid que todayKey arriba, no UTC — si no, este
+      // cierre automático podía comparar fichajes de un día que no es de
+      // verdad "ayer" en Madrid durante esa misma ventana de 1-2h.
+      const ayerKey = typeof _todayKeyMadrid === 'function'
+        ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - 86400000))
+        : new Date(Date.now() - 86400000).toISOString().slice(0, 10); // ayer (resta 1 día completo)
       const fich = fichajesLoad();
       const emps = empLoadAll();
       let modified = false;
@@ -3656,7 +3673,7 @@ function _avisarFalloPermisoPedidos(activo) {
 //  FIREBASE REALTIME LISTENERS
 // ══════════════════════════════════════════
 function initFirebaseListeners() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   console.log('[fee] initFirebaseListeners START, _firebaseReady=', window._firebaseReady);
 
   // Tarjeta de sellos: si ya conocemos el teléfono de este cliente (pedido
@@ -3802,7 +3819,7 @@ function initFirebaseListeners() {
       // Forzar que getSlotsData use _slotsCache en vez de stats locales
       // invalidando la fecha de stats para que no se use como fuente
       try {
-        const todayKey = new Date().toISOString().slice(0, 10);
+        const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
         const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
         if (stats && stats.date === todayKey) {
           // Sobrescribir los slots de stats con los de Firebase (fuente de verdad)
@@ -3825,7 +3842,7 @@ function initFirebaseListeners() {
   // cliente (y las dos cuadrículas de admin) lo reflejan al momento en
   // cualquier dispositivo, sin depender de recargar.
   if (window.fb_listenSlotsClosed) {
-    const _todayKeyCerrados = new Date().toISOString().slice(0, 10);
+    const _todayKeyCerrados = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
     window.fb_listenSlotsClosed(_todayKeyCerrados, cerrados => {
       _slotsClosedCache = cerrados || {};
       const picker = document.getElementById('slot-picker-group');
@@ -4007,16 +4024,48 @@ function initFirebaseListeners() {
         refreshKitchenGrid();
       }
     };
-    window.fb_listenStats(todayKey, _procesarSnapshotStatsPedidos, err => {
-      console.error('[DPF] fb_listenStats: lectura de pedidos rechazada', err);
-      _avisarFalloPermisoPedidos(true);
-    });
+    // Qué día escucha ahora mismo el listener en tiempo real de abajo, y el
+    // callback que devolvió fb_listenStats (hace falta para poder hacer
+    // .off() de ese nodo concreto cuando cambie el día — ver
+    // _comprobarCambioDeDiaStats más abajo).
+    let _statsListenerDateKey = todayKey;
+    let _statsListenerHandle = null;
+    function _suscribirStatsListener(dateKey) {
+      _statsListenerHandle = window.fb_listenStats(dateKey, _procesarSnapshotStatsPedidos, err => {
+        console.error('[DPF] fb_listenStats: lectura de pedidos rechazada', err);
+        _avisarFalloPermisoPedidos(true);
+      });
+    }
+    _suscribirStatsListener(todayKey);
     // Expuesta en window para que _iniciarAvisoConexionFirebase (init.js)
     // pueda forzar un refresco en cuanto ".info/connected" avise de que la
     // conexión se ha recuperado tras un corte real — ver el comentario
     // junto a esa función: antes solo escondía el banner y confiaba en que
     // este listener se resincronizara solo, sin forzar nada.
     window._procesarSnapshotStatsPedidos = _procesarSnapshotStatsPedidos;
+    // Si ha pasado la medianoche real (Madrid) desde que se suscribió el
+    // listener de arriba, hay que "moverlo" al nodo stats/(día nuevo) —
+    // antes se suscribía UNA VEZ al cargar la página y se quedaba escuchando
+    // el nodo del día viejo para siempre. Cualquier tablet/panel dejado
+    // abierto de un día para otro (lo normal en una tienda) dejaba de
+    // recibir avisos de pedido nuevo por completo — ni sonido, ni
+    // impresión, ni aparecer en "En vivo" — hasta recargar la página a
+    // mano, porque ni siquiera el respaldo de 20s de abajo ayudaba: seguía
+    // preguntando por el día viejo, y aunque hubiera preguntado por el
+    // nuevo, _fbLastCount aún tenía el recuento final de AYER (mucho más
+    // alto que el "1" del primer pedido de hoy), así que la comparación
+    // newCount>_fbLastCount tampoco se habría cumplido nunca para los
+    // primeros pedidos del día nuevo.
+    function _comprobarCambioDeDiaStats() {
+      const _diaActual = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+      if (_diaActual === _statsListenerDateKey) return;
+      if (_statsListenerHandle && typeof firebase !== 'undefined' && firebase.database) {
+        try { firebase.database().ref('stats/' + _statsListenerDateKey).off('value', _statsListenerHandle); } catch (e) {}
+      }
+      _statsListenerDateKey = _diaActual;
+      _fbLastCount = 0;
+      _suscribirStatsListener(_diaActual);
+    }
     // Respaldo: si el listener en tiempo real de arriba se queda colgado en
     // este dispositivo (pasó de verdad en producción, sin explicación clara
     // — ver comentario en _procesarSnapshotStatsPedidos), esto vuelve a
@@ -4028,9 +4077,10 @@ function initFirebaseListeners() {
     // se vuelve a avisar ni a imprimir dos veces).
     setInterval(async () => {
       if (!_adminLoggedIn || !window.fb_getStats) return;
+      _comprobarCambioDeDiaStats();
       try {
         const _statsRespaldo = await Promise.race([
-          window.fb_getStats(new Date().toISOString().slice(0, 10)),
+          window.fb_getStats(_statsListenerDateKey),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
         ]);
         if (_statsRespaldo) _procesarSnapshotStatsPedidos(_statsRespaldo);
@@ -4044,7 +4094,10 @@ function initFirebaseListeners() {
     // apariencia pero sin recibir nada más. goOffline()+goOnline() obliga
     // al SDK a tirar la conexión vieja (puede que ya muerta) y abrir una
     // de cero en cuanto la pantalla vuelve a primer plano, en vez de
-    // esperar hasta 20s a que lo note el respaldo de arriba.
+    // esperar hasta 20s a que lo note el respaldo de arriba. También es el
+    // primer momento en que se puede notar el cambio de día en una tablet
+    // que se dejó bloqueada toda la noche — no hace falta esperar al
+    // respaldo de 20s si quien la desbloquea ya está delante.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible' || !_adminLoggedIn) return;
       try {
@@ -4053,8 +4106,9 @@ function initFirebaseListeners() {
           firebase.database().goOnline();
         }
       } catch (e) {}
+      _comprobarCambioDeDiaStats();
       if (window.fb_getStats) {
-        window.fb_getStats(new Date().toISOString().slice(0, 10))
+        window.fb_getStats(_statsListenerDateKey)
           .then(stats => { if (stats) _procesarSnapshotStatsPedidos(stats); })
           .catch(() => {});
       }
@@ -4159,7 +4213,7 @@ function initFirebaseListeners() {
   // Load initial slots: use localStorage immediately, then update from Firebase
   try {
     const lsData = JSON.parse(localStorage.getItem(SLOTS_KEY) || '{}');
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
     if (lsData.date === todayKey && lsData.slots) {
       _slotsCache = lsData.slots;
       renderSlotPicker(); // render immediately with cached data
@@ -4414,7 +4468,12 @@ if (window._firebaseReady) {
 // tanto recordOrderStats (aquí) como printLastTicket (admin, historial-export.js).
 let _lastTicketData = null;
 async function recordOrderStats(orderNum, name, total, slotTime) {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): un pedido
+  // hecho entre medianoche y la 1-2 de la madrugada (hora de Madrid) caía
+  // bajo la fecha UTC de AYER, así que el pedido se archivaba en el
+  // "stats/<fecha>" equivocado — descuadrando ingresos/nº de pedidos de
+  // ambos días, justo el bug de fondo que ya se arregló para slots/tickets.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   const items = _lastTicketData ? _lastTicketData.items : [];
   const phone = _lastTicketData ? _lastTicketData.phone || '' : '';
   const notes = _lastTicketData ? _lastTicketData.notes || '' : '';
