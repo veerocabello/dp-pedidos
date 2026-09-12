@@ -2538,6 +2538,14 @@ function buildOrderObject(preview) {
       { name: m.name, qty: m.qty, subtotal: m.price * m.qty, extras: [], _rank: CATEGORY_ORDER.length, _menuId: null },
       m.key));
   });
+  // Cobro rápido sin comanda: con el carrito vacío se puede escribir el
+  // total a mano en "Cobrar" (repasar un ticket, un cobro suelto que no es
+  // un pedido de la carta...) y cobrarlo con la calculadora de cambio. Si
+  // no se convierte en una línea aquí, ese cobro no se guarda en ningún
+  // sitio — ni en Pedidos de hoy ni en los totales de Hacer Caja.
+  if (items.length === 0 && cobrarTotalManual != null && cobrarTotalManual > 0) {
+    items.push({ name: 'Cobro', qty: 1, subtotal: cobrarTotalManual, extras: [], _rank: CATEGORY_ORDER.length, _menuId: null });
+  }
   items.sort((a, b) => a._rank - b._rank);
   items.forEach(it => delete it._rank);
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
@@ -2754,7 +2762,8 @@ function peekNextOrderNum() {
   return 'C' + String(data.n + 1).padStart(3, '0');
 }
 function previewTicket() {
-  if (!cartHasAnyItem()) { toast('La comanda está vacía'); return; }
+  const hayCobroManual = cobrarTotalManual != null && cobrarTotalManual > 0;
+  if (!cartHasAnyItem() && !hayCobroManual) { toast('La comanda está vacía'); return; }
   openTicketView(buildOrderObject(true));
 }
 function openTicketView(order) {
@@ -3871,7 +3880,11 @@ async function printOrder(order) {
 }
 
 async function handlePrintOrder() {
-  if (!cartHasAnyItem()) { toast('La comanda está vacía'); return; }
+  // Cobro rápido sin comanda: comanda vacía pero con un total escrito a
+  // mano en "Cobrar" (ver buildOrderObject) — sí hay algo que cobrar e
+  // imprimir, aunque no venga de la carta.
+  const hayCobroManual = cobrarTotalManual != null && cobrarTotalManual > 0;
+  if (!cartHasAnyItem() && !hayCobroManual) { toast('La comanda está vacía'); return; }
   const btn = document.getElementById('print-btn');
   btn.disabled = true;
   const order = buildOrderObject();
