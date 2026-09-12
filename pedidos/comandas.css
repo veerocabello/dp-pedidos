@@ -872,7 +872,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .denom-count {
   /* Dentro del propio botón (no asomando por fuera, que se solapaba con
      el botón de al lado en la rejilla y hacía casi imposible acertar al
-     tocarlo) y con hueco de sobra para el dedo. */
+     tocarlo) y con hueco de sobra para el dedo. Siempre visible: toca para
+     escribir la cantidad exacta con el teclado numérico. */
   position: absolute; top: 2px; right: 2px; min-width: 24px; height: 24px; padding: 0 5px;
   background: var(--brown); color: var(--gold); border-radius: 999px;
   font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
@@ -880,8 +881,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   cursor: pointer;
   z-index: 1;
 }
-.denom-count:hover { background: var(--error); color: #fff; transform: scale(1.1); }
+.denom-count:hover { background: var(--amber-dark); color: #fff; transform: scale(1.1); }
 .denom-count:active { transform: scale(.9); }
+.denom-count.zero {
+  background: transparent; color: var(--muted); border: 1.5px dashed var(--muted);
+  box-shadow: none; opacity: .55;
+}
+.denom-count.zero:hover { background: var(--amber-light); color: var(--amber-dark); border-color: var(--amber-dark); opacity: 1; transform: scale(1.1); }
 
 .keypad-col { display: flex; flex-direction: column; gap: clamp(4px, 0.8vh, 6px); }
 .keypad-display {

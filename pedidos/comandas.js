@@ -3159,15 +3159,6 @@ function tapCajaDenom(btn, v) {
   renderCajaContadoUI();
   renderCaja();
 }
-function untapCajaDenom(btn, v) {
-  const key = String(v);
-  const n = (cajaContado.counts[key] || 0) - 1;
-  if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
-  cajaContado.total = Math.max(0, Math.round((cajaContado.total - v) * 100) / 100);
-  saveCajaContadoState();
-  renderCajaContadoUI();
-  renderCaja();
-}
 function limpiarCajaContado() {
   cajaContado = { total: 0, counts: {} };
   saveCajaContadoState();
@@ -3180,22 +3171,53 @@ function setCajaContadoManual(valorStr) {
   renderCajaContadoUI();
   renderCaja();
 }
+// Con prisa (o si son muchas monedas de golpe — 75 de un céntimo, por
+// ejemplo) tocar una por una es un rollo. La insignia de cada billete/
+// moneda está siempre a la vista (aunque no haya ninguna todavía) y al
+// tocarla se abre el teclado para escribir la cantidad exacta de una
+// vez, en vez de tener que tocar el botón esa cantidad de veces.
+let cajaDenomNumpadValue = null;
+function formatDenomLabel(v) {
+  return v >= 1 ? fmt(v) + ' €' : Math.round(v * 100) + ' cent';
+}
+function openCajaDenomNumpad(v) {
+  cajaDenomNumpadValue = v;
+  const current = cajaContado.counts[String(v)] || 0;
+  const input = document.getElementById('caja-denom-numpad-input');
+  input.value = current || '';
+  openNumpad('caja-denom-numpad-input', 'Cuántas de ' + formatDenomLabel(v));
+}
+function onCajaDenomNumpadInput(valorStr) {
+  if (cajaDenomNumpadValue == null) return;
+  setCajaDenomCantidad(cajaDenomNumpadValue, valorStr);
+}
+function setCajaDenomCantidad(v, valorStr) {
+  const key = String(v);
+  const n = Math.max(0, Math.round(parseCashNum(valorStr) || 0));
+  if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
+  // Se recalcula el total entero a partir de los conteos en vez de sumar
+  // la diferencia — así no se puede descuadrar aunque se edite un salto
+  // grande de golpe.
+  cajaContado.total = Math.round(Object.entries(cajaContado.counts).reduce((s, [k, c]) => s + parseFloat(k) * c, 0) * 100) / 100;
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
 function renderCajaContadoUI() {
   document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
     const v = btn.dataset.v;
     const n = cajaContado.counts[v] || 0;
     btn.classList.toggle('tapped', n > 0);
     let badge = btn.querySelector('.denom-count');
-    if (n > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'denom-count';
-        badge.title = 'Tocar para quitar uno';
-        badge.onclick = (e) => { e.stopPropagation(); untapCajaDenom(btn, parseFloat(v)); };
-        btn.appendChild(badge);
-      }
-      badge.textContent = '×' + n;
-    } else if (badge) badge.remove();
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'denom-count';
+      badge.title = 'Escribir cuántas hay';
+      badge.onclick = (e) => { e.stopPropagation(); openCajaDenomNumpad(parseFloat(v)); };
+      btn.appendChild(badge);
+    }
+    badge.textContent = '×' + n;
+    badge.classList.toggle('zero', n === 0);
   });
   const totalEl = document.getElementById('caja-contado-total');
   if (totalEl) totalEl.textContent = fmt(cajaContado.total) + ' €';
