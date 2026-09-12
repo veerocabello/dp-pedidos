@@ -508,6 +508,71 @@ if ($action === 'removerDispositivoConfianza') {
     }
 }
 
+// ── Ocultar/restaurar un cliente de la lista "Clientes" pasando por el
+// servidor (mismo motivo que guardarBannerDia más arriba: config/* exige
+// sesión real de Firebase Auth para escribir, y un dispositivo "de
+// confianza" sin esa sesión viva fallaba en silencio). A diferencia del
+// banner, aquí además el propio cliente (ocultarCliente/restaurarCliente en
+// banner-pdf.js) mandaba la LISTA ENTERA calculada con su copia local, que
+// podía estar desactualizada si otro dispositivo había ocultado/restaurado
+// a alguien más recientemente — el guardado de uno pisaba sin darse cuenta
+// el cambio del otro. Aquí se lee la lista real de Firebase en el momento
+// de escribir (no la que mande el cliente) y se añade/quita un único
+// teléfono, así que dos dispositivos cambiando cosas distintas casi a la
+// vez ya no se pisan entre sí.
+if ($action === 'toggleClienteOculto') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $phone = isset($data['phone']) ? preg_replace('/[^0-9]/', '', (string)$data['phone']) : '';
+    $ocultar = !empty($data['ocultar']);
+    if ($deviceId === '' || $token === '' || !preg_match('/^\d{9}$/', $phone) || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $actual = fbGetNodoConCuentaServicio($databaseURL, 'config/clientesOcultos', $rutaCredenciales);
+        $lista = is_array($actual) ? array_values($actual) : [];
+        $idx = array_search($phone, $lista, true);
+        if ($ocultar) {
+            if ($idx === false) $lista[] = $phone;
+        } elseif ($idx !== false) {
+            array_splice($lista, $idx, 1);
+        }
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/clientesOcultos', $rutaCredenciales, $lista);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        $fp2 = @fopen($ip_file, 'c+');
+        if ($fp2 !== false) {
+            flock($fp2, LOCK_EX);
+            ftruncate($fp2, 0);
+            flock($fp2, LOCK_UN);
+            fclose($fp2);
+        }
+        echo json_encode(['success' => true, 'lista' => $lista]);
+        exit();
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+
 // ── Comprobar el PIN (comportamiento por defecto, action: 'pin' u omitido) ──
 $pin = isset($data['pin']) ? (string)$data['pin'] : '';
 $hash = hash('sha256', $pin . BIMBA_SALT);

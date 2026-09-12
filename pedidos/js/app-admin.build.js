@@ -8718,22 +8718,85 @@ function toggleMostrarOcultosClientes() {
   _clientesMostrarOcultos = !_clientesMostrarOcultos;
   renderClientes();
 }
+// Guarda el cambio pasando por el servidor (mismo motivo y mismo patrón que
+// _guardarBannerDiaServidor de arriba: config/clientesOcultos exige sesión
+// real de Firebase Auth para escribir, y un dispositivo "de confianza" sin
+// esa sesión viva fallaba en silencio — el cliente parecía quedar
+// oculto/restaurado en ESTE dispositivo, pero nunca llegaba a Firebase, así
+// que reaparecía (o volvía a ocultarse) en cuanto se recargaba la página o
+// se miraba desde otro dispositivo). El propio servidor lee la lista real
+// de Firebase antes de tocarla (ver toggleClienteOculto en
+// bimba-verify.php) en vez de fiarse de la que mande el navegador, así que
+// dos dispositivos ocultando/restaurando cosas distintas a la vez ya no se
+// pisan entre sí como antes.
+async function _toggleClienteOcultoServidor(phone, ocultar) {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    let res;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggleClienteOculto', deviceId, token, phone, ocultar })
+      });
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor: ' + e.message);
+    }
+    if (!res.ok && res.status !== 429) {
+      throw new Error('El servidor devolvió un error (HTTP ' + res.status + ').');
+    }
+    const r = await res.json().catch(() => ({ success: false }));
+    if (r.success) { saveClientesOcultosLocal(r.lista || []); return; }
+    if (res.status === 429) throw new Error('Demasiados intentos seguidos — espera un minuto y vuelve a intentarlo.');
+    // Mismo auto-limpiado que _guardarBannerDiaServidor: el token guardado
+    // ya no sirve (el servidor lo acaba de rechazar), y si hay sesión real
+    // de Firebase Auth viva ahora mismo, el guardado directo puede
+    // funcionar igual en el mismo intento.
+    localStorage.removeItem('dpf_trusted_device');
+    localStorage.removeItem('dpf_trusted_device_name');
+    localStorage.removeItem('dpf_trusted_token');
+    if (window.fb_saveClientesOcultos) {
+      const list = getClientesOcultos();
+      const idx = list.indexOf(phone);
+      if (ocultar && idx === -1) list.push(phone);
+      if (!ocultar && idx !== -1) list.splice(idx, 1);
+      try { await window.fb_saveClientesOcultos(list); saveClientesOcultosLocal(list); return; } catch (e) {}
+    }
+    throw new Error('Este dispositivo ya no está reconocido como de confianza. Cierra sesión y vuelve a entrar con tu contraseña real (marca "Dispositivo de confianza" antes de entrar) para guardar uno nuevo.');
+  }
+  // Sin dispositivo de confianza guardado (sesión real de Firebase Auth
+  // recién iniciada) — el guardado directo sí funciona en ese caso.
+  if (window.fb_saveClientesOcultos) {
+    const list = getClientesOcultos();
+    const idx = list.indexOf(phone);
+    if (ocultar && idx === -1) list.push(phone);
+    if (!ocultar && idx !== -1) list.splice(idx, 1);
+    await window.fb_saveClientesOcultos(list);
+    saveClientesOcultosLocal(list);
+    return;
+  }
+  throw new Error('No hay forma de guardar este cambio en este dispositivo.');
+}
 // Ocultar un cliente de la lista "Clientes" — NO borra ningún pedido ni
 // dato del historial, solo deja de aparecer aquí. Reversible con
 // restaurarCliente().
 async function ocultarCliente(phone) {
   if (!phone) return;
   if (!confirm('¿Ocultar este cliente de la lista de Clientes?\n\nNo se borra ningún pedido — solo deja de aparecer aquí. Puedes recuperarlo luego con el botón "🗑️ Ocultos".')) return;
-  const list = getClientesOcultos();
-  if (!list.includes(phone)) list.push(phone);
-  saveClientesOcultosLocal(list);
-  if (window.fb_saveClientesOcultos) await window.fb_saveClientesOcultos(list).catch(() => {});
+  try {
+    await _toggleClienteOcultoServidor(phone, true);
+  } catch (e) {
+    alert('⚠️ No se ha podido ocultar al cliente: ' + e.message);
+  }
   renderClientes();
 }
 async function restaurarCliente(phone) {
-  const list = getClientesOcultos().filter(p => p !== phone);
-  saveClientesOcultosLocal(list);
-  if (window.fb_saveClientesOcultos) await window.fb_saveClientesOcultos(list).catch(() => {});
+  try {
+    await _toggleClienteOcultoServidor(phone, false);
+  } catch (e) {
+    alert('⚠️ No se ha podido restaurar al cliente: ' + e.message);
+  }
   renderClientes();
 }
 var _clientesSort = 'az';
