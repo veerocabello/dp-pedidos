@@ -2923,16 +2923,20 @@ function getCajaTotalesKey(fecha) { return 'dpf_comandas_caja_totales_' + (fecha
 // localStorage a mano.
 function _acumularEnTotales(t, order, signo) {
   if (!order) return;
+  // "No pagado" es solo un aviso impreso para el compañero (para que sepa
+  // que ese pedido todavía no se ha cobrado al hacerlo) — en la tienda el
+  // cobro real, cuando llega, se hace aparte con el total a mano en
+  // "Cobrar" (ver el "Cobro" de buildOrderObject), sin pasar nunca por
+  // "Pedidos no pagados" para marcarlo pagado. Si este pedido sin pagar
+  // sumara aquí como "pendiente", esa venta quedaría contada DOS veces en
+  // Hacer Caja: una como pendiente que nunca se resuelve y otra como el
+  // cobro suelto real — así que no pagado no toca los totales de caja.
+  if (!order.paid) return;
   const total = (typeof order.total === 'number' && isFinite(order.total)) ? order.total : 0;
-  if (order.paid) {
-    if (order.paymentMethod === 'tarjeta') t.tarjeta += signo * total; else t.efectivo += signo * total;
-  } else {
-    t.pendiente += signo * total;
-  }
+  if (order.paymentMethod === 'tarjeta') t.tarjeta += signo * total; else t.efectivo += signo * total;
   t.count = Math.max(0, t.count + signo);
   t.efectivo = Math.max(0, t.efectivo);
   t.tarjeta = Math.max(0, t.tarjeta);
-  t.pendiente = Math.max(0, t.pendiente);
 }
 function loadCajaTotales(fecha) {
   try {
