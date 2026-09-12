@@ -1598,10 +1598,14 @@ function renderCustChips() {
   const iEl = document.getElementById('cust-ingredients');
   const sinSalsaChip = `<button class="chip ${custSelSauces.includes(SIN_SALSA) ? 'selected' : ''}" onclick="toggleCustSauce('${SIN_SALSA}')">🚫 Sin salsa</button>`;
   sEl.innerHTML = sinSalsaChip + CUST_SAUCES.map(n => {
-    const sel = custSelSauces.includes(n);
-    const extra = custSelExtraSauces.includes(n);
-    const label = extra ? n + ' +' + fmt(priceOfSalsaExtra(n)) + '€' : n;
-    return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
+    const countIncluded = custSelSauces.filter(x => x === n).length;
+    const countExtra = custSelExtraSauces.filter(x => x === n).length;
+    const total = countIncluded + countExtra;
+    const mult = total >= 2;
+    const sel = total > 0;
+    const priceUnit = priceOfSalsaExtra(n);
+    const label = mult ? n + ' x' + total + (countExtra > 0 ? ' +' + fmt(priceUnit * countExtra) + '€' : '') : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
     const countIncluded = custSelIngredients.filter(x => x === n).length;
@@ -1629,14 +1633,19 @@ function toggleCustSauce(n) {
     return;
   }
   custSelSauces = custSelSauces.filter(s => s !== SIN_SALSA);
-  const iN = custSelSauces.indexOf(n);
-  const iE = custSelExtraSauces.indexOf(n);
-  if (iN >= 0) custSelSauces.splice(iN, 1);
-  else if (iE >= 0) custSelExtraSauces.splice(iE, 1);
-  else {
+  // Igual que con los ingredientes: normal → doble → triple → normal,
+  // cada unidad de más ocupa un hueco incluido mientras quede sitio en
+  // el límite, y solo la que ya no cabe se cobra aparte.
+  const countIncluded = custSelSauces.filter(x => x === n).length;
+  const countExtra = custSelExtraSauces.filter(x => x === n).length;
+  const total = countIncluded + countExtra;
+  if (total < MAX_ING_MULTIPLICIDAD) {
     const roomInLimit = (cfg.maxSauces === null || custSelSauces.length < cfg.maxSauces) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelSauces.push(n);
     else custSelExtraSauces.push(n); // fuera del límite incluido → se cobra aparte
+  } else {
+    custSelSauces = custSelSauces.filter(x => x !== n);
+    custSelExtraSauces = custSelExtraSauces.filter(x => x !== n);
   }
   renderCustChips(); updateCustBadges(); updateCustTotalPrice();
 }
