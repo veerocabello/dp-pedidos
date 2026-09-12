@@ -3449,11 +3449,15 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function construirCopiaJSON(fecha) {
+  const notas = {};
+  ['datafono', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
   return {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
     fondoCaja: loadCajaFondo(fecha),
     totales: loadCajaTotales(fecha),
+    contado: loadCajaContadoState(fecha),
+    notas,
     pedidos: getHistorial(fecha),
   };
 }
@@ -3565,11 +3569,23 @@ function importarCopiaJSON(event) {
     if (data.totales && typeof data.totales === 'object') saveCajaTotales(data.totales, fecha);
     else localStorage.removeItem(getCajaTotalesKey(fecha)); // sin totales en el archivo: se recalculan solos desde los pedidos al leer la caja
     if (typeof data.fondoCaja === 'number') localStorage.setItem(getCajaFondoKey(fecha), String(data.fondoCaja));
+    // Efectivo contado con billetes/monedas y las notas (datáfono, web,
+    // plataformas de delivery) — si el archivo es de una copia antigua sin
+    // estos campos, se deja lo del día en blanco en vez de dejar algo del
+    // día anterior sin querer.
+    if (data.contado && typeof data.contado === 'object') localStorage.setItem(getCajaContadoKey(fecha), JSON.stringify(data.contado));
+    else localStorage.removeItem(getCajaContadoKey(fecha));
+    ['datafono', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
+      const v = data.notas && typeof data.notas === 'object' ? data.notas[id] : null;
+      saveCajaNota(id, fecha, typeof v === 'number' ? v : null);
+    });
     cajaFechaSel = fecha;
     const fechaInput = document.getElementById('caja-fecha-input');
     if (fechaInput) fechaInput.value = fecha;
     const fondoInput = document.getElementById('caja-fondo');
     if (fondoInput) fondoInput.value = loadCajaFondo(fecha) || '';
+    cajaContado = loadCajaContadoState(fecha);
+    renderCajaContadoUI();
     renderCaja();
     toast('✅ Copia del ' + fecha + ' importada');
   };
