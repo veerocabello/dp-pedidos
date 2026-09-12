@@ -2686,7 +2686,10 @@ function buildCajaResumenBlocks(fecha) {
   const divider = '-'.repeat(width);
   const fondo = loadCajaFondo(fecha);
   const t = loadCajaTotales(fecha);
-  const facturado = t.efectivo + t.tarjeta + t.pendiente;
+  const web = loadCajaNota('web', fecha);
+  const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, fecha));
+  const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
+  const facturado = t.efectivo + t.tarjeta + t.pendiente + deliveryTotal;
   const esperadoCajon = fondo + t.efectivo;
   const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -2700,20 +2703,28 @@ function buildCajaResumenBlocks(fecha) {
   B.push({ text: divider, align: 'left' });
   B.push({ text: 'Pedidos: ' + t.count, align: 'left' });
   B.push({ text: 'Fondo inicial: ' + fmtEur(fondo), align: 'left' });
-  B.push({ text: 'Efectivo cobrado: ' + fmtEur(t.efectivo), align: 'left' });
-  B.push({ text: 'Tarjeta cobrada: ' + fmtEur(t.tarjeta), align: 'left' });
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'TIENDA', align: 'left', big: true });
+  B.push({ text: '  Efectivo: ' + fmtEur(t.efectivo), align: 'left' });
+  B.push({ text: '  Tarjeta: ' + fmtEur(t.tarjeta), align: 'left' });
+  if (web != null) {
+    B.push({ text: '  (de la web: ' + fmtEur(web) + ')', align: 'left' });
+  }
   if (t.pendiente > 0) {
     B.push({ text: 'PENDIENTE DE COBRO: ' + fmtEur(t.pendiente), align: 'left', paidStatus: 'no' });
   }
   B.push({ text: divider, align: 'left' });
-  B.push({ text: 'TOTAL FACTURADO: ' + fmtEur(facturado), align: 'left', big: true });
+  B.push({ text: 'DELIVERY', align: 'left', big: true });
+  CAJA_DELIVERY.forEach((d, i) => {
+    B.push({ text: '  ' + foldAccents(d.label) + ': ' + fmtEur(deliveryValores[i] || 0), align: 'left' });
+  });
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'TOTAL: ' + fmtEur(facturado), align: 'left', big: true });
   B.push({ text: 'EFECTIVO ESPERADO EN CAJA:', align: 'center' });
   B.push({ text: fmtEur(esperadoCajon), align: 'center', big: true });
   if (t.pendiente > 0) {
     B.push({ text: divider, align: 'center' });
     B.push({ text: 'Ojo: hay pedidos sin cobrar.', align: 'center' });
-    B.push({ text: 'Si se cobraron a mano sin marcarlos', align: 'center' });
-    B.push({ text: 'pagados aqui, la caja no cuadrara.', align: 'center' });
   }
   B.push({ text: divider, align: 'center' });
   return B;
@@ -3179,32 +3190,44 @@ function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || 
 const CAJA_FONDO_DEFECTO = 200;
 function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? CAJA_FONDO_DEFECTO : v; }
 function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
-// ── Total según el datáfono, escrito a mano — la app calcula "Cobrado con
-// tarjeta" a partir de lo marcado pedido a pedido, así que si alguno se
-// marcó mal (efectivo en vez de tarjeta, o al revés) no se nota hasta que
-// se compara con el ticket resumen del propio datáfono. Igual que con el
-// efectivo contado, en cuanto se escribe algo aquí se avisa solo si cuadra.
-// null (a diferencia de 0) significa "todavía no se ha escrito nada".
-function getCajaDatafonoKey(fecha) { return 'dpf_comandas_caja_datafono_' + (fecha || todayISO()); }
-function loadCajaDatafono(fecha) {
-  const raw = localStorage.getItem(getCajaDatafonoKey(fecha));
+// ── Notas de caja escritas a mano: el datáfono (para tener a la vista su
+// propio total, aparte del que calcula la app con lo marcado tarjeta
+// pedido a pedido), cuánto de lo cobrado en tienda viene de pedidos
+// hechos por la página web, y lo que ha generado cada plataforma de
+// delivery (Glovo/Just Eat/Uber Eats no pasan por la app, se cobran
+// aparte). Todo son notas sin más — no se comparan ni se juzgan si
+// "cuadran": con pedidos de fuera es normal que no encajen del todo, así
+// que Hacer Caja aquí solo sirve para apuntar. null (a diferencia de 0)
+// significa "todavía no se ha escrito nada".
+const CAJA_DELIVERY = [
+  { id: 'glovo', label: 'Glovo' },
+  { id: 'justeat', label: 'Just Eat' },
+  { id: 'ubereats', label: 'Uber Eats' },
+];
+function getCajaNotaKey(id, fecha) { return 'dpf_comandas_caja_nota_' + id + '_' + (fecha || todayISO()); }
+function loadCajaNota(id, fecha) {
+  const raw = localStorage.getItem(getCajaNotaKey(id, fecha));
   if (raw === null) return null;
   const v = parseFloat(raw);
   return isFinite(v) ? v : null;
 }
-function saveCajaDatafono(fecha, valor) {
-  if (valor == null) localStorage.removeItem(getCajaDatafonoKey(fecha));
-  else localStorage.setItem(getCajaDatafonoKey(fecha), String(valor));
+function saveCajaNota(id, fecha, valor) {
+  if (valor == null) localStorage.removeItem(getCajaNotaKey(id, fecha));
+  else localStorage.setItem(getCajaNotaKey(id, fecha), String(valor));
 }
-function editCajaDatafono() {
-  const actual = loadCajaDatafono(cajaFechaSel);
-  const input = document.getElementById('caja-datafono-manual-input');
+let cajaNotaEditando = null;
+function editCajaNota(id, titulo) {
+  cajaNotaEditando = id;
+  const actual = loadCajaNota(id, cajaFechaSel);
+  const input = document.getElementById('caja-nota-manual-input');
   input.value = actual != null ? String(actual).replace('.', ',') : '';
-  openNumpad('caja-datafono-manual-input', 'Total según el datáfono');
+  openNumpad('caja-nota-manual-input', titulo);
 }
-function setCajaDatafonoManual(valorStr) {
+function setCajaNotaManual(valorStr) {
+  if (!cajaNotaEditando) return;
   const trimmed = String(valorStr || '').trim();
-  saveCajaDatafono(cajaFechaSel, trimmed === '' ? null : Math.max(0, parseCashNum(trimmed)));
+  saveCajaNota(cajaNotaEditando, cajaFechaSel, trimmed === '' ? null : Math.max(0, parseCashNum(trimmed)));
+  cajaNotaEditando = null;
   renderCaja();
 }
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
@@ -3323,57 +3346,40 @@ function renderCaja() {
   const fondo = loadCajaFondo(cajaFechaSel);
   const t = loadCajaTotales(cajaFechaSel);
   const efectivo = t.efectivo, tarjeta = t.tarjeta, pendiente = t.pendiente, nPedidos = t.count;
-  const facturado = efectivo + tarjeta + pendiente;
   const esperadoCajon = fondo + efectivo;
-  const datafono = loadCajaDatafono(cajaFechaSel);
+  const datafono = loadCajaNota('datafono', cajaFechaSel);
+  const web = loadCajaNota('web', cajaFechaSel);
+  const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, cajaFechaSel));
+  const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
+  const facturado = efectivo + tarjeta + pendiente + deliveryTotal;
   const esHoy = cajaFechaSel === todayISO();
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
   const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
+  // Fila editable para una nota manual (datáfono, web, cada plataforma de
+  // delivery...) — solo apunta el número, sin comparar contra nada.
+  const notaRow = (id, label, valor, titulo) => `<div class="cash-calc-total-row editable" style="margin:4px 0" onclick="editCajaNota('${id}','${titulo}')"><label style="flex:1">${label} ✏️</label><b${valor == null ? ' style="color:var(--muted);font-weight:400"' : ''}>${valor == null ? 'Escribir' : fmt(valor) + ' €'}</b></div>`;
   const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
     ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
     : '';
-  // Antes "pendiente" solo entraba en el total facturado sin verse en
-  // ningún sitio — si alguien marcaba un pedido como pagado a mano fuera de
-  // la app (en vez de darle a "pedido no cobrado" desde el panel) la caja
-  // se descuadraba sin que nada avisara de por qué. Esta fila lo hace
-  // visible siempre que haya algo pendiente, en rojo, para que salte a la
-  // vista antes de cerrar.
   const avisoPendiente = pendiente > 0
     ? `<div style="background:#FBE7E4;border:1.5px solid rgba(192,57,43,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px">
         <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:var(--error);font-weight:700">⚠️ Pendiente de cobro</label><b style="color:var(--error)">${fmt(pendiente)} €</b></div>
-        <div style="font-size:11.5px;color:var(--error);margin-top:4px">Si alguno se cobró a mano sin marcarlo pagado en la app, la caja no cuadrará.</div>
       </div>`
     : '';
-  // Descuadre automático: en cuanto se ha contado algo (tocando un
-  // billete/moneda o escribiendo el total a mano), se compara solo contra
-  // "esperado" — antes había que restar a mano cada vez.
-  const hayContado = cajaContado.total > 0 || Object.keys(cajaContado.counts).length > 0;
-  const diferencia = Math.round((cajaContado.total - esperadoCajon) * 100) / 100;
-  const cuadra = Math.abs(diferencia) < 0.005;
-  const avisoDiferencia = hayContado
-    ? `<div style="background:${cuadra ? '#E3F3E9' : '#FBE7E4'};border:1.5px solid ${cuadra ? 'rgba(46,139,87,.35)' : 'rgba(192,57,43,.4)'};border-radius:10px;padding:10px 12px;margin:8px 0">
-        <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadra ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadra ? '✅ Cuadra' : diferencia > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadra ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferencia))} €</b></div>
-      </div>`
-    : '';
-  const diferenciaTarjeta = datafono != null ? Math.round((datafono - tarjeta) * 100) / 100 : 0;
-  const cuadraTarjeta = Math.abs(diferenciaTarjeta) < 0.005;
-  const filaDatafono = `<div class="cash-calc-total-row editable" style="margin:4px 0 0" onclick="editCajaDatafono()"><label style="flex:1">💳 Según el datáfono ✏️</label><b${datafono == null ? ' style="color:var(--muted);font-weight:400"' : ''}>${datafono == null ? 'Escribir' : fmt(datafono) + ' €'}</b></div>`
-    + (datafono != null
-      ? `<div style="background:${cuadraTarjeta ? '#E3F3E9' : '#FBE7E4'};border:1.5px solid ${cuadraTarjeta ? 'rgba(46,139,87,.35)' : 'rgba(192,57,43,.4)'};border-radius:10px;padding:10px 12px;margin:6px 0 10px">
-          <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadraTarjeta ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadraTarjeta ? '✅ Cuadra' : diferenciaTarjeta > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadraTarjeta ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferenciaTarjeta))} €</b></div>
-        </div>`
-      : '<div style="margin-bottom:10px"></div>');
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
-    + row('💵 Cobrado en efectivo', efectivo)
-    + row('💳 Cobrado con tarjeta', tarjeta)
-    + filaDatafono
+    + `<div class="section-label">Tienda</div>`
+    + row('💵 Efectivo', efectivo)
+    + row('💳 Tarjeta', tarjeta)
+    + notaRow('datafono', '💳 Según el datáfono', datafono, 'Total segun el datafono')
+    + notaRow('web', '🌐 De tienda, cuánto es de la web', web, 'De tienda, cuanto es de la pagina web')
     + avisoPendiente
+    + `<div class="section-label" style="margin-top:10px">Delivery</div>`
+    + CAJA_DELIVERY.map((d, i) => notaRow(d.id, d.label, deliveryValores[i], 'Total de ' + d.label)).join('')
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
-    + row('💰 Esperado en caja', esperadoCajon, true)
-    + avisoDiferencia;
+    + row('💰 Esperado en caja', esperadoCajon, true);
 }
 
 /* ── Imprimir resumen del día al cerrar caja — mismo "blocks" y mismo
