@@ -290,6 +290,12 @@ let paymentMethod = 'efectivo';
 // cocina YA se imprimió, así que al cobrarlo ahora no hay que volver a
 // imprimir nada — solo marcarlo como pagado.
 let pedidoACobrarSinImprimir = null;
+// Foto de cart/custCart/extrasCart/manualCart/orderDiscount/lineDiscounts en
+// el momento de recuperar un pedido no pagado para cobrarlo (payHistorialOrder)
+// — si al confirmar ya no coincide es que se añadió o quitó algo al recogerlo
+// (p. ej. una tarta), y hay que tratarlo como comanda nueva en vez de dar por
+// buenos el total y los artículos de cuando se hizo por teléfono.
+let pedidoACobrarSinImprimirSnapshot = null;
 function setOrderPaid(v) {
   orderPaid = v;
   const btnYes = document.getElementById('paid-btn-yes'), btnNo = document.getElementById('paid-btn-no');
@@ -319,10 +325,22 @@ function cobrarBottomAction() {
 function finalizarCobroSinImprimir() {
   const order = pedidoACobrarSinImprimir;
   if (!order) return;
+  const snapshotActual = JSON.stringify({ cart, custCart, extrasCart, manualCart, orderDiscount, lineDiscounts });
+  const seAñadioAlgo = pedidoACobrarSinImprimirSnapshot !== null && snapshotActual !== pedidoACobrarSinImprimirSnapshot;
+  pedidoACobrarSinImprimir = null;
+  pedidoACobrarSinImprimirSnapshot = null;
+  if (seAñadioAlgo) {
+    // El total y los artículos guardados son los de cuando se hizo el
+    // pedido por teléfono — si se ha añadido o quitado algo al recogerlo ya
+    // no valen, así que se cobra e imprime como una comanda nueva (mismo
+    // criterio que "✏️ Modificar") para que la caja cuadre con lo cobrado.
+    toast('🧾 Se añadió/quitó algo — se cobra como comanda nueva');
+    handlePrintOrder();
+    return;
+  }
   order.paid = true;
   order.paymentMethod = paymentMethod;
   saveToHistorial(order);
-  pedidoACobrarSinImprimir = null;
   clearOrder(true);
   toast('✅ Pedido ' + order.num + ' cobrado');
 }
@@ -1553,6 +1571,7 @@ function clearOrder(silent) {
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
   pedidoACobrarSinImprimir = null;
+  pedidoACobrarSinImprimirSnapshot = null;
   setOrderPaid(true);
   setPaymentMethod('efectivo');
   renderMenu();
@@ -2944,10 +2963,16 @@ function _cajaTotalesAplicar(order, signo, fecha) {
 function saveToHistorial(order) {
   let list;
   try { list = JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { list = []; }
+  // OJO: _cajaTotalesAplicar tiene que ir ANTES de guardar el pedido en el
+  // historial. Si el acumulador del día todavía no existe (el primer pedido
+  // de cada día), loadCajaTotales() lo reconstruye sumando el historial de
+  // ese día — si este pedido ya estuviera ahí guardado, se sumaría una vez
+  // en la reconstrucción y otra vez más al aplicarlo, contando el primer
+  // pedido del día por duplicado en la caja.
+  _cajaTotalesAplicar(order, 1);
   list.unshift(order);
   if (list.length > HISTORIAL_MAX) list = list.slice(0, HISTORIAL_MAX);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
-  _cajaTotalesAplicar(order, 1);
   maybeAutoBackup(todayISO());
 }
 function getHistorial(fecha) {
@@ -3099,7 +3124,12 @@ function payHistorialOrder(index) {
   // impreso) para poder cobrarlo sin generar uno nuevo ni volver a
   // imprimir — ver cobrarBottomAction/finalizarCobroSinImprimir.
   pedidoACobrarSinImprimir = order;
-  setOrderPaid(false);
+  pedidoACobrarSinImprimirSnapshot = JSON.stringify({ cart, custCart, extrasCart, manualCart, orderDiscount, lineDiscounts });
+  // Antes se ponía en "No pagado", lo que ocultaba la fila Efectivo/Tarjeta
+  // del modal (había que darle antes a "Pagado" para verla, nada obvio) —
+  // este cobro siempre termina marcándose como pagado, así que se muestra
+  // directamente para poder elegir Efectivo o Tarjeta sin pasos de más.
+  setOrderPaid(true);
   setPaymentMethod(order.paymentMethod || 'efectivo');
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
