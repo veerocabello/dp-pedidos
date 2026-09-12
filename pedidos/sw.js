@@ -7,16 +7,28 @@
 //  para que el menú, precios y pedidos estén siempre al día.
 // ═══════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'dpf-static-v5'; // súbelo a v6, v7... si algún día cambias esta lógica
-//
-// ⚠️ IMPORTANTE: las imágenes de img/ y js/firebase-auth-compat.js NO llevan
-// ?v= en su URL (a diferencia de css/style.css y los módulos de src/, que sí).
-// Si algún día cambias una imagen o ese archivo, hay que subir este número
-// de versión (CACHE_NAME) también, o el Service Worker seguirá sirviendo
-// la versión vieja cacheada indefinidamente a quien ya haya visitado la web.
+// dpf-static-vNNN: regenerado solo en cada build (ver
+// actualizarVersionCacheSW en scripts/build.js) — no lo subas a mano. Las
+// imágenes de img/ y js/firebase-auth-compat.js son los únicos assets
+// cacheados aquí que NO llevan su propio "?v=" en la URL (a diferencia de
+// css/style.css y los módulos de src/, que sí) — antes dependía de acordarse
+// de subir este número a mano cada vez que cambiaba una imagen; si se
+// olvidaba, el Service Worker seguía sirviendo la versión vieja
+// indefinidamente a quien ya hubiera visitado la web.
+const CACHE_NAME = 'dpf-static-v1789227655918';
 const CACHEABLE_PATHS = ['/css/', '/fonts/', '/img/', '/js/', '/src/'];
 
-self.addEventListener('install', () => {
+// Página de "sin conexión" — autocontenida (estilos inline, sin depender de
+// css/style.css) para que se pueda mostrar aunque falle justo lo que la
+// hubiera traído. Se precachea aquí mismo al instalar el Service Worker,
+// para que esté disponible incluso en el primer arranque sin red de quien
+// instaló la app como PWA y nunca llegó a visitar offline.html a mano.
+const OFFLINE_URL = '/offline.html';
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.add(OFFLINE_URL)).catch(() => {})
+  );
   self.skipWaiting();
 });
 
@@ -39,6 +51,20 @@ self.addEventListener('fetch', (event) => {
 
   // Nunca tocar peticiones a otros dominios (Firebase, Google Fonts, EmailJS, etc.)
   if (url.origin !== self.location.origin) return;
+
+  // Navegación (cargar una página completa, p.ej. index.php/admin-shell.html
+  // o pulsar "Recargar"): SIEMPRE se intenta la red primero — el HTML nunca
+  // se cachea, para que el menú/precios estén al día — pero si falla por
+  // no haber conexión, en vez del típico error del navegador se muestra la
+  // página de aviso propia en vez de dejarlo en manos del navegador.
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req).catch(() =>
+        caches.open(CACHE_NAME).then((cache) => cache.match(OFFLINE_URL))
+      )
+    );
+    return;
+  }
 
   // Solo cachear rutas estáticas conocidas — todo lo demás (HTML, PHP) pasa directo a la red
   const isCacheable = CACHEABLE_PATHS.some((p) => url.pathname.includes(p));

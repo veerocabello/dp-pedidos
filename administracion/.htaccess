@@ -1,0 +1,37 @@
+# ═══════════════════════════════════════════════════════════
+#  administracion.dulcepatatafood.es — panel de socios
+#
+#  Hasta ahora esta carpeta no tenía NINGÚN .htaccess: sin cabeceras
+#  de seguridad (CSP, X-Frame-Options...) y sin la contraseña extra
+#  que sí llevan admin-shell.html/comandas.html en pedidos/ — solo el
+#  login de Firebase Auth de dentro de la página. Mismo patrón que
+#  esos dos: contraseña de "Zona privada" (mismo usuario/contraseña
+#  ya usado ahí) delante de TODO, ya que aquí no hay ninguna parte
+#  pública que deba quedar sin ella (a diferencia de pedidos/, que sí
+#  tiene que dejar pasar a los clientes).
+#
+#  IMPORTANTE: revisa que la ruta de AuthUserFile de abajo sea la
+#  correcta para esta carpeta en concreto (hPanel → Subdominios →
+#  administracion → Directorio raíz) — si el subdominio vive en una
+#  ruta distinta a la de abajo, Apache no encontrará el archivo y
+#  dará error 500 en vez de pedir la contraseña.
+# ═══════════════════════════════════════════════════════════
+
+# ── Cabeceras de seguridad HTTP (mismas que pedidos/, ajustando la CSP:
+#    aquí Firebase se carga desde gstatic.com en vez de estar
+#    autoalojado) ──
+<IfModule mod_headers.c>
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.firebasedatabase.app https://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src https://dulce-patata-e96c2.firebaseapp.com; base-uri 'self'; form-action 'self'"
+</IfModule>
+
+# ── Contraseña de "Zona privada" para TODA la carpeta — mismo usuario/
+#    contraseña que ya usan admin-shell.html y comandas.html en pedidos/. ──
+AuthType Basic
+AuthName "Zona privada"
+AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
+Require valid-user

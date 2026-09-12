@@ -1,7 +1,13 @@
 <IfModule mod_headers.c>
+  # Caché corta (1 día), no "no-cache" — estos archivos NO llevan hash en
+  # el nombre (a diferencia de los de assets/, que sí), así que si se
+  # actualiza el logo o se retoca la página, un cliente que ya la haya
+  # visitado seguiría viendo la versión vieja hasta que caduque esta caché.
+  # Con "no-cache, no-store" (como estaba antes) se pedía el archivo entero
+  # de nuevo en cada visita, sin ningún beneficio ahora que la carta ya no
+  # se edita a diario — 1 día es suficiente margen para notar un cambio sin
+  # penalizar el rendimiento de cada visita.
   <FilesMatch "\.(css|js|png|jpg|jpeg)$">
-    Header set Cache-Control "no-cache, no-store, must-revalidate"
-    Header set Pragma "no-cache"
-    Header set Expires 0
+    Header set Cache-Control "public, max-age=86400, must-revalidate"
   </FilesMatch>
 </IfModule>

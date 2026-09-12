@@ -20,8 +20,19 @@ if (file_exists($secretsPath)) {
 }
 
 // Comprobación de seguridad: si el fichero no cargó bien, avisar en vez
-// de fallar en silencio con credenciales vacías.
+// de fallar en silencio con credenciales vacías. Antes esto solo escribía
+// en error_log y seguía adelante — quien incluye este fichero (send-code.php,
+// verify-code.php) usa las constantes TWILIO_* directamente más abajo, así
+// que si no llegan a definirse, PHP 8 lanza un Error fatal NO capturado en
+// cuanto se referencian ("Undefined constant"): un despliegue con la ruta
+// de secretos mal puesta se veía como un 500 en blanco sin ningún mensaje
+// claro, en vez de un error entendible. Se corta aquí con una respuesta
+// JSON limpia — igual que ya hace webhook-incidencia.php para su propio
+// secreto (TALLY_SIGNING_SECRET).
 if (!defined('TWILIO_ACCOUNT_SID') || !defined('TWILIO_AUTH_TOKEN') || !defined('TWILIO_SERVICE_SID')
     || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_SERVICE_SID) {
     error_log('[twilio-config] ERROR: credenciales de Twilio no disponibles. Revisa twilio-secrets.php.');
+    http_response_code(500);
+    echo json_encode(['error' => 'Configuración incompleta']);
+    exit();
 }
