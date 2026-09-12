@@ -108,12 +108,14 @@ if (!dpf_fichar_check_limit($ip_file, $max_ip, $window)) {
 // fallo bajo lock) — varias peticiones en paralelo podían mirar el límite
 // todas a la vez, verlo por debajo de 5, y fallar todas antes de que
 // ninguna llegara a registrar nada, triplicando (o más) el margen real por
-// encima de los 5 fallos previstos. Ahora dpf_fichar_pinfail_abrir()
-// reserva el lock exclusivo DESDE la comprobación, y se mantiene abierto
-// durante toda la comprobación del PIN (solo serializa peticiones de la
-// MISMA conexión — justo lo que hace falta para contar fallos de verdad) —
-// se libera con dpf_fichar_pinfail_registrar_y_cerrar() (PIN incorrecto,
-// añade el fallo) o dpf_fichar_pinfail_cerrar() (PIN correcto, no cuenta).
+// encima de los 5 fallos previstos. dpf_fichar_pinfail_abrir() reserva el
+// lock exclusivo DESDE la comprobación — pero solo hasta saber si el PIN
+// tiene formato válido; antes de la llamada de red a Firebase que viene
+// justo después (fbGetArrayString, hasta 8s) se libera con
+// dpf_fichar_pinfail_liberar_temprano(), y si el PIN resulta incorrecto,
+// dpf_fichar_pinfail_registrar_tras_red() reabre el archivo un instante
+// para anotar el fallo — así el lock solo serializa el rato real de leer/
+// escribir el archivo local, no la espera a Firebase de por medio.
 function dpf_fichar_pinfail_abrir($file, $max, $window) {
     $fp = fopen($file, 'c+');
     if ($fp === false) return ['ok' => true, 'fp' => null, 'log' => []]; // no bloquear tráfico real por un fallo de disco
@@ -130,12 +132,41 @@ function dpf_fichar_pinfail_abrir($file, $max, $window) {
     }
     return ['ok' => true, 'fp' => $fp, 'log' => $log];
 }
-// PIN incorrecto: añade el fallo y libera el lock. Devuelve el log
-// resultante (ya con el fallo nuevo) para que el llamador pueda contar
-// cuántos fallos van sin tener que releer el archivo aparte.
-function dpf_fichar_pinfail_registrar_y_cerrar($fp, $log, $file) {
-    if ($fp === null) return $log;
-    $log[] = time();
+// PIN correcto: no cuenta como fallo, solo libera el lock.
+function dpf_fichar_pinfail_cerrar($fp) {
+    if ($fp === null) return;
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+// Variantes que NO mantienen el lock abierto durante la llamada de red a
+// Firebase (fbGetArrayString, hasta 8s) que hay entre medias en 'login' —
+// antes, fichar desde el mismo wifi de la tienda casi a la vez (lo normal
+// al cambiar de turno) podía dejar al segundo empleado esperando detrás
+// del flock(LOCK_EX) del primero mientras ESE seguía esperando a Firebase,
+// en vez de solo el tiempo real de leer/escribir el archivo local de
+// intentos. dpf_fichar_pinfail_liberar_temprano() suelta el lock nada más
+// pasar la comprobación (antes de la llamada de red); si el PIN resulta
+// incorrecto, dpf_fichar_pinfail_registrar_tras_red() reabre el archivo un
+// instante para anotar el fallo — releyendo y filtrando la ventana de
+// nuevo, por si ha pasado tiempo entre medias.
+function dpf_fichar_pinfail_liberar_temprano($fp) {
+    if ($fp !== null) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
+}
+function dpf_fichar_pinfail_registrar_tras_red($file, $window) {
+    $fp = @fopen($file, 'c+');
+    if ($fp === false) return [];
+    if (!flock($fp, LOCK_EX)) { fclose($fp); return []; }
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
+        return ($now - $ts) < $window;
+    }));
+    $log[] = $now;
     ftruncate($fp, 0);
     rewind($fp);
     fwrite($fp, json_encode($log));
@@ -143,12 +174,6 @@ function dpf_fichar_pinfail_registrar_y_cerrar($fp, $log, $file) {
     flock($fp, LOCK_UN);
     fclose($fp);
     return $log;
-}
-// PIN correcto: no cuenta como fallo, solo libera el lock.
-function dpf_fichar_pinfail_cerrar($fp) {
-    if ($fp === null) return;
-    flock($fp, LOCK_UN);
-    fclose($fp);
 }
 
 // ── Credenciales de Firebase (fuera de public_html, mismo sitio de siempre) ──
@@ -470,6 +495,9 @@ try {
             echo json_encode(['success' => false, 'error' => 'PIN inválido']);
             exit;
         }
+        // Liberar el lock ANTES de la llamada de red de abajo — ver
+        // comentario junto a dpf_fichar_pinfail_liberar_temprano más arriba.
+        dpf_fichar_pinfail_liberar_temprano($pinFailGate['fp']);
         $empleados = fbGetArrayString($databaseURL, 'config/empleados', $accessToken);
         $encontrado = null;
         $coincidencias = 0;
@@ -496,16 +524,15 @@ try {
         if (!$encontrado) {
             // Avisar a caja al tercer fallo seguido, sin esperar a que se
             // agote el límite del todo — así se puede revisar mientras pasa.
-            // $fallos ya es el log actualizado (con este fallo incluido),
-            // no hace falta releer el archivo aparte.
-            $fallos = dpf_fichar_pinfail_registrar_y_cerrar($pinFailGate['fp'], $pinFailGate['log'], $pinFailFile);
+            $fallos = dpf_fichar_pinfail_registrar_tras_red($pinFailFile, $pinFailWindow);
             if (count($fallos) === 3) {
                 fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Varios PIN de fichaje incorrectos seguidos desde la misma conexión — posible intento de adivinar un PIN');
             }
             echo json_encode(['success' => false, 'error' => 'PIN incorrecto']);
             exit;
         }
-        dpf_fichar_pinfail_cerrar($pinFailGate['fp']); // PIN correcto, no cuenta como fallo
+        // PIN correcto, no cuenta como fallo — el lock ya se liberó antes
+        // de la llamada de red, no hace falta volver a tocar el archivo.
         echo json_encode([
             'success'      => true,
             'empId'        => $encontrado['id'],
