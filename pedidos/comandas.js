@@ -2686,10 +2686,12 @@ function buildCajaResumenBlocks(fecha) {
   const divider = '-'.repeat(width);
   const fondo = loadCajaFondo(fecha);
   const t = loadCajaTotales(fecha);
+  const tarjetaOverride = loadCajaNota('tarjeta', fecha);
+  const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
   const web = loadCajaNota('web', fecha);
   const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, fecha));
   const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
-  const facturado = t.efectivo + t.tarjeta + t.pendiente + deliveryTotal;
+  const facturado = t.efectivo + tarjeta + t.pendiente + deliveryTotal;
   const esperadoCajon = fondo + t.efectivo;
   const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -2704,9 +2706,14 @@ function buildCajaResumenBlocks(fecha) {
   B.push({ text: 'Pedidos: ' + t.count, align: 'left' });
   B.push({ text: 'Fondo inicial: ' + fmtEur(fondo), align: 'left' });
   B.push({ text: divider, align: 'left' });
-  B.push({ text: 'TIENDA', align: 'left', big: true });
+  // "TIENDA"/"DELIVERY" sin "big": a doble ancho, una etiqueta o un
+  // importe largo puede pasarse del ancho del papel (sobre todo en 58mm,
+  // que en doble ancho solo caben ~16 caracteres) y la impresora corta o
+  // salta de línea a media palabra. Solo el TOTAL final va grande, y en su
+  // propia línea corta, como ya se hacía con "Esperado en caja".
+  B.push({ text: 'TIENDA', align: 'left' });
   B.push({ text: '  Efectivo: ' + fmtEur(t.efectivo), align: 'left' });
-  B.push({ text: '  Tarjeta: ' + fmtEur(t.tarjeta), align: 'left' });
+  B.push({ text: '  Tarjeta: ' + fmtEur(tarjeta), align: 'left' });
   if (web != null) {
     B.push({ text: '  (de la web: ' + fmtEur(web) + ')', align: 'left' });
   }
@@ -2714,12 +2721,13 @@ function buildCajaResumenBlocks(fecha) {
     B.push({ text: 'PENDIENTE DE COBRO: ' + fmtEur(t.pendiente), align: 'left', paidStatus: 'no' });
   }
   B.push({ text: divider, align: 'left' });
-  B.push({ text: 'DELIVERY', align: 'left', big: true });
+  B.push({ text: 'DELIVERY', align: 'left' });
   CAJA_DELIVERY.forEach((d, i) => {
     B.push({ text: '  ' + foldAccents(d.label) + ': ' + fmtEur(deliveryValores[i] || 0), align: 'left' });
   });
   B.push({ text: divider, align: 'left' });
-  B.push({ text: 'TOTAL: ' + fmtEur(facturado), align: 'left', big: true });
+  B.push({ text: 'TOTAL:', align: 'center' });
+  B.push({ text: fmtEur(facturado), align: 'center', big: true });
   B.push({ text: 'EFECTIVO ESPERADO EN CAJA:', align: 'center' });
   B.push({ text: fmtEur(esperadoCajon), align: 'center', big: true });
   if (t.pendiente > 0) {
@@ -3216,11 +3224,15 @@ function saveCajaNota(id, fecha, valor) {
   else localStorage.setItem(getCajaNotaKey(id, fecha), String(valor));
 }
 let cajaNotaEditando = null;
-function editCajaNota(id, titulo) {
+// fallbackVal: valor a mostrar en el teclado si todavía no se ha escrito
+// nada a mano — lo usa "Tarjeta" para partir del total que ya calcula la
+// app (lo marcado pedido a pedido) en vez de partir en blanco.
+function editCajaNota(id, titulo, fallbackVal) {
   cajaNotaEditando = id;
   const actual = loadCajaNota(id, cajaFechaSel);
+  const valorMostrar = actual != null ? actual : fallbackVal;
   const input = document.getElementById('caja-nota-manual-input');
-  input.value = actual != null ? String(actual).replace('.', ',') : '';
+  input.value = valorMostrar != null ? String(valorMostrar).replace('.', ',') : '';
   openNumpad('caja-nota-manual-input', titulo);
 }
 function setCajaNotaManual(valorStr) {
@@ -3345,9 +3357,15 @@ function renderCaja() {
   // que el real en un día muy movido.
   const fondo = loadCajaFondo(cajaFechaSel);
   const t = loadCajaTotales(cajaFechaSel);
-  const efectivo = t.efectivo, tarjeta = t.tarjeta, pendiente = t.pendiente, nPedidos = t.count;
+  const efectivo = t.efectivo, pendiente = t.pendiente, nPedidos = t.count;
   const esperadoCajon = fondo + efectivo;
-  const datafono = loadCajaNota('datafono', cajaFechaSel);
+  // "Tarjeta" parte del total que calcula la app sola (lo marcado tarjeta
+  // pedido a pedido), pero se puede tocar y escribir el número real del
+  // datáfono a mano — igual que "Efectivo" tiene su "Contado" aparte, salvo
+  // que aquí no hay nada físico que contar, así que es un solo número
+  // editable en vez de dos filas.
+  const tarjetaOverride = loadCajaNota('tarjeta', cajaFechaSel);
+  const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
   const web = loadCajaNota('web', cajaFechaSel);
   const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, cajaFechaSel));
   const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
@@ -3356,9 +3374,9 @@ function renderCaja() {
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
   const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
-  // Fila editable para una nota manual (datáfono, web, cada plataforma de
+  // Fila editable para una nota manual (tarjeta, web, cada plataforma de
   // delivery...) — solo apunta el número, sin comparar contra nada.
-  const notaRow = (id, label, valor, titulo) => `<div class="cash-calc-total-row editable" style="margin:4px 0" onclick="editCajaNota('${id}','${titulo}')"><label style="flex:1">${label} ✏️</label><b${valor == null ? ' style="color:var(--muted);font-weight:400"' : ''}>${valor == null ? 'Escribir' : fmt(valor) + ' €'}</b></div>`;
+  const notaRow = (id, label, valor, titulo, fallback) => `<div class="cash-calc-total-row editable" style="margin:4px 0" onclick="editCajaNota('${id}','${titulo}'${fallback != null ? ',' + fallback : ''})"><label style="flex:1">${label} ✏️</label><b${valor == null ? ' style="color:var(--muted);font-weight:400"' : ''}>${valor == null ? 'Escribir' : fmt(valor) + ' €'}</b></div>`;
   const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
     ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
     : '';
@@ -3371,8 +3389,7 @@ function renderCaja() {
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + `<div class="section-label">Tienda</div>`
     + row('💵 Efectivo', efectivo)
-    + row('💳 Tarjeta', tarjeta)
-    + notaRow('datafono', '💳 Según el datáfono', datafono, 'Total segun el datafono')
+    + notaRow('tarjeta', '💳 Tarjeta', tarjeta, 'Tarjeta (segun el datafono)', t.tarjeta)
     + notaRow('web', '🌐 De tienda, cuánto es de la web', web, 'De tienda, cuanto es de la pagina web')
     + avisoPendiente
     + `<div class="section-label" style="margin-top:10px">Delivery</div>`
@@ -3450,7 +3467,7 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
 }
 function construirCopiaJSON(fecha) {
   const notas = {};
-  ['datafono', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
+  ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
   return {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
@@ -3575,7 +3592,7 @@ function importarCopiaJSON(event) {
     // día anterior sin querer.
     if (data.contado && typeof data.contado === 'object') localStorage.setItem(getCajaContadoKey(fecha), JSON.stringify(data.contado));
     else localStorage.removeItem(getCajaContadoKey(fecha));
-    ['datafono', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
+    ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
       const v = data.notas && typeof data.notas === 'object' ? data.notas[id] : null;
       saveCajaNota(id, fecha, typeof v === 'number' ? v : null);
     });
