@@ -80,7 +80,11 @@ function renderBlacklist() {
 }
 
 function loadDayStats() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): sin esto, durante la 1-2h de
+  // desfase tras la medianoche de Madrid, "borrar/reiniciar el día de hoy"
+  // podía escribir un objeto vacío sobre el nodo de AYER (ya archivado)
+  // en vez del de hoy — pérdida de datos real, no solo un dato mal leído.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   // Intentar cargar desde Firebase primero (fuente de verdad entre dispositivos)
   if (window.fb_getStats) {
     window.fb_getStats(todayKey).then(fbStats => {
@@ -146,7 +150,11 @@ function resetSlots() {
 }
 async function confirmClearDay() {
   if (!confirm('¿Limpiar todos los pedidos del día?\nEsta acción no se puede deshacer.')) return;
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): sin esto, durante la 1-2h de
+  // desfase tras la medianoche de Madrid, "borrar/reiniciar el día de hoy"
+  // podía escribir un objeto vacío sobre el nodo de AYER (ya archivado)
+  // en vez del de hoy — pérdida de datos real, no solo un dato mal leído.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   // Borrar pedidos y stats del día — local primero
   localStorage.removeItem(STATS_KEY);
   // Borrar en Firebase (fuente de verdad) para que loadLiveOrders no los restaure
@@ -172,7 +180,11 @@ async function confirmClearDay() {
   showToast('live-clear-toast');
 }
 async function resetDayStats() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): sin esto, durante la 1-2h de
+  // desfase tras la medianoche de Madrid, "borrar/reiniciar el día de hoy"
+  // podía escribir un objeto vacío sobre el nodo de AYER (ya archivado)
+  // en vez del de hoy — pérdida de datos real, no solo un dato mal leído.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   localStorage.removeItem(STATS_KEY);
   // Borrar en Firebase para que no restaure los datos al recargar
   if (window.fb_saveStats) {

@@ -223,7 +223,10 @@ async function activarFinDeNoche() {
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): cerrar el día justo tras la
+  // medianoche real de Madrid podía leer stats/<día UTC> (todavía "ayer"),
+  // dando un resumen vacío o del día equivocado.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
     try {

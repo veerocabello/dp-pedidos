@@ -592,7 +592,11 @@ let _slotsClosedCache = {}; // { slotTime: true }
 function getSlotsClosed() { return _slotsClosedCache; }
 
 function getSlotsData() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto podía descartar datos de
+  // turnos válidos de hoy (o usar los de ayer), mostrando ocupación
+  // equivocada justo al cliente eligiendo su hora de recogida.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   // Contar siempre desde pedidos reales (fuente de verdad)
   let stats;
   try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch { stats = {}; }

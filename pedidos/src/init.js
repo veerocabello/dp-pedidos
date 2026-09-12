@@ -321,7 +321,7 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         // Visto en producción que a veces no lo hace: forzar aquí también
         // un refresco directo de pedidos en cuanto la conexión vuelve.
         if (_bannerConexionMostrado && _adminLoggedIn && window.fb_getStats && window._procesarSnapshotStatsPedidos) {
-          window.fb_getStats(new Date().toISOString().slice(0, 10))
+          window.fb_getStats(typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10))
             .then(stats => { if (stats) window._procesarSnapshotStatsPedidos(stats); })
             .catch(() => {});
         }

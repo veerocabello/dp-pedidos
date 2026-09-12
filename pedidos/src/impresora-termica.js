@@ -1500,7 +1500,7 @@ async function imprimirResumenDiaTermico() {
 // haber pulsado "Cerrar el día" — a diferencia de imprimirResumenDiaTermico()
 // de arriba, que solo tiene datos después de cerrar.
 async function imprimirResumenHoyTermico() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
     try { stats = await window.fb_getStats(todayKey); } catch (e) {}

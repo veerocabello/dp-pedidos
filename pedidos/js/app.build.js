@@ -6536,7 +6536,11 @@ let _slotsClosedCache = {}; // { slotTime: true }
 function getSlotsClosed() { return _slotsClosedCache; }
 
 function getSlotsData() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto podía descartar datos de
+  // turnos válidos de hoy (o usar los de ayer), mostrando ocupación
+  // equivocada justo al cliente eligiendo su hora de recogida.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   // Contar siempre desde pedidos reales (fuente de verdad)
   let stats;
   try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch { stats = {}; }
@@ -9123,7 +9127,7 @@ applyAutoDelete(); // auto-borrado del historial al cargar
         // Visto en producción que a veces no lo hace: forzar aquí también
         // un refresco directo de pedidos en cuanto la conexión vuelve.
         if (_bannerConexionMostrado && _adminLoggedIn && window.fb_getStats && window._procesarSnapshotStatsPedidos) {
-          window.fb_getStats(new Date().toISOString().slice(0, 10))
+          window.fb_getStats(typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10))
             .then(stats => { if (stats) window._procesarSnapshotStatsPedidos(stats); })
             .catch(() => {});
         }

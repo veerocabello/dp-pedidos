@@ -69,7 +69,12 @@ async function setOrderStatus(num, status) {
 // Carga y renderiza los pedidos en vivo.
 // Render instantáneo con localStorage, luego actualiza desde Firebase (fuente de verdad).
 async function loadLiveOrdersWithLocalFirst() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let localStats;
   try {
     localStats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -94,7 +99,12 @@ async function loadLiveOrders() {
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10));
   // No tocar el overflow del body al recargar pedidos en vivo
   const _savedOverflow = document.body.style.overflow;
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   // Firebase es la fuente de verdad (tiene todos los pedidos de todos los dispositivos)
   if (window.fb_getStats) {
@@ -268,7 +278,12 @@ function _renderLiveOrders(stats, todayKey) {
 }
 // Sube los pedidos del localStorage de ESTE dispositivo a Firebase fusionando con los que ya existen
 async function emergencySyncFromLocal() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let local;
   try {
     local = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -424,7 +439,12 @@ async function toggleSlotCerrado(slot) {
   if (!window.fb_toggleSlotClosed) return;
   const cerrados = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
   const yaCerrado = !!cerrados[slot];
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   try {
     await window.fb_toggleSlotClosed(todayKey, slot, !yaCerrado);
   } catch (e) {
@@ -436,7 +456,12 @@ async function toggleSlotCerrado(slot) {
 }
 async function refreshKitchenGrid() {
   if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   try {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -918,7 +943,12 @@ function updateTabTitle(newOrderCount) {
 // cualquier visitante (initFirebaseListeners), no solo este polling de
 // respaldo cuando Firebase no está disponible.
 function checkForNewOrders(statsOverride) {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = statsOverride || null;
   if (!stats) {
     try {
@@ -1041,7 +1071,12 @@ function confirmarTodosListos() {
   markAllKitchenReady();
 }
 function markAllKitchenReady() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   try {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');

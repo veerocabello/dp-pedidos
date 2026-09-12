@@ -598,7 +598,7 @@ async function doEncryptExport() {
 
 // ── EXPORTAR CSV ──
 function exportTodayCSV() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   try {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -807,8 +807,11 @@ async function _reclamarImpresionAuto(orderNum) {
   if (!orderNum || !window.fb_transactJsonString) return true;
   // Un nodo por día (igual que usedOrderNums/<fecha> y demás estructuras de
   // este estilo) — así no crece sin límite para siempre, cada día es un
-  // mapa pequeño y aparte.
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // mapa pequeño y aparte. _todayKeyMadrid() en vez de toISOString(): si
+  // no, los pedidos de la 1-2h tras la medianoche de Madrid se reclamaban
+  // bajo el nodo del día UTC (todavía "ayer"), en vez del día real al que
+  // pertenecen.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   try {
     // Límite de tiempo, no solo captura de errores: una transacción de
     // Firebase que nunca llega a resolverse ni a rechazar (una sesión de
@@ -892,14 +895,14 @@ function _avisarFalloEnvioTicket(orderNum) {
   logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión', {
     tipo: 'ticket_no_impreso',
     orderNum,
-    fecha: new Date().toISOString().slice(0, 10)
+    fecha: typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10)
   });
 }
 const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
 function _registrarEnvioTicket(orderNum, ok) {
   let log = [];
   try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   log.unshift({ num: orderNum, date: todayKey, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
   // Guarda hasta 300 entradas (varios días de margen) — el panel solo
   // enseña las de hoy, esto es solo para no dejar crecer localStorage sin límite.
@@ -914,7 +917,7 @@ function _renderTicketSendLog() {
   if (!el) return;
   let log = [];
   try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   const logHoy = log.filter(e => (e.date || todayKey) === todayKey);
   const resumenEl = document.getElementById('tc-envios-resumen');
   if (resumenEl) {
@@ -938,7 +941,7 @@ function _renderTicketSendLog() {
 // (cliente) como printLastTicket/aquí abajo (admin).
 async function printOrderFromStats(num, name, time, total, slot) {
   // Try to get items from Firebase stats, fall back to localStorage
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
     try {

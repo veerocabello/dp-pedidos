@@ -183,7 +183,11 @@ function bimbaActualizarContadorAlertas() {
   var btn = document.getElementById('bimba-btn-alertas-fichaje');
   if (!btn) return;
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
   var sinFichar = _empSinFichar(empleados, fichajes, today);
@@ -198,7 +202,11 @@ function bimbaRenderFichajeLista() {
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   if (!empleados.length) { lista.innerHTML = '<div style="font-size:13px;color:#8A6A4E">No hay empleados registrados</div>'; return; }
 
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
 
@@ -253,7 +261,11 @@ function bimbaAvisarEmpleado(id, nombre, tel, estado) {
 
 function bimbaAvisarTodos() {
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
   var sinFichar = _empSinFichar(empleados, fichajes, today);
@@ -342,7 +354,11 @@ function _mostrarAlertaTablet(data) {
 
   // Construir lista de no fichados
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
   var sinFichar = _empSinFichar(empleados, fichajes, today);

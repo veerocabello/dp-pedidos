@@ -14,7 +14,11 @@ const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
 (function _cargarPrintedOrdersLocal() {
   try {
     const saved = JSON.parse(localStorage.getItem(PRINTED_ORDERS_KEY) || 'null');
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // _todayKeyMadrid() en vez de toISOString(): con UTC, justo la ventana
+    // de 1-2h tras la medianoche de Madrid (que es precisamente para lo que
+    // se guarda esta fecha — "no arrastrar el número de ayer a hoy") hacía
+    // lo contrario de lo que este comentario de arriba dice que arregla.
+    const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
     if (saved && saved.date === todayKey && Array.isArray(saved.nums)) {
       saved.nums.forEach(n => _printedOrders.add(n));
     }
@@ -22,7 +26,8 @@ const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
 })();
 function _guardarPrintedOrdersLocal() {
   try {
-    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: new Date().toISOString().slice(0, 10), nums: [..._printedOrders] }));
+    const _fecha = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: _fecha, nums: [..._printedOrders] }));
   } catch (e) {}
 }
 

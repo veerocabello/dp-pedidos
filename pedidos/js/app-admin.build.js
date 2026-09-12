@@ -1963,7 +1963,11 @@ function renderBlacklist() {
 }
 
 function loadDayStats() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): sin esto, durante la 1-2h de
+  // desfase tras la medianoche de Madrid, "borrar/reiniciar el día de hoy"
+  // podía escribir un objeto vacío sobre el nodo de AYER (ya archivado)
+  // en vez del de hoy — pérdida de datos real, no solo un dato mal leído.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   // Intentar cargar desde Firebase primero (fuente de verdad entre dispositivos)
   if (window.fb_getStats) {
     window.fb_getStats(todayKey).then(fbStats => {
@@ -2029,7 +2033,11 @@ function resetSlots() {
 }
 async function confirmClearDay() {
   if (!confirm('¿Limpiar todos los pedidos del día?\nEsta acción no se puede deshacer.')) return;
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): sin esto, durante la 1-2h de
+  // desfase tras la medianoche de Madrid, "borrar/reiniciar el día de hoy"
+  // podía escribir un objeto vacío sobre el nodo de AYER (ya archivado)
+  // en vez del de hoy — pérdida de datos real, no solo un dato mal leído.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   // Borrar pedidos y stats del día — local primero
   localStorage.removeItem(STATS_KEY);
   // Borrar en Firebase (fuente de verdad) para que loadLiveOrders no los restaure
@@ -2055,7 +2063,11 @@ async function confirmClearDay() {
   showToast('live-clear-toast');
 }
 async function resetDayStats() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): sin esto, durante la 1-2h de
+  // desfase tras la medianoche de Madrid, "borrar/reiniciar el día de hoy"
+  // podía escribir un objeto vacío sobre el nodo de AYER (ya archivado)
+  // en vez del de hoy — pérdida de datos real, no solo un dato mal leído.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   localStorage.removeItem(STATS_KEY);
   // Borrar en Firebase para que no restaure los datos al recargar
   if (window.fb_saveStats) {
@@ -2313,7 +2325,10 @@ async function activarFinDeNoche() {
   updateOrdersUI(false);
 
   // 2. Recoger estadísticas del día
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): cerrar el día justo tras la
+  // medianoche real de Madrid podía leer stats/<día UTC> (todavía "ayer"),
+  // dando un resumen vacío o del día equivocado.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
     try {
@@ -2805,7 +2820,11 @@ const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
 (function _cargarPrintedOrdersLocal() {
   try {
     const saved = JSON.parse(localStorage.getItem(PRINTED_ORDERS_KEY) || 'null');
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // _todayKeyMadrid() en vez de toISOString(): con UTC, justo la ventana
+    // de 1-2h tras la medianoche de Madrid (que es precisamente para lo que
+    // se guarda esta fecha — "no arrastrar el número de ayer a hoy") hacía
+    // lo contrario de lo que este comentario de arriba dice que arregla.
+    const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
     if (saved && saved.date === todayKey && Array.isArray(saved.nums)) {
       saved.nums.forEach(n => _printedOrders.add(n));
     }
@@ -2813,7 +2832,8 @@ const _printedOrders = new Set(); // IDs de pedidos ya impresos hoy
 })();
 function _guardarPrintedOrdersLocal() {
   try {
-    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: new Date().toISOString().slice(0, 10), nums: [..._printedOrders] }));
+    const _fecha = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
+    localStorage.setItem(PRINTED_ORDERS_KEY, JSON.stringify({ date: _fecha, nums: [..._printedOrders] }));
   } catch (e) {}
 }
 
@@ -5305,7 +5325,7 @@ async function doEncryptExport() {
 
 // ── EXPORTAR CSV ──
 function exportTodayCSV() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   try {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -5514,8 +5534,11 @@ async function _reclamarImpresionAuto(orderNum) {
   if (!orderNum || !window.fb_transactJsonString) return true;
   // Un nodo por día (igual que usedOrderNums/<fecha> y demás estructuras de
   // este estilo) — así no crece sin límite para siempre, cada día es un
-  // mapa pequeño y aparte.
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // mapa pequeño y aparte. _todayKeyMadrid() en vez de toISOString(): si
+  // no, los pedidos de la 1-2h tras la medianoche de Madrid se reclamaban
+  // bajo el nodo del día UTC (todavía "ayer"), en vez del día real al que
+  // pertenecen.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   try {
     // Límite de tiempo, no solo captura de errores: una transacción de
     // Firebase que nunca llega a resolverse ni a rechazar (una sesión de
@@ -5599,14 +5622,14 @@ function _avisarFalloEnvioTicket(orderNum) {
   logActivity('⚠️ Fallo al enviar el ticket del pedido #' + orderNum + ' a la impresora — revisa la conexión', {
     tipo: 'ticket_no_impreso',
     orderNum,
-    fecha: new Date().toISOString().slice(0, 10)
+    fecha: typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10)
   });
 }
 const TICKET_SEND_LOG_KEY = 'dpf_ticket_send_log';
 function _registrarEnvioTicket(orderNum, ok) {
   let log = [];
   try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   log.unshift({ num: orderNum, date: todayKey, time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), ok });
   // Guarda hasta 300 entradas (varios días de margen) — el panel solo
   // enseña las de hoy, esto es solo para no dejar crecer localStorage sin límite.
@@ -5621,7 +5644,7 @@ function _renderTicketSendLog() {
   if (!el) return;
   let log = [];
   try { log = JSON.parse(localStorage.getItem(TICKET_SEND_LOG_KEY) || '[]'); } catch (e) {}
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   const logHoy = log.filter(e => (e.date || todayKey) === todayKey);
   const resumenEl = document.getElementById('tc-envios-resumen');
   if (resumenEl) {
@@ -5645,7 +5668,7 @@ function _renderTicketSendLog() {
 // (cliente) como printLastTicket/aquí abajo (admin).
 async function printOrderFromStats(num, name, time, total, slot) {
   // Try to get items from Firebase stats, fall back to localStorage
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
     try {
@@ -5744,7 +5767,12 @@ async function setOrderStatus(num, status) {
 // Carga y renderiza los pedidos en vivo.
 // Render instantáneo con localStorage, luego actualiza desde Firebase (fuente de verdad).
 async function loadLiveOrdersWithLocalFirst() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let localStats;
   try {
     localStats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -5769,7 +5797,12 @@ async function loadLiveOrders() {
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(parseInt(localStorage.getItem('dpf_pausa_expres_hasta') || '0', 10));
   // No tocar el overflow del body al recargar pedidos en vivo
   const _savedOverflow = document.body.style.overflow;
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   // Firebase es la fuente de verdad (tiene todos los pedidos de todos los dispositivos)
   if (window.fb_getStats) {
@@ -5943,7 +5976,12 @@ function _renderLiveOrders(stats, todayKey) {
 }
 // Sube los pedidos del localStorage de ESTE dispositivo a Firebase fusionando con los que ya existen
 async function emergencySyncFromLocal() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let local;
   try {
     local = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -6099,7 +6137,12 @@ async function toggleSlotCerrado(slot) {
   if (!window.fb_toggleSlotClosed) return;
   const cerrados = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
   const yaCerrado = !!cerrados[slot];
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   try {
     await window.fb_toggleSlotClosed(todayKey, slot, !yaCerrado);
   } catch (e) {
@@ -6111,7 +6154,12 @@ async function toggleSlotCerrado(slot) {
 }
 async function refreshKitchenGrid() {
   if (typeof _ptUpdateDebugStatus === 'function') _ptUpdateDebugStatus();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   try {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -6593,7 +6641,12 @@ function updateTabTitle(newOrderCount) {
 // cualquier visitante (initFirebaseListeners), no solo este polling de
 // respaldo cuando Firebase no está disponible.
 function checkForNewOrders(statsOverride) {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = statsOverride || null;
   if (!stats) {
     try {
@@ -6716,7 +6769,12 @@ function confirmarTodosListos() {
   markAllKitchenReady();
 }
 function markAllKitchenReady() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
+  // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
+  // comparar/escribir contra el día equivocado — pedidos "en vivo"
+  // apareciendo vacíos, cierres de turno o "marcar todos listos" sin
+  // efecto, justo en la ventana donde más se necesita que funcione bien.
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats;
   try {
     stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
@@ -8268,7 +8326,7 @@ async function imprimirResumenDiaTermico() {
 // haber pulsado "Cerrar el día" — a diferencia de imprimirResumenDiaTermico()
 // de arriba, que solo tiene datos después de cerrar.
 async function imprimirResumenHoyTermico() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   let stats = null;
   if (window.fb_getStats) {
     try { stats = await window.fb_getStats(todayKey); } catch (e) {}
@@ -11987,7 +12045,11 @@ function bimbaActualizarContadorAlertas() {
   var btn = document.getElementById('bimba-btn-alertas-fichaje');
   if (!btn) return;
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
   var sinFichar = _empSinFichar(empleados, fichajes, today);
@@ -12002,7 +12064,11 @@ function bimbaRenderFichajeLista() {
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   if (!empleados.length) { lista.innerHTML = '<div style="font-size:13px;color:#8A6A4E">No hay empleados registrados</div>'; return; }
 
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
 
@@ -12057,7 +12123,11 @@ function bimbaAvisarEmpleado(id, nombre, tel, estado) {
 
 function bimbaAvisarTodos() {
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
   var sinFichar = _empSinFichar(empleados, fichajes, today);
@@ -12146,7 +12216,11 @@ function _mostrarAlertaTablet(data) {
 
   // Construir lista de no fichados
   var empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
-  var today = new Date().toISOString().slice(0, 10);
+  // _todayKeyMadrid() en vez de toISOString(): con UTC, durante la 1-2h de
+  // desfase tras la medianoche de Madrid esto calculaba mal quién "no ha
+  // fichado hoy" — avisos de WhatsApp reales a empleados sobre el día
+  // equivocado, o pasando por alto a quien sí llegaba tarde de verdad.
+  var today = typeof _todayKeyMadrid === 'function' ? _todayKeyMadrid() : new Date().toISOString().slice(0, 10);
   var fichajes = JSON.parse(localStorage.getItem('dpf_fichajes') || '[]');
   if (!Array.isArray(fichajes)) fichajes = [];
   var sinFichar = _empSinFichar(empleados, fichajes, today);
