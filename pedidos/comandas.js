@@ -766,6 +766,41 @@ const SEASONING_NAMES = new Set(['sal', 'pimienta']);
 function countFreeSwapQuitados(quitadosNames) {
   return (quitadosNames || []).filter(name => !SEASONING_NAMES.has(String(name).trim().toLowerCase())).length;
 }
+// Cuando quitar un ingrediente/salsa real "regala" un cambio gratis, en
+// vez de dejarlo como dos líneas sueltas ("🚫 Sin X" + "+ Y") se
+// convierte directamente en un cambio de verdad ("🔄 X → Y"), como si se
+// hubiera usado el selector "Cambiar ingrediente/salsa" — mismo tipo
+// primero (ingrediente con ingrediente, salsa con salsa) y, si sobra
+// alguno, con el que quede. En la Simple nunca hay nada que emparejar:
+// sal/pimienta no cuentan para el cupo (countFreeSwapQuitados), así que
+// sus extras se quedan siempre como extras sueltos, nunca como cambio.
+function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder) {
+  const freePasses = computeFreeSwapPasses(countFreeSwapQuitados(quitadosList), explicitCambios.length);
+  if (freePasses <= 0) {
+    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder };
+  }
+  const comps = parseBaseComponents(item);
+  const realIngComponents = new Set(comps.filter(c => !esComponenteSalsa(c) && !isBaseGrasaComp(c) && !isElegirSalsaComp(c)));
+  const realSalsaComponents = new Set(comps.filter(c => esComponenteSalsa(c) && !isBaseGrasaComp(c)));
+  let remainingQuitados = [...quitadosList];
+  let remainingIng = [...ingList];
+  let remainingSalsa = [...salsaList];
+  const newCambios = [];
+  const consumed = new Set(); // "type:name" de picks ya emparejados, para limpiar pickOrder
+  (pickOrder || []).slice(0, freePasses).forEach(pick => {
+    const isIng = pick.type === 'ing';
+    let qIdx = remainingQuitados.findIndex(q => isIng ? realIngComponents.has(q) : realSalsaComponents.has(q));
+    if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
+    if (qIdx === -1) return; // no debería pasar si freePasses se calculó bien
+    const from = remainingQuitados.splice(qIdx, 1)[0];
+    newCambios.push({ from, to: pick.name });
+    consumed.add(pick.type + ':' + pick.name);
+    if (isIng) remainingIng = remainingIng.filter(n => n !== pick.name);
+    else remainingSalsa = remainingSalsa.filter(n => n !== pick.name);
+  });
+  const newPickOrder = (pickOrder || []).filter(p => !consumed.has(p.type + ':' + p.name));
+  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder };
+}
 // Mismo criterio que computeExtrasCorePrice: los primeros `freePasses`
 // picks por orden de selección van gratis — así el ticket muestra sin
 // precio justo los mismos que no se cobraron en el total.
@@ -2317,12 +2352,20 @@ function confirmExtras() {
     toast('🚫 Elige una salsa antes de añadir ' + item.name);
     return;
   }
-  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing).sort();
-  const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
-  const quitadosList = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q).sort();
   const dobles = currentDoblesList().sort();
-  const cambiosList = extrasCambios.map(c => ({ from: c.from, to: c.to }));
-  const pickOrder = getOrderedExtrasPicks();
+  const paired = autoPairFreeSwaps(
+    item,
+    Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q),
+    Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing),
+    Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s),
+    extrasCambios.map(c => ({ from: c.from, to: c.to })),
+    getOrderedExtrasPicks()
+  );
+  const ingList = paired.ingredientesExtra.sort();
+  const salsaList = paired.salsasExtra.sort();
+  const quitadosList = paired.quitados.sort();
+  const cambiosList = paired.cambios;
+  const pickOrder = paired.pickOrder;
   const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
