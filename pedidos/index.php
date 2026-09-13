@@ -1170,6 +1170,18 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   function _loadAdminBundle(callback) {
     if (_adminBundleLoaded) { if (callback) callback(); return; }
     if (!_adminBundlePromise) {
+      // html2pdf (~900KB) solo lo usa banner-pdf.js, dentro del panel de
+      // admin — antes se cargaba con una etiqueta <script> fija en TODA
+      // visita a la web, incluida la inmensa mayoría que es un cliente
+      // pidiendo patatas y nunca abre el panel. Se pide aparte, en
+      // paralelo (sin bloquear el resto del panel si tarda o falla), justo
+      // aquí en vez de con una etiqueta fija — nadie más lo necesita.
+      if (!document.querySelector('script[src^="js/html2pdf.bundle.min.js"]')) {
+        var sPdf = document.createElement('script');
+        sPdf.src = 'js/html2pdf.bundle.min.js?v=1785893700000';
+        sPdf.defer = true;
+        document.body.appendChild(sPdf);
+      }
       _adminBundlePromise = new Promise(function(resolve) {
         var s = document.createElement('script');
         s.src = 'js/app-admin.js?v=' + Date.now();
@@ -1289,8 +1301,9 @@ setInterval(function() {
     <button onclick="smsCancelVerify()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
   </div>
 </div>
-<!-- Generación de PDF real (historial/tickets en el panel de admin) -->
-<script src="js/html2pdf.bundle.min.js?v=1785893700000" defer></script>
+<!-- Generación de PDF real (historial/tickets en el panel de admin) — ya no
+     se carga aquí fijo para todo el mundo, ver _loadAdminBundle() más
+     arriba: solo se pide al abrir el panel de admin, junto a app-admin.js. -->
 <!-- Analítica (GoatCounter — sin cookies, sin banner de consentimiento) -->
 <script data-goatcounter="https://dulcepatata.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
