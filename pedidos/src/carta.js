@@ -658,9 +658,21 @@ function _ofertaRelampagoVigente(o) {
 // directamente — así el descuento se refleja en todos lados con un único
 // cambio, sin mutar el propio array MENU (que también lo usa finanzas.js
 // para calcular márgenes, y no debe ver precios rebajados temporalmente).
+// Productos que NO pasan por cart[id]/item.price plano al calcular lo que
+// paga el cliente de verdad: Al Gusto (15) y Bomba (16) usan su propio
+// personalizador (custCart, ver updateCustTotalPrice en antifraude.js), y
+// Cheddar-Bacon/Boniato Bacon/patatas con extras usan extrasCart (ver
+// getExtrasItemPrice) — ninguno de los dos lee _precioConOferta(). El panel
+// de admin ya no deja elegirlos al crear una oferta relámpago (ver el
+// filtro en admin-turnos-descuentos.js), pero esto es la red de seguridad
+// por si un registro de oferta llegara a incluirlos de todos modos (un
+// dato manipulado a mano en Firebase, o un futuro cambio en el panel que
+// quite ese filtro sin saber por qué estaba ahí): así nunca se le muestra
+// al cliente un "-X% en Patata Bomba" que luego no se descuenta de verdad.
+const OFERTA_RELAMPAGO_IDS_EXCLUIDOS = new Set([15, 16, CHEDDAR_ID, BONIATO_BACON_ID, ...ALL_EXTRAS_IDS]);
 function _precioConOferta(item) {
   const o = window._ofertaRelampagoActiva;
-  if (o && o.tipo === 'producto' && Array.isArray(o.productoIds) && o.productoIds.includes(item.id) && _ofertaRelampagoVigente(o)) {
+  if (o && o.tipo === 'producto' && Array.isArray(o.productoIds) && o.productoIds.includes(item.id) && !OFERTA_RELAMPAGO_IDS_EXCLUIDOS.has(item.id) && _ofertaRelampagoVigente(o)) {
     return Math.round(item.price * (1 - o.pct / 100) * 100) / 100;
   }
   return item.price;
@@ -678,7 +690,8 @@ function _renderOfertaRelampagoBanner() {
   const s = Math.floor((restante % 60000) / 1000);
   let destino = 'todo el pedido';
   if (o.tipo === 'producto' && Array.isArray(o.productoIds)) {
-    const nombres = o.productoIds.map(id => (MENU.find(mi => mi.id === id) || {}).name).filter(Boolean);
+    const idsValidos = o.productoIds.filter(id => !OFERTA_RELAMPAGO_IDS_EXCLUIDOS.has(id));
+    const nombres = idsValidos.map(id => (MENU.find(mi => mi.id === id) || {}).name).filter(Boolean);
     destino = nombres.length ? nombres.join(', ') : 'este producto';
   }
   el.textContent = '⚡ Oferta relámpago: -' + o.pct + '% en ' + destino + ' · acaba en ' + m + ':' + String(s).padStart(2, '0');
