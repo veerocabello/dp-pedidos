@@ -9,11 +9,18 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <head>
 <meta charset="UTF-8">
 <!-- Sentry: captura errores reales de JavaScript en el navegador de clientes
-     de verdad (con traza completa) — lo más arriba posible para no perderse
-     errores tempranos. El dominio ya estaba permitido en la CSP desde que
-     se preparó, pero nunca se llegó a activar hasta ahora. -->
-<script src="https://js-de.sentry-cdn.com/65861694625070a6ae9c01293f5017e8.min.js" crossorigin="anonymous"></script>
-<script>
+     de verdad (con traza completa). Con "defer" en vez de sin nada: sigue
+     cargando en paralelo con el resto de la página (no hace falta esperar
+     a que el HTML termine de bajar para empezar a pedirlo), pero ya no
+     BLOQUEA el análisis del resto del <head> — antes, al ser el primer
+     script sin async/defer de toda la página, el navegador tenía que
+     parar a descargarlo y ejecutarlo antes de seguir leyendo el título, la
+     meta descripción o el CSS, penalizando la velocidad de carga real
+     (y lo que Google mide como tal) sin necesidad, ya que un error de
+     cliente que tarde unos milisegundos más en poder reportarse no cambia
+     nada para nadie. -->
+<script src="https://js-de.sentry-cdn.com/65861694625070a6ae9c01293f5017e8.min.js" crossorigin="anonymous" defer></script>
+<script defer>
   Sentry.onLoad(function () {
     Sentry.init({ environment: 'cliente' });
   });
@@ -21,7 +28,12 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- user-scalable=no quitado: impedía hacer zoom con los dedos en el
+     móvil (accesibilidad — alguien con visión reducida no podía ampliar
+     el texto), y Google lo señala como mala práctica de experiencia de
+     usuario en sus guías de posicionamiento. Quitar la restricción no
+     cambia nada para quien no necesita hacer zoom. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Dulce Patata Food — Pedidos Online en Granada</title>
 <meta name="description" content="Haz tu pedido online en Dulce Patata Food, Granada. Patatas rellenas artesanales con los mejores ingredientes. Recoge en tienda y paga al recoger.">
 <meta name="keywords" content="dulce patata, patatas rellenas, pedidos online, comida para llevar, patatas artesanales">
@@ -236,7 +248,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       <span id="hero-status-text">Cerrado ahora</span>
     </div>
     <h1 style="font-family:'Anton',sans-serif;font-size:48px;line-height:1.25;letter-spacing:0.02em;text-transform:uppercase;margin:0;color:var(--cream)">Haz tu pedido<br><span style="color:var(--gold)">y recógelo listo</span> <span class="emoji-acc">🥔</span></h1>
-    <p style="font-size:17px;color:#D9C9A8;margin:16px 0 0;font-weight:500;max-width:420px;font-family:'DM Sans',sans-serif">Elige, confirma y paga cuando llegues al local.</p>
+    <p style="font-size:17px;color:#D9C9A8;margin:16px 0 0;font-weight:500;max-width:420px;font-family:'DM Sans',sans-serif">Elige, confirma y paga cuando llegues a nuestro local en Granada.</p>
   </div>
 
   <div style="flex:none;width:380px;max-width:100%">
@@ -647,7 +659,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
   <!-- Tarjeta horario -->
   <div style="background:#2B1712;border-radius:14px;padding:24px 20px;max-width:380px;margin:0 auto 14px;text-align:center;">
-    <h2 style="font-family:'Anton',sans-serif;font-size:20px;color:var(--gold);letter-spacing:0.06em;margin:0 0 14px;">🕐 MARTES A DOMINGO</h2>
+    <h3 style="font-family:'Anton',sans-serif;font-size:20px;color:var(--gold);letter-spacing:0.06em;margin:0 0 14px;">🕐 MARTES A DOMINGO</h3>
     <div style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:rgba(245,230,200,0.8);letter-spacing:0.03em;margin-bottom:6px;">MAÑANAS · 10:00 – 13:45H</div>
     <div style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:rgba(245,230,200,0.8);letter-spacing:0.03em;margin-bottom:0;">TARDES · 18:00 – 23:45H</div>
     <div style="height:1px;background:rgba(244,196,48,0.2);margin:14px 0;"></div>
@@ -656,7 +668,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 
   <!-- Dirección -->
   <div style="background:#2B1712;border-radius:14px;padding:16px 20px;max-width:380px;margin:0 auto 20px;text-align:center;">
-    <h2 style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin:0 0 4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</h2>
+    <h3 style="font-family:'Anton',sans-serif;font-size:12px;color:var(--cream);letter-spacing:0.05em;margin:0 0 4px;">📍 CARRETERA DE MÁLAGA 111 · 18015 GRANADA</h3>
     <div style="font-family:'Oswald',sans-serif;font-weight:300;font-size:11px;color:var(--cream);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">Frente al Supermercado Dani</div>
     <a href="https://www.google.com/maps/dir/?api=1&destination=Carretera%20de%20M%C3%A1laga%20111%2C%2018015%20Granada" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:#2B1712;text-decoration:none;padding:8px 18px;border-radius:99px;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif;">📍 Cómo llegar</a>
   </div>
