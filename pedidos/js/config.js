@@ -82,7 +82,13 @@ function _initFirebase() {
     };
 
     window.fb_getAdminUser = function() {
-      return auth.currentUser;
+      // auth.currentUser también es un objeto (truthy) para la sesión
+      // anónima que se inicia sola para CUALQUIER visitante (ver
+      // signInAnonymously más abajo) — sin excluirla aquí, todo el código
+      // que usa fb_getAdminUser()/fb.getAdminUser() para saber "¿es admin
+      // de verdad?" daba positivo también para clientes normales.
+      var u = auth.currentUser;
+      return (u && !u.isAnonymous) ? u : null;
     };
 
     window.fb_onAuthChange = function(cb) {
