@@ -2236,6 +2236,75 @@ try {
     $horaLabel = date('H:i');
     $ticketKey = normOrderKey($orderNum);
 
+    // ── 0. ¿YA SE GUARDÓ ESTE PEDIDO? (reenvío idempotente) — se comprueba
+    // ANTES que cualquier otra cosa (antifraude, horario, código de
+    // descuento, precios...), porque un reenvío es un pedido que YA pasó
+    // esas comprobaciones la primera vez y solo se repite porque la
+    // respuesta se perdió (cierre de pestaña, corte de red — ver
+    // _recuperarPedidoEnCurso en carrito-checkout.js). Antes esta
+    // comprobación vivía más abajo, después del código de descuento: un
+    // pedido que SÍ se había guardado bien la primera vez (agotando de
+    // paso un código de un solo uso) se rechazaba en el reenvío con "este
+    // código ya se ha agotado" — un pedido reventado por su propio éxito
+    // anterior. tickets/<fecha>/<num> es un nodo por pedido: sin condición
+    // de carrera posible entre pedidos distintos (cada uno tiene su propia
+    // clave) — pero antes se escribía sin comprobar nada, con un PUT
+    // incondicional: cualquiera que adivinara un T#### ya usado (el número
+    // se muestra al cliente, y el espacio son solo 4 dígitos) podía
+    // sobrescribir el ticket de OTRO pedido con datos propios, y hasta
+    // farmear sellos de fidelización con él (fidelizacion.php confía en lo
+    // que haya en tickets/<fecha>/<num>). Ahora se comprueba primero que
+    // el ticket no exista ya, y la escritura (más abajo) es condicional
+    // (If-Match con el ETag de esta misma lectura) para que dos peticiones
+    // casi simultáneas para el mismo número no puedan pisarse entre sí
+    // tampoco.
+    $orderNumReasignado = null;
+    $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
+    $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
+    if ($leidoTicket['data'] !== null) {
+        // Si es un reenvío del mismo pedido (mismo teléfono) que ya se había
+        // guardado con éxito antes — p.ej. el cliente cerró la pestaña justo
+        // después de confirmar y la web reintenta sola al reabrirla, o la
+        // respuesta se perdió por un corte de red aunque el servidor sí
+        // terminara de guardarlo — se responde como éxito en vez de error:
+        // reenviar el mismo pedido no debe tratarse como un fallo ni
+        // duplicarlo (las estadísticas ya son idempotentes por número de
+        // pedido, ver guardarPedidoEnStats más abajo).
+        $existente = $leidoTicket['data'];
+        if (is_array($existente) && ($existente['phone'] ?? null) === $phone) {
+            echo json_encode(['success' => true, 'yaGuardado' => true]);
+            exit;
+        }
+        // Colisión de verdad con OTRO pedido — el caso más habitual es el
+        // número de emergencia que genera el navegador si la reserva
+        // atómica (acción 'reservarNumeroPedido') no respondió a tiempo 3
+        // veces seguidas (ver generateOrderNumber(), carrito-checkout.js):
+        // ese número es un simple aleatorio SIN comprobar unicidad. Antes
+        // esto rechazaba el pedido entero sin más — justo cuando ese
+        // camino degradado es más probable (Firebase/red con problemas)
+        // también hay más clientes cayendo en él a la vez, y el cliente ya
+        // había verificado el SMS y reservado turno para nada. Ahora se
+        // intenta reasignar un número nuevo de verdad libre (mismo
+        // mecanismo atómico) y seguir con el guardado — el navegador
+        // corrige solo el número mostrado/guardado en cuanto llega la
+        // respuesta (ver 'orderNumReasignado' en la respuesta final, y
+        // _aplicarReasignacionOrderNum en carrito-checkout.js).
+        $orderNumReasignado = dpf_reservarNuevoNumeroPedido($databaseURL, $accessToken, $todayKey);
+        if (!$orderNumReasignado) {
+            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — número ' . $orderNum . ' ya usado por otro teléfono, y no se pudo reasignar uno nuevo');
+            echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
+            exit;
+        }
+        fbAgregarActivityLog($databaseURL, $accessToken, 'ℹ️ Pedido de ' . $name . ' (' . $phoneClean . ') — número ' . $orderNum . ' ya usado por otro teléfono, reasignado a ' . $orderNumReasignado . ' automáticamente');
+        $orderNum = $orderNumReasignado;
+        $ticketKey = normOrderKey($orderNum);
+        $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
+        // Releer para este nuevo path — $leidoTicket['etag'] de arriba
+        // pertenece al path VIEJO (el que estaba ocupado); la escritura
+        // condicional de más abajo necesita el etag del path nuevo.
+        $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
+    }
+
     // ── ANTIFRAUDE: lista negra + cooldown/límite diario por teléfono ──
     // Esto SÍ bloquea el pedido (a diferencia de los avisos de precio/total
     // de abajo) — son las mismas reglas que ya aplicaba el navegador, solo
@@ -2340,65 +2409,6 @@ try {
     $posibleDup = detectarPosibleDuplicado($databaseURL, $accessToken, $todayKey, $phone, $total);
     if ($posibleDup) {
         fbAgregarActivityLog($databaseURL, $accessToken, '🔁 Posible pedido duplicado: mismo teléfono e importe en ' . $posibleDup . ' y ' . $orderNum . ' con menos de 90s de diferencia — comprueba si es el mismo pedido enviado dos veces');
-    }
-
-    // ── 1. GUARDAR TICKET (para reimprimir) ──
-    // tickets/<fecha>/<num> es un nodo por pedido: sin condición de carrera
-    // posible entre pedidos distintos (cada uno tiene su propia clave) —
-    // PERO antes se escribía sin comprobar nada, con un PUT incondicional:
-    // cualquiera que adivinara un T#### ya usado (el número se muestra al
-    // cliente, y el espacio son solo 4 dígitos) podía sobrescribir el
-    // ticket de OTRO pedido con datos propios, y hasta farmear sellos de
-    // fidelización con él (fidelizacion.php confía en lo que haya en
-    // tickets/<fecha>/<num>). Ahora se comprueba primero que el ticket no
-    // exista ya, y la escritura es condicional (If-Match con el ETag de esa
-    // misma lectura) para que dos peticiones casi simultáneas para el mismo
-    // número no puedan pisarse entre sí tampoco.
-    $orderNumReasignado = null;
-    $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
-    $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
-    if ($leidoTicket['data'] !== null) {
-        // Si es un reenvío del mismo pedido (mismo teléfono) que ya se había
-        // guardado con éxito antes — p.ej. el cliente cerró la pestaña justo
-        // después de confirmar y la web reintenta sola al reabrirla, o la
-        // respuesta se perdió por un corte de red aunque el servidor sí
-        // terminara de guardarlo — se responde como éxito en vez de error:
-        // reenviar el mismo pedido no debe tratarse como un fallo ni
-        // duplicarlo (las estadísticas ya son idempotentes por número de
-        // pedido, ver guardarPedidoEnStats más abajo).
-        $existente = $leidoTicket['data'];
-        if (is_array($existente) && ($existente['phone'] ?? null) === $phone) {
-            echo json_encode(['success' => true, 'yaGuardado' => true]);
-            exit;
-        }
-        // Colisión de verdad con OTRO pedido — el caso más habitual es el
-        // número de emergencia que genera el navegador si la reserva
-        // atómica (acción 'reservarNumeroPedido') no respondió a tiempo 3
-        // veces seguidas (ver generateOrderNumber(), carrito-checkout.js):
-        // ese número es un simple aleatorio SIN comprobar unicidad. Antes
-        // esto rechazaba el pedido entero sin más — justo cuando ese
-        // camino degradado es más probable (Firebase/red con problemas)
-        // también hay más clientes cayendo en él a la vez, y el cliente ya
-        // había verificado el SMS y reservado turno para nada. Ahora se
-        // intenta reasignar un número nuevo de verdad libre (mismo
-        // mecanismo atómico) y seguir con el guardado — el navegador
-        // corrige solo el número mostrado/guardado en cuanto llega la
-        // respuesta (ver 'orderNumReasignado' en la respuesta final, y
-        // _aplicarReasignacionOrderNum en carrito-checkout.js).
-        $orderNumReasignado = dpf_reservarNuevoNumeroPedido($databaseURL, $accessToken, $todayKey);
-        if (!$orderNumReasignado) {
-            fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — número ' . $orderNum . ' ya usado por otro teléfono, y no se pudo reasignar uno nuevo');
-            echo json_encode(['success' => false, 'error' => 'Este número de pedido ya se ha usado. Recarga la página e inténtalo de nuevo.']);
-            exit;
-        }
-        fbAgregarActivityLog($databaseURL, $accessToken, 'ℹ️ Pedido de ' . $name . ' (' . $phoneClean . ') — número ' . $orderNum . ' ya usado por otro teléfono, reasignado a ' . $orderNumReasignado . ' automáticamente');
-        $orderNum = $orderNumReasignado;
-        $ticketKey = normOrderKey($orderNum);
-        $ticketPath = 'tickets/' . $todayKey . '/' . $ticketKey;
-        // Releer para este nuevo path — $leidoTicket['etag'] de arriba
-        // pertenece al path VIEJO (el que estaba ocupado); la escritura
-        // condicional de más abajo necesita el etag del path nuevo.
-        $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
     }
 
     // ── VERIFICACIÓN SMS: SÍ bloquea el pedido (ver validarSmsToken arriba) ──
