@@ -1,13 +1,13 @@
 {
-  "name": "Comandas · Dulce Patata Food",
+  "name": "Comandas Dulce Patata Food",
   "short_name": "Comandas",
-  "description": "Herramienta de mostrador para tomar pedidos — funciona sin conexión",
+  "description": "App de mostrador Dulce Patata Food — funciona sin conexión",
   "start_url": "comandas.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#3D1F0D",
   "theme_color": "#3D1F0D",
-  "orientation": "portrait",
+  "orientation": "any",
   "icons": [
     {
       "src": "img/icon-192.png",

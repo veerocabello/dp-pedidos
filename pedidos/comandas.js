@@ -290,6 +290,12 @@ let paymentMethod = 'efectivo';
 // cocina YA se imprimió, así que al cobrarlo ahora no hay que volver a
 // imprimir nada — solo marcarlo como pagado.
 let pedidoACobrarSinImprimir = null;
+// Foto de cart/custCart/extrasCart/manualCart/orderDiscount/lineDiscounts en
+// el momento de recuperar un pedido no pagado para cobrarlo (payHistorialOrder)
+// — si al confirmar ya no coincide es que se añadió o quitó algo al recogerlo
+// (p. ej. una tarta), y hay que tratarlo como comanda nueva en vez de dar por
+// buenos el total y los artículos de cuando se hizo por teléfono.
+let pedidoACobrarSinImprimirSnapshot = null;
 function setOrderPaid(v) {
   orderPaid = v;
   const btnYes = document.getElementById('paid-btn-yes'), btnNo = document.getElementById('paid-btn-no');
@@ -319,10 +325,22 @@ function cobrarBottomAction() {
 function finalizarCobroSinImprimir() {
   const order = pedidoACobrarSinImprimir;
   if (!order) return;
+  const snapshotActual = JSON.stringify({ cart, custCart, extrasCart, manualCart, orderDiscount, lineDiscounts });
+  const seAñadioAlgo = pedidoACobrarSinImprimirSnapshot !== null && snapshotActual !== pedidoACobrarSinImprimirSnapshot;
+  pedidoACobrarSinImprimir = null;
+  pedidoACobrarSinImprimirSnapshot = null;
+  if (seAñadioAlgo) {
+    // El total y los artículos guardados son los de cuando se hizo el
+    // pedido por teléfono — si se ha añadido o quitado algo al recogerlo ya
+    // no valen, así que se cobra e imprime como una comanda nueva (mismo
+    // criterio que "✏️ Modificar") para que la caja cuadre con lo cobrado.
+    toast('🧾 Se añadió/quitó algo — se cobra como comanda nueva');
+    handlePrintOrder();
+    return;
+  }
   order.paid = true;
   order.paymentMethod = paymentMethod;
   saveToHistorial(order);
-  pedidoACobrarSinImprimir = null;
   clearOrder(true);
   toast('✅ Pedido ' + order.num + ' cobrado');
 }
@@ -757,12 +775,69 @@ function offerNote(salsaCount, ingCount) {
 function computeFreeSwapPasses(quitadosCount, cambiosCount) {
   return Math.max(0, Math.min(quitadosCount || 0, 2 - (cambiosCount || 0)));
 }
-// Elegir "Ninguna" en la base de Patata Simple se guarda como un
-// ingrediente quitado más (para que el ticket diga "🚫 Sin Aceite de
-// oliva"), pero no es un cambio real de verdad — no debe regalar un pase
-// gratis de "quitar uno, añadir otro" como si fuera un ingrediente normal.
-function contarQuitadosParaGratis(quitados) {
-  return (quitados || []).filter(c => !isBaseGrasaComp(c)).length;
+// "Sal" y "pimienta" (los únicos quitables de la Patata Simple) no son
+// ingredientes de verdad — quitarlas no debe regalar un cambio gratis
+// (si a alguien se le olvida ponerlas, eso no es excusa para colar un
+// ingrediente extra sin cobrar). Solo cuentan para el cupo de "cambio
+// gratis" los ingredientes reales que se quitan.
+const SEASONING_NAMES = new Set(['sal', 'pimienta']);
+function countFreeSwapQuitados(quitadosNames) {
+  return (quitadosNames || []).filter(name => !SEASONING_NAMES.has(String(name).trim().toLowerCase())).length;
+}
+// Cuando quitar un ingrediente/salsa real "regala" un cambio gratis, en
+// vez de dejarlo como dos líneas sueltas ("🚫 Sin X" + "+ Y") se
+// convierte directamente en un cambio de verdad ("🔄 X → Y"), como si se
+// hubiera usado el selector "Cambiar ingrediente/salsa" — mismo tipo
+// primero (ingrediente con ingrediente, salsa con salsa) y, si sobra
+// alguno, con el que quede. En la Simple nunca hay nada que emparejar:
+// sal/pimienta no cuentan para el cupo (countFreeSwapQuitados), así que
+// sus extras se quedan siempre como extras sueltos, nunca como cambio.
+function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder, doblesList) {
+  const freePasses = computeFreeSwapPasses(countFreeSwapQuitados(quitadosList), explicitCambios.length);
+  if (freePasses <= 0) {
+    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder, dobles: doblesList || [] };
+  }
+  const comps = parseBaseComponents(item);
+  const realIngComponents = new Set(comps.filter(c => !esComponenteSalsa(c) && !isBaseGrasaComp(c) && !isElegirSalsaComp(c)));
+  const realSalsaComponents = new Set(comps.filter(c => esComponenteSalsa(c) && !isBaseGrasaComp(c)));
+  let remainingQuitados = [...quitadosList];
+  let remainingIng = [...ingList];
+  let remainingSalsa = [...salsaList];
+  let remainingDobles = [...(doblesList || [])];
+  const newCambios = [];
+  const consumed = new Set(); // "type:name" de picks ya emparejados, para limpiar pickOrder
+  (pickOrder || []).slice(0, freePasses).forEach(pick => {
+    const isIng = pick.type === 'ing';
+    let qIdx = remainingQuitados.findIndex(q => isIng ? realIngComponents.has(q) : realSalsaComponents.has(q));
+    if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
+    if (qIdx === -1) return; // no debería pasar si freePasses se calculó bien
+    const from = remainingQuitados.splice(qIdx, 1)[0];
+    newCambios.push({ from, to: pick.name });
+    consumed.add(pick.type + ':' + pick.name);
+    if (isIng) remainingIng = remainingIng.filter(n => n !== pick.name);
+    else remainingSalsa = remainingSalsa.filter(n => n !== pick.name);
+  });
+  const newPickOrder = (pickOrder || []).filter(p => !consumed.has(p.type + ':' + p.name));
+  // Si sobra cupo de cambio gratis y queda algún ingrediente/salsa pedido
+  // doble/triple (ya estaba en la receta, no es un extra nuevo), se
+  // empareja igual: quitar uno de base y pedir el doble de otro cuesta lo
+  // mismo que un cambio de verdad, así que esa unidad de más sale gratis
+  // en vez de cobrarse aparte con dobleSurcharge.
+  let freeLeft = freePasses - newCambios.length;
+  const dobleIdxConsumidos = [];
+  for (let i = 0; i < remainingDobles.length && freeLeft > 0 && remainingQuitados.length > 0; i++) {
+    const name = remainingDobles[i];
+    const isIng = realIngComponents.has(name);
+    let qIdx = remainingQuitados.findIndex(q => isIng ? realIngComponents.has(q) : realSalsaComponents.has(q));
+    if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
+    if (qIdx === -1) continue;
+    const from = remainingQuitados.splice(qIdx, 1)[0];
+    newCambios.push({ from, to: name });
+    dobleIdxConsumidos.push(i);
+    freeLeft--;
+  }
+  dobleIdxConsumidos.reverse().forEach(i => remainingDobles.splice(i, 1));
+  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder, dobles: remainingDobles };
 }
 // Mismo criterio que computeExtrasCorePrice: los primeros `freePasses`
 // picks por orden de selección van gratis — así el ticket muestra sin
@@ -774,7 +849,7 @@ function freeSwapPickSet(pickOrder, freePasses) {
   return set;
 }
 function getExtrasItemPrice(e) {
-  const free = computeFreeSwapPasses(contarQuitadosParaGratis(e.quitados), (e.cambios || []).length);
+  const free = computeFreeSwapPasses(countFreeSwapQuitados(e.quitados), (e.cambios || []).length);
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
   return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
@@ -831,7 +906,7 @@ function getExtrasItemTicketExtras(e) {
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
-  const free = upgraded ? 0 : computeFreeSwapPasses(contarQuitadosParaGratis(e.quitados), (e.cambios || []).length);
+  const free = upgraded ? 0 : computeFreeSwapPasses(countFreeSwapQuitados(e.quitados), (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
   (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
@@ -1516,6 +1591,7 @@ function clearOrder(silent) {
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
   pedidoACobrarSinImprimir = null;
+  pedidoACobrarSinImprimirSnapshot = null;
   setOrderPaid(true);
   setPaymentMethod('efectivo');
   renderMenu();
@@ -1605,10 +1681,14 @@ function renderCustChips() {
   const iEl = document.getElementById('cust-ingredients');
   const sinSalsaChip = `<button class="chip ${custSelSauces.includes(SIN_SALSA) ? 'selected' : ''}" onclick="toggleCustSauce('${SIN_SALSA}')">🚫 Sin salsa</button>`;
   sEl.innerHTML = sinSalsaChip + CUST_SAUCES.map(n => {
-    const sel = custSelSauces.includes(n);
-    const extra = custSelExtraSauces.includes(n);
-    const label = extra ? n + ' +' + fmt(priceOfSalsaExtra(n)) + '€' : n;
-    return `<button class="chip ${sel ? 'selected' : ''} ${extra ? 'extra' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
+    const countIncluded = custSelSauces.filter(x => x === n).length;
+    const countExtra = custSelExtraSauces.filter(x => x === n).length;
+    const total = countIncluded + countExtra;
+    const mult = total >= 2;
+    const sel = total > 0;
+    const priceUnit = priceOfSalsaExtra(n);
+    const label = mult ? n + ' x' + total + (countExtra > 0 ? ' +' + fmt(priceUnit * countExtra) + '€' : '') : countExtra > 0 ? n + ' +' + fmt(priceUnit) + '€' : n;
+    return `<button class="chip ${sel ? 'selected' : ''} ${countExtra > 0 ? 'extra' : ''} ${mult ? 'doble' : ''}" onclick="toggleCustSauce('${n.replace(/'/g, "\\'")}')">${label}</button>`;
   }).join('');
   iEl.innerHTML = sortEs(CUST_INGREDIENTS).map(n => {
     const countIncluded = custSelIngredients.filter(x => x === n).length;
@@ -1636,14 +1716,19 @@ function toggleCustSauce(n) {
     return;
   }
   custSelSauces = custSelSauces.filter(s => s !== SIN_SALSA);
-  const iN = custSelSauces.indexOf(n);
-  const iE = custSelExtraSauces.indexOf(n);
-  if (iN >= 0) custSelSauces.splice(iN, 1);
-  else if (iE >= 0) custSelExtraSauces.splice(iE, 1);
-  else {
+  // Igual que con los ingredientes: normal → doble → triple → normal,
+  // cada unidad de más ocupa un hueco incluido mientras quede sitio en
+  // el límite, y solo la que ya no cabe se cobra aparte.
+  const countIncluded = custSelSauces.filter(x => x === n).length;
+  const countExtra = custSelExtraSauces.filter(x => x === n).length;
+  const total = countIncluded + countExtra;
+  if (total < MAX_ING_MULTIPLICIDAD) {
     const roomInLimit = (cfg.maxSauces === null || custSelSauces.length < cfg.maxSauces) && (cfg.maxTotal === null || custSelTotal() < cfg.maxTotal);
     if (roomInLimit) custSelSauces.push(n);
     else custSelExtraSauces.push(n); // fuera del límite incluido → se cobra aparte
+  } else {
+    custSelSauces = custSelSauces.filter(x => x !== n);
+    custSelExtraSauces = custSelExtraSauces.filter(x => x !== n);
   }
   renderCustChips(); updateCustBadges(); updateCustTotalPrice();
 }
@@ -1755,7 +1840,7 @@ function confirmCustomizer() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — CHEDDAR-BACON
    ══════════════════════════════════════════════════════════════ */
-let cheddarCarne = null, cheddarCarneQty = 1, cheddarSalsasExtra = {}, cheddarEditKey = null;
+let cheddarCarne = null, cheddarCarneQty = 1, cheddarIngredientesExtra = {}, cheddarSalsasExtra = {}, cheddarEditKey = null;
 // Nombre "de catálogo" de la carne elegida — el que ya tiene precio de
 // sobra en EXTRAS_ING_PRECIO1, así se reutiliza dobleSurcharge() sin tener
 // que inventar un precio nuevo para "picada"/"kebab".
@@ -1764,6 +1849,15 @@ function cheddarDobles() {
   const name = cheddarCarneCanonical();
   const out = [];
   if (name) for (let i = 1; i < cheddarCarneQty; i++) out.push(name);
+  return out;
+}
+// Cada unidad de más de un ingrediente/salsa extra (doble = 1 de más,
+// triple = 2) — mismo criterio que currentDoblesList() del resto de
+// patatas, aparte de la carne (que lleva su propio cheddarDobles()).
+function cheddarExtraDobles() {
+  const out = [];
+  Object.entries(cheddarIngredientesExtra).forEach(([name, q]) => { for (let i = 1; i < q; i++) out.push(name); });
+  Object.entries(cheddarSalsasExtra).forEach(([name, q]) => { for (let i = 1; i < q; i++) out.push(name); });
   return out;
 }
 function openCheddarModal(editKey) {
@@ -1775,12 +1869,16 @@ function openCheddarModal(editKey) {
     const name = existing.cheddarCarne === 'kebab' ? 'Carne Kebab' : 'Carne Picada';
     cheddarCarneQty = 1 + (existing.dobles || []).filter(d => d === name).length;
   }
+  cheddarIngredientesExtra = {};
   cheddarSalsasExtra = {};
-  if (existing) (existing.salsasExtra || []).forEach(s => cheddarSalsasExtra[s] = true);
+  if (existing) {
+    (existing.ingredientesExtra || []).forEach(i => { cheddarIngredientesExtra[i] = 1 + (existing.dobles || []).filter(d => d === i).length; });
+    (existing.salsasExtra || []).forEach(s => { cheddarSalsasExtra[s] = 1 + (existing.dobles || []).filter(d => d === s).length; });
+  }
   renderCheddarCarneOptions();
   document.getElementById('cheddar-error').style.display = 'none';
   document.getElementById('cheddar-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
-  renderCheddarSalsasExtra();
+  renderCheddarExtras();
   updateCheddarPrice();
   document.getElementById('cheddar-modal').classList.add('open');
 }
@@ -1809,27 +1907,55 @@ function renderCheddarCarneOptions() {
     document.getElementById('cheddar-title-' + k).textContent = mult ? labels[k] + ' (x' + cheddarCarneQty + ')' : labels[k];
   });
 }
-function renderCheddarSalsasExtra() {
-  const el = document.getElementById('cheddar-salsas-list');
-  if (!el) return;
-  el.innerHTML = CUST_SAUCES.map(s => {
-    const slug = 'cheddar-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
-    const on = !!cheddarSalsasExtra[s];
-    return `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
-      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
-    </label>`;
-  }).join('');
+// Mismo estilo de chips que "Ingredientes extra"/"Salsas extra" del resto
+// de patatas (ver renderExtrasBody) — aquí todo lo que se toca es siempre
+// "extra" (nada de esto viene incluido en la receta base del Cheddar), así
+// que el chip marcado se pinta igual que un extra ahí.
+// Carne Kebab/Carne Picada se excluyen de "Ingredientes extra": esas dos
+// ya tienen su propio selector arriba ("Elige la carne"), no tendría
+// sentido ofrecerlas otra vez sueltas.
+function renderCheddarExtras() {
+  const ingEl = document.getElementById('cheddar-ingredientes-list');
+  if (ingEl) {
+    ingEl.innerHTML = sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07])
+      .filter(ing => ing !== 'Carne Kebab' && ing !== 'Carne Picada')
+      .map(ing => {
+        const precio = priceOfIngExtra(ing);
+        const qty = cheddarIngredientesExtra[ing] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const label = mult ? ing + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? ing + ' +' + fmt(precio) + '€' : ing;
+        return `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleCheddarIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+      }).join('');
+  }
+  const salsaEl = document.getElementById('cheddar-salsas-list');
+  if (salsaEl) {
+    salsaEl.innerHTML = CUST_SAUCES.map(s => {
+      const precio = priceOfSalsaExtra(s);
+      const qty = cheddarSalsasExtra[s] || 0;
+      const on = qty > 0, mult = qty >= 2;
+      const label = mult ? s + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? s + ' +' + fmt(precio) + '€' : s;
+      return `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+    }).join('');
+  }
+}
+function toggleCheddarIng(ing) {
+  const cur = cheddarIngredientesExtra[ing] || 0;
+  cheddarIngredientesExtra[ing] = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  renderCheddarExtras();
+  updateCheddarPrice();
 }
 function toggleCheddarSalsa(s) {
-  cheddarSalsasExtra[s] = !cheddarSalsasExtra[s];
-  renderCheddarSalsasExtra();
+  const cur = cheddarSalsasExtra[s] || 0;
+  cheddarSalsasExtra[s] = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  renderCheddarExtras();
   updateCheddarPrice();
 }
 function updateCheddarPrice() {
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
-  document.getElementById('cheddar-price').textContent = fmt(item.price + extra + dobleSurcharge(cheddarDobles())) + ' €';
+  const extraIng = Object.entries(cheddarIngredientesExtra).filter(([, q]) => q > 0).reduce((s, [name]) => s + priceOfIngExtra(name), 0);
+  const extraSalsa = Object.entries(cheddarSalsasExtra).filter(([, q]) => q > 0).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
+  const dobles = [...cheddarDobles(), ...cheddarExtraDobles()];
+  document.getElementById('cheddar-price').textContent = fmt(item.price + extraIng + extraSalsa + dobleSurcharge(dobles)) + ' €';
 }
 function confirmCheddar() {
   if (!cheddarCarne) {
@@ -1837,16 +1963,19 @@ function confirmCheddar() {
     return;
   }
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const salsaList = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).map(([s]) => s).sort();
-  const dobles = cheddarDobles();
-  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (cheddarCarneQty > 1 ? '_x' + cheddarCarneQty : '') + (salsaList.length ? '_S' + salsaList.join('|') : '');
+  const ingList = Object.entries(cheddarIngredientesExtra).filter(([, q]) => q > 0).map(([name]) => name).sort();
+  const salsaList = Object.entries(cheddarSalsasExtra).filter(([, q]) => q > 0).map(([name]) => name).sort();
+  const dobles = [...cheddarDobles(), ...cheddarExtraDobles()];
+  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (cheddarCarneQty > 1 ? '_x' + cheddarCarneQty : '')
+    + (ingList.length ? '_I' + ingList.join('|') : '')
+    + (salsaList.length ? '_S' + salsaList.join('|') : '');
   let qtyToSet = 1;
   if (cheddarEditKey && extrasCart[cheddarEditKey]) {
     qtyToSet = extrasCart[cheddarEditKey].qty;
     delete extrasCart[cheddarEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: [], salsasExtra: salsaList, dobles, basePrice: item.price, cheddarCarne, key };
+  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: ingList, salsasExtra: salsaList, dobles, basePrice: item.price, cheddarCarne, key };
   const wasEdit = !!cheddarEditKey;
   closeCheddarModal();
   renderCart();
@@ -1966,15 +2095,6 @@ function isBaseGrasaComp(comp) { return ['aceite de oliva', 'mantequilla'].inclu
 // 4 Quesos lleva los quesos ya mezclados (no se pueden quitar ni cambiar),
 // pero la salsa base sí es un ingrediente suelto que se puede cambiar.
 const SALSA_CAMBIABLE_AUNQUE_BLOQUEADO_IDS = new Set([8]);
-// Insignia con el nº de ingredientes/salsas marcados, junto al título de
-// cada sección — para verlo de un vistazo sin contar los chips resaltados
-// uno a uno, sobre todo para saber si ya toca la oferta de Al Gusto (1
-// salsa + 6 ingredientes) o Bomba (9 en total). Solo se pinta si hay algo
-// marcado, para no ensuciar el título cuando aún no se ha tocado nada.
-function extrasSectionCounterHtml(count) {
-  if (!count) return '';
-  return `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;background:var(--brown);color:var(--gold);border-radius:999px;font-size:11px;font-weight:700;vertical-align:middle">${count}</span>`;
-}
 function renderExtrasBody(item) {
   const isBoniato = BONIATO_IDS.has(item.id);
   const soloGratinado = EXTRAS_SOLO_GRATINADO.has(item.id);
@@ -2140,9 +2260,7 @@ function renderExtrasBody(item) {
     // de las filas con casilla de antes) — aquí todo lo que se toca es
     // siempre "extra" (esta patata no tiene ninguna incluida gratis), así
     // que el chip marcado se pinta igual que un ingrediente de más ahí.
-    const ingCountExtra = Object.values(extrasIngredientes).filter(q => q > 0).length;
-    const salsaCountExtra = Object.values(extrasSalsas).filter(q => q > 0).length;
-    html += `<div class="section-label">Ingredientes extra ${extrasSectionCounterHtml(ingCountExtra)} <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
     sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
       const precio = priceOfIngExtra(ing);
       const qty = extrasIngredientes[ing] || 0;
@@ -2151,7 +2269,7 @@ function renderExtrasBody(item) {
       html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
-    html += `<div class="section-label">Salsas extra ${extrasSectionCounterHtml(salsaCountExtra)} <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
     const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
     html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
     CUST_SAUCES.forEach(s => {
@@ -2295,18 +2413,39 @@ function currentDoblesList() {
   });
   return dobles;
 }
+// Reúne el estado en vivo del modal de extras y le aplica el
+// emparejamiento de cambios gratis (autoPairFreeSwaps) — lo usan tanto el
+// precio en vivo (updateExtrasTotalPrice) como la confirmación
+// (confirmExtras), para que lo que se ve mientras se personaliza sea
+// exactamente lo que se acaba cobrando.
+function pairCurrentExtras(item) {
+  return autoPairFreeSwaps(
+    item,
+    Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q),
+    Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing),
+    Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s),
+    extrasCambios.map(c => ({ from: c.from, to: c.to })),
+    getOrderedExtrasPicks(),
+    currentDoblesList()
+  );
+}
 function updateExtrasTotalPrice() {
   const item = MENU.find(m => m.id == extrasCurrentId);
   if (!item) return;
-  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
-  const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
-  const quitadosCount = contarQuitadosParaGratis(Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([c]) => c));
-  const free = computeFreeSwapPasses(quitadosCount, extrasCambios.length);
-  const core = computeExtrasCorePrice(item.price, ingList, salsaList, getOrderedExtrasPicks(), free);
-  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(currentDoblesList());
+  const paired = pairCurrentExtras(item);
+  // paired.ingredientesExtra/salsasExtra/pickOrder ya vienen sin los que se
+  // acaban de emparejar como cambio gratis (ver autoPairFreeSwaps), así que
+  // aquí no queda ningún "free" que restar aparte — todo lo que queda en
+  // esas listas se cobra entero.
+  const core = computeExtrasCorePrice(item.price, paired.ingredientesExtra, paired.salsasExtra, paired.pickOrder, 0);
+  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
-  if (noteEl) noteEl.textContent = offerNote(salsaList.length, ingList.length);
+  if (noteEl) {
+    const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing);
+    const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s);
+    noteEl.textContent = offerNote(salsaList.length, ingList.length);
+  }
 }
 function confirmExtras() {
   const id = extrasCurrentId;
@@ -2317,12 +2456,13 @@ function confirmExtras() {
     toast('🚫 Elige una salsa antes de añadir ' + item.name);
     return;
   }
-  const ingList = Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing).sort();
-  const salsaList = Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s).sort();
-  const quitadosList = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q).sort();
-  const dobles = currentDoblesList().sort();
-  const cambiosList = extrasCambios.map(c => ({ from: c.from, to: c.to }));
-  const pickOrder = getOrderedExtrasPicks();
+  const paired = pairCurrentExtras(item);
+  const ingList = paired.ingredientesExtra.sort();
+  const salsaList = paired.salsasExtra.sort();
+  const quitadosList = paired.quitados.sort();
+  const cambiosList = paired.cambios;
+  const pickOrder = paired.pickOrder;
+  const dobles = paired.dobles.sort();
   const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
@@ -2476,6 +2616,14 @@ function buildOrderObject(preview) {
       { name: m.name, qty: m.qty, subtotal: m.price * m.qty, extras: [], _rank: CATEGORY_ORDER.length, _menuId: null },
       m.key));
   });
+  // Cobro rápido sin comanda: con el carrito vacío se puede escribir el
+  // total a mano en "Cobrar" (repasar un ticket, un cobro suelto que no es
+  // un pedido de la carta...) y cobrarlo con la calculadora de cambio. Si
+  // no se convierte en una línea aquí, ese cobro no se guarda en ningún
+  // sitio — ni en Pedidos de hoy ni en los totales de Hacer Caja.
+  if (items.length === 0 && cobrarTotalManual != null && cobrarTotalManual > 0) {
+    items.push({ name: 'Cobro', qty: 1, subtotal: cobrarTotalManual, extras: [], _rank: CATEGORY_ORDER.length, _menuId: null });
+  }
   items.sort((a, b) => a._rank - b._rank);
   items.forEach(it => delete it._rank);
   const subtotal = items.reduce((s, it) => s + it.subtotal, 0);
@@ -2616,7 +2764,12 @@ function buildCajaResumenBlocks(fecha) {
   const divider = '-'.repeat(width);
   const fondo = loadCajaFondo(fecha);
   const t = loadCajaTotales(fecha);
-  const facturado = t.efectivo + t.tarjeta + t.pendiente;
+  const tarjetaOverride = loadCajaNota('tarjeta', fecha);
+  const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
+  const web = loadCajaNota('web', fecha);
+  const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, fecha));
+  const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
+  const facturado = t.efectivo + tarjeta + t.pendiente + deliveryTotal;
   const esperadoCajon = fondo + t.efectivo;
   const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -2630,20 +2783,34 @@ function buildCajaResumenBlocks(fecha) {
   B.push({ text: divider, align: 'left' });
   B.push({ text: 'Pedidos: ' + t.count, align: 'left' });
   B.push({ text: 'Fondo inicial: ' + fmtEur(fondo), align: 'left' });
-  B.push({ text: 'Efectivo cobrado: ' + fmtEur(t.efectivo), align: 'left' });
-  B.push({ text: 'Tarjeta cobrada: ' + fmtEur(t.tarjeta), align: 'left' });
+  B.push({ text: divider, align: 'left' });
+  // "TIENDA"/"DELIVERY" sin "big": a doble ancho, una etiqueta o un
+  // importe largo puede pasarse del ancho del papel (sobre todo en 58mm,
+  // que en doble ancho solo caben ~16 caracteres) y la impresora corta o
+  // salta de línea a media palabra. Solo el TOTAL final va grande, y en su
+  // propia línea corta, como ya se hacía con "Esperado en caja".
+  B.push({ text: 'TIENDA', align: 'left' });
+  B.push({ text: '  Efectivo: ' + fmtEur(t.efectivo), align: 'left' });
+  B.push({ text: '  Tarjeta: ' + fmtEur(tarjeta), align: 'left' });
+  if (web != null) {
+    B.push({ text: '  (de la web: ' + fmtEur(web) + ')', align: 'left' });
+  }
   if (t.pendiente > 0) {
     B.push({ text: 'PENDIENTE DE COBRO: ' + fmtEur(t.pendiente), align: 'left', paidStatus: 'no' });
   }
   B.push({ text: divider, align: 'left' });
-  B.push({ text: 'TOTAL FACTURADO: ' + fmtEur(facturado), align: 'left', big: true });
+  B.push({ text: 'DELIVERY', align: 'left' });
+  CAJA_DELIVERY.forEach((d, i) => {
+    B.push({ text: '  ' + foldAccents(d.label) + ': ' + fmtEur(deliveryValores[i] || 0), align: 'left' });
+  });
+  B.push({ text: divider, align: 'left' });
+  B.push({ text: 'TOTAL:', align: 'center' });
+  B.push({ text: fmtEur(facturado), align: 'center', big: true });
   B.push({ text: 'EFECTIVO ESPERADO EN CAJA:', align: 'center' });
   B.push({ text: fmtEur(esperadoCajon), align: 'center', big: true });
   if (t.pendiente > 0) {
     B.push({ text: divider, align: 'center' });
     B.push({ text: 'Ojo: hay pedidos sin cobrar.', align: 'center' });
-    B.push({ text: 'Si se cobraron a mano sin marcarlos', align: 'center' });
-    B.push({ text: 'pagados aqui, la caja no cuadrara.', align: 'center' });
   }
   B.push({ text: divider, align: 'center' });
   return B;
@@ -2692,7 +2859,8 @@ function peekNextOrderNum() {
   return 'C' + String(data.n + 1).padStart(3, '0');
 }
 function previewTicket() {
-  if (!cartHasAnyItem()) { toast('La comanda está vacía'); return; }
+  const hayCobroManual = cobrarTotalManual != null && cobrarTotalManual > 0;
+  if (!cartHasAnyItem() && !hayCobroManual) { toast('La comanda está vacía'); return; }
   openTicketView(buildOrderObject(true));
 }
 function openTicketView(order) {
@@ -2852,16 +3020,20 @@ function getCajaTotalesKey(fecha) { return 'dpf_comandas_caja_totales_' + (fecha
 // localStorage a mano.
 function _acumularEnTotales(t, order, signo) {
   if (!order) return;
+  // "No pagado" es solo un aviso impreso para el compañero (para que sepa
+  // que ese pedido todavía no se ha cobrado al hacerlo) — en la tienda el
+  // cobro real, cuando llega, se hace aparte con el total a mano en
+  // "Cobrar" (ver el "Cobro" de buildOrderObject), sin pasar nunca por
+  // "Pedidos no pagados" para marcarlo pagado. Si este pedido sin pagar
+  // sumara aquí como "pendiente", esa venta quedaría contada DOS veces en
+  // Hacer Caja: una como pendiente que nunca se resuelve y otra como el
+  // cobro suelto real — así que no pagado no toca los totales de caja.
+  if (!order.paid) return;
   const total = (typeof order.total === 'number' && isFinite(order.total)) ? order.total : 0;
-  if (order.paid) {
-    if (order.paymentMethod === 'tarjeta') t.tarjeta += signo * total; else t.efectivo += signo * total;
-  } else {
-    t.pendiente += signo * total;
-  }
+  if (order.paymentMethod === 'tarjeta') t.tarjeta += signo * total; else t.efectivo += signo * total;
   t.count = Math.max(0, t.count + signo);
   t.efectivo = Math.max(0, t.efectivo);
   t.tarjeta = Math.max(0, t.tarjeta);
-  t.pendiente = Math.max(0, t.pendiente);
 }
 function loadCajaTotales(fecha) {
   try {
@@ -2901,10 +3073,16 @@ function _cajaTotalesAplicar(order, signo, fecha) {
 function saveToHistorial(order) {
   let list;
   try { list = JSON.parse(localStorage.getItem(getHistorialKey()) || '[]'); } catch (e) { list = []; }
+  // OJO: _cajaTotalesAplicar tiene que ir ANTES de guardar el pedido en el
+  // historial. Si el acumulador del día todavía no existe (el primer pedido
+  // de cada día), loadCajaTotales() lo reconstruye sumando el historial de
+  // ese día — si este pedido ya estuviera ahí guardado, se sumaría una vez
+  // en la reconstrucción y otra vez más al aplicarlo, contando el primer
+  // pedido del día por duplicado en la caja.
+  _cajaTotalesAplicar(order, 1);
   list.unshift(order);
   if (list.length > HISTORIAL_MAX) list = list.slice(0, HISTORIAL_MAX);
   localStorage.setItem(getHistorialKey(), JSON.stringify(list));
-  _cajaTotalesAplicar(order, 1);
   maybeAutoBackup(todayISO());
 }
 function getHistorial(fecha) {
@@ -3056,7 +3234,12 @@ function payHistorialOrder(index) {
   // impreso) para poder cobrarlo sin generar uno nuevo ni volver a
   // imprimir — ver cobrarBottomAction/finalizarCobroSinImprimir.
   pedidoACobrarSinImprimir = order;
-  setOrderPaid(false);
+  pedidoACobrarSinImprimirSnapshot = JSON.stringify({ cart, custCart, extrasCart, manualCart, orderDiscount, lineDiscounts });
+  // Antes se ponía en "No pagado", lo que ocultaba la fila Efectivo/Tarjeta
+  // del modal (había que darle antes a "Pagado" para verla, nada obvio) —
+  // este cobro siempre termina marcándose como pagado, así que se muestra
+  // directamente para poder elegir Efectivo o Tarjeta sin pasos de más.
+  setOrderPaid(true);
   setPaymentMethod(order.paymentMethod || 'efectivo');
   list.splice(index, 1);
   localStorage.setItem(getHistorialKey(historialFechaSel), JSON.stringify(list));
@@ -3093,6 +3276,50 @@ function getCajaFondoKey(fecha) { return 'dpf_comandas_caja_fondo_' + (fecha || 
 const CAJA_FONDO_DEFECTO = 200;
 function loadCajaFondo(fecha) { const v = parseFloat(localStorage.getItem(getCajaFondoKey(fecha))); return isNaN(v) ? CAJA_FONDO_DEFECTO : v; }
 function saveCajaFondo() { localStorage.setItem(getCajaFondoKey(cajaFechaSel), document.getElementById('caja-fondo').value || '0'); }
+// ── Notas de caja escritas a mano: el datáfono (para tener a la vista su
+// propio total, aparte del que calcula la app con lo marcado tarjeta
+// pedido a pedido), cuánto de lo cobrado en tienda viene de pedidos
+// hechos por la página web, y lo que ha generado cada plataforma de
+// delivery (Glovo/Just Eat/Uber Eats no pasan por la app, se cobran
+// aparte). Todo son notas sin más — no se comparan ni se juzgan si
+// "cuadran": con pedidos de fuera es normal que no encajen del todo, así
+// que Hacer Caja aquí solo sirve para apuntar. null (a diferencia de 0)
+// significa "todavía no se ha escrito nada".
+const CAJA_DELIVERY = [
+  { id: 'glovo', label: 'Glovo' },
+  { id: 'justeat', label: 'Just Eat' },
+  { id: 'ubereats', label: 'Uber Eats' },
+];
+function getCajaNotaKey(id, fecha) { return 'dpf_comandas_caja_nota_' + id + '_' + (fecha || todayISO()); }
+function loadCajaNota(id, fecha) {
+  const raw = localStorage.getItem(getCajaNotaKey(id, fecha));
+  if (raw === null) return null;
+  const v = parseFloat(raw);
+  return isFinite(v) ? v : null;
+}
+function saveCajaNota(id, fecha, valor) {
+  if (valor == null) localStorage.removeItem(getCajaNotaKey(id, fecha));
+  else localStorage.setItem(getCajaNotaKey(id, fecha), String(valor));
+}
+let cajaNotaEditando = null;
+// fallbackVal: valor a mostrar en el teclado si todavía no se ha escrito
+// nada a mano — lo usa "Tarjeta" para partir del total que ya calcula la
+// app (lo marcado pedido a pedido) en vez de partir en blanco.
+function editCajaNota(id, titulo, fallbackVal) {
+  cajaNotaEditando = id;
+  const actual = loadCajaNota(id, cajaFechaSel);
+  const valorMostrar = actual != null ? actual : fallbackVal;
+  const input = document.getElementById('caja-nota-manual-input');
+  input.value = valorMostrar != null ? String(valorMostrar).replace('.', ',') : '';
+  openNumpad('caja-nota-manual-input', titulo);
+}
+function setCajaNotaManual(valorStr) {
+  if (!cajaNotaEditando) return;
+  const trimmed = String(valorStr || '').trim();
+  saveCajaNota(cajaNotaEditando, cajaFechaSel, trimmed === '' ? null : Math.max(0, parseCashNum(trimmed)));
+  cajaNotaEditando = null;
+  renderCaja();
+}
 const BACKUP_HECHO_PREFIX = 'dpf_comandas_backup_hecho_';
 function marcarBackupHecho(fecha) { localStorage.setItem(BACKUP_HECHO_PREFIX + fecha, '1'); }
 function hayBackupHecho(fecha) { return localStorage.getItem(BACKUP_HECHO_PREFIX + fecha) === '1'; }
@@ -3116,15 +3343,6 @@ function tapCajaDenom(btn, v) {
   renderCajaContadoUI();
   renderCaja();
 }
-function untapCajaDenom(btn, v) {
-  const key = String(v);
-  const n = (cajaContado.counts[key] || 0) - 1;
-  if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
-  cajaContado.total = Math.max(0, Math.round((cajaContado.total - v) * 100) / 100);
-  saveCajaContadoState();
-  renderCajaContadoUI();
-  renderCaja();
-}
 function limpiarCajaContado() {
   cajaContado = { total: 0, counts: {} };
   saveCajaContadoState();
@@ -3137,22 +3355,60 @@ function setCajaContadoManual(valorStr) {
   renderCajaContadoUI();
   renderCaja();
 }
+// Con prisa (o si son muchas monedas de golpe — 75 de un céntimo, por
+// ejemplo) tocar una por una es un rollo. La insignia de cada billete/
+// moneda está siempre a la vista (aunque no haya ninguna todavía) y al
+// tocarla se abre el teclado para escribir la cantidad exacta de una
+// vez, en vez de tener que tocar el botón esa cantidad de veces.
+let cajaDenomNumpadValue = null;
+function formatDenomLabel(v) {
+  return v >= 1 ? Math.round(v) + ' euros' : Math.round(v * 100) + ' céntimos';
+}
+function openCajaDenomNumpad(v) {
+  cajaDenomNumpadValue = v;
+  const current = cajaContado.counts[String(v)] || 0;
+  const input = document.getElementById('caja-denom-numpad-input');
+  input.value = current || '';
+  openNumpad('caja-denom-numpad-input', 'Cuántas de ' + formatDenomLabel(v));
+}
+function onCajaDenomNumpadInput(valorStr) {
+  if (cajaDenomNumpadValue == null) return;
+  setCajaDenomCantidad(cajaDenomNumpadValue, valorStr);
+}
+function setCajaDenomCantidad(v, valorStr) {
+  const key = String(v);
+  const n = Math.max(0, Math.round(parseCashNum(valorStr) || 0));
+  if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
+  // Se recalcula el total entero a partir de los conteos en vez de sumar
+  // la diferencia — así no se puede descuadrar aunque se edite un salto
+  // grande de golpe.
+  cajaContado.total = Math.round(Object.entries(cajaContado.counts).reduce((s, [k, c]) => s + parseFloat(k) * c, 0) * 100) / 100;
+  saveCajaContadoState();
+  renderCajaContadoUI();
+  renderCaja();
+}
 function renderCajaContadoUI() {
   document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
-    const v = btn.dataset.v;
+    // OJO: btn.dataset.v es el texto tal cual del HTML ("0.20", "0.10",
+    // "0.50" — con el cero final) pero tapCajaDenom/setCajaDenomCantidad
+    // guardan la clave con String(v) de un NÚMERO de JS, que para esos
+    // mismos valores da "0.2"/"0.1"/"0.5" (sin el cero final) — sin pasar
+    // por parseFloat aquí, esos tres círculos nunca encontraban su
+    // contador guardado y se quedaban siempre en "×0" aunque sí se hubiera
+    // escrito una cantidad y el total ya la sumara.
+    const v = String(parseFloat(btn.dataset.v));
     const n = cajaContado.counts[v] || 0;
     btn.classList.toggle('tapped', n > 0);
     let badge = btn.querySelector('.denom-count');
-    if (n > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'denom-count';
-        badge.title = 'Tocar para quitar uno';
-        badge.onclick = (e) => { e.stopPropagation(); untapCajaDenom(btn, parseFloat(v)); };
-        btn.appendChild(badge);
-      }
-      badge.textContent = '×' + n;
-    } else if (badge) badge.remove();
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'denom-count';
+      badge.title = 'Escribir cuántas hay';
+      badge.onclick = (e) => { e.stopPropagation(); openCajaDenomNumpad(parseFloat(v)); };
+      btn.appendChild(badge);
+    }
+    badge.textContent = '×' + n;
+    badge.classList.toggle('zero', n === 0);
   });
   const totalEl = document.getElementById('caja-contado-total');
   if (totalEl) totalEl.textContent = fmt(cajaContado.total) + ' €';
@@ -3186,48 +3442,46 @@ function renderCaja() {
   // que el real en un día muy movido.
   const fondo = loadCajaFondo(cajaFechaSel);
   const t = loadCajaTotales(cajaFechaSel);
-  const efectivo = t.efectivo, tarjeta = t.tarjeta, pendiente = t.pendiente, nPedidos = t.count;
-  const facturado = efectivo + tarjeta + pendiente;
+  const efectivo = t.efectivo, pendiente = t.pendiente, nPedidos = t.count;
   const esperadoCajon = fondo + efectivo;
+  // "Tarjeta" parte del total que calcula la app sola (lo marcado tarjeta
+  // pedido a pedido), pero se puede tocar y escribir el número real del
+  // datáfono a mano — igual que "Efectivo" tiene su "Contado" aparte, salvo
+  // que aquí no hay nada físico que contar, así que es un solo número
+  // editable en vez de dos filas.
+  const tarjetaOverride = loadCajaNota('tarjeta', cajaFechaSel);
+  const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
+  const web = loadCajaNota('web', cajaFechaSel);
+  const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, cajaFechaSel));
+  const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
+  const facturado = efectivo + tarjeta + pendiente + deliveryTotal;
   const esHoy = cajaFechaSel === todayISO();
   const labelEl = document.getElementById('caja-fecha-label');
   if (labelEl) labelEl.textContent = (esHoy ? 'Resumen de hoy · ' : 'Resumen del ') + new Date(cajaFechaSel + 'T00:00:00').toLocaleDateString('es-ES');
   const row = (label, value, big) => `<div class="cash-calc-total-row" style="margin-bottom:8px"><label style="flex:1">${label}</label><b${big ? ' style="font-size:15px"' : ''}>${fmt(value)} €</b></div>`;
+  // Fila editable para una nota manual (tarjeta, web, cada plataforma de
+  // delivery...) — solo apunta el número, sin comparar contra nada.
+  const notaRow = (id, label, valor, titulo, fallback) => `<div class="cash-calc-total-row editable" style="margin:4px 0" onclick="editCajaNota('${id}','${titulo}'${fallback != null ? ',' + fallback : ''})"><label style="flex:1">${label} ✏️</label><b${valor == null ? ' style="color:var(--muted);font-weight:400"' : ''}>${valor == null ? 'Escribir' : fmt(valor) + ' €'}</b></div>`;
   const avisoBackup = (esHoy && nPedidos > 0 && !hayBackupHecho(cajaFechaSel))
     ? `<div style="background:#FFF3CD;border:1.5px solid #D9A441;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#5a3e1b;font-weight:600">⚠️ Todavía no has descargado la copia de hoy — pulsa "📥 Descargar copia" antes de cerrar, por si acaso.</div>`
     : '';
-  // Antes "pendiente" solo entraba en el total facturado sin verse en
-  // ningún sitio — si alguien marcaba un pedido como pagado a mano fuera de
-  // la app (en vez de darle a "pedido no cobrado" desde el panel) la caja
-  // se descuadraba sin que nada avisara de por qué. Esta fila lo hace
-  // visible siempre que haya algo pendiente, en rojo, para que salte a la
-  // vista antes de cerrar.
   const avisoPendiente = pendiente > 0
     ? `<div style="background:#FBE7E4;border:1.5px solid rgba(192,57,43,.4);border-radius:10px;padding:10px 12px;margin-bottom:10px">
         <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:var(--error);font-weight:700">⚠️ Pendiente de cobro</label><b style="color:var(--error)">${fmt(pendiente)} €</b></div>
-        <div style="font-size:11.5px;color:var(--error);margin-top:4px">Si alguno se cobró a mano sin marcarlo pagado en la app, la caja no cuadrará.</div>
-      </div>`
-    : '';
-  // Descuadre automático: en cuanto se ha contado algo (tocando un
-  // billete/moneda o escribiendo el total a mano), se compara solo contra
-  // "esperado" — antes había que restar a mano cada vez.
-  const hayContado = cajaContado.total > 0 || Object.keys(cajaContado.counts).length > 0;
-  const diferencia = Math.round((cajaContado.total - esperadoCajon) * 100) / 100;
-  const cuadra = Math.abs(diferencia) < 0.005;
-  const avisoDiferencia = hayContado
-    ? `<div style="background:${cuadra ? '#E3F3E9' : '#FBE7E4'};border:1.5px solid ${cuadra ? 'rgba(46,139,87,.35)' : 'rgba(192,57,43,.4)'};border-radius:10px;padding:10px 12px;margin:8px 0">
-        <div class="cash-calc-total-row" style="margin-bottom:0"><label style="flex:1;color:${cuadra ? 'var(--success)' : 'var(--error)'};font-weight:700">${cuadra ? '✅ Cuadra' : diferencia > 0 ? '➕ Sobran' : '➖ Faltan'}</label><b style="color:${cuadra ? 'var(--success)' : 'var(--error)'}">${fmt(Math.abs(diferencia))} €</b></div>
       </div>`
     : '';
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
-    + row('💵 Cobrado en efectivo', efectivo)
-    + row('💳 Cobrado con tarjeta', tarjeta)
+    + `<div class="section-label">Tienda</div>`
+    + row('💵 Efectivo', efectivo)
+    + notaRow('tarjeta', '💳 Tarjeta', tarjeta, 'Tarjeta (segun el datafono)', t.tarjeta)
+    + notaRow('web', '🌐 De tienda, cuánto es de la web', web, 'De tienda, cuanto es de la pagina web')
     + avisoPendiente
+    + `<div class="section-label" style="margin-top:10px">Delivery</div>`
+    + CAJA_DELIVERY.map((d, i) => notaRow(d.id, d.label, deliveryValores[i], 'Total de ' + d.label)).join('')
     + `<div style="border-top:1px solid var(--warm);margin:8px 0"></div>`
     + row('Total facturado', facturado, true)
-    + row('💰 Esperado en caja', esperadoCajon, true)
-    + avisoDiferencia;
+    + row('💰 Esperado en caja', esperadoCajon, true);
 }
 
 /* ── Imprimir resumen del día al cerrar caja — mismo "blocks" y mismo
@@ -3297,11 +3551,15 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function construirCopiaJSON(fecha) {
+  const notas = {};
+  ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
   return {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
     fondoCaja: loadCajaFondo(fecha),
     totales: loadCajaTotales(fecha),
+    contado: loadCajaContadoState(fecha),
+    notas,
     pedidos: getHistorial(fecha),
   };
 }
@@ -3413,11 +3671,23 @@ function importarCopiaJSON(event) {
     if (data.totales && typeof data.totales === 'object') saveCajaTotales(data.totales, fecha);
     else localStorage.removeItem(getCajaTotalesKey(fecha)); // sin totales en el archivo: se recalculan solos desde los pedidos al leer la caja
     if (typeof data.fondoCaja === 'number') localStorage.setItem(getCajaFondoKey(fecha), String(data.fondoCaja));
+    // Efectivo contado con billetes/monedas y las notas (datáfono, web,
+    // plataformas de delivery) — si el archivo es de una copia antigua sin
+    // estos campos, se deja lo del día en blanco en vez de dejar algo del
+    // día anterior sin querer.
+    if (data.contado && typeof data.contado === 'object') localStorage.setItem(getCajaContadoKey(fecha), JSON.stringify(data.contado));
+    else localStorage.removeItem(getCajaContadoKey(fecha));
+    ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
+      const v = data.notas && typeof data.notas === 'object' ? data.notas[id] : null;
+      saveCajaNota(id, fecha, typeof v === 'number' ? v : null);
+    });
     cajaFechaSel = fecha;
     const fechaInput = document.getElementById('caja-fecha-input');
     if (fechaInput) fechaInput.value = fecha;
     const fondoInput = document.getElementById('caja-fondo');
     if (fondoInput) fondoInput.value = loadCajaFondo(fecha) || '';
+    cajaContado = loadCajaContadoState(fecha);
+    renderCajaContadoUI();
     renderCaja();
     toast('✅ Copia del ' + fecha + ' importada');
   };
@@ -3776,7 +4046,11 @@ async function printOrder(order) {
 }
 
 async function handlePrintOrder() {
-  if (!cartHasAnyItem()) { toast('La comanda está vacía'); return; }
+  // Cobro rápido sin comanda: comanda vacía pero con un total escrito a
+  // mano en "Cobrar" (ver buildOrderObject) — sí hay algo que cobrar e
+  // imprimir, aunque no venga de la carta.
+  const hayCobroManual = cobrarTotalManual != null && cobrarTotalManual > 0;
+  if (!cartHasAnyItem() && !hayCobroManual) { toast('La comanda está vacía'); return; }
   const btn = document.getElementById('print-btn');
   btn.disabled = true;
   const order = buildOrderObject();

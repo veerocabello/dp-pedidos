@@ -203,8 +203,10 @@
       <div class="option-check" id="cheddar-check-kebab"></div>
     </label>
     <div class="modal-error" id="cheddar-error">⚠️ Elige la carne para continuar</div>
-    <div class="section-label">Salsas extra</div>
-    <div class="ing-grid" id="cheddar-salsas-list"></div>
+    <div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div>
+    <div class="chip-grid" id="cheddar-ingredientes-list"></div>
+    <div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div>
+    <div class="chip-grid" id="cheddar-salsas-list"></div>
     <div class="modal-footer">
       <div class="modal-price" id="cheddar-price">8,50 €</div>
       <button class="modal-confirm-btn" id="cheddar-confirm-btn" onclick="confirmCheddar()">&#x2192; Añadir al pedido</button>
@@ -453,7 +455,7 @@
       <input id="caja-fondo" type="number" min="0" step="0.01" placeholder="0,00" oninput="saveCajaFondo();renderCaja()">
     </div>
     <div id="caja-summary" class="summary-box"></div>
-    <div class="section-label">Efectivo contado en el cajón <span style="font-weight:400;text-transform:none;letter-spacing:0">(para ver si cuadra sola)</span></div>
+    <div class="section-label">Efectivo contado en el cajón</div>
     <div class="calc-columns" style="grid-template-columns:1fr;margin-top:4px">
       <div class="denom-col">
         <div class="denom-sep" style="margin-top:0">Billetes</div>
@@ -480,6 +482,8 @@
       <label style="flex:1">Contado ✏️</label><b id="caja-contado-total">0,00 €</b>
     </div>
     <input type="hidden" id="caja-contado-manual-input" oninput="setCajaContadoManual(this.value)">
+    <input type="hidden" id="caja-denom-numpad-input" oninput="onCajaDenomNumpadInput(this.value)">
+    <input type="hidden" id="caja-nota-manual-input" oninput="setCajaNotaManual(this.value)">
     <div class="clear-link"><button type="button" onclick="limpiarCajaContado()">✕ Limpiar contado</button></div>
     <div class="settings-actions">
       <button class="btn-secondary" onclick="imprimirResumenCaja()">🖨️ Imprimir resumen del día</button>
@@ -493,7 +497,7 @@
       <b>Importar copia:</b> recupera un archivo descargado antes con "📥 Descargar copia" (por ejemplo, si se ha perdido este ordenador o se ha cambiado a otro). Solo afecta al día indicado dentro del archivo — sustituye lo que hubiera guardado ese día por lo del archivo, así que revisa la fecha antes de confirmar.
     </div>
     <div class="settings-help">
-      "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo ese día. Cuenta el cajón físico y compáralo con esa cifra para cuadrar caja. Lo cobrado con tarjeta no debe estar en el cajón.
+      "Efectivo esperado en caja" = fondo inicial + lo cobrado en efectivo ese día. Cuenta el cajón físico y apúntalo en "Contado" para comparar con esa cifra. Lo cobrado con tarjeta no debe estar en el cajón.
     </div>
   </div>
 </div>
