@@ -226,7 +226,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     <div style="display:flex;align-items:center;gap:10px;">
       <picture>
         <source srcset="img/logo.webp" type="image/webp">
-        <img src="img/logo.png" alt="Dulce Patata Food" style="height:52px;width:auto;display:block;">
+        <img src="img/logo.png" alt="Dulce Patata Food" width="160" height="160" style="height:52px;width:auto;display:block;">
       </picture>
       <div class="logo" id="logo-secret" style="cursor:default;user-select:none;font-family:Anton,sans-serif;letter-spacing:0.05em;text-transform:uppercase">DULCE <span style="color:var(--gold)">PATATA</span> FOOD</div>
     </div>
@@ -251,7 +251,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       <div class="pickup-icon">
         <picture>
           <source srcset="img/pin-mapa-dulce-patata.webp" type="image/webp">
-          <img src="img/pin-mapa-dulce-patata.png" alt="Ubicación de Dulce Patata Food en el mapa">
+          <img src="img/pin-mapa-dulce-patata.png" alt="Ubicación de Dulce Patata Food en el mapa" width="400" height="512">
         </picture>
       </div>
       <div class="pickup-text">
