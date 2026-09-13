@@ -360,6 +360,56 @@ async function reintentarRevertirSelloFidelizacion(ts, orderNum, telefono, fecha
     if (statusEl) { statusEl.textContent = '❌ ' + (e.message || 'Error de conexión'); statusEl.style.display = 'block'; }
   }
 }
+// Aprueba/descarta un cupón de reseña pendiente (ver resena-cupon.php y
+// la tarjeta especial de renderAlertas más abajo). Siempre pasa por el
+// servidor con deviceId+token de dispositivo de confianza — a diferencia
+// de otras acciones de este panel, aquí no hay ningún camino "directo por
+// Firebase" posible aunque haya sesión real de Firebase Auth, porque
+// generar el cupón es solo la mitad: el servidor es quien decide si el
+// cliente ya puede verlo aprobado la próxima vez que verifique su móvil.
+async function _resenaCuponAccion(accion, telefono) {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (!deviceId || !token) {
+    throw new Error('Este dispositivo no está reconocido como de confianza. Cierra sesión y vuelve a entrar marcando "Dispositivo de confianza" para poder aprobar cupones.');
+  }
+  const res = await fetch('resena-cupon.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: accion, deviceId, token, phone: telefono })
+  });
+  const data = await res.json().catch(() => ({ success: false }));
+  if (!data.success) throw new Error(data.error || 'El servidor rechazó la petición.');
+  return data;
+}
+async function aprobarCuponResena(ts, telefono) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const actions = card && card.querySelector('.resena-actions');
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    const data = await _resenaCuponAccion('aprobar', telefono);
+    if (actions) actions.innerHTML = '<span style="font-size:12.5px;font-weight:800;color:#1e5c37">✅ Cupón ' + escapeHtml(data.codigo || '') + ' generado</span>';
+    logActivity('✅ Cupón de reseña aprobado — ' + telefono + ': ' + (data.codigo || ''));
+    setTimeout(() => resolverAlerta(ts), 1200);
+  } catch (e) {
+    if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = false);
+    if (statusEl) { statusEl.textContent = '❌ ' + e.message; statusEl.style.display = 'block'; }
+  }
+}
+async function descartarCuponResena(ts, telefono) {
+  const card = document.getElementById(_alertaDomId(ts));
+  const actions = card && card.querySelector('.resena-actions');
+  const statusEl = card && card.querySelector('.alerta-retry-status');
+  if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    await _resenaCuponAccion('descartar', telefono);
+    resolverAlerta(ts);
+  } catch (e) {
+    if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = false);
+    if (statusEl) { statusEl.textContent = '❌ ' + e.message; statusEl.style.display = 'block'; }
+  }
+}
 // ── ESTADO DEL SISTEMA ── Chequeo rápido de las 3 piezas de las que
 // depende un pedido: Firebase, el servidor (guardar-pedido.php) y la
 // impresora de este dispositivo — para enterarse de un problema mirando
@@ -473,6 +523,9 @@ function renderAlertas() {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:13px;text-align:center;padding:20px">✅ Sin avisos pendientes</div>';
   } else {
     el.innerHTML = entries.map(e => {
+      if (e.tipo === 'cupon_resena_pendiente' && e.telefono) {
+        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+      }
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';
       const border = critico ? '#F0CFC8' : '#EFD6A9';

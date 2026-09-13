@@ -608,6 +608,14 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
         </div>
       </div>
 
+      <!-- Cupón por reseña — ver src/resena-cupon-cliente.js -->
+      <div style="background:linear-gradient(155deg,var(--brown) 0%,#2B1712 100%);border-radius:16px;padding:16px 18px;margin-bottom:16px;text-align:center">
+        <div style="font-size:22px;margin-bottom:4px">⭐</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:16px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.02em">¿Ya dejaste tu reseña?</div>
+        <div style="font-size:12.5px;color:#E9D9BE;margin:4px 0 12px">Consigue un 10% de descuento en tu próximo pedido</div>
+        <button onclick="abrirResenaCupon()" style="padding:11px 22px;background:var(--gold);color:var(--brown);border:none;border-radius:99px;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif">Quiero mi 10%</button>
+      </div>
+
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:4px">
         <button onclick="shareOrderWhatsApp(currentOrderNum,currentOrderName,currentOrderSlot,currentOrderItems,currentOrderTotal)"
           id="btn-whatsapp-share"
@@ -1123,8 +1131,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789031901626" defer></script>
-<script src="js/app.js?v=1789299093511" defer></script>
-<script src="js/auth.js?v=1789299093511" defer></script>
+<script src="js/app.js?v=1789323579173" defer></script>
+<script src="js/auth.js?v=1789323579173" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
@@ -1301,6 +1309,75 @@ setInterval(function() {
     <button onclick="smsCancelVerify()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
   </div>
 </div>
+
+<!-- ── CUPÓN POR RESEÑA ── ver src/resena-cupon-cliente.js. No hay envío
+     de SMS de aviso: el estado se comprueba en vivo cada vez que se abre
+     este modal y se verifica el móvil (ver resena-cupon.php). -->
+<div id="resena-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.6);align-items:center;justify-content:center">
+  <div style="background:var(--white);border-radius:20px;padding:32px 24px;max-width:360px;width:90%;text-align:center;font-family:'DM Sans',sans-serif;max-height:85vh;overflow-y:auto">
+
+    <div id="resena-paso-telefono">
+      <div style="font-size:40px;margin-bottom:12px">⭐</div>
+      <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">¿Ya dejaste tu reseña?</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:20px">Verifica tu móvil para pedir tu 10% de descuento.</div>
+      <input id="resena-tel-input" type="tel" inputmode="numeric" placeholder="6XX XX XX XX" maxlength="9" style="width:100%;padding:14px;border:2px solid var(--warm);border-radius:12px;font-size:16px;text-align:center;color:var(--brown);font-weight:700;margin-bottom:16px;box-sizing:border-box">
+      <button id="resena-btn-enviar-codigo" onclick="resenaEnviarCodigo()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">Enviar código</button>
+      <button onclick="cerrarResenaCupon()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+    </div>
+
+    <div id="resena-paso-otp" style="display:none">
+      <div style="font-size:40px;margin-bottom:12px">📱</div>
+      <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">Verifica tu teléfono</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:24px">Código enviado al <span id="resena-tel-mostrado" style="font-weight:700;color:var(--brown)"></span></div>
+      <div style="display:flex;justify-content:center;gap:10px;margin-bottom:20px">
+        <input id="resena-otp-1" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="resenaOtpInput(this,1)" onkeydown="resenaOtpKey(event,1)">
+        <input id="resena-otp-2" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="resenaOtpInput(this,2)" onkeydown="resenaOtpKey(event,2)">
+        <input id="resena-otp-3" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="resenaOtpInput(this,3)" onkeydown="resenaOtpKey(event,3)">
+        <input id="resena-otp-4" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" style="width:52px;height:60px;text-align:center;font-size:28px;font-weight:900;border:2px solid var(--warm);border-radius:12px;color:var(--brown);outline:none" oninput="resenaOtpInput(this,4)" onkeydown="resenaOtpKey(event,4)">
+      </div>
+      <div id="resena-otp-error" style="display:none;color:var(--error);font-size:13px;font-weight:600;margin-bottom:12px"></div>
+      <button id="resena-btn-verificar" onclick="resenaVerificarCodigo()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">Verificar</button>
+      <button onclick="cerrarResenaCupon()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+    </div>
+
+    <div id="resena-paso-formulario" style="display:none">
+      <div style="font-size:40px;margin-bottom:12px">🔎</div>
+      <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">Tu reseña en Google</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:16px">Para poder encontrarla y confirmarla.</div>
+      <div style="text-align:left;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">Nombre con el que la dejaste</div>
+      <input id="resena-nombre-input" type="text" placeholder="Ej. Marta G." maxlength="60" style="width:100%;padding:12px;border:2px solid var(--warm);border-radius:10px;font-size:15px;color:var(--brown);margin-bottom:14px;box-sizing:border-box">
+      <div style="text-align:left;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">Algo que pusiste (opcional)</div>
+      <textarea id="resena-comentario-input" rows="3" maxlength="300" placeholder="Ayuda a encontrarla más rápido" style="width:100%;padding:12px;border:2px solid var(--warm);border-radius:10px;font-size:14px;color:var(--brown);margin-bottom:16px;box-sizing:border-box;resize:none;font-family:'DM Sans',sans-serif"></textarea>
+      <button id="resena-btn-enviar-solicitud" onclick="resenaEnviarSolicitud()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">Enviar para comprobar</button>
+      <button onclick="cerrarResenaCupon()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
+    </div>
+
+    <div id="resena-paso-pendiente" style="display:none">
+      <div style="font-size:40px;margin-bottom:12px">⏳</div>
+      <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">Comprobando tu reseña</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:24px">Aún no está lista. Vuelve más tarde a este mismo botón y verifica tu móvil otra vez para ver si ya se aprobó.</div>
+      <button onclick="cerrarResenaCupon()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Entendido</button>
+    </div>
+
+    <div id="resena-paso-exito" style="display:none">
+      <div style="font-size:40px;margin-bottom:12px">🎉</div>
+      <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">¡Confirmado!</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:16px">Aquí tienes tu 10% de descuento:</div>
+      <div id="resena-codigo-mostrado" onclick="copiarTexto(document.getElementById('resena-codigo-mostrado').textContent, '✅ Código copiado')" title="Toca para copiar" style="display:inline-block;background:var(--brown);color:var(--gold);font-family:'Anton',sans-serif;letter-spacing:.02em;font-size:22px;padding:10px 20px;border-radius:10px;margin-bottom:16px;cursor:pointer">RESENA-XXXX</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Válido para tu próximo pedido, un solo uso.</div>
+      <button onclick="cerrarResenaCupon()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Genial</button>
+    </div>
+
+    <div id="resena-paso-error" style="display:none">
+      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+      <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">No se pudo comprobar</div>
+      <div id="resena-error-msg" style="font-size:14px;color:var(--muted);margin-bottom:20px"></div>
+      <button onclick="cerrarResenaCupon()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">Cerrar</button>
+    </div>
+
+  </div>
+</div>
+
 <!-- Generación de PDF real (historial/tickets en el panel de admin) — ya no
      se carga aquí fijo para todo el mundo, ver _loadAdminBundle() más
      arriba: solo se pide al abrir el panel de admin, junto a app-admin.js. -->

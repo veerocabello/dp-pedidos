@@ -26,6 +26,7 @@ const CORE_MODULOS = [
   'carta.js',
   'carrito-checkout.js',
   'antifraude.js',
+  'resena-cupon-cliente.js',
   'init.js',
 ];
 

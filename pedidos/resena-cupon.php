@@ -1,0 +1,485 @@
+<?php
+// ═══════════════════════════════════════════════════════════
+//  CUPÓN POR RESEÑA — Dulce Patata Food
+//
+//  Qué hace: un cliente que ya verificó su teléfono (mismo SMS de
+//  verificación que se usa para pedir, ver send-code.php/verify-code.php)
+//  puede pedir un cupón del 10% a cambio de haber dejado una reseña en
+//  Google. NO se genera ningún código solo por pedirlo — se guarda como
+//  "pendiente" y aparece como aviso en el panel de admin (Alertas), y
+//  solo cuando la dueña lo aprueba a mano (tras comprobar ella misma que
+//  la reseña existe de verdad en su Google Business) se crea el cupón
+//  real. Sin envío de SMS de aviso por ahora: el cliente ve el resultado
+//  volviendo a esta misma pantalla y verificando su móvil otra vez
+//  (acción "consultarEstado" más abajo) — si más adelante hay forma de
+//  avisar por SMS, se añade sin tocar el resto de este flujo.
+//
+//  config/cuponesResena/<teléfono> exige el UID de admin en las reglas
+//  de Firebase (igual que el resto de config/), así que un cliente
+//  anónimo nunca podría escribir ahí por su cuenta — todo pasa por aquí,
+//  con la cuenta de servicio.
+//
+//  POST (JSON):
+//   {"action":"consultarEstado","smsToken":"...","phone":"6XXXXXXXX"}
+//     → {"success":true,"estado":"ninguno"|"pendiente"|"aprobado"|"descartado","codigo":"RESENA-XXXX"|null}
+//   {"action":"solicitar","smsToken":"...","phone":"...","nombreGoogle":"...","comentario":"..."}
+//     → {"success":true,"estado":"pendiente"|"aprobado","codigo":"..."|null}
+//   {"action":"aprobar","deviceId":"...","token":"...","phone":"..."}
+//     → {"success":true,"codigo":"RESENA-XXXX"}
+//   {"action":"descartar","deviceId":"...","token":"...","phone":"..."}
+//     → {"success":true}
+// ═══════════════════════════════════════════════════════════
+
+date_default_timezone_set('Europe/Madrid');
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'error' => 'Método no permitido']);
+    exit;
+}
+
+// ── LÍMITE DE INTENTOS: máximo 20 peticiones por IP cada 10 minutos ──
+// (consultarEstado se llama en cada verificación de móvil, más generoso
+// que un límite pensado solo para "solicitar")
+$tmp_dir = sys_get_temp_dir();
+$window  = 600;
+$max_ip  = 20;
+
+$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$ip = preg_replace('/[^0-9a-fA-F:.,]/', '', explode(',', $ip)[0]);
+$ip_file = $tmp_dir . '/dpf_resena_ip_' . md5($ip) . '.json';
+
+function dpf_gc_rate_limit_files() {
+    if (mt_rand(1, 50) !== 1) return;
+    $ahora = time();
+    foreach (glob(sys_get_temp_dir() . '/dpf_resena_*.json') ?: [] as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime !== false && ($ahora - $mtime) > 3600) {
+            @unlink($f);
+        }
+    }
+}
+dpf_gc_rate_limit_files();
+
+function dpf_resena_check_limit($file, $max, $window) {
+    $fp = fopen($file, 'c+');
+    if ($fp === false) return true; // fail-open, igual que el resto de límites de esta web
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return true;
+    }
+    $now = time();
+    $size = filesize($file) ?: 0;
+    $raw = $size > 0 ? fread($fp, $size) : '';
+    $log = json_decode($raw, true) ?: [];
+    $log = array_values(array_filter($log, function ($ts) use ($now, $window) {
+        return ($now - $ts) < $window;
+    }));
+    if (count($log) >= $max) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return false;
+    }
+    $log[] = $now;
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($log));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return true;
+}
+
+if (!dpf_resena_check_limit($ip_file, $max_ip, $window)) {
+    http_response_code(429);
+    echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+    exit;
+}
+
+// ── Tope aparte, por teléfono: máximo 5 solicitudes NUEVAS ("solicitar")
+// por día — evita que alguien reenvíe la misma solicitud sin parar y
+// llene de avisos duplicados el panel de Alertas. No afecta a
+// consultarEstado, que es de solo lectura. ──
+$max_solicitudes_dia = 5;
+
+require_once __DIR__ . '/twilio-config.php';
+
+// ── Credenciales de Firebase (fuera de public_html, mismo sitio de siempre) ──
+$rutaCredenciales = __DIR__ . '/../../firebase-credenciales.json';
+$databaseURL = 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app';
+
+function base64url_encode($data) {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+function obtenerTokenAcceso($rutaCredenciales) {
+    // Cache del token compartido entre todos los endpoints (guardar-pedido.php,
+    // fidelizacion.php, juegos.php, fichar-pin-check.php, webhook-incidencia.php,
+    // bimba-verify.php, resena-cupon.php) — dura 1 hora entera, ver el
+    // comentario largo original en juegos.php para el porqué.
+    $rutaCache = dirname($rutaCredenciales) . '/firebase-token-cache.json';
+    $cache = null;
+    $fpCache = @fopen($rutaCache, 'r');
+    if ($fpCache !== false) {
+        if (flock($fpCache, LOCK_SH)) {
+            $cache = @json_decode(stream_get_contents($fpCache), true);
+        }
+        fclose($fpCache);
+    }
+    if (is_array($cache) && isset($cache['token'], $cache['exp']) && (int)$cache['exp'] > (time() + 300)) {
+        return $cache['token'];
+    }
+
+    $creds = json_decode(file_get_contents($rutaCredenciales), true);
+    if (!$creds || !isset($creds['private_key'])) {
+        throw new Exception('No se pudo leer el archivo de credenciales.');
+    }
+    $now = time();
+    $header = base64url_encode(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $claims = base64url_encode(json_encode([
+        'iss'   => $creds['client_email'],
+        'scope' => 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email',
+        'aud'   => 'https://oauth2.googleapis.com/token',
+        'exp'   => $now + 3600,
+        'iat'   => $now,
+    ]));
+    $unsigned = $header . '.' . $claims;
+    $signature = '';
+    openssl_sign($unsigned, $signature, $creds['private_key'], 'SHA256');
+    $jwt = $unsigned . '.' . base64url_encode($signature);
+
+    $ch = curl_init('https://oauth2.googleapis.com/token');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        'assertion'  => $jwt,
+    ]));
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $data = json_decode($response, true);
+    if (!isset($data['access_token'])) {
+        throw new Exception('No se pudo obtener el token de acceso: ' . $response);
+    }
+
+    $fpCache = @fopen($rutaCache, 'c');
+    if ($fpCache !== false) {
+        if (flock($fpCache, LOCK_EX)) {
+            ftruncate($fpCache, 0);
+            fwrite($fpCache, json_encode([
+                'token' => $data['access_token'],
+                'exp'   => $now + (int)($data['expires_in'] ?? 3600),
+            ]));
+            flock($fpCache, LOCK_UN);
+        }
+        fclose($fpCache);
+    }
+
+    return $data['access_token'];
+}
+
+function fbGetConEtag($databaseURL, $path, $accessToken) {
+    $etag = null;
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
+        if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
+        return strlen($header);
+    });
+    $response = curl_exec($ch);
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer ' . $path . ' de Firebase');
+    }
+    curl_close($ch);
+    $data = json_decode($response, true);
+    return ['data' => $data, 'etag' => $etag];
+}
+
+function fbPutSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+    $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
+    if ($etag) $headers[] = 'If-Match: ' . $etag;
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $httpCode === 200;
+}
+
+// ── config/activityLog usa la convención de "string JSON" (el valor
+// guardado es un string con JSON dentro, no un array nativo) — mismos
+// helpers que fidelizacion.php, necesarios para no romper ese formato al
+// escribir el aviso de "cupón de reseña pendiente" en Alertas. ──
+function fbGetJsonStringConEtag($databaseURL, $path, $accessToken) {
+    $etag = null;
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken, 'X-Firebase-ETag: true']);
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$etag) {
+        if (stripos($header, 'ETag:') === 0) $etag = trim(substr($header, 5));
+        return strlen($header);
+    });
+    $response = curl_exec($ch);
+    if ($response === false) {
+        curl_close($ch);
+        throw new Exception('Fallo de red al leer ' . $path . ' de Firebase');
+    }
+    curl_close($ch);
+    $raw = json_decode($response, true);
+    $arr = is_string($raw) ? json_decode($raw, true) : null;
+    return ['data' => is_array($arr) ? $arr : null, 'etag' => $etag];
+}
+function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $etag) {
+    $ch = curl_init($databaseURL . '/' . $path . '.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+    $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
+    if ($etag) $headers[] = 'If-Match: ' . $etag;
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(json_encode($data)));
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $httpCode === 200;
+}
+function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = []) {
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
+        $log = $leido['data'] ?: [];
+        $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        array_unshift($log, $extra + [
+            'ts'     => $ahora->format('c'),
+            'time'   => $ahora->format('d/m/Y, H:i:s'),
+            'action' => $mensaje,
+        ]);
+        if (count($log) > 200) $log = array_slice($log, 0, 200);
+        if (fbPutJsonStringSiCoincide($databaseURL, 'config/activityLog', $accessToken, $log, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
+function validarSmsToken($token, $telefonoEsperado) {
+    if (!defined('TWILIO_AUTH_TOKEN') || !TWILIO_AUTH_TOKEN) return false;
+    if (!$token || !is_string($token)) return false;
+    $partes = explode('|', $token);
+    if (count($partes) !== 3) return false;
+    list($tel, $exp, $firma) = $partes;
+    if (!is_numeric($exp) || (int)$exp < time()) return false;
+    if ($tel !== $telefonoEsperado) return false;
+    $firmaEsperada = hash_hmac('sha256', $tel . '|' . $exp, TWILIO_AUTH_TOKEN);
+    return hash_equals($firmaEsperada, (string)$firma);
+}
+
+// Genera el código de descuento del 10% ligado a este teléfono — mismo
+// mecanismo que ya usan los premios de Ruleta/Rasca (crearCodigoPremio en
+// juegos.php): discounts/<código> con 'telefono' puesto, así que
+// guardar-pedido.php ya rechaza solo que lo use un teléfono distinto (ver
+// discountCodeInvalido allí). 60 días de validez — más margen que un
+// premio de juego porque conseguir este cupón cuesta bastante más
+// esfuerzo real (dejar una reseña) que un giro de ruleta.
+const RESENA_CODIGO_VALIDEZ_MS = 60 * 24 * 60 * 60 * 1000;
+const RESENA_PCT = 10;
+function crearCodigoResena($databaseURL, $accessToken, $telefono) {
+    for ($intento = 0; $intento < 20; $intento++) {
+        $codigo = 'RESENA-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 4));
+        $leido = fbGetConEtag($databaseURL, 'discounts/' . $codigo, $accessToken);
+        if ($leido['data'] !== null) continue; // colisión (muy improbable), probar otro
+        $ahoraMs = (int)(microtime(true) * 1000);
+        $cupon = [
+            'pct'       => RESENA_PCT,
+            'maxUses'   => 1,
+            'uses'      => 0,
+            'createdAt' => $ahoraMs,
+            'expiraEn'  => $ahoraMs + RESENA_CODIGO_VALIDEZ_MS,
+            'origen'    => 'resena',
+            'telefono'  => $telefono,
+        ];
+        if (fbPutSiCoincide($databaseURL, 'discounts/' . $codigo, $accessToken, $cupon, $leido['etag'])) {
+            return $codigo;
+        }
+    }
+    return null;
+}
+
+// Valida deviceId+token contra config/trustedDevices/<deviceId> — mismo
+// mecanismo que checkTrustedDevice en bimba-verify.php, copiado aquí
+// porque cada endpoint de este proyecto lleva sus propias copias de estos
+// helpers (ver el comentario de obtenerTokenAcceso). Sin esto, aprobar o
+// descartar un cupón sería una escritura de admin que cualquiera podría
+// disparar sin haber iniciado sesión nunca.
+function esDispositivoDeConfianza($databaseURL, $accessToken, $deviceId, $token) {
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        return false;
+    }
+    $leido = fbGetConEtag($databaseURL, 'config/trustedDevices/' . $deviceId, $accessToken);
+    $registro = $leido['data'];
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expirado = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    return !$expirado && $tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', (string)$token));
+}
+
+try {
+    $raw = file_get_contents('php://input');
+    $payload = json_decode($raw, true);
+    $action = isset($payload['action']) ? (string)$payload['action'] : '';
+
+    $phone = isset($payload['phone']) ? preg_replace('/[^0-9]/', '', (string)$payload['phone']) : '';
+    if (!preg_match('/^\d{9}$/', $phone)) {
+        echo json_encode(['success' => false, 'error' => 'Teléfono no válido']);
+        exit;
+    }
+    $cuponPath = 'config/cuponesResena/' . $phone;
+
+    $accessToken = obtenerTokenAcceso($rutaCredenciales);
+
+    if ($action === 'consultarEstado' || $action === 'solicitar') {
+        // Ambas acciones exigen haber verificado de verdad este teléfono por
+        // SMS hace poco (mismo comprobante que exige guardar-pedido.php) —
+        // sin esto, cualquiera podría consultar o crear solicitudes con el
+        // teléfono de otra persona con solo escribirlo.
+        $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
+        if (!validarSmsToken($smsToken, $phone)) {
+            echo json_encode(['success' => false, 'error' => 'Verificación de móvil caducada o no válida. Verifica tu número otra vez.']);
+            exit;
+        }
+
+        $leido = fbGetConEtag($databaseURL, $cuponPath, $accessToken);
+        $registro = is_array($leido['data']) ? $leido['data'] : null;
+        $estadoActual = $registro['estado'] ?? 'ninguno';
+
+        if ($action === 'consultarEstado') {
+            echo json_encode([
+                'success' => true,
+                'estado'  => in_array($estadoActual, ['pendiente', 'aprobado'], true) ? $estadoActual : 'ninguno',
+                'codigo'  => $estadoActual === 'aprobado' ? ($registro['codigo'] ?? null) : null,
+            ]);
+            exit;
+        }
+
+        // action === 'solicitar'
+        // Si ya hay una solicitud viva (pendiente o ya aprobada), no se crea
+        // otra — se devuelve el estado real tal cual, para que el cliente
+        // recupere lo que ya tenía en vez de generar avisos duplicados.
+        if ($estadoActual === 'pendiente' || $estadoActual === 'aprobado') {
+            echo json_encode([
+                'success' => true,
+                'estado'  => $estadoActual,
+                'codigo'  => $estadoActual === 'aprobado' ? ($registro['codigo'] ?? null) : null,
+            ]);
+            exit;
+        }
+
+        $nombreGoogle = isset($payload['nombreGoogle']) && is_string($payload['nombreGoogle']) ? trim(mb_substr($payload['nombreGoogle'], 0, 60)) : '';
+        if ($nombreGoogle === '') {
+            echo json_encode(['success' => false, 'error' => 'Escribe el nombre con el que dejaste la reseña']);
+            exit;
+        }
+        $comentario = isset($payload['comentario']) && is_string($payload['comentario']) ? trim(mb_substr($payload['comentario'], 0, 300)) : '';
+
+        // Tope de solicitudes nuevas por teléfono y día — independiente del
+        // límite de IP de arriba, para que no se pueda reintentar sin fin
+        // con el mismo número y llenar Alertas de avisos repetidos.
+        $solic_file = $tmp_dir . '/dpf_resena_solic_' . md5($phone) . '.json';
+        if (!dpf_resena_check_limit($solic_file, $max_solicitudes_dia, 86400)) {
+            echo json_encode(['success' => false, 'error' => 'Ya has solicitado el cupón varias veces hoy — espera a que lo revisemos.']);
+            exit;
+        }
+
+        $ahoraMs = (int)(microtime(true) * 1000);
+        $nuevoRegistro = [
+            'estado'       => 'pendiente',
+            'nombreGoogle' => $nombreGoogle,
+            'comentario'   => $comentario,
+            'ts'           => $ahoraMs,
+        ];
+        if (!fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, $nuevoRegistro, $leido['etag'])) {
+            echo json_encode(['success' => false, 'error' => 'No se pudo guardar la solicitud. Inténtalo de nuevo.']);
+            exit;
+        }
+
+        $detalle = 'Dice haberla dejado como "' . $nombreGoogle . '"';
+        if ($comentario !== '') $detalle .= ' — "' . $comentario . '"';
+        fbAgregarActivityLog($databaseURL, $accessToken, '🎁 Cupón de reseña pendiente', [
+            'tipo'         => 'cupon_resena_pendiente',
+            'telefono'     => $phone,
+            'nombreGoogle' => $nombreGoogle,
+            'comentario'   => $comentario,
+        ]);
+
+        echo json_encode(['success' => true, 'estado' => 'pendiente', 'codigo' => null]);
+        exit;
+    }
+
+    if ($action === 'aprobar' || $action === 'descartar') {
+        $deviceId = isset($payload['deviceId']) ? (string)$payload['deviceId'] : '';
+        $token = isset($payload['token']) ? (string)$payload['token'] : '';
+        if (!esDispositivoDeConfianza($databaseURL, $accessToken, $deviceId, $token)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Este dispositivo no está reconocido como de confianza. Inicia sesión de admin marcando "Dispositivo de confianza" e inténtalo de nuevo.']);
+            exit;
+        }
+
+        $leido = fbGetConEtag($databaseURL, $cuponPath, $accessToken);
+        $registro = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$registro) {
+            echo json_encode(['success' => false, 'error' => 'No hay ninguna solicitud de este teléfono.']);
+            exit;
+        }
+
+        if ($action === 'descartar') {
+            $registro['estado'] = 'descartado';
+            fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, $registro, $leido['etag']);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+
+        // action === 'aprobar' — idempotente: si ya estaba aprobado (doble
+        // clic, o dos dispositivos aprobando casi a la vez), se devuelve el
+        // mismo código ya generado en vez de crear uno segundo.
+        if (($registro['estado'] ?? '') === 'aprobado' && !empty($registro['codigo'])) {
+            echo json_encode(['success' => true, 'codigo' => $registro['codigo']]);
+            exit;
+        }
+
+        $codigo = crearCodigoResena($databaseURL, $accessToken, $phone);
+        if (!$codigo) {
+            echo json_encode(['success' => false, 'error' => 'No se pudo generar el código de descuento. Inténtalo de nuevo.']);
+            exit;
+        }
+
+        $registro['estado'] = 'aprobado';
+        $registro['codigo'] = $codigo;
+        if (!fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, $registro, $leido['etag'])) {
+            // El cupón discounts/<código> ya se creó y es válido igualmente
+            // aunque este registro no se actualice — el cliente lo verá al
+            // volver a "consultarEstado" en el próximo intento, cuando esta
+            // escritura (o el reintento manual desde el panel) sí cuadre.
+            echo json_encode(['success' => true, 'codigo' => $codigo]);
+            exit;
+        }
+
+        echo json_encode(['success' => true, 'codigo' => $codigo]);
+        exit;
+    }
+
+    echo json_encode(['success' => false, 'error' => 'Acción no reconocida']);
+} catch (Exception $e) {
+    error_log('[resena-cupon] Error: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Error interno']);
+}
