@@ -3988,7 +3988,7 @@ function initFirebaseListeners() {
             // en historial-export.js) — evita que dos dispositivos con
             // impresora conectada impriman el mismo pedido dos veces.
             _nuevosPedidos.forEach(async o => {
-              if (typeof _reclamarImpresionAuto !== 'function' || await _reclamarImpresionAuto(o.num)) {
+              if ((typeof _reclamarImpresionAuto !== 'function' || await _reclamarImpresionAuto(o.num)) && typeof _autoImprimirPedido === 'function') {
                 _autoImprimirPedido(o);
               }
             });
@@ -3997,8 +3997,13 @@ function initFirebaseListeners() {
           // duplicar) en vez de sobreescribirlo — antes, si llegaban dos
           // avisos de "pedido nuevo" seguidos antes de atender el primero,
           // el segundo pisaba el contador entero en vez de sumarse.
-          _nuevosPedidos.forEach(o => _marcarPedidoPendienteAlerta(o.num));
-          startAlertLoop();
+          // _marcarPedidoPendienteAlerta vive en pedidos-vivo-cocina.js (bundle
+          // de admin) — con el guarda typeof, si por lo que sea _adminLoggedIn
+          // se pone a true antes de que ese bundle termine de cargar, esto no
+          // rompe la página con un ReferenceError (ver historial de bugs:
+          // esto llegó a pasarle a clientes normales, no solo en admin).
+          if (typeof _marcarPedidoPendienteAlerta === 'function') _nuevosPedidos.forEach(o => _marcarPedidoPendienteAlerta(o.num));
+          if (typeof startAlertLoop === 'function') startAlertLoop();
           const toast = document.getElementById('new-order-toast');
           if (toast) {
             toast.style.display = 'block';
@@ -4137,8 +4142,12 @@ function initFirebaseListeners() {
         Object.keys(nuevos).forEach(num => {
           if (nuevos[num] === 'cancelado' && _prevOrderStatuses[num] !== 'cancelado') {
             if (_adminLoggedIn) {
-              playNotificationSound('urgente');
-              if (getTicketConfig().autoImprimir) {
+              // playNotificationSound/imprimirAnulacion viven en el bundle de
+              // admin — guarda typeof por si _adminLoggedIn se pone a true
+              // antes de que termine de cargar (ver el mismo guarda un poco
+              // más arriba, en el aviso de pedido nuevo).
+              if (typeof playNotificationSound === 'function') playNotificationSound('urgente');
+              if (getTicketConfig().autoImprimir && typeof imprimirAnulacion === 'function') {
                 imprimirAnulacion(num).catch(e => console.warn('[Impresora] fallo al imprimir anulación', e));
               }
             }
