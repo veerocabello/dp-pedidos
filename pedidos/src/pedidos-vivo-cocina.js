@@ -342,6 +342,13 @@ let _kitchenInterval = null;
 let _kitchenWakeLock = null;
 async function _pedirWakeLockCocina() {
   if (!('wakeLock' in navigator)) return;
+  // Sin este freno, cada sitio que llama a esta función (Modo Cocina, el
+  // refresco de "En vivo", el bucle de mantenimiento de la impresora...)
+  // pedía un WakeLockSentinel NUEVO encima del que ya hubiera, sin soltar
+  // el anterior — funcionaba igual (la pantalla se queda encendida con
+  // cualquiera de los dos activo), pero iba dejando sentinels sueltos sin
+  // necesidad.
+  if (_kitchenWakeLock) return;
   try {
     _kitchenWakeLock = await navigator.wakeLock.request('screen');
     _kitchenWakeLock.addEventListener('release', () => { _kitchenWakeLock = null; });

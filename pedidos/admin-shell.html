@@ -135,6 +135,17 @@
         <span>📱 <strong>Dispositivo de confianza</strong>: <span id="trusted-device-name-display" style="font-style:italic">–</span></span>
         <button onclick="removeTrustedDevice()" style="background:none;border:1.5px solid var(--brown);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--brown);cursor:pointer;font-family:'DM Sans',sans-serif">Quitar</button>
       </div>
+
+      <!-- IMPRESORA DESCONECTADA — visible en CUALQUIER pestaña del panel,
+           no solo "En vivo"/Cocina, y solo en el dispositivo marcado como
+           "de la impresora" (ver _ptActualizarBadgePersistente en
+           impresora-termica.js) — antes, si te desconectabas estando en
+           otra pestaña (Comandas, Hoy...), no te enterabas hasta volver a
+           "En vivo". -->
+      <div id="pt-status-persistente" style="display:none;background:#fdf0ee;border:1.5px solid #7a1a0e;border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;font-weight:700;color:#7a1a0e;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>🔌 Impresora desconectada — los pedidos nuevos no se están imprimiendo</span>
+        <button onclick="showAdminSection('pedidos', document.querySelector('[data-section=pedidos]'))" style="background:none;border:1.5px solid #7a1a0e;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;color:#7a1a0e;cursor:pointer;font-family:'DM Sans',sans-serif">Ver</button>
+      </div>
       <div class="buscador-wrap">
         <span class="buscador-icon">🔍</span>
         <input type="text" id="buscador-admin-input" placeholder="Buscar… (producto, ingrediente, sección)" autocomplete="off">

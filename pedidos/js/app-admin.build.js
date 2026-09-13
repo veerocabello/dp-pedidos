@@ -6040,6 +6040,13 @@ let _kitchenInterval = null;
 let _kitchenWakeLock = null;
 async function _pedirWakeLockCocina() {
   if (!('wakeLock' in navigator)) return;
+  // Sin este freno, cada sitio que llama a esta función (Modo Cocina, el
+  // refresco de "En vivo", el bucle de mantenimiento de la impresora...)
+  // pedía un WakeLockSentinel NUEVO encima del que ya hubiera, sin soltar
+  // el anterior — funcionaba igual (la pantalla se queda encendida con
+  // cualquiera de los dos activo), pero iba dejando sentinels sueltos sin
+  // necesidad.
+  if (_kitchenWakeLock) return;
   try {
     _kitchenWakeLock = await navigator.wakeLock.request('screen');
     _kitchenWakeLock.addEventListener('release', () => { _kitchenWakeLock = null; });
@@ -7147,6 +7154,18 @@ let _ptUltimoTicket = null; // último ticket normal enviado (para "Reimprimir �
 // vuelve a llamar con connected=false, y no queremos repetir la alerta
 // cada 8 segundos mientras tanto).
 let _ptEstabaConectada = false;
+// Aviso persistente en admin-shell.html, FUERA de cualquier pestaña
+// concreta (a diferencia de .pt-conn-status/.pt-desconexion-aviso, que solo
+// viven dentro de "En vivo" y Modo Cocina) — para que una desconexión se
+// note aunque en ese momento se esté mirando otra pestaña del panel
+// (Comandas, Hoy...). Solo en el dispositivo marcado como "de la
+// impresora", igual que el resto de avisos de _ptAplicarVisibilidadEstadoLive.
+function _ptActualizarBadgePersistente() {
+  const el = document.getElementById('pt-status-persistente');
+  if (!el) return;
+  const mostrar = _ptEsDispositivoPrincipal() && !_ptIsConnected();
+  el.style.display = mostrar ? 'flex' : 'none';
+}
 function _ptStatusUI(connected, msg) {
   if (_ptEstabaConectada && !connected) _ptAvisoDesconexionImpresora();
   if (!_ptEstabaConectada && connected) {
@@ -7167,6 +7186,7 @@ function _ptStatusUI(connected, msg) {
     el.textContent = texto;
     el.style.color = connected ? '#166534' : '#991B1B';
   });
+  _ptActualizarBadgePersistente();
 }
 
 // Aviso de que la impresora se acaba de desconectar — sonido distinto al
@@ -7257,6 +7277,7 @@ function _ptEsDispositivoPrincipal() {
 function _ptSetDispositivoPrincipal(valor) {
   try { localStorage.setItem(PT_DISPOSITIVO_PRINCIPAL_KEY, valor ? '1' : '0'); } catch (e) {}
   _ptAplicarVisibilidadEstadoLive();
+  if (typeof _ptActualizarBadgePersistente === 'function') _ptActualizarBadgePersistente();
 }
 // Oculta, fuera de Configuración del ticket, los avisos de "impresora no
 // conectada"/tickets pendientes en la pestaña "En vivo" y en Modo Cocina
@@ -7265,7 +7286,8 @@ function _ptSetDispositivoPrincipal(valor) {
 // vivo"/Modo Cocina) para que la visibilidad se mantenga correcta aunque
 // otro código vuelva a tocar el display de estos mismos elementos.
 function _ptAplicarVisibilidadEstadoLive() {
-  const ocultar = !_ptEsDispositivoPrincipal();
+  const esPrincipal = _ptEsDispositivoPrincipal();
+  const ocultar = !esPrincipal;
   const selector = '#admin-pedidos .pt-conn-status, #pt-debug-status,' +
     ' #admin-pedidos .pt-cola-contador, #admin-pedidos .pt-cola-antigua-lista,' +
     ' #admin-pedidos .pt-papel-aviso, #admin-pedidos .pt-desconexion-aviso,' +
@@ -7274,6 +7296,12 @@ function _ptAplicarVisibilidadEstadoLive() {
   document.querySelectorAll(selector).forEach(el => {
     el.classList.toggle('pt-oculto-no-principal', ocultar);
   });
+  // Mantener la pantalla encendida en el dispositivo de la impresora sin
+  // importar en qué pestaña del panel esté — antes solo se pedía dentro de
+  // Modo Cocina a pantalla completa; si este dispositivo se usaba desde la
+  // pestaña normal "En vivo" (lo más habitual), la pantalla se podía
+  // apagar sola y con ella la reconexión automática de la impresora.
+  if (esPrincipal && typeof _pedirWakeLockCocina === 'function') _pedirWakeLockCocina();
 }
 
 // Indicador visible en la pantalla de pedidos en vivo/cocina, sin necesitar consola,
@@ -7728,6 +7756,45 @@ function _ptColaGuardar(cola) {
   try { localStorage.setItem(PT_COLA_KEY, JSON.stringify(cola)); } catch (e) {}
   _ptColaActualizarUI();
 }
+// Respaldo en Firebase (best-effort, nunca bloquea ni avisa si falla — la
+// cola local en localStorage sigue siendo la fuente de verdad de ESTE
+// dispositivo) — antes esta cola vivía SOLO en el localStorage de este
+// dispositivo: si la pestaña se cerraba o el dispositivo se reiniciaba con
+// tickets pendientes de reimprimir (impresora sin papel o desconectada), se
+// perdían de la cola sin que nadie en cocina se enterara. Se guarda SOLO
+// este ticket (por número de pedido) — nunca la lista completa de este
+// dispositivo, para que dos dispositivos con copias locales distintas no
+// se pisen el uno al otro y resuciten tickets que el otro ya había
+// impreso y quitado.
+//
+// Pasa por bimba-verify.php (mismo patrón que guardarBannerDia/
+// toggleClienteOculto) porque config/colaImpresionPendiente exige sesión
+// real de Firebase Auth — con solo el guardado directo (fb_colaImpresionAgregar/
+// Quitar, gated tras window.fb_getAdminUser()), un dispositivo "de
+// confianza" sin esa sesión viva NUNCA respaldaba nada en Firebase, así
+// que el ticket pendiente solo existía en su localStorage: si se recargaba
+// la página o se borraba su caché, desaparecía sin rastro. Aquí, si no hay
+// sesión real, se intenta igualmente por el servidor con el token de
+// dispositivo de confianza.
+async function _ptColaCambioServidor(orderNum, modo, ticket) {
+  if (window.fb_getAdminUser && window.fb_getAdminUser()) {
+    try {
+      if (modo === 'agregar' && window.fb_colaImpresionAgregar) await window.fb_colaImpresionAgregar(ticket);
+      if (modo === 'quitar' && window.fb_colaImpresionQuitar) await window.fb_colaImpresionQuitar(orderNum);
+      return;
+    } catch (e) { /* sigue abajo, prueba por el servidor */ }
+  }
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (!deviceId || !token) return;
+  try {
+    await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'colaImpresionCambio', deviceId, token, orderNum, modo, ticket })
+    });
+  } catch (e) { /* best-effort — la cola local ya quedó guardada de todos modos */ }
+}
 function _ptColaAgregar(ticket) {
   if (!ticket || !ticket.orderNum) return;
   const cola = _ptColaCargar();
@@ -7741,27 +7808,11 @@ function _ptColaAgregar(ticket) {
   });
   cola.push(ticketConFecha);
   _ptColaGuardar(cola);
-  // Respaldo en Firebase — antes esta cola vivía SOLO en el localStorage de
-  // este dispositivo: si la pestaña se cerraba o el dispositivo se
-  // reiniciaba con tickets pendientes de reimprimir (impresora sin papel o
-  // desconectada), se perdían de la cola sin que nadie en cocina se
-  // enterara. Se guarda SOLO este ticket (transacción atómica por número de
-  // pedido, ver fb_colaImpresionAgregar/Quitar en config.js) — nunca la
-  // lista completa de este dispositivo, para que dos dispositivos con
-  // copias locales distintas no se pisen el uno al otro y resuciten
-  // tickets que el otro ya había impreso y quitado. Solo si hay sesión de
-  // admin activa (evita permission_denied en intentos de login). Ver
-  // _ptColaRestaurarDesdeFirebase() más abajo, que recupera esto al volver
-  // a cargar la página.
-  if (window.fb_colaImpresionAgregar && window.fb_getAdminUser && window.fb_getAdminUser()) {
-    window.fb_colaImpresionAgregar(ticketConFecha).catch(() => {});
-  }
+  _ptColaCambioServidor(ticket.orderNum, 'agregar', ticketConFecha);
 }
 function _ptColaQuitar(orderNum) {
   _ptColaGuardar(_ptColaCargar().filter(t => t.orderNum !== orderNum));
-  if (window.fb_colaImpresionQuitar && window.fb_getAdminUser && window.fb_getAdminUser()) {
-    window.fb_colaImpresionQuitar(orderNum).catch(() => {});
-  }
+  _ptColaCambioServidor(orderNum, 'quitar', null);
 }
 function _ptColaActualizarUI() {
   const cola = _ptColaCargar();
@@ -7867,19 +7918,44 @@ document.addEventListener('DOMContentLoaded', () => { _ptColaActualizarUI(); });
 // normal de la web) — para cuando este código se ejecuta, la página ya
 // lleva rato cargada, así que se llama directamente en vez de esperar a
 // DOMContentLoaded (ese evento ya habría pasado).
-async function _ptColaRestaurarDesdeFirebase() {
-  if (!window.fb_loadColaImpresion) return;
+// Respaldo del lado de lectura: config/colaImpresionPendiente también exige
+// sesión real de Firebase Auth para LEER, así que un dispositivo "de
+// confianza" sin esa sesión viva nunca conseguía recuperar aquí lo que
+// otro dispositivo hubiera dejado pendiente (fallaba en silencio, atrapado
+// por el catch de abajo). Se intenta primero la lectura directa (más
+// rápida si hay sesión real); si no, por el servidor con el token de
+// dispositivo de confianza — mismo patrón que _ptColaCambioServidor.
+async function _ptColaLeerServidor() {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (!deviceId || !token) return null;
   try {
-    const remota = await window.fb_loadColaImpresion();
-    if (!Array.isArray(remota) || !remota.length) return;
-    const local = _ptColaCargar();
-    const localNums = new Set(local.map(t => t.orderNum));
-    const faltantes = remota.filter(t => t && t.orderNum && !localNums.has(t.orderNum));
-    if (faltantes.length) {
-      _ptColaGuardar(local.concat(faltantes));
-      if (_ptIsConnected()) _ptColaProcesar();
-    }
-  } catch (e) { console.warn('[impresora] no se pudo restaurar la cola de impresión pendiente', e); }
+    const res = await fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'colaImpresionLeer', deviceId, token })
+    });
+    if (!res.ok) return null;
+    const r = await res.json().catch(() => ({ success: false }));
+    if (!r.success) return null;
+    const valores = Object.values(r.mapa || {});
+    return valores.length ? valores : null;
+  } catch (e) { return null; }
+}
+async function _ptColaRestaurarDesdeFirebase() {
+  let remota = null;
+  if (window.fb_getAdminUser && window.fb_getAdminUser() && window.fb_loadColaImpresion) {
+    try { remota = await window.fb_loadColaImpresion(); } catch (e) { /* sigue abajo */ }
+  }
+  if (!remota) remota = await _ptColaLeerServidor();
+  if (!Array.isArray(remota) || !remota.length) return;
+  const local = _ptColaCargar();
+  const localNums = new Set(local.map(t => t.orderNum));
+  const faltantes = remota.filter(t => t && t.orderNum && !localNums.has(t.orderNum));
+  if (faltantes.length) {
+    _ptColaGuardar(local.concat(faltantes));
+    if (_ptIsConnected()) _ptColaProcesar();
+  }
 }
 _ptColaActualizarUI();
 _ptColaRestaurarDesdeFirebase();
@@ -8460,6 +8536,14 @@ if (navigator.usb || navigator.bluetooth) {
       } else {
         _ptComprobarPapel();
       }
+      // Este bucle corre siempre, esté abierta la pestaña que esté abierta
+      // del panel — es el sitio adecuado para mantener al día el aviso
+      // persistente y la pantalla encendida en el dispositivo de la
+      // impresora, sin depender de estar mirando "En vivo"/Cocina en ese
+      // momento (eso ya lo cubre _ptUpdateDebugStatus, pero solo cuando esa
+      // pantalla concreta se está refrescando).
+      if (typeof _ptActualizarBadgePersistente === 'function') _ptActualizarBadgePersistente();
+      if (typeof _ptAplicarVisibilidadEstadoLive === 'function') _ptAplicarVisibilidadEstadoLive();
       if (_ptIsConnected() && window.fb_avisarPuntoImpresionActivo) window.fb_avisarPuntoImpresionActivo().catch(() => {});
       // La cola pendiente normalmente se vacía sola al detectar una
       // reconexión real (ver _ptStatusUI), pero un ticket puede fallar por un

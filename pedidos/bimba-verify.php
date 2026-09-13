@@ -573,6 +573,90 @@ if ($action === 'toggleClienteOculto') {
     }
 }
 
+// ── Cola de impresión pendiente pasando por el servidor (mismo motivo que
+// guardarBannerDia/toggleClienteOculto: config/colaImpresionPendiente exige
+// sesión real de Firebase Auth, y un dispositivo "de confianza" sin esa
+// sesión viva fallaba en silencio — un ticket que no consiguiera imprimirse
+// se quedaba SOLO en el localStorage de ese dispositivo, sin respaldo
+// ninguno; si se recargaba la página o se borraba su caché, ese ticket
+// pendiente desaparecía sin que nadie se enterara).
+//
+// OJO con el formato: a diferencia de config/bannerDia y
+// config/clientesOcultos (objetos/arrays nativos), config/colaImpresionPendiente
+// sigue el convenio "string JSON" que ya usa config/empleados/config/fichajes
+// (ver fb_transactJsonString en config.js) — el valor guardado en Firebase
+// es un STRING que contiene el JSON, no un objeto nativo. Por eso aquí hace
+// falta un nivel extra de decode al leer (fbGetNodoConCuentaServicio ya
+// hace el primero, el de la respuesta REST) y de encode al escribir, antes
+// de pasarlo por fbSetNodoConCuentaServicio.
+function _colaImpresionLeerMapa($databaseURL, $rutaCredenciales) {
+    $actualRaw = fbGetNodoConCuentaServicio($databaseURL, 'config/colaImpresionPendiente', $rutaCredenciales);
+    $mapa = is_string($actualRaw) ? json_decode($actualRaw, true) : null;
+    return is_array($mapa) ? $mapa : [];
+}
+if ($action === 'colaImpresionCambio' || $action === 'colaImpresionLeer') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $orderNum = isset($data['orderNum']) ? (string)$data['orderNum'] : '';
+    $modo = isset($data['modo']) ? (string)$data['modo'] : '';
+    $ticket = isset($data['ticket']) && is_array($data['ticket']) ? $data['ticket'] : null;
+    $esCambio = $action === 'colaImpresionCambio';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)
+        || ($esCambio && ($orderNum === '' || strlen($orderNum) > 30 || !in_array($modo, ['agregar', 'quitar'], true)
+            || ($modo === 'agregar' && ($ticket === null || strlen(json_encode($ticket)) > 20000))))) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    if (!$esCambio) {
+        try {
+            $mapa = _colaImpresionLeerMapa($databaseURL, $rutaCredenciales);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Error interno']);
+            exit();
+        }
+        $fp2 = @fopen($ip_file, 'c+');
+        if ($fp2 !== false) { flock($fp2, LOCK_EX); ftruncate($fp2, 0); flock($fp2, LOCK_UN); fclose($fp2); }
+        echo json_encode(['success' => true, 'mapa' => $mapa]);
+        exit();
+    }
+    try {
+        $mapa = _colaImpresionLeerMapa($databaseURL, $rutaCredenciales);
+        if ($modo === 'agregar') {
+            $mapa[$orderNum] = $ticket;
+        } else {
+            unset($mapa[$orderNum]);
+        }
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/colaImpresionPendiente', $rutaCredenciales, json_encode($mapa));
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        $fp2 = @fopen($ip_file, 'c+');
+        if ($fp2 !== false) { flock($fp2, LOCK_EX); ftruncate($fp2, 0); flock($fp2, LOCK_UN); fclose($fp2); }
+        echo json_encode(['success' => true]);
+        exit();
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+
 // ── Comprobar el PIN (comportamiento por defecto, action: 'pin' u omitido) ──
 $pin = isset($data['pin']) ? (string)$data['pin'] : '';
 $hash = hash('sha256', $pin . BIMBA_SALT);
