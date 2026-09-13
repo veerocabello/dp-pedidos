@@ -7,11 +7,19 @@
 header('Content-Type: application/xml; charset=UTF-8');
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 ?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://pedidos.dulcepatatafood.es/</loc>
     <lastmod><?= date('Y-m-d') ?></lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://pedidos.dulcepatatafood.es/img/hero-bg.jpg</image:loc>
+      <image:title>Dulce Patata Food — patatas rellenas artesanales en Granada</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://pedidos.dulcepatatafood.es/img/logo.png</image:loc>
+      <image:title>Logo de Dulce Patata Food</image:title>
+    </image:image>
   </url>
 </urlset>

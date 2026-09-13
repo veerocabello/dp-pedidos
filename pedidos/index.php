@@ -104,7 +104,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     ],
     "hasMap": "https://maps.app.goo.gl/fUoVZdJDtByWcYq16",
     "servesCuisine": ["Patatas rellenas", "Comida rápida artesanal"],
-    "priceRange": "€",
+    "priceRange": "€1 - €10",
     "openingHoursSpecification": [
       {
         "@type": "OpeningHoursSpecification",
@@ -122,7 +122,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     "aggregateRating": {
       "@type": "AggregateRating",
       "ratingValue": "4.6",
-      "reviewCount": "512"
+      "reviewCount": "516"
     },
     "hasMenu": "https://pedidos.dulcepatatafood.es/#carta",
     "acceptsReservations": false,
