@@ -1840,7 +1840,7 @@ function confirmCustomizer() {
 /* ══════════════════════════════════════════════════════════════
    MODAL — CHEDDAR-BACON
    ══════════════════════════════════════════════════════════════ */
-let cheddarCarne = null, cheddarCarneQty = 1, cheddarSalsasExtra = {}, cheddarEditKey = null;
+let cheddarCarne = null, cheddarCarneQty = 1, cheddarIngredientesExtra = {}, cheddarSalsasExtra = {}, cheddarEditKey = null;
 // Nombre "de catálogo" de la carne elegida — el que ya tiene precio de
 // sobra en EXTRAS_ING_PRECIO1, así se reutiliza dobleSurcharge() sin tener
 // que inventar un precio nuevo para "picada"/"kebab".
@@ -1849,6 +1849,15 @@ function cheddarDobles() {
   const name = cheddarCarneCanonical();
   const out = [];
   if (name) for (let i = 1; i < cheddarCarneQty; i++) out.push(name);
+  return out;
+}
+// Cada unidad de más de un ingrediente/salsa extra (doble = 1 de más,
+// triple = 2) — mismo criterio que currentDoblesList() del resto de
+// patatas, aparte de la carne (que lleva su propio cheddarDobles()).
+function cheddarExtraDobles() {
+  const out = [];
+  Object.entries(cheddarIngredientesExtra).forEach(([name, q]) => { for (let i = 1; i < q; i++) out.push(name); });
+  Object.entries(cheddarSalsasExtra).forEach(([name, q]) => { for (let i = 1; i < q; i++) out.push(name); });
   return out;
 }
 function openCheddarModal(editKey) {
@@ -1860,12 +1869,16 @@ function openCheddarModal(editKey) {
     const name = existing.cheddarCarne === 'kebab' ? 'Carne Kebab' : 'Carne Picada';
     cheddarCarneQty = 1 + (existing.dobles || []).filter(d => d === name).length;
   }
+  cheddarIngredientesExtra = {};
   cheddarSalsasExtra = {};
-  if (existing) (existing.salsasExtra || []).forEach(s => cheddarSalsasExtra[s] = true);
+  if (existing) {
+    (existing.ingredientesExtra || []).forEach(i => { cheddarIngredientesExtra[i] = 1 + (existing.dobles || []).filter(d => d === i).length; });
+    (existing.salsasExtra || []).forEach(s => { cheddarSalsasExtra[s] = 1 + (existing.dobles || []).filter(d => d === s).length; });
+  }
   renderCheddarCarneOptions();
   document.getElementById('cheddar-error').style.display = 'none';
   document.getElementById('cheddar-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
-  renderCheddarSalsasExtra();
+  renderCheddarExtras();
   updateCheddarPrice();
   document.getElementById('cheddar-modal').classList.add('open');
 }
@@ -1894,27 +1907,55 @@ function renderCheddarCarneOptions() {
     document.getElementById('cheddar-title-' + k).textContent = mult ? labels[k] + ' (x' + cheddarCarneQty + ')' : labels[k];
   });
 }
-function renderCheddarSalsasExtra() {
-  const el = document.getElementById('cheddar-salsas-list');
-  if (!el) return;
-  el.innerHTML = CUST_SAUCES.map(s => {
-    const slug = 'cheddar-salsa-' + s.replace(/[^a-z0-9]/gi, '_');
-    const on = !!cheddarSalsasExtra[s];
-    return `<label id="lbl-${slug}" class="option-row ${on ? 'on' : ''}" style="margin-bottom:0;padding:9px 10px" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">
-      <div><div class="option-title" style="font-size:13px">${s}</div><div class="option-sub">+${fmt(priceOfSalsaExtra(s))} €</div></div>
-      <div class="option-check ${on ? 'on' : ''}" id="${slug}" style="width:20px;height:20px"></div>
-    </label>`;
-  }).join('');
+// Mismo estilo de chips que "Ingredientes extra"/"Salsas extra" del resto
+// de patatas (ver renderExtrasBody) — aquí todo lo que se toca es siempre
+// "extra" (nada de esto viene incluido en la receta base del Cheddar), así
+// que el chip marcado se pinta igual que un extra ahí.
+// Carne Kebab/Carne Picada se excluyen de "Ingredientes extra": esas dos
+// ya tienen su propio selector arriba ("Elige la carne"), no tendría
+// sentido ofrecerlas otra vez sueltas.
+function renderCheddarExtras() {
+  const ingEl = document.getElementById('cheddar-ingredientes-list');
+  if (ingEl) {
+    ingEl.innerHTML = sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07])
+      .filter(ing => ing !== 'Carne Kebab' && ing !== 'Carne Picada')
+      .map(ing => {
+        const precio = priceOfIngExtra(ing);
+        const qty = cheddarIngredientesExtra[ing] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const label = mult ? ing + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? ing + ' +' + fmt(precio) + '€' : ing;
+        return `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleCheddarIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+      }).join('');
+  }
+  const salsaEl = document.getElementById('cheddar-salsas-list');
+  if (salsaEl) {
+    salsaEl.innerHTML = CUST_SAUCES.map(s => {
+      const precio = priceOfSalsaExtra(s);
+      const qty = cheddarSalsasExtra[s] || 0;
+      const on = qty > 0, mult = qty >= 2;
+      const label = mult ? s + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? s + ' +' + fmt(precio) + '€' : s;
+      return `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleCheddarSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+    }).join('');
+  }
+}
+function toggleCheddarIng(ing) {
+  const cur = cheddarIngredientesExtra[ing] || 0;
+  cheddarIngredientesExtra[ing] = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  renderCheddarExtras();
+  updateCheddarPrice();
 }
 function toggleCheddarSalsa(s) {
-  cheddarSalsasExtra[s] = !cheddarSalsasExtra[s];
-  renderCheddarSalsasExtra();
+  const cur = cheddarSalsasExtra[s] || 0;
+  cheddarSalsasExtra[s] = (cur + 1) % (MAX_ING_MULTIPLICIDAD + 1);
+  renderCheddarExtras();
   updateCheddarPrice();
 }
 function updateCheddarPrice() {
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const extra = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
-  document.getElementById('cheddar-price').textContent = fmt(item.price + extra + dobleSurcharge(cheddarDobles())) + ' €';
+  const extraIng = Object.entries(cheddarIngredientesExtra).filter(([, q]) => q > 0).reduce((s, [name]) => s + priceOfIngExtra(name), 0);
+  const extraSalsa = Object.entries(cheddarSalsasExtra).filter(([, q]) => q > 0).reduce((s, [name]) => s + priceOfSalsaExtra(name), 0);
+  const dobles = [...cheddarDobles(), ...cheddarExtraDobles()];
+  document.getElementById('cheddar-price').textContent = fmt(item.price + extraIng + extraSalsa + dobleSurcharge(dobles)) + ' €';
 }
 function confirmCheddar() {
   if (!cheddarCarne) {
@@ -1922,16 +1963,19 @@ function confirmCheddar() {
     return;
   }
   const item = MENU.find(m => m.id === CHEDDAR_ID);
-  const salsaList = Object.entries(cheddarSalsasExtra).filter(([, on]) => on).map(([s]) => s).sort();
-  const dobles = cheddarDobles();
-  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (cheddarCarneQty > 1 ? '_x' + cheddarCarneQty : '') + (salsaList.length ? '_S' + salsaList.join('|') : '');
+  const ingList = Object.entries(cheddarIngredientesExtra).filter(([, q]) => q > 0).map(([name]) => name).sort();
+  const salsaList = Object.entries(cheddarSalsasExtra).filter(([, q]) => q > 0).map(([name]) => name).sort();
+  const dobles = [...cheddarDobles(), ...cheddarExtraDobles()];
+  const key = 'ext:' + CHEDDAR_ID + ':' + cheddarCarne + (cheddarCarneQty > 1 ? '_x' + cheddarCarneQty : '')
+    + (ingList.length ? '_I' + ingList.join('|') : '')
+    + (salsaList.length ? '_S' + salsaList.join('|') : '');
   let qtyToSet = 1;
   if (cheddarEditKey && extrasCart[cheddarEditKey]) {
     qtyToSet = extrasCart[cheddarEditKey].qty;
     delete extrasCart[cheddarEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: [], salsasExtra: salsaList, dobles, basePrice: item.price, cheddarCarne, key };
+  else extrasCart[key] = { menuId: CHEDDAR_ID, qty: qtyToSet, queso: false, gratinado: false, ingredientesExtra: ingList, salsasExtra: salsaList, dobles, basePrice: item.price, cheddarCarne, key };
   const wasEdit = !!cheddarEditKey;
   closeCheddarModal();
   renderCart();
