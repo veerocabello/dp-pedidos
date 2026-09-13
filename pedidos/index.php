@@ -243,7 +243,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
       <span id="hero-status-text">Cerrado ahora</span>
     </div>
     <h1 style="font-family:'Anton',sans-serif;font-size:48px;line-height:1.25;letter-spacing:0.02em;text-transform:uppercase;margin:0;color:var(--cream)">Haz tu pedido<br><span style="color:var(--gold)">y recógelo listo</span> <span class="emoji-acc">🥔</span></h1>
-    <p style="font-size:17px;color:#D9C9A8;margin:16px 0 0;font-weight:500;max-width:420px;font-family:'DM Sans',sans-serif">Elige, confirma y paga cuando llegues a nuestro local en Granada.</p>
+    <p style="font-size:17px;color:#D9C9A8;margin:16px 0 0;font-weight:500;max-width:420px;font-family:'DM Sans',sans-serif">Elige, confirma y paga cuando llegues al local.</p>
   </div>
 
   <div style="flex:none;width:380px;max-width:100%">
