@@ -31,7 +31,7 @@
     </div>
   </div>
   <div class="topbar-actions">
-    <span id="printer-status" class="printer-status">comprobando impresora…</span>
+    <span id="printer-status" class="printer-status" onclick="printerStatusClick()" title="Toca para conectar la impresora por Bluetooth" style="cursor:pointer">comprobando impresora…</span>
     <button class="btn-ghost" onclick="openHistorial()">🧾 <span class="btn-ghost-label">Pedidos de hoy</span></button>
     <button class="btn-ghost" onclick="openCaja()">🧮 <span class="btn-ghost-label">Hacer caja</span></button>
     <button class="btn-ghost" onclick="openResumen()">📈 <span class="btn-ghost-label">Resumen</span></button>
@@ -330,7 +330,8 @@
     </div>
 
     <div class="settings-actions">
-      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora directa</button>
+      <button class="btn-secondary" onclick="pairPrinterBluetooth()">📶 Conectar impresora por Bluetooth</button>
+      <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora por cable (USB)</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
     </div>
 
