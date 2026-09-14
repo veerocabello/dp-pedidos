@@ -3865,8 +3865,14 @@ function updatePrinterStatusUI() {
   } else if (!navigator.usb && !navigator.bluetooth) {
     el.textContent = '🖨️ Sin impresión directa (usa Chrome/Edge) — diálogo de impresión';
     el.className = 'printer-status warn';
+  } else if (navigator.bluetooth) {
+    // Mismo toque que ya hace falta para conectarla (printerStatusClick) —
+    // antes el texto no decía que se podía tocar aquí mismo, así que la
+    // única forma "descubrible" de conectar era entrar en ⚙️ Ajustes.
+    el.textContent = '🔌 Sin impresora — toca aquí para conectar Bluetooth';
+    el.className = 'printer-status warn';
   } else {
-    el.textContent = '🖨️ Sin impresora conectada — usará el diálogo de impresión';
+    el.textContent = '🔌 Sin impresora — toca aquí para conectar por USB';
     el.className = 'printer-status warn';
   }
 }
@@ -3970,7 +3976,13 @@ function printerStatusClick() {
     toast(printerTransport === 'ble' ? '🖨️ Ya conectada por Bluetooth' : '🖨️ Ya conectada por cable (USB)');
     return;
   }
-  pairPrinterBluetooth();
+  // Bluetooth es la vía pensada para la tablet — si el navegador no la
+  // soporta (p.ej. Safari), se ofrece USB directamente en su lugar en vez
+  // de fallar con un aviso de "este navegador no soporta Bluetooth" sin
+  // ninguna alternativa a mano.
+  if (navigator.bluetooth) pairPrinterBluetooth();
+  else if (navigator.usb) pairPrinter();
+  else toast('Este navegador no soporta impresión directa. Usa Chrome o Edge, o deja el modo "diálogo".');
 }
 
 // Reconecta en silencio a un dispositivo Bluetooth ya autorizado antes —
