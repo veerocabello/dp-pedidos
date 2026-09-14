@@ -2764,13 +2764,15 @@ function buildCajaResumenBlocks(fecha) {
   const divider = '-'.repeat(width);
   const fondo = loadCajaFondo(fecha);
   const t = loadCajaTotales(fecha);
+  const efectivoOverride = loadCajaNota('efectivo', fecha);
+  const efectivo = efectivoOverride != null ? efectivoOverride : t.efectivo;
   const tarjetaOverride = loadCajaNota('tarjeta', fecha);
   const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
   const web = loadCajaNota('web', fecha);
   const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, fecha));
   const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
-  const facturado = t.efectivo + tarjeta + t.pendiente + deliveryTotal;
-  const esperadoCajon = fondo + t.efectivo;
+  const facturado = efectivo + tarjeta + t.pendiente + deliveryTotal;
+  const esperadoCajon = fondo + efectivo;
   const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   const B = [];
@@ -2790,7 +2792,7 @@ function buildCajaResumenBlocks(fecha) {
   // salta de línea a media palabra. Solo el TOTAL final va grande, y en su
   // propia línea corta, como ya se hacía con "Esperado en caja".
   B.push({ text: 'TIENDA', align: 'left' });
-  B.push({ text: '  Efectivo: ' + fmtEur(t.efectivo), align: 'left' });
+  B.push({ text: '  Efectivo: ' + fmtEur(efectivo), align: 'left' });
   B.push({ text: '  Tarjeta: ' + fmtEur(tarjeta), align: 'left' });
   if (web != null) {
     B.push({ text: '  (de la web: ' + fmtEur(web) + ')', align: 'left' });
@@ -3364,20 +3366,29 @@ let cajaDenomNumpadValue = null;
 function formatDenomLabel(v) {
   return v >= 1 ? Math.round(v) + ' euros' : Math.round(v * 100) + ' céntimos';
 }
+// Se pregunta por el DINERO que hay en esa moneda/billete (p.ej. "75" si
+// hay 75€ en billetes de 5), no por cuántas unidades son — contar cuántos
+// billetes de 5 hay y multiplicar de cabeza es innecesario si lo que se
+// tiene delante ya está mentalmente agrupado por dinero ("tengo 75€ en
+// billetes de 5"). Por dentro se sigue guardando como unidades (para el
+// contador ×N del círculo), calculadas dividiendo el dinero entre el
+// valor de esa moneda/billete.
 function openCajaDenomNumpad(v) {
   cajaDenomNumpadValue = v;
-  const current = cajaContado.counts[String(v)] || 0;
+  const n = cajaContado.counts[String(v)] || 0;
   const input = document.getElementById('caja-denom-numpad-input');
-  input.value = current || '';
-  openNumpad('caja-denom-numpad-input', 'Cuántas de ' + formatDenomLabel(v));
+  input.value = n > 0 ? String(Math.round(n * v * 100) / 100).replace('.', ',') : '';
+  const grupo = v >= 1 ? 'billetes' : 'monedas';
+  openNumpad('caja-denom-numpad-input', 'Dinero en ' + grupo + ' de ' + formatDenomLabel(v));
 }
 function onCajaDenomNumpadInput(valorStr) {
   if (cajaDenomNumpadValue == null) return;
-  setCajaDenomCantidad(cajaDenomNumpadValue, valorStr);
+  setCajaDenomDinero(cajaDenomNumpadValue, valorStr);
 }
-function setCajaDenomCantidad(v, valorStr) {
+function setCajaDenomDinero(v, valorStr) {
   const key = String(v);
-  const n = Math.max(0, Math.round(parseCashNum(valorStr) || 0));
+  const dinero = Math.max(0, parseCashNum(valorStr) || 0);
+  const n = Math.round(dinero / v);
   if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
   // Se recalcula el total entero a partir de los conteos en vez de sumar
   // la diferencia — así no se puede descuadrar aunque se edite un salto
@@ -3390,7 +3401,7 @@ function setCajaDenomCantidad(v, valorStr) {
 function renderCajaContadoUI() {
   document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
     // OJO: btn.dataset.v es el texto tal cual del HTML ("0.20", "0.10",
-    // "0.50" — con el cero final) pero tapCajaDenom/setCajaDenomCantidad
+    // "0.50" — con el cero final) pero tapCajaDenom/setCajaDenomDinero
     // guardan la clave con String(v) de un NÚMERO de JS, que para esos
     // mismos valores da "0.2"/"0.1"/"0.5" (sin el cero final) — sin pasar
     // por parseFloat aquí, esos tres círculos nunca encontraban su
@@ -3442,13 +3453,15 @@ function renderCaja() {
   // que el real en un día muy movido.
   const fondo = loadCajaFondo(cajaFechaSel);
   const t = loadCajaTotales(cajaFechaSel);
-  const efectivo = t.efectivo, pendiente = t.pendiente, nPedidos = t.count;
+  const pendiente = t.pendiente, nPedidos = t.count;
+  // "Efectivo" y "Tarjeta" parten del total que calcula la app sola (lo
+  // marcado pedido a pedido), pero se pueden tocar y corregir a mano —
+  // por si algo se marcó con el método equivocado y no se quiere ir pedido
+  // a pedido a arreglarlo, o para poner directamente lo que da el
+  // datáfono/lo que se ha contado sin más vueltas.
+  const efectivoOverride = loadCajaNota('efectivo', cajaFechaSel);
+  const efectivo = efectivoOverride != null ? efectivoOverride : t.efectivo;
   const esperadoCajon = fondo + efectivo;
-  // "Tarjeta" parte del total que calcula la app sola (lo marcado tarjeta
-  // pedido a pedido), pero se puede tocar y escribir el número real del
-  // datáfono a mano — igual que "Efectivo" tiene su "Contado" aparte, salvo
-  // que aquí no hay nada físico que contar, así que es un solo número
-  // editable en vez de dos filas.
   const tarjetaOverride = loadCajaNota('tarjeta', cajaFechaSel);
   const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
   const web = loadCajaNota('web', cajaFechaSel);
@@ -3473,7 +3486,7 @@ function renderCaja() {
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + `<div class="section-label">Tienda</div>`
-    + row('💵 Efectivo', efectivo)
+    + notaRow('efectivo', '💵 Efectivo', efectivo, 'Efectivo', t.efectivo)
     + notaRow('tarjeta', '💳 Tarjeta', tarjeta, 'Tarjeta (segun el datafono)', t.tarjeta)
     + notaRow('web', '🌐 De tienda, cuánto es de la web', web, 'De tienda, cuanto es de la pagina web')
     + avisoPendiente
@@ -3552,7 +3565,7 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
 }
 function construirCopiaJSON(fecha) {
   const notas = {};
-  ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
+  ['efectivo', 'tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
   return {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
@@ -3677,7 +3690,7 @@ function importarCopiaJSON(event) {
     // día anterior sin querer.
     if (data.contado && typeof data.contado === 'object') localStorage.setItem(getCajaContadoKey(fecha), JSON.stringify(data.contado));
     else localStorage.removeItem(getCajaContadoKey(fecha));
-    ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
+    ['efectivo', 'tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
       const v = data.notas && typeof data.notas === 'object' ? data.notas[id] : null;
       saveCajaNota(id, fecha, typeof v === 'number' ? v : null);
     });
