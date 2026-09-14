@@ -149,7 +149,27 @@ if (is_array($payloadPing) && ($payloadPing['action'] ?? '') === 'ping') {
     exit;
 }
 
-if (!dpf_check_limit($ip_file, $max_ip, $window)) {
+// ── Acciones propias de Comandas (encolar impresión, ventas de tienda) —
+// cupo APARTE del de pedidos reales, por el mismo motivo que 'ping' de
+// arriba: Comandas suele estar en el mismo wifi/IP de la tienda que usan
+// los clientes para "pedido desde el local", y antes compartía el mismo
+// contador de 20/10min que los pedidos de verdad. En una hora punta, cada
+// pedido imprime 1-2 copias (una llamada aquí por copia) y encima puede
+// haber varias ventas de mostrador seguidas — de sobra para agotar ese
+// cupo compartido y dejar a un cliente real sin poder confirmar su pedido
+// justo cuando el negocio va bien, el peor momento posible para que esto
+// falle. Más generoso (90/10min: hasta ~45 tickets/copias en 10 minutos)
+// porque el riesgo de abuso aquí es mucho menor — no genera ningún cupón
+// ni descuento, como mucho gasta cuota de Firebase.
+$accionesComandasSinLimiteCompartido = ['encolarImpresionComandas', 'registrarVentaTienda', 'revertirVentaTienda'];
+$esAccionComandas = is_array($payloadPing) && in_array($payloadPing['action'] ?? '', $accionesComandasSinLimiteCompartido, true);
+if ($esAccionComandas) {
+    if (!dpf_check_limit($tmp_dir . '/dpf_comandas_ip_' . md5($ip) . '.json', 90, $window)) {
+        http_response_code(429);
+        echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
+        exit;
+    }
+} elseif (!dpf_check_limit($ip_file, $max_ip, $window)) {
     http_response_code(429);
     echo json_encode(['success' => false, 'error' => 'Demasiados intentos. Espera unos minutos.']);
     exit;
