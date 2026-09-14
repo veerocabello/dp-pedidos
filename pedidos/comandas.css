@@ -930,6 +930,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   text-decoration: underline; padding: 2px 4px;
 }
 
+/* ── Enlace opcional bajo el título del teclado numérico genérico, para
+   alternar de qué se está pidiendo un valor (ej. dinero vs. cantidad de
+   monedas en Hacer Caja) — solo lo rellenan los flujos que lo necesitan;
+   el resto de usos del teclado lo dejan vacío y oculto. ── */
+#numpad-toggle-row { text-align: center; margin: -6px 0 6px; }
+.numpad-toggle-link {
+  background: none; border: none; color: var(--amber-dark); font-size: 12px; font-weight: 700; cursor: pointer;
+  text-decoration: underline; padding: 2px 4px;
+}
+
 /* ── Fila "etiqueta + valor en negrita" reutilizada en resúmenes (Caja) ── */
 .cash-calc-total-row { display: flex; align-items: center; }
 .cash-calc-total-row label {

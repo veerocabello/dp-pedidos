@@ -967,6 +967,12 @@ function openNumpad(inputId, title) {
   const el = document.getElementById(inputId);
   numpadBuffer = el && el.value ? String(el.value).replace('.', ',') : '';
   document.getElementById('numpad-title').textContent = title || 'Valor';
+  // El enlace de alternar dinero/cantidad es propio de Hacer Caja — se
+  // oculta aquí por defecto y solo openCajaDenomNumpad lo vuelve a
+  // mostrar justo después, así el resto de usos del teclado (descuentos,
+  // cobro suelto...) no se quedan con un enlace de una vez anterior.
+  const toggleRow = document.getElementById('numpad-toggle-row');
+  if (toggleRow) toggleRow.style.display = 'none';
   updateNumpadDisplay();
   document.getElementById('numpad-modal').classList.add('open');
 }
@@ -3363,32 +3369,67 @@ function setCajaContadoManual(valorStr) {
 // tocarla se abre el teclado para escribir la cantidad exacta de una
 // vez, en vez de tener que tocar el botón esa cantidad de veces.
 let cajaDenomNumpadValue = null;
+// Dos formas de rellenar cada billete/moneda: por el DINERO que suman
+// (p.ej. "75" si hay 75€ en billetes de 5 — no hace falta calcular que
+// son 15 billetes) o por la CANTIDAD de unidades, como antes (útil si ya
+// las has contado una a una). Un enlace bajo el título alterna entre las
+// dos sin cerrar el teclado, convirtiendo lo ya escrito. Por dentro
+// siempre se guarda como unidades, para el contador ×N del círculo.
+let cajaDenomModoCantidad = false;
 function formatDenomLabel(v) {
   return v >= 1 ? Math.round(v) + ' euros' : Math.round(v * 100) + ' céntimos';
 }
-// Se pregunta por el DINERO que hay en esa moneda/billete (p.ej. "75" si
-// hay 75€ en billetes de 5), no por cuántas unidades son — contar cuántos
-// billetes de 5 hay y multiplicar de cabeza es innecesario si lo que se
-// tiene delante ya está mentalmente agrupado por dinero ("tengo 75€ en
-// billetes de 5"). Por dentro se sigue guardando como unidades (para el
-// contador ×N del círculo), calculadas dividiendo el dinero entre el
-// valor de esa moneda/billete.
+function tituloCajaDenomNumpad(v) {
+  const grupo = v >= 1 ? 'billetes' : 'monedas';
+  const cuantos = v >= 1 ? 'Cuántos' : 'Cuántas';
+  return cajaDenomModoCantidad
+    ? cuantos + ' ' + grupo + ' de ' + formatDenomLabel(v) + ' hay'
+    : 'Dinero en ' + grupo + ' de ' + formatDenomLabel(v);
+}
+function renderCajaDenomToggle(v) {
+  const row = document.getElementById('numpad-toggle-row');
+  if (!row) return;
+  row.style.display = 'block';
+  row.innerHTML = cajaDenomModoCantidad
+    ? '<button type="button" class="numpad-toggle-link" onclick="toggleCajaDenomModo()">💶 Escribir el dinero en vez de la cantidad</button>'
+    : '<button type="button" class="numpad-toggle-link" onclick="toggleCajaDenomModo()">🔢 Escribir la cantidad en vez del dinero</button>';
+}
+function toggleCajaDenomModo() {
+  if (cajaDenomNumpadValue == null) return;
+  const v = cajaDenomNumpadValue;
+  const actual = parseCashNum(numpadBuffer);
+  cajaDenomModoCantidad = !cajaDenomModoCantidad;
+  const convertido = cajaDenomModoCantidad ? Math.round(actual / v) : Math.round(actual * v * 100) / 100;
+  numpadBuffer = convertido > 0 ? String(convertido).replace('.', ',') : '';
+  updateNumpadDisplay();
+  document.getElementById('numpad-title').textContent = tituloCajaDenomNumpad(v);
+  renderCajaDenomToggle(v);
+}
 function openCajaDenomNumpad(v) {
   cajaDenomNumpadValue = v;
+  cajaDenomModoCantidad = false; // siempre se abre pidiendo el dinero
   const n = cajaContado.counts[String(v)] || 0;
   const input = document.getElementById('caja-denom-numpad-input');
   input.value = n > 0 ? String(Math.round(n * v * 100) / 100).replace('.', ',') : '';
-  const grupo = v >= 1 ? 'billetes' : 'monedas';
-  openNumpad('caja-denom-numpad-input', 'Dinero en ' + grupo + ' de ' + formatDenomLabel(v));
+  openNumpad('caja-denom-numpad-input', tituloCajaDenomNumpad(v));
+  renderCajaDenomToggle(v);
 }
 function onCajaDenomNumpadInput(valorStr) {
   if (cajaDenomNumpadValue == null) return;
-  setCajaDenomDinero(cajaDenomNumpadValue, valorStr);
+  if (cajaDenomModoCantidad) setCajaDenomCantidad(cajaDenomNumpadValue, valorStr);
+  else setCajaDenomDinero(cajaDenomNumpadValue, valorStr);
+}
+function setCajaDenomCantidad(v, valorStr) {
+  const key = String(v);
+  const n = Math.max(0, Math.round(parseCashNum(valorStr) || 0));
+  guardarCajaDenomCantidad(key, n);
 }
 function setCajaDenomDinero(v, valorStr) {
   const key = String(v);
   const dinero = Math.max(0, parseCashNum(valorStr) || 0);
-  const n = Math.round(dinero / v);
+  guardarCajaDenomCantidad(key, Math.round(dinero / v));
+}
+function guardarCajaDenomCantidad(key, n) {
   if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
   // Se recalcula el total entero a partir de los conteos en vez de sumar
   // la diferencia — así no se puede descuadrar aunque se edite un salto
