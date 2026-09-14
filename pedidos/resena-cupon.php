@@ -2,17 +2,27 @@
 // ═══════════════════════════════════════════════════════════
 //  CUPÓN POR RESEÑA — Dulce Patata Food
 //
-//  Qué hace: un cliente que ya verificó su teléfono (mismo SMS de
-//  verificación que se usa para pedir, ver send-code.php/verify-code.php)
-//  puede pedir un cupón del 10% a cambio de haber dejado una reseña en
-//  Google. NO se genera ningún código solo por pedirlo — se guarda como
-//  "pendiente" y aparece como aviso en el panel de admin (Alertas), y
-//  solo cuando la dueña lo aprueba a mano (tras comprobar ella misma que
-//  la reseña existe de verdad en su Google Business) se crea el cupón
-//  real. Sin envío de SMS de aviso por ahora: el cliente ve el resultado
-//  volviendo a esta misma pantalla y verificando su móvil otra vez
-//  (acción "consultarEstado" más abajo) — si más adelante hay forma de
-//  avisar por SMS, se añade sin tocar el resto de este flujo.
+//  Qué hace: un cliente escribe su número de móvil y pide un cupón del
+//  10% a cambio de haber dejado una reseña en Google. NO se genera ningún
+//  código solo por pedirlo — se guarda como "pendiente" y aparece como
+//  aviso en el panel de admin (Alertas), y solo cuando la dueña lo aprueba
+//  a mano (tras comprobar ella misma que la reseña existe de verdad en su
+//  Google Business) se crea el cupón real y se manda un SMS de aviso real
+//  por Twilio (Messages API, distinta de la Verify API que usan
+//  send-code.php/verify-code.php para los códigos OTP del checkout —
+//  necesita TWILIO_PHONE_NUMBER definido en twilio-secrets.php, ver
+//  enviarSmsAvisoCuponAprobado más abajo). Si ese SMS falla o no está
+//  configurado, no rompe la aprobación: el cupón ya es válido igual, y el
+//  cliente lo verá de todos modos si vuelve a esta pantalla y escribe su
+//  número otra vez (acción "consultarEstado" más abajo).
+//
+//  Sin verificación por SMS (OTP) al solicitar — a propósito: mandar un
+//  código de un solo uso aquí solo para "demostrar" el número, cuando de
+//  todas formas se va a avisar por SMS real al aprobar, era un SMS de más
+//  sin necesidad real. El filtro de abuso de verdad sigue siendo el mismo
+//  de siempre: la dueña comprueba a mano que la reseña existe antes de
+//  aprobar nada, y el cupón generado solo lo puede canjear ESE teléfono
+//  (discountCodeInvalido en guardar-pedido.php).
 //
 //  config/cuponesResena/<teléfono> exige el UID de admin en las reglas
 //  de Firebase (igual que el resto de config/), así que un cliente
@@ -20,9 +30,9 @@
 //  con la cuenta de servicio.
 //
 //  POST (JSON):
-//   {"action":"consultarEstado","smsToken":"...","phone":"6XXXXXXXX"}
+//   {"action":"consultarEstado","phone":"6XXXXXXXX"}
 //     → {"success":true,"estado":"ninguno"|"pendiente"|"aprobado"|"descartado","codigo":"RESENA-XXXX"|null}
-//   {"action":"solicitar","smsToken":"...","phone":"...","nombreGoogle":"...","comentario":"..."}
+//   {"action":"solicitar","phone":"...","nombreGoogle":"...","comentario":"..."}
 //     → {"success":true,"estado":"pendiente"|"aprobado","codigo":"..."|null}
 //   {"action":"aprobar","deviceId":"...","token":"...","phone":"..."}
 //     → {"success":true,"codigo":"RESENA-XXXX"}
@@ -273,16 +283,44 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [])
     }
 }
 
-function validarSmsToken($token, $telefonoEsperado) {
-    if (!defined('TWILIO_AUTH_TOKEN') || !TWILIO_AUTH_TOKEN) return false;
-    if (!$token || !is_string($token)) return false;
-    $partes = explode('|', $token);
-    if (count($partes) !== 3) return false;
-    list($tel, $exp, $firma) = $partes;
-    if (!is_numeric($exp) || (int)$exp < time()) return false;
-    if ($tel !== $telefonoEsperado) return false;
-    $firmaEsperada = hash_hmac('sha256', $tel . '|' . $exp, TWILIO_AUTH_TOKEN);
-    return hash_equals($firmaEsperada, (string)$firma);
+// Manda el SMS real de aviso cuando se aprueba un cupón — API de Mensajes
+// de Twilio (Messages), DISTINTA de la Verify API que usan send-code.php/
+// verify-code.php para los códigos OTP: Verify no puede mandar texto
+// libre, solo códigos de un solo uso. Para esto hace falta un número de
+// Twilio propio como remitente ("From"), que aún no existe en este
+// proyecto — hay que definir TWILIO_PHONE_NUMBER en twilio-secrets.php
+// (fuera de public_html, junto a TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN).
+// Si no está definido, se salta en silencio (con log) en vez de romper la
+// aprobación: el cupón ya es válido igual, y el aviso queda pendiente de
+// que se configure el número.
+function enviarSmsAvisoCuponAprobado($telefono, $codigo) {
+    if (!defined('TWILIO_PHONE_NUMBER') || !TWILIO_PHONE_NUMBER
+        || !defined('TWILIO_ACCOUNT_SID') || !TWILIO_ACCOUNT_SID
+        || !defined('TWILIO_AUTH_TOKEN') || !TWILIO_AUTH_TOKEN) {
+        error_log('[' . date('Y-m-d H:i:s') . '] [resena-cupon] TWILIO_PHONE_NUMBER no configurado — no se manda SMS de aviso (cupón ' . $codigo . ' para ' . $telefono . ' sigue siendo válido igualmente)' . PHP_EOL, 3, __DIR__ . '/twilio-errores.log');
+        return false;
+    }
+    $to = '+34' . $telefono;
+    $mensaje = '🎉 ¡Tu 10% ya está listo! Código: ' . $codigo . ' — válido 60 días, un solo uso. Dulce Patata Food';
+    $ch = curl_init('https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'To'   => $to,
+        'From' => TWILIO_PHONE_NUMBER,
+        'Body' => $mensaje,
+    ]));
+    curl_setopt($ch, CURLOPT_USERPWD, TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($httpCode !== 201) {
+        error_log('[' . date('Y-m-d H:i:s') . "] [resena-cupon] Twilio SMS aviso ERROR — to=$to http_code=$httpCode response=$response" . PHP_EOL, 3, __DIR__ . '/twilio-errores.log');
+        return false;
+    }
+    return true;
 }
 
 // Genera el código de descuento del 10% ligado a este teléfono — mismo
@@ -348,16 +386,16 @@ try {
     $accessToken = obtenerTokenAcceso($rutaCredenciales);
 
     if ($action === 'consultarEstado' || $action === 'solicitar') {
-        // Ambas acciones exigen haber verificado de verdad este teléfono por
-        // SMS hace poco (mismo comprobante que exige guardar-pedido.php) —
-        // sin esto, cualquiera podría consultar o crear solicitudes con el
-        // teléfono de otra persona con solo escribirlo.
-        $smsToken = isset($payload['smsToken']) ? (string)$payload['smsToken'] : '';
-        if (!validarSmsToken($smsToken, $phone)) {
-            echo json_encode(['success' => false, 'error' => 'Verificación de móvil caducada o no válida. Verifica tu número otra vez.']);
-            exit;
-        }
-
+        // Ya NO se exige verificar el teléfono por SMS (OTP) para esto — con
+        // el aviso real por SMS al aprobar (enviarSmsAvisoCuponAprobado más
+        // arriba), pedir un código de un solo uso aquí solo para "demostrar"
+        // el número antes de eso era un SMS de más sin necesidad real: la
+        // dueña ya comprueba a mano que la reseña existe de verdad en Google
+        // antes de aprobar nada, y el cupón generado solo lo puede canjear
+        // ESE teléfono (discountCodeInvalido en guardar-pedido.php) — así que
+        // poner el número de otra persona por error/broma no deja a nadie
+        // usar el cupón, como mucho le llega un SMS de aviso a un número que
+        // no es el suyo si la solicitud llegase a aprobarse por error.
         $leido = fbGetConEtag($databaseURL, $cuponPath, $accessToken);
         $registro = is_array($leido['data']) ? $leido['data'] : null;
         $estadoActual = $registro['estado'] ?? 'ninguno';
@@ -469,10 +507,15 @@ try {
             // aunque este registro no se actualice — el cliente lo verá al
             // volver a "consultarEstado" en el próximo intento, cuando esta
             // escritura (o el reintento manual desde el panel) sí cuadre.
+            enviarSmsAvisoCuponAprobado($phone, $codigo);
             echo json_encode(['success' => true, 'codigo' => $codigo]);
             exit;
         }
 
+        // Best-effort: si Twilio falla o TWILIO_PHONE_NUMBER no está
+        // configurado, no se rompe la aprobación — el cupón ya es válido
+        // igual, el cliente lo verá si vuelve a comprobar el estado.
+        enviarSmsAvisoCuponAprobado($phone, $codigo);
         echo json_encode(['success' => true, 'codigo' => $codigo]);
         exit;
     }
