@@ -3629,6 +3629,24 @@ function scheduleSlotMidnightReset() {
       firebase.database().ref('config/openManualOverride').set(false).catch(() => {});
       if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(true).catch(() => {});
       if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(() => {});
+      // Productos marcados "agotado" vuelven disponibles solos cada noche —
+      // salvo los marcados "agotado permanente" (toggleSoldoutPermanente,
+      // admin-config.js), pensados para lo que se quita a propósito (fuera
+      // de temporada, descatalogado), no para "hoy se acabó". Este reseteo
+      // solo puede ocurrir en un dispositivo con MENU/saveMenu cargados
+      // (bundle de admin) — si ningún dispositivo de confianza real está
+      // abierto justo a medianoche, se aplica en cuanto el primero se abra
+      // ese día (mismo límite que el resto de resets de aquí arriba).
+      if (typeof MENU !== 'undefined' && typeof saveMenu === 'function') {
+        const _reactivados = MENU.filter(i => i.soldout && !i.soldoutPermanente);
+        if (_reactivados.length) {
+          _reactivados.forEach(i => { i.soldout = false; });
+          saveMenu();
+          if (typeof renderMenu === 'function') renderMenu();
+          if (typeof renderAdminProducts === 'function') renderAdminProducts();
+          logActivity('🔄 ' + _reactivados.length + ' producto' + (_reactivados.length !== 1 ? 's' : '') + ' agotado' + (_reactivados.length !== 1 ? 's' : '') + ' disponible' + (_reactivados.length !== 1 ? 's' : '') + ' de nuevo (reseteo automático del día)');
+        }
+      }
     }
     // También archivar el día anterior en historial
     try {
