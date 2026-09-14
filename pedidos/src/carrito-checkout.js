@@ -1665,6 +1665,23 @@ async function _finalizarPedido() {
       esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false,
       fidelizacionElegible: window._pendingTicketData.fidelizacionElegible || false
     };
+    // Modo prueba ("🧪 Probar un pedido" en el panel, admin-config.js) — de
+    // un solo uso: se lee y se borra aquí mismo, así que solo afecta a ESTE
+    // pedido. guardar-pedido.php revalida el dispositivo de confianza en el
+    // servidor antes de dejarlo saltarse el horario/cierre real — esto de
+    // aquí solo decide si se intenta.
+    try {
+      if (localStorage.getItem('dpf_modo_prueba_pedido') === '1') {
+        localStorage.removeItem('dpf_modo_prueba_pedido');
+        const _deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+        const _trustedToken = localStorage.getItem('dpf_trusted_token');
+        if (_deviceId && _trustedToken) {
+          _pedidoPayload.testMode = true;
+          _pedidoPayload.deviceId = _deviceId;
+          _pedidoPayload.token = _trustedToken;
+        }
+      }
+    } catch (e) {}
     // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
     // cierra o se pierde la conexión justo después de confirmar (antes de
     // recibir la respuesta), _recuperarPedidoEnCurso() lo reenvía solo al

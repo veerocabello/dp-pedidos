@@ -1619,6 +1619,13 @@ function getMinutes(timeStr, isClose) {
 }
 function checkAutoCloseWarning() {
   var _h$diasAbiertos2;
+  // Modo prueba activado — no tocar el formulario/banner (ver
+  // activarModoPruebaPedido en admin-config.js, que ya lo deja visible al
+  // activarlo); esta función se vuelve a llamar sola periódicamente y sin
+  // esto podría volver a ocultar el formulario a mitad de la prueba.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) return;
+  } catch (e) {}
   const manualOpen = localStorage.getItem('dpf_open') !== 'false';
   let h;
   try {
@@ -2118,6 +2125,12 @@ function getOrdersOpen() {
   return val !== 'false';
 }
 function updateOrdersUI(open, customMsg) {
+  // Modo prueba activado — no dejar que esta función vuelva a ocultar el
+  // formulario (p.ej. porque config/ordersOpen sigue en false de verdad) a
+  // mitad de la prueba. Mismo guarda que checkAutoCloseWarning.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) open = true;
+  } catch (e) {}
   // Hay más de un botón "Pausar/Reanudar pedidos" en la página (Local y En
   // vivo) — se actualizan todos igual, por clase, en vez de solo el de id
   // fijo de antes (mismo patrón que _ptColaListaRenderUI para varias
@@ -5130,6 +5143,16 @@ function _sonidoConfirmacionPedido() {
 }
 function isShopBlocked() {
   var _document$getElementB;
+  // 0. Modo prueba activado desde el panel ("🧪 Probar un pedido",
+  // admin-config.js) por un dispositivo de confianza real — deja pasar
+  // el pedido de PRUEBA sin tocar el horario/cierre real, para poder
+  // probar el flujo completo un día cerrado sin cambiar nada de verdad.
+  // guardar-pedido.php revalida el dispositivo de confianza en el
+  // servidor antes de aceptar el saltarse el horario — esto de aquí es
+  // solo para no bloquear la pantalla, la comprobación real es la suya.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) return false;
+  } catch (e) {}
   // 1. Si el banner de cerrado está visible
   const banner = document.getElementById('orders-closed-banner');
   if (banner && banner.style.display === 'block') return true;
@@ -7631,6 +7654,23 @@ async function _finalizarPedido() {
       esEstudianteJubilado: window._pendingTicketData.esEstudianteJubilado || false,
       fidelizacionElegible: window._pendingTicketData.fidelizacionElegible || false
     };
+    // Modo prueba ("🧪 Probar un pedido" en el panel, admin-config.js) — de
+    // un solo uso: se lee y se borra aquí mismo, así que solo afecta a ESTE
+    // pedido. guardar-pedido.php revalida el dispositivo de confianza en el
+    // servidor antes de dejarlo saltarse el horario/cierre real — esto de
+    // aquí solo decide si se intenta.
+    try {
+      if (localStorage.getItem('dpf_modo_prueba_pedido') === '1') {
+        localStorage.removeItem('dpf_modo_prueba_pedido');
+        const _deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+        const _trustedToken = localStorage.getItem('dpf_trusted_token');
+        if (_deviceId && _trustedToken) {
+          _pedidoPayload.testMode = true;
+          _pedidoPayload.deviceId = _deviceId;
+          _pedidoPayload.token = _trustedToken;
+        }
+      }
+    } catch (e) {}
     // Se guarda un marcador ANTES de mandar la petición — si la pestaña se
     // cierra o se pierde la conexión justo después de confirmar (antes de
     // recibir la respuesta), _recuperarPedidoEnCurso() lo reenvía solo al

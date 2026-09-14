@@ -1619,6 +1619,13 @@ function getMinutes(timeStr, isClose) {
 }
 function checkAutoCloseWarning() {
   var _h$diasAbiertos2;
+  // Modo prueba activado — no tocar el formulario/banner (ver
+  // activarModoPruebaPedido en admin-config.js, que ya lo deja visible al
+  // activarlo); esta función se vuelve a llamar sola periódicamente y sin
+  // esto podría volver a ocultar el formulario a mitad de la prueba.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) return;
+  } catch (e) {}
   const manualOpen = localStorage.getItem('dpf_open') !== 'false';
   let h;
   try {
@@ -2118,6 +2125,12 @@ function getOrdersOpen() {
   return val !== 'false';
 }
 function updateOrdersUI(open, customMsg) {
+  // Modo prueba activado — no dejar que esta función vuelva a ocultar el
+  // formulario (p.ej. porque config/ordersOpen sigue en false de verdad) a
+  // mitad de la prueba. Mismo guarda que checkAutoCloseWarning.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) open = true;
+  } catch (e) {}
   // Hay más de un botón "Pausar/Reanudar pedidos" en la página (Local y En
   // vivo) — se actualizan todos igual, por clase, en vez de solo el de id
   // fijo de antes (mismo patrón que _ptColaListaRenderUI para varias

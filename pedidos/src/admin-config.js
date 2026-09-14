@@ -814,6 +814,42 @@ function toggleOpenStatus() {
   logActivity("🏪 Local marcado como: ".concat(next ? 'ABIERTO' : 'CERRADO'));
 }
 
+// ── MODO PRUEBA DE PEDIDO — deja hacer un pedido real de principio a fin
+// (SMS de verdad, guardado real, impresión real) saltándose el
+// horario/cierre/vacaciones, SIN tocar ningún ajuste real de la tienda —
+// pensado para probar el flujo un día cerrado (domingo noche, lunes...)
+// sin tener que abrir el local de verdad ni cambiar el horario a mano y
+// acordarse de deshacerlo luego. Solo funciona desde un dispositivo de
+// confianza (guardar-pedido.php revalida esto en el servidor antes de
+// dejar pasar el pedido) y se desactiva solo tras UN pedido — ver el uso
+// de dpf_modo_prueba_pedido en carrito-checkout.js/carta.js/nucleo-compartido.js.
+function activarModoPruebaPedido() {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (!deviceId || !token) {
+    showAlert('Este dispositivo no está reconocido como de confianza. Cierra sesión y vuelve a entrar marcando "Dispositivo de confianza" para poder usar el modo prueba.');
+    return;
+  }
+  localStorage.setItem('dpf_modo_prueba_pedido', '1');
+  // Se restaura la vista de pedido normal al momento, sin esperar a que el
+  // chequeo periódico de horario (checkAutoCloseWarning) vuelva a correr
+  // solo — si no, seguiría viéndose "Cerrado" en pantalla aunque el
+  // próximo pedido ya vaya a aceptarse de verdad.
+  const banner = document.getElementById('orders-closed-banner');
+  const orderForm = document.getElementById('order-form');
+  const totalRow = document.getElementById('cart-total-row');
+  const lockedMsg = document.getElementById('cart-locked-msg');
+  const closingSoon = document.getElementById('closing-soon-banner');
+  if (banner) banner.style.display = 'none';
+  if (orderForm) orderForm.style.display = '';
+  if (totalRow) totalRow.style.display = '';
+  if (lockedMsg) lockedMsg.style.display = 'none';
+  if (closingSoon) closingSoon.remove();
+  logActivity('🧪 Modo prueba de pedido activado (el próximo pedido saltará horario/cierre)');
+  closeAdmin();
+  showAlert('Modo prueba activado: añade productos y confirma un pedido normal — este saltará el cierre/horario real sin tocar ningún ajuste. Solo afecta a este dispositivo, y se desactiva solo en cuanto confirmes ese pedido.');
+}
+
 // ── GASTOS DE GESTIÓN (guardar desde el panel) ──
 function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');

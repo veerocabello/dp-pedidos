@@ -1113,6 +1113,24 @@ function dpf_limitesPersonalizadorExcedidos($items) {
 // navegador (mismo criterio de "día de servicio" antes de las 06:00, mismo
 // tratamiento de sesión continua manOpen→tarClose con posible cruce de
 // medianoche) para no rechazar pedidos que la propia web sí deja hacer.
+// Valida deviceId+token contra config/trustedDevices/<deviceId> — mismo
+// mecanismo que checkTrustedDevice en bimba-verify.php (copiado aquí,
+// como el resto de helpers de este archivo — ver el comentario de
+// obtenerTokenAcceso sobre por qué cada endpoint lleva su propia copia).
+// Único uso aquí: dejar que la dueña pruebe el flujo de pedido completo
+// (SMS real, guardado real...) sin tocar el horario/cierre de verdad —
+// ver 'testMode' en la comprobación de tienda abierta, más abajo.
+function esDispositivoDeConfianza($databaseURL, $accessToken, $deviceId, $token) {
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        return false;
+    }
+    $leido = fbGetConEtag($databaseURL, 'config/trustedDevices/' . $deviceId, $accessToken);
+    $registro = $leido['data'];
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expirado = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    return !$expirado && $tokenHashReal !== '' && hash_equals($tokenHashReal, hash('sha256', (string)$token));
+}
+
 function comprobarTiendaAbierta($databaseURL, $accessToken) {
     // Las comprobaciones de abajo son independientes entre sí (ninguna
     // necesita el resultado de otra para saber QUÉ leer) — antes se leían
@@ -2336,10 +2354,24 @@ try {
     }
 
     // ── TIENDA CERRADA / VACACIONES / PEDIDOS PAUSADOS: SÍ bloquea el pedido ──
-    $errorHorario = comprobarTiendaAbierta($databaseURL, $accessToken);
-    if ($errorHorario) {
-        echo json_encode(['success' => false, 'error' => $errorHorario]);
-        exit;
+    // Excepción: pedido de PRUEBA desde un dispositivo de confianza real
+    // (ver 'testMode' + deviceId/token en el payload, y el botón "🧪 Probar
+    // un pedido" del panel — admin-config.js) — deja pasar este pedido en
+    // concreto sin tocar el horario/cierre/vacaciones reales, así se puede
+    // probar el flujo completo (SMS real, guardado real, impresión real)
+    // un lunes con la tienda cerrada sin tener que cambiar nada de verdad.
+    // Se revalida el dispositivo de confianza aquí, en el servidor — el
+    // navegador no puede fingir esto solo con marcar una casilla.
+    $modoPrueba = !empty($payload['testMode'])
+        && esDispositivoDeConfianza($databaseURL, $accessToken, (string)($payload['deviceId'] ?? ''), (string)($payload['token'] ?? ''));
+    if ($modoPrueba) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '🧪 Pedido de prueba ' . $orderNum . ' — horario/cierre saltado desde un dispositivo de confianza');
+    } else {
+        $errorHorario = comprobarTiendaAbierta($databaseURL, $accessToken);
+        if ($errorHorario) {
+            echo json_encode(['success' => false, 'error' => $errorHorario]);
+            exit;
+        }
     }
 
     // ── 0a. CÓDIGO DE DESCUENTO (SÍ bloquea si ya no es válido) ──

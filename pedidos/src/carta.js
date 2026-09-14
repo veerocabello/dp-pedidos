@@ -567,6 +567,16 @@ function _sonidoConfirmacionPedido() {
 }
 function isShopBlocked() {
   var _document$getElementB;
+  // 0. Modo prueba activado desde el panel ("🧪 Probar un pedido",
+  // admin-config.js) por un dispositivo de confianza real — deja pasar
+  // el pedido de PRUEBA sin tocar el horario/cierre real, para poder
+  // probar el flujo completo un día cerrado sin cambiar nada de verdad.
+  // guardar-pedido.php revalida el dispositivo de confianza en el
+  // servidor antes de aceptar el saltarse el horario — esto de aquí es
+  // solo para no bloquear la pantalla, la comprobación real es la suya.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) return false;
+  } catch (e) {}
   // 1. Si el banner de cerrado está visible
   const banner = document.getElementById('orders-closed-banner');
   if (banner && banner.style.display === 'block') return true;
