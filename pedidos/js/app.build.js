@@ -2111,6 +2111,16 @@ function loadTicketConfigFromFirebase() {
 // ── ABIERTO/CERRADO — evaluación real para cualquier visitante (activar/
 // desactivar a mano es cosa de admin, ver admin-config.js) ──
 function getOrdersOpen() {
+  // Modo prueba activado (ver activarModoPruebaPedido, admin-config.js) —
+  // esta es la función raíz de la que dependen isShopBlocked() Y
+  // renderCart() (esta última la llama directamente, sin pasar por
+  // isShopBlocked) para decidir si mostrar el formulario de pedido. Sin
+  // este guarda aquí, renderCart() seguía ocultando el formulario un día
+  // cerrado aunque isShopBlocked() ya dijera que no estaba bloqueado — el
+  // carrito se veía pero nunca aparecían los datos para pedir.
+  try {
+    if (localStorage.getItem('dpf_modo_prueba_pedido') === '1' && localStorage.getItem('dpf_trusted_token')) return true;
+  } catch (e) {}
   // Si estamos fuera de horario o hoy es día cerrado, siempre devolver false
   if (isOutsideHours() || !isTodayOpen()) return false;
   // "Local cerrado" (botón de la pestaña Local) — antes solo cambiaba el
