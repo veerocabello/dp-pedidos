@@ -4162,6 +4162,20 @@ if (navigator.usb) {
   });
 }
 
+// Dispositivos sin NINGUNA forma de imprimir por su cuenta (típicamente
+// iPhone/iPad: Safari no soporta Bluetooth ni USB desde la web, ninguna
+// alternativa lo hace) — para estos, caer al plan B de sendToPrinter()
+// cuando Admin no está disponible no sirve de nada, siempre va a fallar
+// igual. Mejor dejar la comanda en la cola aunque Admin no esté conectado
+// AHORA MISMO (ver "sinImpresionDirecta" más abajo y en guardar-pedido.php)
+// — Firebase entrega el estado actual completo del nodo en cuanto Admin
+// empieza a escuchar, así que la comanda se imprime en cuanto Admin se
+// conecte, aunque sea más tarde, en vez de perderse cayendo hasta el
+// diálogo de impresión de Safari (inútil para una térmica).
+function _tienePrintDirectoPosible() {
+  return !!(navigator.bluetooth || navigator.usb || (isDesktopApp() && window.comandasDesktop && window.comandasDesktop.printRaw));
+}
+
 // Manda el ticket a la cola del panel de Admin (que ya está conectado a
 // la impresora — el "punto único") en vez de que Comandas se conecte
 // ella misma. Solo la PRIMERA copia decide si se sigue este camino o el
@@ -4173,20 +4187,23 @@ if (navigator.usb) {
 async function intentarEncolarEnAdmin(bytes, copies) {
   let bytesBase64;
   try { bytesBase64 = bytesToBase64(bytes); } catch (e) { return false; }
+  const sinImpresionDirecta = !_tienePrintDirectoPosible();
   let primeraOk = false;
+  let quedoEnColaPendiente = false;
   for (let i = 0; i < copies; i++) {
     try {
       const res = await _conTimeout(
         fetch('guardar-pedido.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'encolarImpresionComandas', bytesBase64 })
+          body: JSON.stringify({ action: 'encolarImpresionComandas', bytesBase64, sinImpresionDirecta })
         }).then(r => r.json()),
         4000,
         'timeout avisando a Admin'
       );
       if (res && res.success) {
         primeraOk = true;
+        if (res.pendiente) quedoEnColaPendiente = true;
       } else if (i === 0) {
         return false;
       }
@@ -4194,6 +4211,13 @@ async function intentarEncolarEnAdmin(bytes, copies) {
       if (i === 0) return false;
       console.warn('[comandas] copia adicional no se pudo encolar en Admin', e);
     }
+  }
+  // Aviso claro de que no se ha impreso YA, sino que queda a la espera —
+  // sin esto, un dispositivo sin impresora directa (iPhone) daba la
+  // impresión por hecha en pantalla aunque en realidad nadie la hubiera
+  // sacado todavía por papel.
+  if (primeraOk && quedoEnColaPendiente) {
+    toast('📋 Comanda en cola — se imprimirá en cuanto se conecte el dispositivo con la impresora', 6000);
   }
   return primeraOk;
 }

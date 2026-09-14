@@ -1862,19 +1862,30 @@ try {
         }
         $accessToken = obtenerTokenAcceso($rutaCredenciales);
         // Comprobar que el panel de Admin está de verdad ahí, conectado a
-        // la impresora, ANTES de encolar — antes se aceptaba el ticket sin
-        // mirar esto y, si Admin no estaba abierto en ese momento, el
-        // trabajo se quedaba en la cola para siempre sin que nadie lo
-        // imprimiera (Comandas lo daba por "impreso" al ver success:true,
-        // así que tampoco caía a su plan B). El aviso lo manda Admin cada
-        // pocos segundos mientras esté conectado (ver
-        // fb_avisarPuntoImpresionActivo/_ptBucleMantenimiento) — si tiene
-        // más de 20s (con margen de sobra sobre el ciclo real de 8s) o no
-        // existe, se rechaza aquí mismo para que Comandas se entere al
-        // momento e imprima ella misma.
+        // la impresora, ANTES de encolar — si Admin no estaba abierto en
+        // ese momento, antes se rechazaba aquí mismo para que Comandas se
+        // enterara al momento e imprimiera ella misma por su cuenta
+        // (Bluetooth/USB). El aviso lo manda Admin cada pocos segundos
+        // mientras esté conectado (ver fb_avisarPuntoImpresionActivo/
+        // _ptBucleMantenimiento) — si tiene más de 20s (con margen de
+        // sobra sobre el ciclo real de 8s) o no existe, se considera "no
+        // disponible ahora mismo".
+        //
+        // 'sinImpresionDirecta' (Comandas, _tienePrintDirectoPosible): un
+        // dispositivo sin NINGUNA vía propia de imprimir (típicamente
+        // iPhone/iPad — Safari no soporta Bluetooth ni USB desde la web)
+        // no tiene ningún "por su cuenta" al que caer si se rechaza aquí —
+        // así que para estos SÍ se encola aunque Admin no esté conectado
+        // ahora mismo: Firebase entrega el estado completo del nodo en
+        // cuanto Admin empiece a escuchar (fb_listenComandasCola), así que
+        // se imprime en cuanto se conecte, aunque sea más tarde, en vez de
+        // perderse cayendo hasta el diálogo de impresión de Safari (inútil
+        // para una térmica).
         $avisoAdmin = fbGetConEtag($databaseURL, 'config/puntoImpresionActivo', $accessToken);
         $tsAviso = is_array($avisoAdmin['data'] ?? null) ? ($avisoAdmin['data']['ts'] ?? null) : null;
-        if (!is_numeric($tsAviso) || (microtime(true) * 1000 - $tsAviso) > 20000) {
+        $adminDisponibleAhora = is_numeric($tsAviso) && (microtime(true) * 1000 - $tsAviso) <= 20000;
+        $sinImpresionDirecta = !empty($payload['sinImpresionDirecta']);
+        if (!$adminDisponibleAhora && !$sinImpresionDirecta) {
             echo json_encode(['success' => false, 'error' => 'admin_no_disponible']);
             exit;
         }
@@ -1883,7 +1894,7 @@ try {
             'bytesBase64' => $bytesBase64,
             'ts' => round(microtime(true) * 1000),
         ], null);
-        echo json_encode(['success' => $ok]);
+        echo json_encode(['success' => $ok, 'pendiente' => $ok && !$adminDisponibleAhora]);
         exit;
     }
 
