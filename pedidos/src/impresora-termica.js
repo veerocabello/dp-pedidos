@@ -159,7 +159,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     const extrasNombre = partes.slice(1);
     const extrasArr = item.extras || [];
     const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
-    const W = tc.anchoPapel === 58 ? 32 : 48;
+    const W = Math.max(20, (tc.anchoPapel === 58 ? 32 : 48) + (parseInt(tc.columnasAjuste, 10) || 0));
     const prefix = item.qty + 'x ';
     const spaces = W - prefix.length - nombrePrincipal.length - precio.length;
     if (spaces >= 0) {
@@ -1438,9 +1438,9 @@ async function imprimirPruebaAnchoPapel() {
   bold(false);
   push('------------------------------------------------\n');
   push('Linea de producto de un\n');
-  push('ticket real (ancho configurado\n');
-  push('hoy: ' + (tc.anchoPapel || 80) + 'mm):\n');
-  const W = tc.anchoPapel === 58 ? 32 : 48;
+  push('ticket real (papel ' + (tc.anchoPapel || 80) + 'mm,\n');
+  push('ajuste ' + (parseInt(tc.columnasAjuste, 10) || 0) + '):\n');
+  const W = Math.max(20, (tc.anchoPapel === 58 ? 32 : 48) + (parseInt(tc.columnasAjuste, 10) || 0));
   const precio = '9.99 EUR';
   const nombre = 'PRODUCTO PRUEBA';
   const prefix = '1x ';

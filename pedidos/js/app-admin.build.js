@@ -4675,6 +4675,8 @@ function bimbaPintarTicketConfig() {
   document.getElementById('tc-despedida').value = tc.despedida;
   document.getElementById('tc-texto-pago').value = tc.textoPago;
   document.getElementById('tc-ancho-papel').value = String(tc.anchoPapel || 80);
+  const columnasAjusteEl = document.getElementById('tc-columnas-ajuste');
+  if (columnasAjusteEl) columnasAjusteEl.value = String(tc.columnasAjuste != null ? tc.columnasAjuste : 4);
   document.getElementById('tc-copias').value = tc.copias || 1;
   const autoEl = document.getElementById('tc-auto-imprimir');
   autoEl.checked = tc.autoImprimir !== false;
@@ -4727,6 +4729,7 @@ function bimbaGuardarTicketConfig() {
     despedida: document.getElementById('tc-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
     textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
     anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
+    columnasAjuste: parseInt(document.getElementById('tc-columnas-ajuste').value, 10) || 0,
     copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
     autoImprimir: document.getElementById('tc-auto-imprimir').checked
   };
@@ -7156,7 +7159,7 @@ function _ptBuildTicketBytes(ticket, omitirLogo) {
     const extrasNombre = partes.slice(1);
     const extrasArr = item.extras || [];
     const precio = (item.subtotal || 0).toFixed(2) + ' EUR';
-    const W = tc.anchoPapel === 58 ? 32 : 48;
+    const W = Math.max(20, (tc.anchoPapel === 58 ? 32 : 48) + (parseInt(tc.columnasAjuste, 10) || 0));
     const prefix = item.qty + 'x ';
     const spaces = W - prefix.length - nombrePrincipal.length - precio.length;
     if (spaces >= 0) {
@@ -8435,9 +8438,9 @@ async function imprimirPruebaAnchoPapel() {
   bold(false);
   push('------------------------------------------------\n');
   push('Linea de producto de un\n');
-  push('ticket real (ancho configurado\n');
-  push('hoy: ' + (tc.anchoPapel || 80) + 'mm):\n');
-  const W = tc.anchoPapel === 58 ? 32 : 48;
+  push('ticket real (papel ' + (tc.anchoPapel || 80) + 'mm,\n');
+  push('ajuste ' + (parseInt(tc.columnasAjuste, 10) || 0) + '):\n');
+  const W = Math.max(20, (tc.anchoPapel === 58 ? 32 : 48) + (parseInt(tc.columnasAjuste, 10) || 0));
   const precio = '9.99 EUR';
   const nombre = 'PRODUCTO PRUEBA';
   const prefix = '1x ';
