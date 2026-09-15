@@ -865,14 +865,38 @@ function getFidelizacionDescuento(phoneClean) {
 // de pedido reservados, dos emails de confirmación, y _pendingOrderData/
 // _pendingTicketData del segundo pisando los del primero en mitad del
 // proceso, todo para lo que el cliente vivió como un único clic.
+//
+// _submitOrderEnCurso ya bloqueaba un SEGUNDO toque dentro de la MISMA
+// pestaña — pero el botón seguía viéndose como "Confirmar pedido →"
+// (sin deshabilitar ni cambiar de texto) durante TODAS las llamadas de
+// red de _submitOrderInner() previas a la línea que sí lo marcaba como
+// "Enviando pedido…" (blacklist, cooldown, turno, número de pedido —
+// varios segundos, más con red lenta). Con conexión mala en el local, el
+// cliente veía un botón aparentemente sin reaccionar, pensaba que no
+// había funcionado y recargaba la página para repetir el pedido entero
+// desde cero — eso SÍ escapa a _submitOrderEnCurso (una recarga la
+// resetea) y es lo que causaba pedidos duplicados de verdad (ver el
+// bloque "0b" en guardar-pedido.php). Ahora el botón se bloquea con
+// feedback claro desde el primer instante, antes de la primera llamada de
+// red, y se restaura siempre en el finally — así cubre cualquier punto de
+// salida de _submitOrderInner() (validación rechazada, turno lleno,
+// teléfono bloqueado, error...) sin tener que tocar cada uno a mano. Si
+// el pedido sí llega a confirmarse, el panel entero se oculta al mostrar
+// la pantalla de éxito, así que restaurar el texto del botón ahí no se
+// llega a ver — no hace falta distinguir ese caso.
 let _submitOrderEnCurso = false;
 async function submitOrder() {
   if (_submitOrderEnCurso) return;
   _submitOrderEnCurso = true;
+  const _btnSubmit = document.getElementById('submit-btn');
+  const _btnSubmitTextoPrevio = _btnSubmit ? _btnSubmit.textContent : null;
+  const _btnSubmitDisabledPrevio = _btnSubmit ? _btnSubmit.disabled : false;
+  if (_btnSubmit) { _btnSubmit.disabled = true; _btnSubmit.textContent = 'Enviando pedido…'; }
   try {
     await _submitOrderInner();
   } finally {
     _submitOrderEnCurso = false;
+    if (_btnSubmit) { _btnSubmit.disabled = _btnSubmitDisabledPrevio; _btnSubmit.textContent = _btnSubmitTextoPrevio; }
   }
 }
 async function _submitOrderInner() {

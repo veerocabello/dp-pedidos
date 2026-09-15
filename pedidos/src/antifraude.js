@@ -24,6 +24,35 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   if (_icon) _icon.textContent = '🥔';
   if (_title) _title.textContent = '¡Pedido confirmado!';
   if (_sub) _sub.textContent = 'Te esperamos en el local';
+
+  // ── Mostrar la confirmación YA, antes de nada más ──────────────────
+  // _finalizarPedido() (carrito-checkout.js) ya mandó el guardado real
+  // del pedido al servidor ANTES de llamar aquí, sin esperar a que esta
+  // función termine — así que en cuanto se llega a este punto el pedido
+  // ya está en camino de guardarse bien, pase lo que pase después. Todo
+  // lo de abajo (estadísticas, lista de productos para el resumen, datos
+  // para WhatsApp...) es secundario: antes, si CUALQUIERA de esos pasos
+  // lanzaba una excepción sin capturar, se perdía la función entera A
+  // MITAD, sin haber llegado nunca a la línea que hace visible la
+  // pantalla de éxito — el cliente se quedaba viendo el formulario de
+  // siempre, sin ningún aviso ni error visible, pensando que el pedido no
+  // se había hecho... aunque el ticket ya estuviera imprimiéndose en
+  // cocina. Mostrar esto lo primero, fuera del try de más abajo,
+  // garantiza que el cliente vea la confirmación siempre, incluso si algo
+  // secundario falla.
+  const _panel = document.querySelector('.order-panel');
+  if (_panel) _panel.style.display = 'none';
+  const _successScreenEl = document.getElementById('success-screen');
+  if (_successScreenEl) _successScreenEl.style.display = 'block';
+  const _orderNumDisplayEl = document.getElementById('order-num-display');
+  if (_orderNumDisplayEl) _orderNumDisplayEl.textContent = orderNum;
+  setTimeout(() => {
+    const el = document.getElementById('success-screen');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+
+  try {
+
   // Mismo motivo que el bloque de arriba: si el pedido anterior en esta
   // visita se llegó a cancelar, cancelarPedido() dejó los botones de
   // Modificar/Cancelar deshabilitados (para evitar un segundo click
@@ -167,9 +196,6 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   } else if (itemsContainer) {
     itemsContainer.innerHTML = '';
   }
-  document.querySelector('.order-panel').style.display = "none";
-  document.getElementById("success-screen").style.display = "block";
-  document.getElementById("order-num-display").textContent = orderNum;
   // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
   // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
   const saveWarning = document.getElementById('success-save-warning');
@@ -183,12 +209,17 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   if (fab) fab.classList.add('hidden');
   // Arrancar temporizador de modificación (5 minutos)
   _startModifyTimer();
-  setTimeout(() => {
-    document.getElementById("success-screen").scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    });
-  }, 50);
+
+  } catch (e) {
+    // La confirmación YA se mostró (bloque de arriba, antes de este try) —
+    // esto solo deja constancia de qué falló en lo secundario (resumen de
+    // productos, WhatsApp, estadísticas...) para poder investigarlo, sin
+    // que el cliente se quede sin saber si su pedido se hizo.
+    console.error('[showSuccess] Error en lo secundario tras confirmar el pedido ' + orderNum + ' (el pedido en sí ya se guardó/mostró bien):', e);
+    if (typeof logActivity === 'function') {
+      logActivity('⚠️ Pedido ' + orderNum + ' confirmado, pero falló algo secundario al mostrar la pantalla de éxito (revisar consola/Sentry): ' + (e && e.message || e));
+    }
+  }
 }
 // Rellena el aviso de "tiempo estimado" de la pantalla de éxito una vez
 // responde guardar-pedido.php — se hace aparte de showSuccess() (que ya

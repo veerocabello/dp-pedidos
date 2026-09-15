@@ -6882,14 +6882,38 @@ function getFidelizacionDescuento(phoneClean) {
 // de pedido reservados, dos emails de confirmación, y _pendingOrderData/
 // _pendingTicketData del segundo pisando los del primero en mitad del
 // proceso, todo para lo que el cliente vivió como un único clic.
+//
+// _submitOrderEnCurso ya bloqueaba un SEGUNDO toque dentro de la MISMA
+// pestaña — pero el botón seguía viéndose como "Confirmar pedido →"
+// (sin deshabilitar ni cambiar de texto) durante TODAS las llamadas de
+// red de _submitOrderInner() previas a la línea que sí lo marcaba como
+// "Enviando pedido…" (blacklist, cooldown, turno, número de pedido —
+// varios segundos, más con red lenta). Con conexión mala en el local, el
+// cliente veía un botón aparentemente sin reaccionar, pensaba que no
+// había funcionado y recargaba la página para repetir el pedido entero
+// desde cero — eso SÍ escapa a _submitOrderEnCurso (una recarga la
+// resetea) y es lo que causaba pedidos duplicados de verdad (ver el
+// bloque "0b" en guardar-pedido.php). Ahora el botón se bloquea con
+// feedback claro desde el primer instante, antes de la primera llamada de
+// red, y se restaura siempre en el finally — así cubre cualquier punto de
+// salida de _submitOrderInner() (validación rechazada, turno lleno,
+// teléfono bloqueado, error...) sin tener que tocar cada uno a mano. Si
+// el pedido sí llega a confirmarse, el panel entero se oculta al mostrar
+// la pantalla de éxito, así que restaurar el texto del botón ahí no se
+// llega a ver — no hace falta distinguir ese caso.
 let _submitOrderEnCurso = false;
 async function submitOrder() {
   if (_submitOrderEnCurso) return;
   _submitOrderEnCurso = true;
+  const _btnSubmit = document.getElementById('submit-btn');
+  const _btnSubmitTextoPrevio = _btnSubmit ? _btnSubmit.textContent : null;
+  const _btnSubmitDisabledPrevio = _btnSubmit ? _btnSubmit.disabled : false;
+  if (_btnSubmit) { _btnSubmit.disabled = true; _btnSubmit.textContent = 'Enviando pedido…'; }
   try {
     await _submitOrderInner();
   } finally {
     _submitOrderEnCurso = false;
+    if (_btnSubmit) { _btnSubmit.disabled = _btnSubmitDisabledPrevio; _btnSubmit.textContent = _btnSubmitTextoPrevio; }
   }
 }
 async function _submitOrderInner() {
@@ -7998,6 +8022,35 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   if (_icon) _icon.textContent = '🥔';
   if (_title) _title.textContent = '¡Pedido confirmado!';
   if (_sub) _sub.textContent = 'Te esperamos en el local';
+
+  // ── Mostrar la confirmación YA, antes de nada más ──────────────────
+  // _finalizarPedido() (carrito-checkout.js) ya mandó el guardado real
+  // del pedido al servidor ANTES de llamar aquí, sin esperar a que esta
+  // función termine — así que en cuanto se llega a este punto el pedido
+  // ya está en camino de guardarse bien, pase lo que pase después. Todo
+  // lo de abajo (estadísticas, lista de productos para el resumen, datos
+  // para WhatsApp...) es secundario: antes, si CUALQUIERA de esos pasos
+  // lanzaba una excepción sin capturar, se perdía la función entera A
+  // MITAD, sin haber llegado nunca a la línea que hace visible la
+  // pantalla de éxito — el cliente se quedaba viendo el formulario de
+  // siempre, sin ningún aviso ni error visible, pensando que el pedido no
+  // se había hecho... aunque el ticket ya estuviera imprimiéndose en
+  // cocina. Mostrar esto lo primero, fuera del try de más abajo,
+  // garantiza que el cliente vea la confirmación siempre, incluso si algo
+  // secundario falla.
+  const _panel = document.querySelector('.order-panel');
+  if (_panel) _panel.style.display = 'none';
+  const _successScreenEl = document.getElementById('success-screen');
+  if (_successScreenEl) _successScreenEl.style.display = 'block';
+  const _orderNumDisplayEl = document.getElementById('order-num-display');
+  if (_orderNumDisplayEl) _orderNumDisplayEl.textContent = orderNum;
+  setTimeout(() => {
+    const el = document.getElementById('success-screen');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+
+  try {
+
   // Mismo motivo que el bloque de arriba: si el pedido anterior en esta
   // visita se llegó a cancelar, cancelarPedido() dejó los botones de
   // Modificar/Cancelar deshabilitados (para evitar un segundo click
@@ -8141,9 +8194,6 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   } else if (itemsContainer) {
     itemsContainer.innerHTML = '';
   }
-  document.querySelector('.order-panel').style.display = "none";
-  document.getElementById("success-screen").style.display = "block";
-  document.getElementById("order-num-display").textContent = orderNum;
   // Se muestra si falla el guardado en el servidor (ver _finalizarPedido) —
   // hay que resetearlo aquí para que no se quede pegado de un pedido anterior.
   const saveWarning = document.getElementById('success-save-warning');
@@ -8157,12 +8207,17 @@ async function showSuccess(orderNum, slotTime, discountCode) {
   if (fab) fab.classList.add('hidden');
   // Arrancar temporizador de modificación (5 minutos)
   _startModifyTimer();
-  setTimeout(() => {
-    document.getElementById("success-screen").scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    });
-  }, 50);
+
+  } catch (e) {
+    // La confirmación YA se mostró (bloque de arriba, antes de este try) —
+    // esto solo deja constancia de qué falló en lo secundario (resumen de
+    // productos, WhatsApp, estadísticas...) para poder investigarlo, sin
+    // que el cliente se quede sin saber si su pedido se hizo.
+    console.error('[showSuccess] Error en lo secundario tras confirmar el pedido ' + orderNum + ' (el pedido en sí ya se guardó/mostró bien):', e);
+    if (typeof logActivity === 'function') {
+      logActivity('⚠️ Pedido ' + orderNum + ' confirmado, pero falló algo secundario al mostrar la pantalla de éxito (revisar consola/Sentry): ' + (e && e.message || e));
+    }
+  }
 }
 // Rellena el aviso de "tiempo estimado" de la pantalla de éxito una vez
 // responde guardar-pedido.php — se hace aparte de showSuccess() (que ya
