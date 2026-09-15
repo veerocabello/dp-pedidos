@@ -2354,6 +2354,44 @@ try {
         $leidoTicket = fbGetConEtag($databaseURL, $ticketPath, $accessToken);
     }
 
+    // ── 0b. ¿PEDIDO CASI IDÉNTICO DEL MISMO TELÉFONO HACE MUY POCO? ──
+    // El check de arriba (mismo orderNum) solo detecta un reenvío que
+    // reutiliza el MISMO número — el automático de
+    // _recuperarPedidoEnCurso() en carrito-checkout.js. NO cubre el caso
+    // real que se reportó: el cliente no ve la pantalla de confirmación
+    // (red lenta, la respuesta se pierde aunque el pedido SÍ se guardara
+    // bien) y repite TODO el proceso de pedir desde cero — eso genera un
+    // orderNum NUEVO (generateOrderNumber() reserva uno distinto cada vez
+    // que se llama), así que el check de arriba nunca ve el segundo
+    // intento como el mismo pedido, y se acaba imprimiendo un ticket
+    // físico por cada intento aunque sea literalmente el mismo pedido.
+    // Si este mismo teléfono ya tiene, en los últimos 2 minutos, un
+    // ticket con EXACTAMENTE los mismos productos (misma firma que
+    // $items, ya normalizado más arriba) y el mismo total, se asume que
+    // es el mismo pedido reenviado sin querer — se devuelve el pedido YA
+    // existente (mismo mecanismo 'orderNumReasignado' que ya usa
+    // carrito-checkout.js para corregir en pantalla el número mostrado)
+    // en vez de crear un segundo ticket real.
+    if ($orderNumReasignado === null) {
+        $VENTANA_DUPLICADO_MS = 2 * 60 * 1000;
+        $ahoraMs = (int)(microtime(true) * 1000);
+        $itemsFirma = json_encode($items);
+        $leidoHoy = fbGetConEtag($databaseURL, 'tickets/' . $todayKey, $accessToken);
+        $ticketsHoy = is_array($leidoHoy['data']) ? $leidoHoy['data'] : [];
+        foreach ($ticketsHoy as $tOtro) {
+            if (!is_array($tOtro) || ($tOtro['phone'] ?? null) !== $phone) continue;
+            $tTs = is_numeric($tOtro['ts'] ?? null) ? (int)$tOtro['ts'] : 0;
+            if ($tTs <= 0 || $ahoraMs < $tTs || ($ahoraMs - $tTs) > $VENTANA_DUPLICADO_MS) continue;
+            if (abs((float)($tOtro['total'] ?? -1) - $total) > 0.01) continue;
+            if (json_encode(is_array($tOtro['items'] ?? null) ? $tOtro['items'] : []) !== $itemsFirma) continue;
+            $numExistente = (string)($tOtro['num'] ?? '');
+            if ($numExistente === '') continue;
+            fbAgregarActivityLog($databaseURL, $accessToken, 'ℹ️ Pedido de ' . $name . ' (' . $phoneClean . ') — reenvío desde cero detectado por contenido (mismo teléfono/productos/total hace menos de 2 min), apuntado al ya existente ' . $numExistente . ' en vez de duplicarlo');
+            echo json_encode(['success' => true, 'yaGuardado' => true, 'orderNumReasignado' => $numExistente]);
+            exit;
+        }
+    }
+
     // ── ANTIFRAUDE: lista negra + cooldown/límite diario por teléfono ──
     // Esto SÍ bloquea el pedido (a diferencia de los avisos de precio/total
     // de abajo) — son las mismas reglas que ya aplicaba el navegador, solo
