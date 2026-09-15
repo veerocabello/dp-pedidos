@@ -100,20 +100,25 @@ RewriteRule ^estado-servidor\.php$ - [L]
     Require valid-user
 </FilesMatch>
 
-# ── comandas.html/js/css: NUNCA cachear ──
-# Encontrado en producción: comandas.html va detrás de HTTP Basic Auth
-# (arriba) — ese tipo de autenticación tiene un comportamiento de caché
-# más agresivo y menos predecible en varios navegadores (una vez el
-# navegador guarda las credenciales de la "zona privada", en algunos casos
-# deja de volver a pedir el archivo al servidor, incluso con la URL
-# cambiada a mano con "?algo=1"). comandas.html/js/css no llevaban ninguna
-# cabecera explícita de caché, así que quedaban a merced de esa heurística
-# — un archivo nuevo subido a Hostinger podía tardar mucho (o no llegar
-# nunca) a mostrarse en un dispositivo que ya hubiera entrado antes, sin
-# ningún aviso de qué estaba pasando. Con esto, el navegador SIEMPRE
-# revalida contra el servidor antes de usar cualquier copia guardada.
+# ── comandas.html/js/css y admin-shell.html: NUNCA cachear ──
+# Encontrado en producción: comandas.html (y admin-shell.html, la misma
+# protección) van detrás de HTTP Basic Auth (arriba) — ese tipo de
+# autenticación tiene un comportamiento de caché más agresivo y menos
+# predecible en varios navegadores (una vez el navegador guarda las
+# credenciales de la "zona privada", en algunos casos deja de volver a
+# pedir el archivo al servidor, incluso con la URL cambiada a mano con
+# "?algo=1"). Ninguno de los dos llevaba ninguna cabecera explícita de
+# caché, así que quedaban a merced de esa heurística — un archivo nuevo
+# subido a Hostinger podía tardar mucho (o no llegar nunca) a mostrarse
+# en un dispositivo que ya hubiera entrado antes, sin ningún aviso de qué
+# estaba pasando. admin-shell.html se quedó fuera del primer arreglo por
+# descuido (se cubrió comandas.html porque era el síntoma reportado
+# entonces, sin caer en que admin-shell.html tiene exactamente el mismo
+# riesgo, al llevar la misma Basic Auth). Con esto, el navegador SIEMPRE
+# revalida contra el servidor antes de usar cualquier copia guardada de
+# cualquiera de los dos.
 <IfModule mod_headers.c>
-    <FilesMatch "^comandas\.(html|js|css)$">
+    <FilesMatch "^(comandas\.(html|js|css)|admin-shell\.html)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
         Header set Expires "0"
