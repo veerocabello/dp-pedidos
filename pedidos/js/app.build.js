@@ -8383,6 +8383,28 @@ async function modificarPedido() {
     return;
   }
 
+  // El pedido YA estaba cancelado de antes (normalmente, la dueña lo
+  // canceló desde el panel/tablet mientras este móvil seguía mostrando el
+  // aviso de "pedido activo", sin enterarse) — seguir adelante como si se
+  // estuviera editando un pedido vivo restauraría el carrito y marcaría el
+  // turno de entonces como "elegido" en el selector, aunque no hubiera
+  // nada real detrás: el cliente veía un turno oscuro/"seleccionado" sin
+  // haberlo tocado, con "X libres" real al lado — confuso, parecía un
+  // fallo aunque el aforo en sí fuera correcto. Mejor avisar claro y
+  // empezar un pedido limpio de cero.
+  if (_borrado === 'ya-cancelado') {
+    if (window._lastOrderData !== data) return;
+    window._lastOrderData = null;
+    try { localStorage.removeItem('dpf_active_order'); } catch (e) {}
+    if (window._modifyTimerInterval) {
+      clearInterval(window._modifyTimerInterval);
+      window._modifyTimerInterval = null;
+    }
+    resetOrder();
+    showAlert('Tu pedido ' + data.num + ' ya había sido cancelado antes de que pudieras modificarlo. Puedes hacer un pedido nuevo cuando quieras.', 'Pedido ya cancelado');
+    return;
+  }
+
   // Si en el rato que hemos esperado al servidor el cliente ya pulsó
   // "Hacer otro pedido" (resetOrder() ya vació el carrito y puso
   // window._lastOrderData a null para el pedido NUEVO que está
@@ -8570,6 +8592,7 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   let telefonoParaRevertirSello = null;
   let slotToFree = null;
   let cancelConfirmado = false;
+  let yaEstabaCanceladoAntes = false;
 
   // 2. Marcar como cancelado y quitar de stats en Firebase — a través del
   // servidor (guardar-pedido.php, acción "cancelarPedido"), NO con una
@@ -8591,6 +8614,7 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
       cancelConfirmado = true;
       telefonoParaRevertirSello = data.phone || phone || null;
       if (data.slot) slotToFree = data.slot;
+      yaEstabaCanceladoAntes = !!data.yaEstabaCancelado;
     } else {
       console.warn('[cancelarPedido] el servidor no pudo anular el pedido:', data && data.error);
     }
@@ -8681,7 +8705,13 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   if (typeof refreshKitchenGrid === 'function') refreshKitchenGrid();
   if (typeof loadLiveOrders === 'function') loadLiveOrders();
 
-  return true;
+  // 'ya-cancelado' (en vez de true a secas) cuando el pedido YA estaba
+  // cancelado de antes (típicamente, la dueña lo canceló desde el panel/
+  // tablet y este dispositivo no se había enterado) — sigue siendo un
+  // valor "truthy" para no romper los `if (!_borrado)` que ya comprueban
+  // fallos de red, pero modificarPedido() lo distingue para no restaurar
+  // el carrito/turno como si estuviera editando un pedido que sigue vivo.
+  return yaEstabaCanceladoAntes ? 'ya-cancelado' : true;
 }
 
 // ══════════════════════════════════════════

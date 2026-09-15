@@ -2155,7 +2155,16 @@ try {
         // los pasos 2-4 — esa otra petición ya se encargó de ellos.
         $cEstadoLeido = fbGetConEtag($databaseURL, 'orderStatus/' . $cFecha . '/' . $cKey, $accessToken);
         if (($cEstadoLeido['data'] ?? null) === 'cancelado') {
-            echo json_encode(['success' => true, 'items' => null, 'phone' => $cTicket['phone'] ?? null, 'slot' => null]);
+            // 'yaEstabaCancelado' distingue esto de una cancelación recién
+            // hecha AHORA MISMO — el caso típico es que la dueña ya lo
+            // canceló desde el panel/tablet, y el cliente (que no se ha
+            // enterado, sigue con el pedido "activo" en su propio móvil)
+            // pulsa "Modificar pedido" más tarde. _borrarPedidoDeFirebase()
+            // en antifraude.js usa este aviso para NO seguir adelante como
+            // si estuviera editando un pedido vivo (restaurando carrito y
+            // turno como si nada) — en vez de eso, avisa claramente de que
+            // ya no existe.
+            echo json_encode(['success' => true, 'items' => null, 'phone' => $cTicket['phone'] ?? null, 'slot' => null, 'yaEstabaCancelado' => true]);
             exit;
         }
         if (!fbPutSiCoincide($databaseURL, 'orderStatus/' . $cFecha . '/' . $cKey, $accessToken, 'cancelado', $cEstadoLeido['etag'])) {
