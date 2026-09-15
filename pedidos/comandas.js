@@ -460,13 +460,13 @@ function renderMenu() {
   const grid = document.getElementById('menu-grid');
   if (activeCategory === 'Todos') {
     grid.innerHTML = categories.filter(c => c !== 'Todos').map(cat => {
-      const items = MENU.filter(m => m.cat === cat && !m.hidden);
+      const items = MENU.filter(m => m.cat === cat);
       if (!items.length) return '';
       return `<div class="menu-cat-sep"><span class="cat-emoji">${CATEGORY_ICONS[cat] || ''}</span><span class="cat-name">${cat.toUpperCase()}</span></div>`
         + renderCategoryItems(cat, items);
     }).join('');
   } else {
-    grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory && !m.hidden));
+    grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory));
   }
   renderSidebarStockTally();
 }
@@ -4737,6 +4737,11 @@ function getStockRestanteForItem(item) {
 // un entero necesita 2 — si solo queda 1 mitad, el entero ya no cabe
 // pero sí otro medio.
 function isItemAgotado(item) {
+  // Marcado a mano como agotado desde "Gestionar carta" (👁️/🙈) — antes
+  // esto quitaba el producto del todo de la carta (item.hidden filtraba
+  // en renderMenu); ahora se trata igual que el agotado por stock: se ve
+  // en su sitio, en gris, con el aviso "Agotado", en vez de desaparecer.
+  if (item.hidden) return true;
   const r = getStockRestanteForItem(item);
   if (r === null) return false;
   const min = item.mitadDe ? 1 : 2;
