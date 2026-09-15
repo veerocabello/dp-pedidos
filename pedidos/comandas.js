@@ -4026,7 +4026,19 @@ async function bleReconectar() {
 // la característica no soporta escritura con respuesta se usa
 // writeValueWithoutResponse con una pequeña espera manual de por medio.
 async function bleEnviarBytes(bytes) {
-  const TAMANO_TROZO = 100;
+  // Trozos de 100 bytes con 45ms de espera: encontrado en producción que
+  // se queda corto para impresoras térmicas BLE baratas cuando NO admiten
+  // escritura "con respuesta" (writeValueWithoutResponse) — el patrón
+  // reportado (el logo, que va al principio, sale bien; el texto de
+  // después sale corrupto o no sale nada) es el síntoma clásico de
+  // desbordar el buffer interno de la impresora: manda los datos más
+  // rápido de lo que puede procesarlos, y como "sin respuesta" no hay
+  // ninguna confirmación de que cada trozo llegó bien, nada de esto se
+  // detecta como error — sin más aviso que un ticket a medias o en blanco.
+  // 20 bytes (el tamaño de paquete BLE más conservador, el que usan por
+  // defecto la mayoría de impresoras térmicas BLE baratas del mercado) y
+  // 30ms de espera es bastante más lento pero mucho más fiable.
+  const TAMANO_TROZO = 20;
   const conRespuesta = !!bleCharacteristic.properties.write;
   for (let i = 0; i < bytes.length; i += TAMANO_TROZO) {
     const trozo = new Uint8Array(bytes.slice(i, i + TAMANO_TROZO));
@@ -4034,7 +4046,7 @@ async function bleEnviarBytes(bytes) {
       await _conTimeout(bleCharacteristic.writeValue(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
     } else {
       await _conTimeout(bleCharacteristic.writeValueWithoutResponse(trozo), 5000, 'timeout enviando por Bluetooth — la impresora no respondió');
-      await new Promise(r => setTimeout(r, 45));
+      await new Promise(r => setTimeout(r, 30));
     }
   }
 }
@@ -4286,16 +4298,32 @@ async function printOrder(order) {
     try {
       const bytes = buildEscPosBytes(order);
       const copies = Math.max(1, parseInt(cfg.copias, 10) || 1);
-      // Primero se intenta que lo imprima Admin — evita que Comandas toque
-      // el Bluetooth y se lo quite (el aparato solo admite una conexión a
-      // la vez). Solo si esto falla del todo (sin internet, el servidor no
-      // responde...) se cae al camino de siempre: imprimir aquí mismo.
-      const okAdmin = await intentarEncolarEnAdmin(bytes, copies);
-      if (okAdmin) {
-        printedOk = true;
-      } else {
+      // Si Comandas YA tiene su propia impresora conectada ahora mismo
+      // (p.ej. una tablet de refuerzo con su Bluetooth emparejado a
+      // propósito), imprime ella misma directamente, SIN pasar primero
+      // por la cola de Admin. Encontrado en producción: el aviso a Admin
+      // se aceptaba como "en camino" mientras el panel siguiera con la
+      // pestaña abierta (su propio latido, puntoImpresionActivo), aunque
+      // su conexión Bluetooth a la impresora llevara rato caída — un
+      // aparato Bluetooth solo admite una conexión a la vez, así que en
+      // cuanto Comandas empareja la suya, se la "roba" a Admin sin que
+      // ninguno de los dos se entere del todo. Resultado: Comandas decía
+      // "comanda impresa" (la cola la había aceptado) pero nunca salía
+      // nada, porque quien de verdad iba a imprimir (Admin) ya no podía.
+      // Si Comandas NO tiene conexión propia (p.ej. un iPhone, sin
+      // Bluetooth web), sigue prefiriendo avisar a Admin como hasta
+      // ahora — ahí sí tiene sentido, es su única vía de imprimir.
+      if (isPrinterConnected()) {
         for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
         printedOk = true;
+      } else {
+        const okAdmin = await intentarEncolarEnAdmin(bytes, copies);
+        if (okAdmin) {
+          printedOk = true;
+        } else {
+          for (let i = 0; i < copies; i++) await sendToPrinter(bytes);
+          printedOk = true;
+        }
       }
     } catch (e) {
       console.warn('[comandas] impresión directa falló:', e);
