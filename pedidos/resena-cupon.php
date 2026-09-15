@@ -268,7 +268,21 @@ function fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $data, $et
     return $httpCode === 200;
 }
 function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = []) {
-    for ($intento = 0; $intento < 5; $intento++) {
+    // config/activityLog es un nodo COMPARTIDO por todo lo que pasa en la
+    // web (cada pedido real, cada acción de admin...) — con 5 reintentos
+    // (~20-80ms cada uno, ~250ms de margen total) un momento con bastante
+    // actividad a la vez puede agotarlos todos por colisiones de ETag
+    // seguidas, perdiendo el aviso en silencio: el cliente ve "solicitud
+    // enviada" (el registro real en config/cuponesResena/<tel> sí se
+    // guardó bien, eso no depende de esto) pero nunca aparece nada en
+    // Alertas porque el aviso en sí nunca llegó a escribirse. Encontrado
+    // en producción: "he solicitado el 10% y en alertas no sale nada".
+    // Más reintentos (~20 × 20-80ms ≈ 1s de margen en el peor caso) para
+    // que gane la carrera con mucha más frecuencia — sigue siendo mucho
+    // menos que el timeout de 8s del cliente. Si aun así fallan todos, se
+    // deja constancia en el log de errores de PHP en vez de desaparecer
+    // sin dejar rastro.
+    for ($intento = 0; $intento < 20; $intento++) {
         $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
         $log = $leido['data'] ?: [];
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
@@ -281,6 +295,7 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [])
         if (fbPutJsonStringSiCoincide($databaseURL, 'config/activityLog', $accessToken, $log, $leido['etag'])) return;
         usleep(rand(20000, 80000));
     }
+    error_log('[resena-cupon] fbAgregarActivityLog: no se pudo escribir el aviso tras 20 intentos — "' . $mensaje . '" se ha perdido (el dato real en config/cuponesResena sí quedó guardado)');
 }
 
 // Manda el SMS real de aviso cuando se aprueba un cupón — API de Mensajes
