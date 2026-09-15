@@ -1,0 +1,11 @@
+# ── Carpeta de archivos subidos por clientes (capturas de reseña, ver
+#    guardarCapturaResena en resena-cupon.php) — nunca deben poder
+#    ejecutarse como script aunque alguien consiguiera colar un archivo con
+#    otra extensión: solo sirven como imágenes estáticas.
+Options -Indexes -ExecCGI
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<FilesMatch "\.(php\d?|phtml|phar|cgi|pl|py|sh|exe)$">
+    Require all denied
+</FilesMatch>
