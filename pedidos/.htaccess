@@ -99,3 +99,23 @@ RewriteRule ^estado-servidor\.php$ - [L]
     AuthUserFile /home/u817463787/domains/dulcepatatafood.es/public_html/pedidos/.htpasswd
     Require valid-user
 </FilesMatch>
+
+# ── comandas.html/js/css: NUNCA cachear ──
+# Encontrado en producción: comandas.html va detrás de HTTP Basic Auth
+# (arriba) — ese tipo de autenticación tiene un comportamiento de caché
+# más agresivo y menos predecible en varios navegadores (una vez el
+# navegador guarda las credenciales de la "zona privada", en algunos casos
+# deja de volver a pedir el archivo al servidor, incluso con la URL
+# cambiada a mano con "?algo=1"). comandas.html/js/css no llevaban ninguna
+# cabecera explícita de caché, así que quedaban a merced de esa heurística
+# — un archivo nuevo subido a Hostinger podía tardar mucho (o no llegar
+# nunca) a mostrarse en un dispositivo que ya hubiera entrado antes, sin
+# ningún aviso de qué estaba pasando. Con esto, el navegador SIEMPRE
+# revalida contra el servidor antes de usar cualquier copia guardada.
+<IfModule mod_headers.c>
+    <FilesMatch "^comandas\.(html|js|css)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>
