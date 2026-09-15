@@ -3376,12 +3376,17 @@ let cajaDenomNumpadValue = null;
 // dos sin cerrar el teclado, convirtiendo lo ya escrito. Por dentro
 // siempre se guarda como unidades, para el contador ×N del círculo.
 let cajaDenomModoCantidad = false;
+// Solo 5/10/20/50€ son billetes de verdad — 1€ y 2€ son monedas (por eso
+// van en la fila "Monedas" del propio grid), así que no basta con mirar
+// si v >= 1 para decidir cómo llamarlas.
+const CAJA_BILLETES = new Set([5, 10, 20, 50]);
 function formatDenomLabel(v) {
   return v >= 1 ? Math.round(v) + ' euros' : Math.round(v * 100) + ' céntimos';
 }
 function tituloCajaDenomNumpad(v) {
-  const grupo = v >= 1 ? 'billetes' : 'monedas';
-  const cuantos = v >= 1 ? 'Cuántos' : 'Cuántas';
+  const esBillete = CAJA_BILLETES.has(v);
+  const grupo = esBillete ? 'billetes' : 'monedas';
+  const cuantos = esBillete ? 'Cuántos' : 'Cuántas';
   return cajaDenomModoCantidad
     ? cuantos + ' ' + grupo + ' de ' + formatDenomLabel(v) + ' hay'
     : 'Dinero en ' + grupo + ' de ' + formatDenomLabel(v);
