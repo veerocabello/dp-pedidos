@@ -490,7 +490,8 @@
           <div class="pt-cola-contador" style="display:none;width:100%;order:96;background:#FDECD5;border:1.5px solid var(--amber);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:var(--amber-dark)"></div>
           <div class="pt-cola-antigua-lista" style="display:none;width:100%;order:96"></div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
-            <span class="pt-conn-status" style="font-size:12px;font-weight:700;color:#991B1B">🔴 Impresora no conectada</span>
+            <button type="button" class="pt-conn-status" onclick="if(typeof _ptIsConnected==='function'&&!_ptIsConnected())conectarImpresoraBluetooth();" title="Toca para conectar por Bluetooth" style="cursor:pointer;border:none;font-size:12px;font-weight:700;color:#991B1B;background:#FBEAE7;padding:7px 14px;border-radius:99px">🔴 Impresora no conectada</button>
+            <button type="button" class="pt-auto-pill" onclick="toggleAutoImprimirDesdeEnVivo()" title="Toca para activar/desactivar imprimir sola al llegar un pedido" style="cursor:pointer;border:none;font-size:12px;font-weight:700;padding:7px 14px;border-radius:99px">⏳ Auto-imprimir…</button>
             <button class="admin-save-btn" onclick="conectarImpresoraTermica()" style="background:var(--brown);padding:8px 14px;font-size:13px">🔌 USB</button>
             <button class="admin-save-btn" onclick="conectarImpresoraBluetooth()" style="background:var(--brown);padding:8px 14px;font-size:13px">📶 Bluetooth</button>
             <button class="admin-save-btn" onclick="openKitchenMode()" style="background:var(--brown);padding:8px 18px;font-size:13px">🍳 Pantalla cocina</button>

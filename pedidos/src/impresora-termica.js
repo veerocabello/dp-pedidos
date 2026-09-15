@@ -352,8 +352,38 @@ function _ptStatusUI(connected, msg) {
   document.querySelectorAll('.pt-conn-status').forEach(el => {
     el.textContent = texto;
     el.style.color = connected ? '#166534' : '#991B1B';
+    el.style.background = connected ? '#E3F5E8' : '#FBEAE7';
   });
   _ptActualizarBadgePersistente();
+  _ptActualizarPildoraAutoImprimir();
+}
+
+// Píldora verde/roja de "Auto-imprimir" en "Pedidos en vivo" — antes solo
+// se veía como texto pequeño y gris dentro de #pt-debug-status (misma
+// línea que "Admin activo · ..."), fácil de pasar por alto entre tanto
+// texto. Pedido explícito: un botón igual de visible que el de la
+// impresora, en el que además se pueda tocar para cambiarlo sin tener
+// que ir a Ajustes → Configuración del ticket.
+function _ptActualizarPildoraAutoImprimir() {
+  const on = typeof getTicketConfig === 'function' && !!getTicketConfig().autoImprimir;
+  document.querySelectorAll('.pt-auto-pill').forEach(el => {
+    el.textContent = on ? '🟢 Auto-imprimir ON' : '🔴 Auto-imprimir OFF';
+    el.style.color = on ? '#166534' : '#991B1B';
+    el.style.background = on ? '#E3F5E8' : '#FBEAE7';
+  });
+}
+async function toggleAutoImprimirDesdeEnVivo() {
+  if (typeof getTicketConfig !== 'function' || typeof saveTicketConfig !== 'function') return;
+  const cfg = getTicketConfig();
+  cfg.autoImprimir = !cfg.autoImprimir;
+  saveTicketConfig(cfg);
+  // El checkbox de Ajustes → Configuración del ticket lee de este mismo
+  // localStorage solo al abrir esa pantalla (bimbaPintarTicketConfig) —
+  // si ya está abierta ahora mismo, se refresca aquí también para que no
+  // se quede desincronizada con lo que se acaba de tocar desde aquí.
+  const chk = document.getElementById('tc-auto-imprimir');
+  if (chk) chk.checked = cfg.autoImprimir;
+  _ptActualizarPildoraAutoImprimir();
 }
 
 // Aviso de que la impresora se acaba de desconectar — sonido distinto al
