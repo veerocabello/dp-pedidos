@@ -242,6 +242,17 @@ function _initFirebase() {
   window.fb_saveActivityLog = async function(l) { await jset("config/activityLog",jstr(l)); };
   window.fb_loadActivityLog = async function() { var sn=await jget("config/activityLog"); return sn.exists()?jparse(sn.val()):null; };
   window.fb_listenActivityLog = function(cb) { return jlisten("config/activityLog",function(sn){cb(sn.exists()?jparse(sn.val()):null);}); };
+  // CUPÓN POR RESEÑA — solicitudes pendientes de aprobar (resena-cupon.php).
+  // No usa jparse: a diferencia de activityLog, config/cuponesResena/<tel>
+  // se guarda como objeto normal (fbGetConEtag/fbPutSiCoincide en PHP), sin
+  // la doble codificación "string JSON". Lectura directa de este nodo (en
+  // vez de depender solo del aviso en activityLog) — ese aviso es una
+  // escritura aparte, best-effort, sobre un nodo MUY compartido; si esa
+  // escritura se pierde por una colisión, el propio registro sigue
+  // existiendo aquí igual, así que el panel puede encontrarlo de todos
+  // modos en vez de quedarse sin ningún rastro. Ver renderAlertas()
+  // (historial-export.js).
+  window.fb_listenCuponesResenaPendientes = function(cb) { return jlisten("config/cuponesResena",function(sn){cb(sn.exists()?sn.val():{});}); };
   // COLA DE IMPRESIÓN PENDIENTE (respaldo — vivía solo en localStorage).
   // Guardado como OBJETO por número de pedido (no un array completo que se
   // sobrescribe entero) y con transacción atómica por ticket — antes, cada

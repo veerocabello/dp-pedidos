@@ -83,8 +83,65 @@ function isAlertEntry(action) {
   // caja se entere y lo marque como visto/entregado.
   return typeof action === 'string' && (action.indexOf('⚠️') === 0 || action.indexOf('🚨') === 0 || action.indexOf('🎁') === 0);
 }
+// Caché en memoria de config/cuponesResena/* (por teléfono) — alimentada
+// por el listener de abajo, solo mientras haya sesión real de admin (ese
+// nodo exige el UID de admin en las reglas de Firebase).
+let _cuponesResenaPendientesLive = {};
+let _cuponesResenaListenerRegistrado = false;
+function _asegurarListenerCuponesResena() {
+  if (_cuponesResenaListenerRegistrado) return;
+  if (!window.fb_listenCuponesResenaPendientes) return;
+  if (!(window.fb_getAdminUser && window.fb_getAdminUser())) return;
+  _cuponesResenaListenerRegistrado = true;
+  window.fb_listenCuponesResenaPendientes(data => {
+    _cuponesResenaPendientesLive = (data && typeof data === 'object') ? data : {};
+    if (typeof updateAlertBadge === 'function') updateAlertBadge();
+    const _sec = document.getElementById('admin-alertas');
+    if (_sec && _sec.classList.contains('active')) renderAlertas();
+  });
+}
 function getAlertEntries() {
-  return getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
+  // Se intenta registrar en cada llamada (barato: si ya está registrado,
+  // o si todavía no hay sesión de admin, sale al momento) — así funciona
+  // sin importar en qué orden se resuelva el login de admin frente a la
+  // primera vez que se pinta Alertas, sin tener que engancharlo a mano en
+  // cada sitio donde empieza una sesión de admin (login normal, cocina,
+  // "recordar dispositivo"...).
+  _asegurarListenerCuponesResena();
+  const deActivityLog = getActivityLog().filter(e => isAlertEntry(e.action) && !e.resolved);
+  // El aviso en Alertas para un cupón de reseña es una escritura APARTE
+  // (activityLog) del registro real (config/cuponesResena/<tel>) — si esa
+  // escritura se perdió (colisión en un nodo muy compartido, ver el
+  // comentario largo en resena-cupon.php), el cliente ya vio "solicitud
+  // enviada" pero nunca aparecía nada aquí, sin ningún rastro. Se rellena
+  // el hueco con lo que haya de verdad en cuponesResena/* que siga
+  // "pendiente" y no tenga ya su propio aviso en el log (evita
+  // duplicarlo cuando el aviso SÍ llegó a escribirse bien).
+  const telefonosYaEnLog = new Set(
+    deActivityLog.filter(e => e.tipo === 'cupon_resena_pendiente' && e.telefono).map(e => e.telefono)
+  );
+  const sinteticas = Object.keys(_cuponesResenaPendientesLive)
+    .filter(tel => {
+      const r = _cuponesResenaPendientesLive[tel];
+      return r && r.estado === 'pendiente' && !telefonosYaEnLog.has(tel);
+    })
+    .map(tel => {
+      const r = _cuponesResenaPendientesLive[tel];
+      return {
+        ts: is_numeric_ts(r.ts) ? new Date(r.ts).toISOString() : new Date().toISOString(),
+        time: is_numeric_ts(r.ts) ? new Date(r.ts).toLocaleString('es-ES') : '',
+        action: '🎁 Cupón de reseña pendiente',
+        tipo: 'cupon_resena_pendiente',
+        telefono: tel,
+        nombreGoogle: r.nombreGoogle || '',
+        comentario: r.comentario || '',
+        resolved: false,
+      };
+    });
+  return deActivityLog.concat(sinteticas).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+}
+function is_numeric_ts(v) {
+  return typeof v === 'number' && isFinite(v) && v > 0;
 }
 function updateAlertBadge() {
   const badge = document.getElementById('alertas-tab-badge');
