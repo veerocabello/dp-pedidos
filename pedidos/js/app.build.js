@@ -6627,8 +6627,24 @@ function getSlotsData() {
   let stats;
   try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}'); } catch { stats = {}; }
   const realSlots = {};
+  // Solo se cuentan pedidos de las últimas 3 horas — un cliente no puede
+  // leer orderStatus/ (es de solo-admin), así que este dispositivo no
+  // tiene forma de enterarse si uno de SUS pedidos de antes se canceló
+  // desde OTRO dispositivo (p.ej. la dueña cancelándolo desde la tablet).
+  // Sin este límite, un pedido de prueba cancelado hace horas se quedaba
+  // contando como "ocupado" para siempre en ESE móvil en concreto —
+  // encontrado en producción: los turnos salían con menos plazas libres
+  // de las reales solo en el dispositivo donde se habían hecho las
+  // pruebas, mientras el panel (que sí ve orderStatus/ de verdad) los
+  // mostraba correctamente a 0. 3 horas es de sobra para el único motivo
+  // real de este "suelo" — cubrir el hueco de unos segundos entre
+  // reservar un turno aquí mismo y que el contador en vivo de Firebase
+  // (_slotsCache) lo refleje — sin arrastrar pedidos de prueba viejos
+  // indefinidamente.
+  const HACE_3_HORAS = Date.now() - 3 * 60 * 60 * 1000;
   if (stats && stats.date === todayKey) {
     (stats.orders || []).forEach(o => {
+      if (typeof o.ts === 'number' && o.ts < HACE_3_HORAS) return;
       const s = o.slot ? o.slot.trim() : null;
       if (s) realSlots[s] = (realSlots[s] || 0) + 1;
     });
