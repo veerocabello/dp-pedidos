@@ -74,7 +74,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1789505459065">
+<link rel="stylesheet" href="css/style.min.css?v=1789506625628">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -1131,8 +1131,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789466873026" defer></script>
-<script src="js/app.js?v=1789505459065" defer></script>
-<script src="js/auth.js?v=1789505459065" defer></script>
+<script src="js/app.js?v=1789506625628" defer></script>
+<script src="js/auth.js?v=1789506625628" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
@@ -1333,6 +1333,10 @@ setInterval(function() {
       <input id="resena-nombre-input" type="text" placeholder="Ej. Marta G." maxlength="60" style="width:100%;padding:12px;border:2px solid var(--warm);border-radius:10px;font-size:15px;color:var(--brown);margin-bottom:14px;box-sizing:border-box">
       <div style="text-align:left;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">Algo que pusiste (opcional)</div>
       <textarea id="resena-comentario-input" rows="3" maxlength="300" placeholder="Ayuda a encontrarla más rápido" style="width:100%;padding:12px;border:2px solid var(--warm);border-radius:10px;font-size:14px;color:var(--brown);margin-bottom:16px;box-sizing:border-box;resize:none;font-family:'DM Sans',sans-serif"></textarea>
+      <div style="text-align:left;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">Captura de tu reseña</div>
+      <input id="resena-captura-input" type="file" accept="image/*" onchange="resenaPreviewCaptura(this)" style="width:100%;margin-bottom:8px;font-size:13px;color:var(--brown)">
+      <img id="resena-captura-preview" style="display:none;max-width:100%;max-height:180px;border-radius:10px;margin-bottom:10px;border:2px solid var(--warm)">
+      <div id="resena-captura-error" style="display:none;text-align:left;font-size:12px;color:#c0392b;margin-bottom:10px"></div>
       <button id="resena-btn-enviar-solicitud" onclick="resenaEnviarSolicitud()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">Enviar para comprobar</button>
       <button onclick="cerrarResenaCupon()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
     </div>

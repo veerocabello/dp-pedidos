@@ -32,8 +32,11 @@
 //  POST (JSON):
 //   {"action":"consultarEstado","phone":"6XXXXXXXX"}
 //     → {"success":true,"estado":"ninguno"|"pendiente"|"aprobado"|"descartado","codigo":"RESENA-XXXX"|null}
-//   {"action":"solicitar","phone":"...","nombreGoogle":"...","comentario":"..."}
+//   {"action":"solicitar","phone":"...","nombreGoogle":"...","comentario":"...","captura":"data:image/jpeg;base64,..."}
 //     → {"success":true,"estado":"pendiente"|"aprobado","codigo":"..."|null}
+//     captura es obligatoria (ver guardarCapturaResena) — una captura de
+//     pantalla de la reseña real en Google, para que la dueña la vea
+//     directamente en Alertas al aprobar en vez de fiarse solo del nombre.
 //   {"action":"aprobar","deviceId":"...","token":"...","phone":"..."}
 //     → {"success":true,"codigo":"RESENA-XXXX"}
 //   {"action":"descartar","deviceId":"...","token":"...","phone":"..."}
@@ -338,6 +341,70 @@ function enviarSmsAvisoCuponAprobado($telefono, $codigo) {
     return true;
 }
 
+// Guarda la captura de pantalla de la reseña que manda el cliente, para
+// que la dueña la vea directamente en Alertas al aprobar en vez de tener
+// que fiarse solo del nombre escrito a mano. Se manda como data URL
+// (base64) en el mismo POST JSON, ya comprimida en el móvil (ver
+// _resenaComprimirImagen en resena-cupon-cliente.js) — aquí se revalida
+// que sea una imagen de verdad y se REGENERA con GD (decodificar y volver
+// a codificar a JPEG) en vez de guardar los bytes tal cual: así, aunque el
+// "data:image/..." del payload fuera en realidad un archivo disfrazado
+// (polyglot), lo único que llega a quedar en disco son los píxeles reales
+// decodificados por GD, nunca los bytes originales. Devuelve la ruta
+// relativa guardada, o lanza una excepción con un mensaje apto para
+// mostrar al cliente si la imagen no es válida.
+const RESENA_CAPTURA_MAX_BYTES = 3 * 1024 * 1024; // 3MB decodificados — de sobra para una captura ya comprimida en el móvil
+function guardarCapturaResena($dataUrl, $telefono) {
+    if (!is_string($dataUrl) || $dataUrl === '') {
+        throw new Exception('Sube una captura de pantalla de tu reseña');
+    }
+    if (!preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/s', $dataUrl, $m)) {
+        throw new Exception('El archivo no es una imagen válida');
+    }
+    // Límite sobre el texto base64 ANTES de decodificar — barato, evita
+    // gastar memoria decodificando algo enorme mandado a propósito.
+    if (strlen($m[2]) > (int)(RESENA_CAPTURA_MAX_BYTES * 4 / 3) + 100) {
+        throw new Exception('La imagen es demasiado grande');
+    }
+    $bytes = base64_decode($m[2], true);
+    if ($bytes === false || strlen($bytes) === 0 || strlen($bytes) > RESENA_CAPTURA_MAX_BYTES) {
+        throw new Exception('La imagen no es válida o es demasiado grande');
+    }
+    $info = @getimagesizefromstring($bytes);
+    if ($info === false || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) {
+        throw new Exception('El archivo no es una imagen válida');
+    }
+
+    $dirUploads = __DIR__ . '/uploads/resenas';
+    if (!is_dir($dirUploads) && !@mkdir($dirUploads, 0755, true) && !is_dir($dirUploads)) {
+        throw new Exception('No se pudo guardar la imagen. Inténtalo de nuevo.');
+    }
+    $nombreArchivo = $telefono . '-' . (int)(microtime(true) * 1000) . '.jpg';
+    $rutaCompleta = $dirUploads . '/' . $nombreArchivo;
+
+    // Si GD está disponible, se regenera la imagen (decodificar+recodificar)
+    // en vez de escribir los bytes originales — capa extra de seguridad
+    // ante un archivo disfrazado de imagen. Si GD no estuviera disponible
+    // en el hosting, se guardan los bytes ya validados por
+    // getimagesizefromstring() como último recurso, en vez de romper la
+    // función entera.
+    $guardado = false;
+    if (extension_loaded('gd')) {
+        $im = @imagecreatefromstring($bytes);
+        if ($im !== false) {
+            $guardado = @imagejpeg($im, $rutaCompleta, 82);
+            imagedestroy($im);
+        }
+    }
+    if (!$guardado) {
+        $guardado = @file_put_contents($rutaCompleta, $bytes) !== false;
+    }
+    if (!$guardado) {
+        throw new Exception('No se pudo guardar la imagen. Inténtalo de nuevo.');
+    }
+    return 'uploads/resenas/' . $nombreArchivo;
+}
+
 // Genera el código de descuento del 10% ligado a este teléfono — mismo
 // mecanismo que ya usan los premios de Ruleta/Rasca (crearCodigoPremio en
 // juegos.php): discounts/<código> con 'telefono' puesto, así que
@@ -444,6 +511,17 @@ try {
         }
         $comentario = isset($payload['comentario']) && is_string($payload['comentario']) ? trim(mb_substr($payload['comentario'], 0, 300)) : '';
 
+        // Captura de pantalla obligatoria — sin ella no hay nada que
+        // enseñarle a la dueña para confirmar la reseña a simple vista, así
+        // que se rechaza la solicitud entera si falta o no es una imagen
+        // válida (ver guardarCapturaResena más arriba).
+        try {
+            $capturaPath = guardarCapturaResena($payload['captura'] ?? null, $phone);
+        } catch (Exception $eCaptura) {
+            echo json_encode(['success' => false, 'error' => $eCaptura->getMessage()]);
+            exit;
+        }
+
         // Tope de solicitudes nuevas por teléfono y día — independiente del
         // límite de IP de arriba, para que no se pueda reintentar sin fin
         // con el mismo número y llenar Alertas de avisos repetidos.
@@ -458,6 +536,7 @@ try {
             'estado'       => 'pendiente',
             'nombreGoogle' => $nombreGoogle,
             'comentario'   => $comentario,
+            'captura'      => $capturaPath,
             'ts'           => $ahoraMs,
         ];
         if (!fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, $nuevoRegistro, $leido['etag'])) {
@@ -472,6 +551,7 @@ try {
             'telefono'     => $phone,
             'nombreGoogle' => $nombreGoogle,
             'comentario'   => $comentario,
+            'captura'      => $capturaPath,
         ]);
 
         echo json_encode(['success' => true, 'estado' => 'pendiente', 'codigo' => null]);

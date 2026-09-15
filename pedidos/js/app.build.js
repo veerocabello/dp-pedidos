@@ -9022,6 +9022,58 @@ function confirmCustomizer() {
 // número antes de eso sería un envío de más sin necesidad.
 
 let _resenaPhone = '';
+let _resenaCapturaBase64 = null;
+
+// Comprime la captura en el propio móvil antes de mandarla (canvas, sin
+// depender de ninguna librería nueva): una foto de pantalla normal pesa
+// varios MB, y en base64 dentro del JSON eso son varios MB más — se
+// reescala a un ancho máximo razonable y se recomprime a JPEG para que el
+// POST sea ligero y rápido incluso con datos móviles flojos, sin perder
+// legibilidad del texto de la reseña.
+function _resenaComprimirImagen(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || file.type.indexOf('image/') !== 0) {
+      reject(new Error('Elige un archivo de imagen (foto o captura de pantalla)'));
+      return;
+    }
+    const lector = new FileReader();
+    lector.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    lector.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('El archivo no es una imagen válida'));
+      img.onload = () => {
+        const ANCHO_MAX = 1000;
+        const escala = Math.min(1, ANCHO_MAX / img.width);
+        const w = Math.max(1, Math.round(img.width * escala));
+        const h = Math.max(1, Math.round(img.height * escala));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = lector.result;
+    };
+    lector.readAsDataURL(file);
+  });
+}
+
+async function resenaPreviewCaptura(input) {
+  const errorEl = document.getElementById('resena-captura-error');
+  const previewEl = document.getElementById('resena-captura-preview');
+  if (errorEl) errorEl.style.display = 'none';
+  const file = input.files && input.files[0];
+  if (!file) { _resenaCapturaBase64 = null; if (previewEl) previewEl.style.display = 'none'; return; }
+  try {
+    _resenaCapturaBase64 = await _resenaComprimirImagen(file);
+    if (previewEl) { previewEl.src = _resenaCapturaBase64; previewEl.style.display = 'block'; }
+  } catch (e) {
+    _resenaCapturaBase64 = null;
+    if (previewEl) previewEl.style.display = 'none';
+    if (errorEl) { errorEl.textContent = e.message; errorEl.style.display = 'block'; }
+    input.value = '';
+  }
+}
 
 function _resenaMostrarPaso(paso) {
   ['telefono', 'formulario', 'pendiente', 'exito', 'error'].forEach(p => {
@@ -9036,6 +9088,16 @@ function abrirResenaCupon() {
   const telGuardado = localStorage.getItem('dpf_customer_phone') || '';
   const inputTel = document.getElementById('resena-tel-input');
   if (inputTel) inputTel.value = telGuardado;
+  // Se limpia la captura de un intento anterior (p.ej. si canceló y volvió
+  // a abrir el modal más tarde) — sin esto se podría mandar sin querer la
+  // imagen de una sesión vieja junto a un nombre distinto.
+  _resenaCapturaBase64 = null;
+  const capturaInput = document.getElementById('resena-captura-input');
+  if (capturaInput) capturaInput.value = '';
+  const capturaPreview = document.getElementById('resena-captura-preview');
+  if (capturaPreview) capturaPreview.style.display = 'none';
+  const capturaError = document.getElementById('resena-captura-error');
+  if (capturaError) capturaError.style.display = 'none';
   _resenaMostrarPaso('telefono');
   modal.style.display = 'flex';
 }
@@ -9114,6 +9176,10 @@ async function resenaEnviarSolicitud() {
     showAlert('Escribe el nombre con el que dejaste la reseña en Google');
     return;
   }
+  if (!_resenaCapturaBase64) {
+    showAlert('Sube una captura de pantalla de tu reseña para poder confirmarla');
+    return;
+  }
   const btn = document.getElementById('resena-btn-enviar-solicitud');
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
   try {
@@ -9124,9 +9190,10 @@ async function resenaEnviarSolicitud() {
         action: 'solicitar',
         phone: _resenaPhone,
         nombreGoogle,
-        comentario: (comentEl ? comentEl.value : '').trim()
+        comentario: (comentEl ? comentEl.value : '').trim(),
+        captura: _resenaCapturaBase64
       })
-    }, 8000);
+    }, 15000);
     const data = await res.json();
     if (!data.success) {
       showAlert(data.error || 'No se pudo enviar la solicitud. Inténtalo de nuevo.');

@@ -4919,6 +4919,7 @@ function getAlertEntries() {
         telefono: tel,
         nombreGoogle: r.nombreGoogle || '',
         comentario: r.comentario || '',
+        captura: r.captura || '',
         resolved: false,
       };
     });
@@ -5365,7 +5366,14 @@ function renderAlertas() {
   } else {
     el.innerHTML = entries.map(e => {
       if (e.tipo === 'cupon_resena_pendiente' && e.telefono) {
-        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+        // Miniatura de la captura (clicable, abre el tamaño real en otra
+        // pestaña) — para verificar la reseña de un vistazo sin tener que
+        // salir del panel a buscarla en Google Maps. e.captura puede venir
+        // vacío en solicitudes viejas de antes de que existiera este campo.
+        const capturaHtml = e.captura
+          ? "<a href=\"".concat(escapeAttr(e.captura), "\" target=\"_blank\" rel=\"noopener\"><img src=\"").concat(escapeAttr(e.captura), "\" alt=\"Captura de la reseña\" style=\"max-width:160px;max-height:160px;border-radius:8px;border:1.5px solid #EFD6A9;display:block\"></a>")
+          : "<span style=\"font-size:11.5px;color:#8A6A4E;font-style:italic\">Sin captura (solicitud anterior a pedirla)</span>";
+        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
       }
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';
