@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Comandas">
 <link rel="apple-touch-icon" href="img/icon-192.png">
-<link rel="stylesheet" href="comandas.css?v=1789469071050">
+<link rel="stylesheet" href="comandas.css?v=1789469357857">
 </head>
 <body>
 
@@ -332,6 +332,7 @@
     <div class="settings-actions">
       <button class="btn-secondary" onclick="pairPrinterBluetooth()">📶 Conectar impresora por Bluetooth</button>
       <button class="btn-secondary" onclick="pairPrinter()">🔌 Conectar impresora por cable (USB)</button>
+      <button class="btn-secondary" onclick="if(confirm('¿Soltar la impresora Bluetooth? Úsalo si quieres que sea el panel de Admin quien la tenga conectada — la impresora solo admite una conexión a la vez.')){desconectarImpresoraBluetooth();}">🔌❌ Soltar Bluetooth (para que la use Admin)</button>
       <button class="btn-secondary" onclick="saveSettingsForm()">💾 Guardar ajustes</button>
     </div>
 
@@ -743,6 +744,6 @@
   <button onclick="undoClearOrder()">↩️ Deshacer</button>
 </div>
 
-<script src="comandas.js?v=1789469071050"></script>
+<script src="comandas.js?v=1789469357857"></script>
 </body>
 </html>

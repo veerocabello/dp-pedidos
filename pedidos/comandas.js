@@ -3967,6 +3967,11 @@ async function pairPrinterBluetooth() {
     const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICIOS_CANDIDATOS });
     await bleConectarDispositivo(device);
     try { localStorage.setItem('dpf_comandas_bt_printer_name', device.name || ''); } catch (e) {}
+    // Pedir esta conexión a propósito cancela cualquier "desconexión manual"
+    // anterior (ver desconectarImpresoraBluetooth) — si no, bleReconectar()
+    // seguiría negándose a reconectar sola la próxima vez que se recargue
+    // la página, aunque se acabe de emparejar aquí mismo a mano.
+    try { localStorage.removeItem('dpf_comandas_bt_desconectado_manual'); } catch (e) {}
     toast('✅ Impresora conectada por Bluetooth: ' + (device.name || 'dispositivo'));
     if (!navigator.bluetooth.getDevices) {
       console.warn('[comandas] Este navegador no soporta navigator.bluetooth.getDevices() — no podrá reconectar sola tras recargar la página, solo mientras esta pestaña siga abierta.');
@@ -3975,6 +3980,27 @@ async function pairPrinterBluetooth() {
     console.warn('[comandas] conexión Bluetooth cancelada o fallida', e);
     if (e && e.name !== 'NotFoundError') toast('No se pudo conectar por Bluetooth: ' + e.message);
   }
+}
+
+// Suelta la conexión Bluetooth a propósito — para devolvérsela al panel
+// de Admin cuando la impresora la tiene tomada Comandas (solo admite una
+// conexión a la vez, así que mientras Comandas la tenga, Admin no puede
+// conectar la suya por mucho que lo intente ahí). No basta con cortar la
+// conexión GATT: el navegador sigue recordando el emparejamiento y
+// bleReconectar() (que se llama sola al cargar la página y antes de cada
+// impresión) la recuperaría enseguida — se deja una marca para que ese
+// intento automático no vuelva a "robarla" hasta que se pulse "Conectar
+// Bluetooth" aquí otra vez a propósito.
+async function desconectarImpresoraBluetooth() {
+  try {
+    if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+  } catch (e) {}
+  bleDevice = null;
+  bleCharacteristic = null;
+  if (printerTransport === 'ble') printerTransport = null;
+  try { localStorage.setItem('dpf_comandas_bt_desconectado_manual', '1'); } catch (e) {}
+  updatePrinterStatusUI();
+  toast('🔌 Impresora Bluetooth desconectada — ya puede volver a conectarla el panel de Admin', 5000);
 }
 
 // Toca el indicador de la cabecera ("🖨️ ...") para conectar sin tener que
@@ -4000,6 +4026,13 @@ function printerStatusClick() {
 // se llama sola al cargar la página y, dentro de sendToPrinter, cada vez
 // que hay que imprimir y no hay conexión activa (mismo patrón que USB).
 async function bleReconectar() {
+  // Si se desconectó a propósito (ver desconectarImpresoraBluetooth) —
+  // p.ej. para devolverle la conexión al panel de Admin, ya que la
+  // impresora solo admite una a la vez — no se reconecta sola hasta que
+  // se vuelva a pulsar "Conectar Bluetooth" a mano. Sin esto, la
+  // reconexión automática (al cargar la página, o cada vez que hay algo
+  // que imprimir) volvería a robarle la conexión a Admin al momento.
+  try { if (localStorage.getItem('dpf_comandas_bt_desconectado_manual') === '1') return false; } catch (e) {}
   if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return false;
   const dispositivos = await navigator.bluetooth.getDevices().catch(() => []);
   if (!dispositivos.length) return false;
