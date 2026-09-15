@@ -3948,18 +3948,23 @@ async function pairPrinterBluetooth() {
   // página en Chrome o Edge en ese mismo ordenador.
   if (!navigator.bluetooth) { toast('Este navegador no soporta Bluetooth. En un ordenador (Mac/Windows/Linux) o Android, abre esta página con Chrome o Edge — nunca funciona en Safari, ni en iPhone/iPad con ningún navegador.'); return; }
   try {
-    let nombreGuardado = null;
-    try { nombreGuardado = localStorage.getItem('dpf_comandas_bt_printer_name') || null; } catch (e) {}
-    let device;
-    if (nombreGuardado) {
-      try {
-        device = await navigator.bluetooth.requestDevice({ filters: [{ name: nombreGuardado }], optionalServices: BLE_SERVICIOS_CANDIDATOS });
-      } catch (e) {
-        device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICIOS_CANDIDATOS });
-      }
-    } else {
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICIOS_CANDIDATOS });
-    }
+    // Antes, si ya había un nombre guardado de un emparejamiento anterior,
+    // se intentaba primero una búsqueda FILTRADA por ese nombre exacto — y
+    // si fallaba (la impresora apagada/fuera de alcance justo en ese
+    // momento, o ya no coincide del todo el nombre), se reintentaba con un
+    // SEGUNDO requestDevice() dentro del mismo catch. Web Bluetooth exige
+    // un gesto de usuario "fresco" para abrir el selector — encadenar una
+    // segunda llamada tras la primera (aunque sea en el mismo evento de
+    // clic) puede perder ese gesto y fallar en silencio, sin diálogo ni
+    // error visible: encontrado en producción, "antes funcionaba, ahora ni
+    // sale el diálogo" — dejó de funcionar justo después del primer
+    // emparejamiento con éxito (el que guarda el nombre), cuando antes (sin
+    // nombre guardado) siempre iba directa a acceptAllDevices. La
+    // reconexión SILENCIOSA a un dispositivo ya autorizado (sin preguntar)
+    // ya la cubre bleReconectar()/getDevices() aparte — este botón es para
+    // emparejar A MANO, así que siempre abre el selector completo,
+    // sin intentar adivinar ni encadenar una segunda llamada.
+    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BLE_SERVICIOS_CANDIDATOS });
     await bleConectarDispositivo(device);
     try { localStorage.setItem('dpf_comandas_bt_printer_name', device.name || ''); } catch (e) {}
     toast('✅ Impresora conectada por Bluetooth: ' + (device.name || 'dispositivo'));
