@@ -3940,7 +3940,13 @@ async function bleConectarDispositivo(device) {
 // Pide permiso al navegador — debe llamarse desde un click (gesto del
 // usuario), el navegador no deja hacerlo en segundo plano.
 async function pairPrinterBluetooth() {
-  if (!navigator.bluetooth) { toast('Este navegador no soporta Bluetooth. Usa Chrome en Android (no funciona en iPhone/iPad ni en Safari).'); return; }
+  // Antes este aviso solo mencionaba "Chrome en Android" — en un Mac/PC
+  // (Windows/Linux), Chrome o Edge TAMBIÉN soportan Bluetooth web; el único
+  // que nunca lo soporta en ningún sistema es Safari (tanto en Mac como en
+  // iPhone/iPad). El texto anterior llevaba a pensar, en un Mac con Safari,
+  // que hacía falta un Android — cuando bastaba con abrir esta misma
+  // página en Chrome o Edge en ese mismo ordenador.
+  if (!navigator.bluetooth) { toast('Este navegador no soporta Bluetooth. En un ordenador (Mac/Windows/Linux) o Android, abre esta página con Chrome o Edge — nunca funciona en Safari, ni en iPhone/iPad con ningún navegador.'); return; }
   try {
     let nombreGuardado = null;
     try { nombreGuardado = localStorage.getItem('dpf_comandas_bt_printer_name') || null; } catch (e) {}

@@ -154,13 +154,22 @@ Promise.all([
 // mostrador podía seguir sirviendo una versión vieja de Comandas aunque el
 // archivo nuevo ya estuviera subido, sin ningún aviso de que era eso lo
 // que pasaba.
+//
+// Antes esto solo REEMPLAZABA un "?v=..." que ya estuviera puesto — si por
+// lo que sea el archivo se quedaba sin ninguno (p.ej. al traer una versión
+// de producción/externa que lo pisara entero, como pasó de verdad — ver
+// "recupera la impresión por Bluetooth"), la expresión regular no
+// encontraba nada que sustituir y el build seguía "OK" en silencio sin
+// volver a añadirlo NUNCA en ningún build futuro, dejando el caché roto
+// indefinidamente sin ningún aviso. Ahora la expresión hace el "?v=..."
+// opcional, así que lo AÑADE si falta en vez de limitarse a no hacer nada.
 (function actualizarVersionCacheComandas() {
   const comandasPath = path.join(rootDir, 'comandas.html');
   const original = fs.readFileSync(comandasPath, 'utf8');
   const v = Date.now();
   const actualizado = original
-    .replace(/comandas\.js\?v=\d+/, 'comandas.js?v=' + v)
-    .replace(/comandas\.css\?v=\d+/, 'comandas.css?v=' + v);
+    .replace(/comandas\.js(\?v=\d+)?"/, 'comandas.js?v=' + v + '"')
+    .replace(/comandas\.css(\?v=\d+)?"/, 'comandas.css?v=' + v + '"');
   if (actualizado !== original) {
     fs.writeFileSync(comandasPath, actualizado);
     console.log('✅ comandas.html: versión de caché de comandas.js/comandas.css actualizada a ' + v);
