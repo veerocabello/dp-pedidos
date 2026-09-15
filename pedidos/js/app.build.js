@@ -4588,6 +4588,15 @@ async function recordOrderStats(orderNum, name, total, slotTime) {
       orders: []
     };
   }
+  // Defensa contra un STATS_KEY del mismo día pero con forma inesperada
+  // (p.ej. sin 'orders', o con un valor que no es array) — confirmado en
+  // Sentry: "undefined is not an object (evaluating 'l.orders.find')"
+  // rompía aquí mismo, tirando abajo toda la función SIN capturar (el
+  // pedido ya se había guardado bien en el servidor, pero este registro
+  // local se perdía entero, incluida la línea de abajo que guarda en
+  // Firebase). Sin tocar por qué llegó corrupto — solo evita el TypeError.
+  if (!Array.isArray(stats.orders)) stats.orders = [];
+  if (typeof stats.total !== 'number' || isNaN(stats.total)) stats.total = 0;
   stats.count++;
   stats.total = parseFloat((stats.total + total).toFixed(2));
   if (!stats.orders.find(o => _normOrderKey(o.num) === _normOrderKey(orderNum))) stats.orders.unshift(newOrder);
