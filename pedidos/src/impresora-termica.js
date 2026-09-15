@@ -25,7 +25,19 @@ function _ptEncodeStr(str) {
   // nombre o las notas se interpretaría como un comando real de la
   // impresora (cortar papel, abrir el cajón...) en vez de imprimirse como texto.
   const limpio = (str || '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '');
-  return limpio.split('').map(c => map[c] || c).join('');
+  // Array.from() en vez de split('') — split('') recorre unidades UTF-16 sueltas,
+  // así que un emoji fuera del BMP (p.ej. el 🆕 en "Patata Pulled Pork 🆕" del
+  // menú) se partía en sus dos mitades del par subrogado, y cada mitad se
+  // convertía en un byte suelto sin sentido para la impresora (aparecía en el
+  // papel como un carácter suelto random — "<", "="... y descuadraba también el
+  // ancho de línea calculado en _ptBuildTicketBytes, pegando el precio al
+  // nombre). Array.from() agrupa cada par subrogado en un solo carácter, que
+  // se descarta aquí en vez de imprimirse como basura (fuera del charset
+  // Latin-1/CP437 que entiende la impresora).
+  return Array.from(limpio).map(c => {
+    if (map[c]) return map[c];
+    return c.codePointAt(0) > 0xFF ? '' : c;
+  }).join('');
 }
 
 // El campo "time" del ticket normalmente ya viene como "HH:MM" (así lo
