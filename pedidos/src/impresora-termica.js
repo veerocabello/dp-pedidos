@@ -1402,6 +1402,63 @@ async function imprimirPruebaModificaciones() {
   }
 }
 
+// Imprime una regla de números SIN saltos de línea propios — el corte de
+// línea lo hace la impresora sola, según su ancho físico real, así que el
+// último dígito de la primera línea dice cuántas columnas caben de verdad
+// (dato que _ptBuildTicketBytes tiene que adivinar con tc.anchoPapel, y que
+// puede no coincidir con el papel real puesto en la impresora — origen del
+// "el precio no llega al borde derecho" reportado en papel). También
+// imprime, justo debajo, una línea de producto+precio con el ancho (W) que
+// hoy usa el ticket real, para comparar directamente si el precio llega al
+// mismo punto que marcó la regla. Autocontenida igual que las pruebas de
+// arriba: no toca _ptBuildTicketBytes.
+async function imprimirPruebaAnchoPapel() {
+  const tc = getTicketConfig();
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const left = () => d.push(ESC, 0x61, 0x00);
+  const bold = on => d.push(ESC, 0x45, on ? 0x01 : 0x00);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+
+  d.push(ESC, 0x40);
+  left();
+  push('PRUEBA DE ANCHO DE PAPEL\n');
+  push('Cuenta cuantos digitos caben\n');
+  push('en la PRIMERA linea, antes\n');
+  push('de que salte sola a la 2a:\n');
+  push('------------------------------------------------\n');
+  // 80 dígitos 1-9-0 repetidos, sin '\n' hasta el final — el propio salto
+  // de línea de la impresora marca el límite real.
+  let regla = '';
+  for (let i = 1; i <= 80; i++) regla += String(i % 10);
+  bold(true);
+  push(regla + '\n');
+  bold(false);
+  push('------------------------------------------------\n');
+  push('Linea de producto de un\n');
+  push('ticket real (ancho configurado\n');
+  push('hoy: ' + (tc.anchoPapel || 80) + 'mm):\n');
+  const W = tc.anchoPapel === 58 ? 32 : 48;
+  const precio = '9.99 EUR';
+  const nombre = 'PRODUCTO PRUEBA';
+  const prefix = '1x ';
+  const spaces = Math.max(0, W - prefix.length - nombre.length - precio.length);
+  push(prefix + nombre + ' '.repeat(spaces) + precio + '\n');
+  push('------------------------------------------------\n');
+  push('(ticket de prueba, no es un pedido real)\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+
+  const _ptEjecutarPrueba = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  try {
+    await _ptEjecutarPrueba(() => _ptEnviarBytes(new Uint8Array(d)));
+  } catch (e) {
+    alert('⚠️ ' + e.message);
+  }
+}
+
 // Imprime 3 tickets cortos de prueba, uno por cada forma posible de
 // resaltar la nota del cliente (arriba del pedido, abajo junto al total,
 // y en negro invertido) — para decidir en papel real cuál queda mejor,

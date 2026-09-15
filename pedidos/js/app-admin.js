@@ -324,7 +324,23 @@ Se fusionar\xC3\xA1n con los que ya existan, sin borrar nada.`))try{await fireba
 `),a(`
 
 
-`),n.push(o,86,66,0);const b=typeof _ptEnFila=="function"?_ptEnFila:(y=>y());try{await b(()=>_ptEnviarBytes(new Uint8Array(n)))}catch(y){alert("\u26A0\uFE0F "+y.message)}}async function imprimirPruebaEstiloNotaCliente(){const e=getTicketConfig(),t=27,o=29,n="Sin cebolla porfa, alergia a frutos secos";function a(r,c){const l=[],d=v=>{for(const E of _ptEncodeStr(v))l.push(E.charCodeAt(0)&255)},u=()=>l.push(t,97,1),m=()=>l.push(t,97,0),b=v=>l.push(t,69,v?1:0),y=()=>l.push(t,33,48),p=()=>l.push(t,33,0),f=v=>l.push(o,66,v?1:0),g=()=>d(`------------------------------------------------
+`),n.push(o,86,66,0);const b=typeof _ptEnFila=="function"?_ptEnFila:(y=>y());try{await b(()=>_ptEnviarBytes(new Uint8Array(n)))}catch(y){alert("\u26A0\uFE0F "+y.message)}}async function imprimirPruebaAnchoPapel(){const e=getTicketConfig(),t=27,o=29,n=[],a=f=>{for(const g of _ptEncodeStr(f))n.push(g.charCodeAt(0)&255)},i=()=>n.push(t,97,1),s=()=>n.push(t,97,0),r=f=>n.push(t,69,f?1:0),c=()=>n.push(t,33,0);n.push(t,64),s(),a(`PRUEBA DE ANCHO DE PAPEL
+`),a(`Cuenta cuantos digitos caben
+`),a(`en la PRIMERA linea, antes
+`),a(`de que salte sola a la 2a:
+`),a(`------------------------------------------------
+`);let l="";for(let f=1;f<=80;f++)l+=String(f%10);r(!0),a(l+`
+`),r(!1),a(`------------------------------------------------
+`),a(`Linea de producto de un
+`),a(`ticket real (ancho configurado
+`),a("hoy: "+(e.anchoPapel||80)+`mm):
+`);const d=e.anchoPapel===58?32:48,u="9.99 EUR",m="PRODUCTO PRUEBA",b="1x ",y=Math.max(0,d-b.length-m.length-u.length);a(b+m+" ".repeat(y)+u+`
+`),a(`------------------------------------------------
+`),a(`(ticket de prueba, no es un pedido real)
+`),a(`
+
+
+`),n.push(o,86,66,0);const p=typeof _ptEnFila=="function"?_ptEnFila:(f=>f());try{await p(()=>_ptEnviarBytes(new Uint8Array(n)))}catch(f){alert("\u26A0\uFE0F "+f.message)}}async function imprimirPruebaEstiloNotaCliente(){const e=getTicketConfig(),t=27,o=29,n="Sin cebolla porfa, alergia a frutos secos";function a(r,c){const l=[],d=v=>{for(const E of _ptEncodeStr(v))l.push(E.charCodeAt(0)&255)},u=()=>l.push(t,97,1),m=()=>l.push(t,97,0),b=v=>l.push(t,69,v?1:0),y=()=>l.push(t,33,48),p=()=>l.push(t,33,0),f=v=>l.push(o,66,v?1:0),g=()=>d(`------------------------------------------------
 `),h=()=>{r==="negro"&&f(!0),u(),b(!0),y(),d(`*** NOTA CLIENTE ***
 `),p(),m(),b(!0),d(n+`
 `),b(!1),r==="negro"&&f(!1)};return l.push(t,64),u(),y(),d(e.nombre+`
