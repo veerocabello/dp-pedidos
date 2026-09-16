@@ -4506,6 +4506,11 @@ function openCartaEdit(id) {
   document.getElementById('carta-edit-price').value = item.price;
   document.getElementById('carta-edit-desc').value = item.desc || '';
   document.getElementById('carta-edit-quitar').checked = !isQuitarBlocked(id);
+  // Aviso de qué producto es EXACTAMENTE el que se va a cambiar — con la
+  // carta llena de iconos pequeños y pegados es fácil tocar el ✏️ de la
+  // fila de al lado sin querer y renombrar un producto por otro sin darse
+  // cuenta (p. ej. sin querer un "Medio Panini" pasa a llamarse "Cookie").
+  document.getElementById('carta-edit-subtitle').textContent = 'Vas a cambiar: "' + item.name + '" (' + item.cat + ')';
   document.getElementById('carta-edit-modal').classList.add('open');
 }
 function closeCartaEdit() { document.getElementById('carta-edit-modal').classList.remove('open'); cartaEditingId = null; }
