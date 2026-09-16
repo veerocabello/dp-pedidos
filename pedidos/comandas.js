@@ -4358,17 +4358,39 @@ function openCartaAdmin() {
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
+  document.getElementById('carta-new-mediopanini').checked = false;
+  document.getElementById('carta-new-mediopanini-group').style.display = 'none';
+  document.getElementById('carta-new-mediopanini-whole-group').style.display = 'none';
   renderCartaAdminList();
   renderCartaExtrasList();
   document.getElementById('carta-modal').classList.add('open');
 }
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
 // Al elegir "➕ Nueva categoría…" aparece un campo para escribir su nombre
-// (hasta ahora solo se podía elegir una categoría ya existente).
+// (hasta ahora solo se podía elegir una categoría ya existente). Al elegir
+// "Paninis" aparece la opción de decir que es medio de un panini entero
+// (comparte stock — ver getStockRestanteForItem/mitadDe).
 function onCartaCatSelectChange() {
-  const esNueva = document.getElementById('carta-new-cat').value === CARTA_NEW_CAT_SENTINEL;
+  const catSelect = document.getElementById('carta-new-cat');
+  const esNueva = catSelect.value === CARTA_NEW_CAT_SENTINEL;
   document.getElementById('carta-new-cat-custom-group').style.display = esNueva ? '' : 'none';
   if (esNueva) document.getElementById('carta-new-cat-custom').focus();
+  const esPaninis = catSelect.value === 'Paninis';
+  document.getElementById('carta-new-mediopanini-group').style.display = esPaninis ? '' : 'none';
+  if (!esPaninis) {
+    document.getElementById('carta-new-mediopanini').checked = false;
+    document.getElementById('carta-new-mediopanini-whole-group').style.display = 'none';
+  }
+}
+function onCartaMedioPaniniToggle() {
+  const on = document.getElementById('carta-new-mediopanini').checked;
+  const group = document.getElementById('carta-new-mediopanini-whole-group');
+  group.style.display = on ? '' : 'none';
+  if (on) {
+    const wholeSelect = document.getElementById('carta-new-mediopanini-whole');
+    const enteros = MENU.filter(m => m.cat === 'Paninis' && !m.mitadDe);
+    wholeSelect.innerHTML = enteros.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+  }
 }
 function cartaExtraPrecioRow(tipo, name, precio) {
   return `<div class="option-row" style="cursor:default">
@@ -4551,13 +4573,17 @@ function addCartaProduct() {
   const price = parseFloat(document.getElementById('carta-new-price').value);
   const desc = document.getElementById('carta-new-desc').value.trim();
   const nuevo = document.getElementById('carta-new-nuevo').checked;
+  const esMedioPanini = catSelect === 'Paninis' && document.getElementById('carta-new-mediopanini').checked;
+  const mitadDeId = esMedioPanini ? parseInt(document.getElementById('carta-new-mediopanini-whole').value, 10) : null;
   if (!name || !cat || !(price >= 0)) {
     toast(catSelect === CARTA_NEW_CAT_SENTINEL && !cat ? '⚠️ Escribe el nombre de la categoría nueva' : '⚠️ Rellena nombre, categoría y precio');
     return;
   }
+  if (esMedioPanini && !mitadDeId) { toast('⚠️ Elige de qué panini entero es la mitad'); return; }
   const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
   const item = { id: nextId, cat, name, desc, price };
   if (nuevo) item.nuevo = true;
+  if (mitadDeId) item.mitadDe = mitadDeId;
   const custom = loadMenuCustom();
   custom.push(item);
   localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
@@ -4574,6 +4600,8 @@ function addCartaProduct() {
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
+  document.getElementById('carta-new-mediopanini').checked = false;
+  document.getElementById('carta-new-mediopanini-whole-group').style.display = 'none';
   const newCatSelect = document.getElementById('carta-new-cat');
   newCatSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
     + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
