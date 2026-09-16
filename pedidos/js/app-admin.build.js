@@ -2086,7 +2086,7 @@ async function resetDayStats() {
 }
 async function cancelarPedidoAdmin(orderNum, phone) {
   if (!confirm("\xBFCancelar el pedido ".concat(orderNum, "? Se eliminar\xE1 de estad\xEDsticas y cocina."))) return;
-  const ok = await _borrarPedidoDeFirebase(orderNum, phone);
+  const ok = await _borrarPedidoDeFirebase(orderNum, phone, true);
   if (!ok) {
     alert('No se pudo cancelar el pedido ' + orderNum + ' en el servidor (revisa la conexión) — sigue activo, inténtalo de nuevo.');
     return;

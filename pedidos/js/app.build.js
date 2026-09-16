@@ -8602,7 +8602,7 @@ async function cancelarPedido() {
 function _todayKeyMadrid() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
-async function _borrarPedidoDeFirebase(orderNum, phone) {
+async function _borrarPedidoDeFirebase(orderNum, phone, comoAdmin) {
   const todayKey = _todayKeyMadrid();
 
   // 0. Si este pedido tenía un ticket esperando en la cola de impresión
@@ -8636,10 +8636,21 @@ async function _borrarPedidoDeFirebase(orderNum, phone) {
   // pedido se quedaba activo para siempre en cocina/estadísticas del resto
   // de dispositivos, aunque el ticket viejo nunca llegara a anularse allí.
   try {
+    // Cancelando desde el panel de Admin (cancelarPedidoAdmin en
+    // admin-antispam-stats.js pasa comoAdmin=true): se manda también el
+    // deviceId+token de dispositivo de confianza, para que el servidor
+    // pueda cancelar el pedido aunque no tenga teléfono guardado (o no
+    // coincida) — ver $cEsAdminConfianza en guardar-pedido.php. El cliente
+    // cancelando su propio pedido (comoAdmin=false/undefined) sigue
+    // demostrando que es suyo solo con el teléfono, como siempre.
+    const credencialesAdmin = comoAdmin ? {
+      deviceId: typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id'),
+      token: localStorage.getItem('dpf_trusted_token')
+    } : {};
     const resp = await fetch('guardar-pedido.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'cancelarPedido', orderNum, fecha: todayKey, phone: phone || '' })
+      body: JSON.stringify({ action: 'cancelarPedido', orderNum, fecha: todayKey, phone: phone || '', ...credencialesAdmin })
     });
     const data = await resp.json();
     if (data && data.success) {

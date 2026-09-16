@@ -2089,14 +2089,10 @@ try {
     // No se cierra aquí porque este MISMO 'action':'cancelarPedido' lo usa
     // tanto el autoservicio del cliente (modificarPedido()/cancelarPedido()
     // en antifraude.js) COMO el botón "✕" del panel de admin
-    // (cancelarPedidoAdmin(), admin-antispam-stats.js) — y el servidor no
-    // tiene ninguna forma de distinguir una petición de la otra (este
-    // endpoint no comprueba ninguna sesión/token de admin, solo IP + que
-    // el teléfono coincida con el del ticket). Poner un límite de tiempo
-    // aquí bloquearía también a la propia dueña cancelando un pedido
-    // antiguo desde el panel. Cerrarlo bien de verdad exige añadir
-    // autenticación real de admin a este endpoint — se deja pendiente
-    // para otra ronda, no metido en este lote.
+    // (cancelarPedidoAdmin(), admin-antispam-stats.js). El límite es por IP,
+    // no por sesión, así que cancelar muchos pedidos seguidos desde el
+    // propio panel de admin también lo cuenta — generoso a propósito (30
+    // cada 10 min) para que no moleste en el uso normal de caja.
     //
     // Mismo motivo que reservarSlot/reservarNumeroPedido arriba: orderStatus/
     // y stats/ exigen el UID exacto del admin en las reglas de seguridad, así
@@ -2105,10 +2101,15 @@ try {
     // Firebase, esa escritura fallaba en silencio — el pedido se quedaba
     // "activo" para siempre en cocina y en estadísticas en el resto de
     // dispositivos, aunque el propio cliente ya lo viera como cancelado en su
-    // móvil. Ahora lo hace este script con la cuenta de servicio. Exige que
-    // el teléfono coincida con el del ticket real (igual que revertirSello en
-    // fidelizacion.php) para que nadie pueda cancelar el pedido de otra
-    // persona solo adivinando el número.
+    // móvil. Ahora lo hace este script con la cuenta de servicio.
+    //
+    // Autorización: el cliente demuestra que el pedido es suyo con el
+    // teléfono (igual que revertirSello en fidelizacion.php), para que nadie
+    // pueda cancelar el pedido de otra persona solo adivinando el número. El
+    // panel de admin, en cambio, manda deviceId+token de dispositivo de
+    // confianza (ver $cEsAdminConfianza más abajo) — la dueña ya está
+    // autenticada de verdad, así que no necesita (ni siempre tiene) el
+    // teléfono del pedido para poder cancelarlo.
     if (($payload['action'] ?? '') === 'cancelarPedido') {
         if (!dpf_check_limit($tmp_dir . '/dpf_cancelarpedido_ip_' . md5($ip) . '.json', 30, $window)) {
             http_response_code(429);
@@ -2118,15 +2119,29 @@ try {
         $cOrderNum = isset($payload['orderNum']) ? (string)$payload['orderNum'] : '';
         $cFecha = isset($payload['fecha']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$payload['fecha']) ? (string)$payload['fecha'] : date('Y-m-d');
         $cPhone = isset($payload['phone']) ? preg_replace('/\D/', '', (string)$payload['phone']) : '';
+        $cDeviceId = isset($payload['deviceId']) ? (string)$payload['deviceId'] : '';
+        $cToken = isset($payload['token']) ? (string)$payload['token'] : '';
         if (!preg_match('/^T\d{3,5}$/', $cOrderNum)) {
             echo json_encode(['success' => false, 'error' => 'Número de pedido inválido']);
             exit;
         }
-        if ($cPhone === '') {
+        $accessToken = obtenerTokenAcceso($rutaCredenciales);
+        // Cancelar desde el panel de Admin (cancelarPedidoAdmin en
+        // admin-antispam-stats.js) SÍ manda deviceId+token de dispositivo de
+        // confianza — si son válidos, no hace falta el teléfono ni que
+        // coincida: la dueña ya está autenticada de verdad, a diferencia del
+        // cliente cancelando su propio pedido (antifraude.js), que no manda
+        // ninguno de los dos y sigue necesitando demostrar que el pedido es
+        // suyo con el teléfono. Sin esto, un pedido guardado sin teléfono
+        // (o con uno que no cuadrara por cualquier motivo) no se podía
+        // cancelar NUNCA desde el panel — ni se marcaba cancelado, ni se
+        // quitaba de stats/, ni se liberaba el turno — aunque la dueña
+        // estuviera delante de la tablet con sesión de admin real.
+        $cEsAdminConfianza = $cDeviceId !== '' && $cToken !== '' && esDispositivoDeConfianza($databaseURL, $accessToken, $cDeviceId, $cToken);
+        if (!$cEsAdminConfianza && $cPhone === '') {
             echo json_encode(['success' => false, 'error' => 'Falta el teléfono del pedido']);
             exit;
         }
-        $accessToken = obtenerTokenAcceso($rutaCredenciales);
         $cKey = normOrderKey($cOrderNum);
         $cTicketLeido = fbGetConEtag($databaseURL, 'tickets/' . $cFecha . '/' . $cKey, $accessToken);
         $cTicket = is_array($cTicketLeido['data']) ? $cTicketLeido['data'] : null;
@@ -2135,7 +2150,7 @@ try {
             exit;
         }
         $cTicketPhone = preg_replace('/\D/', '', (string)($cTicket['phone'] ?? ''));
-        if ($cTicketPhone === '' || $cPhone !== $cTicketPhone) {
+        if (!$cEsAdminConfianza && ($cTicketPhone === '' || $cPhone !== $cTicketPhone)) {
             echo json_encode(['success' => false, 'error' => 'No autorizado']);
             exit;
         }
