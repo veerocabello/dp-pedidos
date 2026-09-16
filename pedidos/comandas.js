@@ -4360,6 +4360,11 @@ function openCartaAdmin() {
   document.getElementById('carta-new-nuevo').checked = false;
   document.getElementById('carta-new-mediopanini-price').value = '';
   document.getElementById('carta-new-mediopanini-group').style.display = 'none';
+  document.getElementById('carta-new-panini-tipo-group').style.display = 'none';
+  document.getElementById('carta-new-panini-tipo').value = 'entero';
+  document.getElementById('carta-new-mediopanini-whole-group').style.display = 'none';
+  document.getElementById('carta-new-name-label').textContent = 'Nombre';
+  document.getElementById('carta-new-price-label').textContent = 'Precio (€)';
   renderCartaAdminList();
   renderCartaExtrasList();
   document.getElementById('carta-modal').classList.add('open');
@@ -4367,17 +4372,41 @@ function openCartaAdmin() {
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
 // Al elegir "➕ Nueva categoría…" aparece un campo para escribir su nombre
 // (hasta ahora solo se podía elegir una categoría ya existente). Al elegir
-// "Paninis" aparece el precio del medio panini — todos los paninis se
-// venden también por mitades, así que se crean los dos juntos de una vez
-// en vez de dar de alta el medio aparte (ver addCartaProduct).
+// "Paninis" aparece el selector de "Panini entero" / "Solo el medio de uno
+// que ya existe" — todos los paninis se venden también por mitades, así
+// que el caso normal es darlos de alta juntos, pero también hace falta
+// poder añadir solo el medio si el entero ya estaba en la carta.
 function onCartaCatSelectChange() {
   const catSelect = document.getElementById('carta-new-cat');
   const esNueva = catSelect.value === CARTA_NEW_CAT_SENTINEL;
   document.getElementById('carta-new-cat-custom-group').style.display = esNueva ? '' : 'none';
   if (esNueva) document.getElementById('carta-new-cat-custom').focus();
   const esPaninis = catSelect.value === 'Paninis';
-  document.getElementById('carta-new-mediopanini-group').style.display = esPaninis ? '' : 'none';
-  if (!esPaninis) document.getElementById('carta-new-mediopanini-price').value = '';
+  document.getElementById('carta-new-panini-tipo-group').style.display = esPaninis ? '' : 'none';
+  if (!esPaninis) {
+    document.getElementById('carta-new-panini-tipo').value = 'entero';
+    document.getElementById('carta-new-mediopanini-price').value = '';
+  }
+  onCartaPaniniTipoChange();
+}
+// Cambia qué campos se ven según si se está dando de alta un panini
+// entero (con su medio opcional) o solo el medio de uno que ya existe.
+function onCartaPaniniTipoChange() {
+  const catSelect = document.getElementById('carta-new-cat');
+  const esPaninis = catSelect.value === 'Paninis';
+  const esMedio = esPaninis && document.getElementById('carta-new-panini-tipo').value === 'medio';
+  document.getElementById('carta-new-mediopanini-whole-group').style.display = esMedio ? '' : 'none';
+  document.getElementById('carta-new-mediopanini-group').style.display = (esPaninis && !esMedio) ? '' : 'none';
+  document.getElementById('carta-new-name-label').textContent = esMedio ? 'Nombre del medio (opcional)' : 'Nombre';
+  document.getElementById('carta-new-name').placeholder = esMedio ? 'Se pone "Medio <panini>" si lo dejas en blanco' : 'Ej. Batido de fresa';
+  document.getElementById('carta-new-price-label').textContent = esMedio ? 'Precio del medio (€)' : 'Precio (€)';
+  if (esMedio) {
+    const wholeSelect = document.getElementById('carta-new-mediopanini-whole');
+    const enteros = MENU.filter(m => m.cat === 'Paninis' && !m.mitadDe);
+    wholeSelect.innerHTML = enteros.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+  } else {
+    document.getElementById('carta-new-mediopanini-price').value = '';
+  }
 }
 function cartaExtraPrecioRow(tipo, name, precio) {
   return `<div class="option-row" style="cursor:default">
@@ -4551,15 +4580,60 @@ function saveCartaEdit() {
   closeCartaEdit();
   toast('✅ Producto actualizado');
 }
+// Deja el formulario de "Añadir producto" listo para el siguiente alta
+// (vuelve a montar el desplegable de categorías por si se creó una nueva)
+// y refresca carta/pestañas/lista — lo comparten los dos flujos de abajo.
+function resetCartaNewFormAndRefresh(catSelect, cat, mensaje) {
+  refreshCategoriesFromMenu();
+  const wasNewCat = catSelect === CARTA_NEW_CAT_SENTINEL;
+  initTabs();
+  renderMenu();
+  renderCartaAdminList();
+  document.getElementById('carta-new-name').value = '';
+  document.getElementById('carta-new-price').value = '';
+  document.getElementById('carta-new-desc').value = '';
+  document.getElementById('carta-new-nuevo').checked = false;
+  document.getElementById('carta-new-mediopanini-price').value = '';
+  const newCatSelect = document.getElementById('carta-new-cat');
+  newCatSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
+  if (wasNewCat) newCatSelect.value = cat;
+  else newCatSelect.value = catSelect;
+  document.getElementById('carta-new-cat-custom-group').style.display = 'none';
+  document.getElementById('carta-new-cat-custom').value = '';
+  onCartaCatSelectChange();
+  toast(wasNewCat ? '✅ Categoría "' + cat + '" creada con este producto' : mensaje);
+}
 function addCartaProduct() {
-  const name = document.getElementById('carta-new-name').value.trim();
   const catSelect = document.getElementById('carta-new-cat').value;
   const cat = catSelect === CARTA_NEW_CAT_SENTINEL
     ? document.getElementById('carta-new-cat-custom').value.trim()
     : catSelect;
+  const esMedio = catSelect === 'Paninis' && document.getElementById('carta-new-panini-tipo').value === 'medio';
   const price = parseFloat(document.getElementById('carta-new-price').value);
   const desc = document.getElementById('carta-new-desc').value.trim();
   const nuevo = document.getElementById('carta-new-nuevo').checked;
+  let name = document.getElementById('carta-new-name').value.trim();
+
+  // Solo el medio de un panini entero que YA está en la carta — un único
+  // producto nuevo, ligado con mitadDe para compartir su stock.
+  if (esMedio) {
+    const wholeId = parseInt(document.getElementById('carta-new-mediopanini-whole').value, 10);
+    const whole = MENU.find(m => m.id === wholeId);
+    if (!whole) { toast('⚠️ Elige de qué panini entero es la mitad'); return; }
+    if (!name) name = 'Medio ' + whole.name;
+    if (!(price >= 0)) { toast('⚠️ Rellena el precio del medio'); return; }
+    const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
+    const medio = { id: nextId, cat: 'Paninis', name, desc: desc || 'La mitad de un panini entero', price, mitadDe: wholeId };
+    if (nuevo) medio.nuevo = true;
+    const custom = loadMenuCustom();
+    custom.push(medio);
+    MENU.push(medio);
+    localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
+    resetCartaNewFormAndRefresh(catSelect, cat, '✅ Medio panini añadido');
+    return;
+  }
+
   const medioPrecioStr = document.getElementById('carta-new-mediopanini-price').value;
   const medioPrecio = catSelect === 'Paninis' && medioPrecioStr !== '' ? parseFloat(medioPrecioStr) : null;
   if (!name || !cat || !(price >= 0)) {
@@ -4583,26 +4657,7 @@ function addCartaProduct() {
     MENU.push(medio);
   }
   localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
-  // Si la categoría es nueva de verdad, tiene que aparecer ya en la propia
-  // lista desplegable (y seguir seleccionada) por si se añaden más
-  // productos seguidos a esa misma categoría.
-  refreshCategoriesFromMenu();
-  const wasNewCat = catSelect === CARTA_NEW_CAT_SENTINEL;
-  initTabs();
-  renderMenu();
-  renderCartaAdminList();
-  document.getElementById('carta-new-name').value = '';
-  document.getElementById('carta-new-price').value = '';
-  document.getElementById('carta-new-desc').value = '';
-  document.getElementById('carta-new-nuevo').checked = false;
-  document.getElementById('carta-new-mediopanini-price').value = '';
-  const newCatSelect = document.getElementById('carta-new-cat');
-  newCatSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
-    + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
-  if (wasNewCat) newCatSelect.value = cat;
-  document.getElementById('carta-new-cat-custom-group').style.display = 'none';
-  document.getElementById('carta-new-cat-custom').value = '';
-  toast(wasNewCat ? '✅ Categoría "' + cat + '" creada con este producto' : medioPrecio != null ? '✅ Panini y su medio añadidos' : '✅ Producto añadido');
+  resetCartaNewFormAndRefresh(catSelect, cat, medioPrecio != null ? '✅ Panini y su medio añadidos' : '✅ Producto añadido');
 }
 function removeCartaProduct(id, name) {
   if (!confirm('¿Quitar "' + name + '" de la carta?')) return;

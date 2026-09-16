@@ -348,21 +348,32 @@
     <div class="modal-subtitle">Añade o quita productos sencillos (bebidas, tartas, cookies…) y marca o quita la etiqueta NUEVO. Se guarda en este ordenador.</div>
 
     <div class="section-label" style="margin-top:0">Añadir producto</div>
-    <div class="form-group"><label>Nombre</label><input id="carta-new-name" type="text" placeholder="Ej. Batido de fresa"></div>
+    <div class="form-group" id="carta-new-panini-tipo-group" style="display:none">
+      <label>Qué añadir</label>
+      <select id="carta-new-panini-tipo" onchange="onCartaPaniniTipoChange()">
+        <option value="entero">Panini entero (con su medio, si quieres)</option>
+        <option value="medio">Solo el medio de un panini que ya existe</option>
+      </select>
+    </div>
+    <div class="form-group" id="carta-new-mediopanini-whole-group" style="display:none">
+      <label>¿De qué panini entero es la mitad?</label>
+      <select id="carta-new-mediopanini-whole"></select>
+    </div>
+    <div class="form-group"><label id="carta-new-name-label">Nombre</label><input id="carta-new-name" type="text" placeholder="Ej. Batido de fresa"></div>
     <div class="settings-grid">
       <div class="form-group">
         <label>Categoría</label>
         <select id="carta-new-cat" onchange="onCartaCatSelectChange()"></select>
       </div>
-      <div class="form-group"><label>Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
+      <div class="form-group"><label id="carta-new-price-label">Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
     </div>
     <div class="form-group" id="carta-new-cat-custom-group" style="display:none">
       <label>Nombre de la categoría nueva</label>
       <input id="carta-new-cat-custom" type="text" placeholder="Ej. Snacks">
     </div>
     <div class="form-group" id="carta-new-mediopanini-group" style="display:none">
-      <label>Precio del medio panini (€)</label>
-      <input id="carta-new-mediopanini-price" type="number" min="0" step="0.01" placeholder="Ej. 3,30 — se crea junto con el entero">
+      <label>Precio del medio panini (€) <span style="font-weight:400;color:var(--muted)">— opcional, se crea junto con el entero</span></label>
+      <input id="carta-new-mediopanini-price" type="number" min="0" step="0.01" placeholder="Ej. 3,30">
     </div>
     <div class="form-group"><label>Descripción (opcional)</label><input id="carta-new-desc" type="text" placeholder="Ej. 500 ml"></div>
     <label class="option-row" style="padding:10px 14px">
