@@ -573,6 +573,39 @@ async function comprobarTodoAntesDeAbrir() {
     if (btn) { btn.disabled = false; btn.textContent = '🖨️ Probar todo'; }
   }
 }
+// Cupones de reseña ya aprobados/descartados — plegados detrás de un botón
+// (mismo patrón que "Ver incidencias resueltas" más arriba), para poder
+// volver a consultar el teléfono, el nombre y la captura de una solicitud
+// antigua: una vez aprobada o descartada, su tarjeta desaparece de la lista
+// de arriba para siempre (resolverAlerta solo la oculta, no borra nada),
+// pero sin esto no había ningún sitio del panel donde volver a verla.
+// _cuponesResenaPendientesLive, a pesar del nombre (queda de cuando solo
+// hacía falta filtrar las pendientes), en realidad ya trae TODOS los
+// estados — fb_listenCuponesResenaPendientes escucha el nodo completo.
+function _renderHistorialCuponesResena() {
+  const historial = Object.keys(_cuponesResenaPendientesLive)
+    .map(tel => [tel, _cuponesResenaPendientesLive[tel]])
+    .filter(([, r]) => r && r.estado && r.estado !== 'pendiente')
+    .sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+  if (!historial.length) return '';
+  const tarjetas = historial.map(([tel, r]) => {
+    const aprobado = r.estado === 'aprobado';
+    const fecha = is_numeric_ts(r.ts) ? new Date(r.ts).toLocaleString('es-ES') : '';
+    const capturaHtml = r.captura
+      ? "<a href=\"".concat(escapeAttr(r.captura), "\" target=\"_blank\" rel=\"noopener\"><img src=\"").concat(escapeAttr(r.captura), "\" alt=\"Captura de la reseña\" style=\"max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e0e0e0;display:block\"></a>")
+      : '';
+    return '<div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;background:#F7F3EC;border:1px solid #EEE3D0">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center">'
+      + '<span style="font-size:11px;font-weight:700;color:' + (aprobado ? '#1e5c37' : '#8A6A4E') + '">' + (aprobado ? '✅ Aprobado' : '✕ Descartado') + '</span>'
+      + '<span style="font-size:10.5px;color:#8A6A4E">' + escapeHtml(fecha) + '</span>'
+      + '</div>'
+      + '<div style="font-size:12.5px;color:#5a3e1b"><b>' + escapeHtml(r.nombreGoogle || '') + '</b> · ' + escapeHtml(tel) + (aprobado && r.codigo ? ' · <span style="font-weight:700">' + escapeHtml(r.codigo) + '</span>' : '') + '</div>'
+      + capturaHtml
+      + '</div>';
+  }).join('');
+  return '<button onclick="var d=this.nextElementSibling;d.style.display=d.style.display===\'none\'?\'flex\':\'none\';this.textContent=d.style.display===\'none\'?\'Ver cupones de reseña anteriores (' + historial.length + ')\':\'Ocultar cupones anteriores\'" style="width:100%;background:none;border:0.5px solid #e0e0e0;border-radius:8px;padding:8px 16px;font-size:13px;color:#8A6A4E;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:10px">Ver cupones de reseña anteriores (' + historial.length + ')</button>'
+    + '<div style="display:none;flex-direction:column;gap:10px;margin-top:10px">' + tarjetas + '</div>';
+}
 function renderAlertas() {
   const entries = getAlertEntries();
   const el = document.getElementById('alertas-list');
@@ -607,6 +640,7 @@ function renderAlertas() {
       return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
     }).join('');
   }
+  el.innerHTML += _renderHistorialCuponesResena();
   // Marcar como vistos: la próxima vez que se recalcule el badge, estos
   // avisos ya no cuentan como nuevos.
   if (entries.length) localStorage.setItem(ALERTAS_SEEN_KEY, entries[0].ts || new Date().toISOString());
