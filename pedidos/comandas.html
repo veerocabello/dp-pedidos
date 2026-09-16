@@ -360,15 +360,9 @@
       <label>Nombre de la categoría nueva</label>
       <input id="carta-new-cat-custom" type="text" placeholder="Ej. Snacks">
     </div>
-    <div id="carta-new-mediopanini-group" style="display:none">
-      <label class="option-row" style="padding:10px 14px" onclick="event.stopPropagation()">
-        <div><div class="option-title" style="font-size:13.5px">🥪 Es medio de un panini entero</div><div class="option-sub">Comparte el stock con el panini entero elegido: 1 entero gastado cuenta como 2 medios</div></div>
-        <input type="checkbox" id="carta-new-mediopanini" style="width:20px;height:20px;flex-shrink:0" onchange="onCartaMedioPaniniToggle()">
-      </label>
-      <div class="form-group" id="carta-new-mediopanini-whole-group" style="display:none">
-        <label>Es la mitad de</label>
-        <select id="carta-new-mediopanini-whole"></select>
-      </div>
+    <div class="form-group" id="carta-new-mediopanini-group" style="display:none">
+      <label>Precio del medio panini (€)</label>
+      <input id="carta-new-mediopanini-price" type="number" min="0" step="0.01" placeholder="Ej. 3,30 — se crea junto con el entero">
     </div>
     <div class="form-group"><label>Descripción (opcional)</label><input id="carta-new-desc" type="text" placeholder="Ej. 500 ml"></div>
     <label class="option-row" style="padding:10px 14px">
