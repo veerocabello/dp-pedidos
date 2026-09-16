@@ -1319,7 +1319,8 @@ setInterval(function() {
     <div id="resena-paso-telefono">
       <div style="font-size:40px;margin-bottom:12px">⭐</div>
       <div style="font-size:20px;font-weight:900;color:var(--brown);font-family:'Oswald',sans-serif;margin-bottom:8px">¿Ya dejaste tu reseña?</div>
-      <div style="font-size:14px;color:var(--muted);margin-bottom:20px">Escribe tu móvil. Si la confirmamos, te mandamos tu 10% de descuento por SMS a ese número.</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:14px">Escribe tu móvil. Si la confirmamos, te mandamos tu 10% de descuento por SMS a ese número.</div>
+      <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:6px;background:#E6F1FB;color:#185FA5;text-decoration:none;padding:11px 14px;border-radius:12px;font-size:13.5px;font-weight:700;margin-bottom:18px;font-family:'DM Sans',sans-serif">⭐ ¿Aún no la has dejado? Escríbela aquí</a>
       <input id="resena-tel-input" type="tel" inputmode="numeric" placeholder="6XX XX XX XX" maxlength="9" style="width:100%;padding:14px;border:2px solid var(--warm);border-radius:12px;font-size:16px;text-align:center;color:var(--brown);font-weight:700;margin-bottom:16px;box-sizing:border-box">
       <button id="resena-btn-continuar" onclick="resenaComprobarTelefono()" style="width:100%;padding:14px;background:var(--brown);color:var(--white);border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px">Continuar</button>
       <button onclick="cerrarResenaCupon()" style="width:100%;padding:10px;background:none;border:none;color:#aaa;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Cancelar</button>
@@ -1365,6 +1366,16 @@ setInterval(function() {
     </div>
 
   </div>
+</div>
+
+<!-- Botón flotante fijo de reseña/10% — siempre visible en cualquier parte
+     de la web (no depende de estar en la pantalla de confirmación del
+     pedido, que se pierde si se recarga la página). z-index bajo a
+     propósito: cualquier modal de la web (todos por encima de 2000) lo
+     tapa mientras esté abierto, en vez de quedar flotando encima. -->
+<div style="position:fixed;bottom:16px;right:16px;z-index:1000;display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+  <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:#4285F4;color:#FFFFFF;text-decoration:none;padding:10px 16px;border-radius:99px;font-size:12.5px;font-weight:700;font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,0.25)">⭐ Reseña</a>
+  <button onclick="abrirResenaCupon()" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:var(--brown);border:none;padding:10px 16px;border-radius:99px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,0.25)">🎁 10%</button>
 </div>
 
 <!-- Generación de PDF real (historial/tickets en el panel de admin) — ya no
