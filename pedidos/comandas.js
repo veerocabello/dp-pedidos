@@ -3412,10 +3412,10 @@ function toggleCajaDenomModo() {
 }
 function openCajaDenomNumpad(v) {
   cajaDenomNumpadValue = v;
-  cajaDenomModoCantidad = false; // siempre se abre pidiendo el dinero
+  cajaDenomModoCantidad = true; // siempre se abre pidiendo la cantidad
   const n = cajaContado.counts[String(v)] || 0;
   const input = document.getElementById('caja-denom-numpad-input');
-  input.value = n > 0 ? String(Math.round(n * v * 100) / 100).replace('.', ',') : '';
+  input.value = n > 0 ? String(n) : '';
   openNumpad('caja-denom-numpad-input', tituloCajaDenomNumpad(v));
   renderCajaDenomToggle(v);
 }
