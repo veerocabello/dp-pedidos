@@ -5253,6 +5253,27 @@ async function descartarCuponResena(ts, telefono) {
     if (statusEl) { statusEl.textContent = '❌ ' + e.message; statusEl.style.display = 'block'; }
   }
 }
+// Borra para siempre una solicitud de "Ver cupones de reseña anteriores"
+// (ya aprobada o descartada) — para limpiar pruebas o lo que ya no haga
+// falta conservar. Igual que aprobar/descartar, pasa por el servidor con
+// deviceId+token de dispositivo de confianza (config/cuponesResena exige
+// UID de admin). Tras el éxito se quita también de la caché local
+// (_cuponesResenaPendientesLive) para que desaparezca al instante de la
+// lista, sin esperar a que llegue el siguiente evento del listener.
+async function borrarCuponResenaHistorial(telefono) {
+  if (!confirm('¿Borrar para siempre esta solicitud de cupón de reseña (' + telefono + ')?\n\nNo se puede deshacer. Si el cupón ya se canjeó o sigue disponible para el cliente, eso no se toca — solo se borra este registro de aquí.')) return;
+  const card = document.getElementById('historial-resena-' + telefono);
+  const btn = card && card.querySelector('.historial-resena-borrar-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Borrando…'; }
+  try {
+    await _resenaCuponAccion('borrarHistorial', telefono);
+    delete _cuponesResenaPendientesLive[telefono];
+    renderAlertas();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🗑️ Borrar'; }
+    alert('⚠️ ' + e.message);
+  }
+}
 // ── ESTADO DEL SISTEMA ── Chequeo rápido de las 3 piezas de las que
 // depende un pedido: Firebase, el servidor (guardar-pedido.php) y la
 // impresora de este dispositivo — para enterarse de un problema mirando
@@ -5382,7 +5403,7 @@ function _renderHistorialCuponesResena() {
     const duplicadaHtml = r.capturaDuplicadaDe
       ? '<div style="font-size:11px;font-weight:700;color:#c0392b">⚠️ Captura parecida a la del tel. ' + escapeHtml(r.capturaDuplicadaDe) + '</div>'
       : '';
-    return '<div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;background:#F7F3EC;border:1px solid #EEE3D0">'
+    return '<div id="historial-resena-' + escapeAttr(tel) + '" style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;background:#F7F3EC;border:1px solid #EEE3D0">'
       + '<div style="display:flex;justify-content:space-between;align-items:center">'
       + '<span style="font-size:11px;font-weight:700;color:' + (aprobado ? '#1e5c37' : '#8A6A4E') + '">' + (aprobado ? '✅ Aprobado' : '✕ Descartado') + '</span>'
       + '<span style="font-size:10.5px;color:#8A6A4E">' + escapeHtml(fecha) + '</span>'
@@ -5390,6 +5411,9 @@ function _renderHistorialCuponesResena() {
       + '<div style="font-size:12.5px;color:#5a3e1b"><b>' + escapeHtml(r.nombreGoogle || '') + '</b> · ' + escapeHtml(tel) + (aprobado && r.codigo ? ' · <span style="font-weight:700">' + escapeHtml(r.codigo) + '</span>' : '') + '</div>'
       + duplicadaHtml
       + capturaHtml
+      + '<div style="display:flex;justify-content:flex-end">'
+      + '<button class="historial-resena-borrar-btn" onclick="borrarCuponResenaHistorial(\'' + escapeAttr(tel) + '\')" style="padding:5px 11px;background:transparent;color:#c0392b;border:1.5px solid #e74c3c;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">🗑️ Borrar</button>'
+      + '</div>'
       + '</div>';
   }).join('');
   return '<button onclick="var d=this.nextElementSibling;d.style.display=d.style.display===\'none\'?\'flex\':\'none\';this.textContent=d.style.display===\'none\'?\'Ver cupones de reseña anteriores (' + historial.length + ')\':\'Ocultar cupones anteriores\'" style="width:100%;background:none;border:0.5px solid #e0e0e0;border-radius:8px;padding:8px 16px;font-size:13px;color:#8A6A4E;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:10px">Ver cupones de reseña anteriores (' + historial.length + ')</button>'

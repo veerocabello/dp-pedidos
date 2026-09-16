@@ -46,6 +46,9 @@
 //     → {"success":true,"codigo":"RESENA-XXXX"}
 //   {"action":"descartar","deviceId":"...","token":"...","phone":"..."}
 //     → {"success":true}
+//   {"action":"borrarHistorial","deviceId":"...","token":"...","phone":"..."}
+//     → {"success":true} — borra para siempre una solicitud ya aprobada o
+//     descartada (y su captura en disco). No permite borrar una pendiente.
 // ═══════════════════════════════════════════════════════════
 
 date_default_timezone_set('Europe/Madrid');
@@ -700,6 +703,53 @@ try {
         // igual, el cliente lo verá si vuelve a comprobar el estado.
         enviarSmsAvisoCuponAprobado($phone, $codigo);
         echo json_encode(['success' => true, 'codigo' => $codigo]);
+        exit;
+    }
+
+    if ($action === 'borrarHistorial') {
+        // Borra PARA SIEMPRE una solicitud ya resuelta (aprobada o
+        // descartada) — pensado para limpiar pruebas o solicitudes que ya
+        // no hace falta conservar, desde "Ver cupones de reseña anteriores"
+        // en el panel. A propósito NO deja borrar una 'pendiente': para esa
+        // ya existe 'descartar' (revisable en el historial después), y
+        // borrar aquí directamente una solicitud que el cliente todavía
+        // está esperando sería fácil de pulsar sin querer. El cupón
+        // discounts/<código> ya canjeado (o listo para canjear) NO se toca
+        // — borrar el registro de la solicitud no debe invalidar un
+        // descuento que ya se le dio al cliente.
+        $deviceId = isset($payload['deviceId']) ? (string)$payload['deviceId'] : '';
+        $token = isset($payload['token']) ? (string)$payload['token'] : '';
+        if (!esDispositivoDeConfianza($databaseURL, $accessToken, $deviceId, $token)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Este dispositivo no está reconocido como de confianza. Inicia sesión de admin marcando "Dispositivo de confianza" e inténtalo de nuevo.']);
+            exit;
+        }
+        $leido = fbGetConEtag($databaseURL, $cuponPath, $accessToken);
+        $registro = is_array($leido['data']) ? $leido['data'] : null;
+        if (!$registro) {
+            echo json_encode(['success' => true]); // ya no existe — nada que borrar
+            exit;
+        }
+        if (($registro['estado'] ?? '') === 'pendiente') {
+            echo json_encode(['success' => false, 'error' => 'Esta solicitud sigue pendiente — descártala o apruébala primero.']);
+            exit;
+        }
+        if (!fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, null, $leido['etag'])) {
+            echo json_encode(['success' => false, 'error' => 'No se pudo borrar. Inténtalo de nuevo.']);
+            exit;
+        }
+        // Borrar también la imagen guardada en disco — best-effort, no
+        // rompe la respuesta si falla (el registro ya está borrado, que es
+        // lo importante).
+        if (!empty($registro['captura']) && is_string($registro['captura'])) {
+            $rutaCaptura = __DIR__ . '/' . ltrim($registro['captura'], '/');
+            $rutaReal = @realpath($rutaCaptura);
+            $dirUploadsReal = @realpath(__DIR__ . '/uploads/resenas');
+            if ($rutaReal && $dirUploadsReal && strpos($rutaReal, $dirUploadsReal) === 0) {
+                @unlink($rutaReal);
+            }
+        }
+        echo json_encode(['success' => true]);
         exit;
     }
 
