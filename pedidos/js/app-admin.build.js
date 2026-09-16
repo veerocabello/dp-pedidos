@@ -9276,19 +9276,30 @@ function renderClientes() {
   var _document$getElementB29;
   const todos = _buildClientesMap();
   const ocultos = getClientesOcultos();
+  // ocultos (config/clientesOcultos) es la lista de TELÉFONOS ocultados
+  // alguna vez, sin fecha — pero todos (_buildClientesMap) solo conoce los
+  // pedidos de los últimos 30 días (getHistorial() está capado a eso, ver
+  // el título "Clientes de los últimos 30 días"). Si un cliente oculto no
+  // ha vuelto a pedir en esos 30 días, ocultos.length lo sigue contando
+  // pero no hay ningún pedido suyo del que sacar su tarjeta — el botón
+  // "Ocultos (N)" prometía un número que la lista de abajo nunca podía
+  // cumplir, saliendo vacía aunque N fuera mayor que 0. ocultosEnVentana
+  // es el único subconjunto que SÍ se puede enseñar de verdad, así que el
+  // contador del botón usa ese número en vez del bruto de Firebase.
+  const ocultosEnVentana = todos.filter(c => ocultos.includes(c.phone));
   const clientes = _clientesMostrarOcultos
-    ? todos.filter(c => ocultos.includes(c.phone))
+    ? ocultosEnVentana
     : todos.filter(c => !ocultos.includes(c.phone));
 
   const toggleBtn = document.getElementById('cocultos-toggle-btn');
   if (toggleBtn) {
     if (_clientesMostrarOcultos) {
-      toggleBtn.textContent = '👁️ Ver clientes (' + (todos.length - ocultos.length) + ')';
+      toggleBtn.textContent = '👁️ Ver clientes (' + (todos.length - ocultosEnVentana.length) + ')';
       toggleBtn.style.background = 'var(--brown)';
       toggleBtn.style.color = 'var(--cream)';
       toggleBtn.style.borderColor = 'var(--brown)';
     } else {
-      toggleBtn.textContent = '🗑️ Ocultos (' + ocultos.length + ')';
+      toggleBtn.textContent = '🗑️ Ocultos (' + ocultosEnVentana.length + ')';
       toggleBtn.style.background = 'var(--white)';
       toggleBtn.style.color = 'var(--muted)';
       toggleBtn.style.borderColor = 'var(--warm)';
@@ -9335,7 +9346,10 @@ function renderClientes() {
   const listEl = document.getElementById('clientes-list');
   if (!listEl) return;
   if (!filtered.length) {
-    listEl.innerHTML = '<div style="text-align:center;color:#8A6A4E;padding:24px;font-size:13px">Sin resultados</div>';
+    const avisoOcultosViejos = (_clientesMostrarOcultos && ocultos.length > ocultosEnVentana.length && !q)
+      ? '<div style="font-size:11.5px;color:#8A6A4E;margin-top:6px">' + (ocultos.length - ocultosEnVentana.length) + ' oculto(s) más sin pedidos en los últimos 30 días — no se pueden mostrar aquí.</div>'
+      : '';
+    listEl.innerHTML = '<div style="text-align:center;color:#8A6A4E;padding:24px;font-size:13px">Sin resultados' + avisoOcultosViejos + '</div>';
     return;
   }
 
