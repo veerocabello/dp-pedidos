@@ -4396,22 +4396,33 @@ function setExtraPrecio(tipo, name, value) {
   saveExtraPrecio(tipo, name, n);
   toast('✅ ' + name + ': ' + fmt(n) + ' €');
 }
+// Arrastrar (drag & drop nativo del navegador) no funciona con el dedo en
+// una pantalla táctil — solo con ratón — así que además de dejarlo para
+// quien sí tenga ratón, cada fila lleva sus propias flechas ▲▼ para
+// reordenar dentro de su categoría, y un desplegable para moverla a otra
+// categoría entera, las dos cosas con un simple toque.
 function renderCartaAdminList() {
-  const html = categories.filter(c => c !== 'Todos').map(cat => {
+  const cats = categories.filter(c => c !== 'Todos');
+  const catOptions = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  const html = cats.map(cat => {
     const items = MENU.filter(m => m.cat === cat);
     if (!items.length) return '';
-    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map(item => `
+    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map((item, i) => `
       <div class="carta-admin-row ${item.hidden ? 'agotado' : ''}" draggable="true"
         ondragstart="onCartaDragStart(event, ${item.id})"
         ondragover="onCartaDragOver(event)"
         ondrop="onCartaDrop(event, ${item.id})"
         ondragend="onCartaDragEnd(event)">
-        <span class="carta-drag-handle" title="Arrastrar para mover">⠿</span>
+        <div class="carta-move-col">
+          <button class="carta-move-btn" onclick="moveCartaItem(${item.id},-1)" ${i === 0 ? 'disabled' : ''} title="Subir">▲</button>
+          <button class="carta-move-btn" onclick="moveCartaItem(${item.id},1)" ${i === items.length - 1 ? 'disabled' : ''} title="Bajar">▼</button>
+        </div>
         <div class="carta-admin-info">
           <span class="carta-admin-name">${escapeHtml(item.name)}${item.hidden ? ' <span class="carta-agotado-tag">Agotado</span>' : ''}</span>
           <span class="carta-admin-price">${fmt(item.price)} €</span>
         </div>
         <div class="carta-admin-actions">
+          <select class="carta-cat-select" onchange="setCartaCategoria(${item.id}, this.value)" title="Mover a otra categoría">${catOptions.replace(`value="${escapeHtml(cat)}"`, `value="${escapeHtml(cat)}" selected`)}</select>
           <button class="carta-nuevo-btn ${item.hidden ? 'on' : ''}" onclick="toggleCartaHidden(${item.id})" title="Ocultar/mostrar (agotado)">${item.hidden ? '🙈' : '👁️'}</button>
           <button class="carta-nuevo-btn ${item.nuevo ? 'on' : ''}" onclick="toggleCartaNuevo(${item.id})" title="Poner/quitar etiqueta NUEVO">🆕</button>
           <button class="carta-remove-btn" onclick="openCartaEdit(${item.id})" title="Editar nombre/descripción">✏️</button>
@@ -4450,6 +4461,42 @@ function onCartaDrop(e, targetId) {
   renderMenu();
   renderCartaAdminList();
 }
+// Subir/bajar un puesto dentro de su misma categoría, con las flechas
+// ▲▼ — la alternativa al arrastrar que sí funciona con el dedo.
+function moveCartaItem(id, delta) {
+  const item = MENU.find(m => m.id === id);
+  if (!item) return;
+  const mismaCat = MENU.filter(m => m.cat === item.cat);
+  const swapWith = mismaCat[mismaCat.indexOf(item) + delta];
+  if (!swapWith) return;
+  const i1 = MENU.indexOf(item), i2 = MENU.indexOf(swapWith);
+  MENU[i1] = swapWith;
+  MENU[i2] = item;
+  saveMenuOrder();
+  renderMenu();
+  renderCartaAdminList();
+}
+// Mover un producto a otra categoría entera desde el desplegable — se
+// manda al final de la carta (así aparece al final de su categoría
+// nueva) y la categoría queda grabada igual que el nombre/precio/desc,
+// para que sobreviva a recargar la página.
+function setCartaCategoria(id, nuevaCat) {
+  const item = MENU.find(m => m.id === id);
+  if (!item || !nuevaCat || item.cat === nuevaCat) return;
+  item.cat = nuevaCat;
+  MENU.splice(MENU.indexOf(item), 1);
+  MENU.push(item);
+  saveMenuOrder();
+  const edits = loadMenuEdits();
+  edits[id] = Object.assign({}, edits[id], { cat: nuevaCat });
+  localStorage.setItem(MENU_EDITS_KEY, JSON.stringify(edits));
+  const custom = loadMenuCustom();
+  const c = custom.find(i => i.id === id);
+  if (c) { c.cat = nuevaCat; localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom)); }
+  renderMenu();
+  renderCartaAdminList();
+  toast('✅ Movido a ' + nuevaCat);
+}
 let cartaEditingId = null;
 function openCartaEdit(id) {
   const item = MENU.find(m => m.id === id);
@@ -4477,7 +4524,7 @@ function saveCartaEdit() {
   item.price = price;
   item.desc = desc;
   const edits = loadMenuEdits();
-  edits[id] = { name, price, desc };
+  edits[id] = Object.assign({}, edits[id], { name, price, desc });
   localStorage.setItem(MENU_EDITS_KEY, JSON.stringify(edits));
   const custom = loadMenuCustom();
   const c = custom.find(i => i.id === id);

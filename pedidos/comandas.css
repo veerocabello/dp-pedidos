@@ -1448,6 +1448,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .carta-nuevo-btn.on { background: var(--gold); filter: none; }
 .carta-remove-btn:hover { background: var(--error); filter: brightness(1.1); }
 .carta-admin-row.agotado { opacity: .6; }
+/* Flechas para subir/bajar de puesto y desplegable para cambiar de
+   categoría — la alternativa al arrastrar que sí funciona con el dedo en
+   una pantalla táctil. */
+.carta-move-col { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.carta-move-btn {
+  background: var(--warm); border: none; border-radius: 6px; width: 22px; height: 18px;
+  font-size: 9px; line-height: 1; color: var(--brown); cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.carta-move-btn:hover:not(:disabled) { background: var(--amber); }
+.carta-move-btn:disabled { opacity: .3; cursor: default; }
+.carta-cat-select {
+  background: var(--warm); border: none; border-radius: var(--radius-xs);
+  padding: 7px 6px; cursor: pointer; font-size: 12px; font-family: inherit; color: var(--text);
+  max-width: 108px;
+}
 .carta-agotado-tag {
   display: inline-block;
   background: var(--muted);
