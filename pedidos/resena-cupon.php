@@ -37,6 +37,11 @@
 //     captura es obligatoria (ver guardarCapturaResena) — una captura de
 //     pantalla de la reseña real en Google, para que la dueña la vea
 //     directamente en Alertas al aprobar en vez de fiarse solo del nombre.
+//     Se calcula también su huella perceptual y se compara contra las de
+//     solicitudes anteriores (ver _dpfHashPerceptualImagen/
+//     RESENA_HASH_DISTANCIA_SOSPECHOSA) — si se parece mucho a la de OTRO
+//     teléfono, no se bloquea la solicitud, pero queda marcada
+//     (capturaDuplicadaDe) para que se note en Alertas antes de aprobar.
 //   {"action":"aprobar","deviceId":"...","token":"...","phone":"..."}
 //     → {"success":true,"codigo":"RESENA-XXXX"}
 //   {"action":"descartar","deviceId":"...","token":"...","phone":"..."}
@@ -341,6 +346,55 @@ function enviarSmsAvisoCuponAprobado($telefono, $codigo) {
     return true;
 }
 
+// Huella perceptual de una imagen (dHash) — a diferencia de un hash
+// criptográfico normal (sha256 de los bytes), esta SÍ reconoce la "misma"
+// imagen aunque se haya recomprimido o reescalado de forma distinta (la
+// foto ya pasa por _resenaComprimirImagen en el móvil, así que dos subidas
+// de la misma captura pueden no ser bytes idénticos). Se reduce a un
+// cuadrito de 9x8 en escala de grises y se compara cada píxel con el de su
+// derecha: 1 si es más claro, 0 si no — 64 bits en total, codificados como
+// 16 caracteres hexadecimales. Devuelve null si GD no está disponible o la
+// imagen no se puede procesar (falla "abierto": si no se puede calcular la
+// huella, simplemente no hay detección de duplicados para esta captura, la
+// solicitud sigue adelante igual).
+function _dpfHashPerceptualImagen($im) {
+    if (!extension_loaded('gd')) return null;
+    $w = 9; $h = 8;
+    $mini = @imagecreatetruecolor($w, $h);
+    if (!$mini) return null;
+    @imagecopyresampled($mini, $im, 0, 0, 0, 0, $w, $h, imagesx($im), imagesy($im));
+    @imagefilter($mini, IMG_FILTER_GRAYSCALE);
+    $bits = '';
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w - 1; $x++) {
+            $g1 = imagecolorat($mini, $x, $y) & 0xFF;
+            $g2 = imagecolorat($mini, $x + 1, $y) & 0xFF;
+            $bits .= ($g1 > $g2) ? '1' : '0';
+        }
+    }
+    imagedestroy($mini);
+    $hex = '';
+    for ($i = 0; $i < 64; $i += 4) {
+        $hex .= dechex(bindec(substr($bits, $i, 4)));
+    }
+    return $hex; // 16 caracteres hex = 64 bits
+}
+// Distancia de Hamming entre dos huellas (cuántos bits distintos hay) —
+// cuanto más baja, más parecidas son las dos imágenes. 0 = idénticas tras
+// reducir a 9x8; en la práctica, 8 o menos sobre 64 bits ya es una señal
+// muy fuerte de que es la misma captura (o una recorte/recompresión de
+// ella), sin llegar a marcar como sospechosas dos fotos de reseñas
+// distintas que por casualidad se parezcan un poco.
+const RESENA_HASH_DISTANCIA_SOSPECHOSA = 8;
+function _dpfDistanciaHamming($hex1, $hex2) {
+    if (!is_string($hex1) || !is_string($hex2) || strlen($hex1) !== 16 || strlen($hex2) !== 16) return 64;
+    $dist = 0;
+    for ($i = 0; $i < 16; $i++) {
+        $dist += substr_count(decbin(hexdec($hex1[$i]) ^ hexdec($hex2[$i])), '1');
+    }
+    return $dist;
+}
+
 // Guarda la captura de pantalla de la reseña que manda el cliente, para
 // que la dueña la vea directamente en Alertas al aprobar en vez de tener
 // que fiarse solo del nombre escrito a mano. Se manda como data URL
@@ -350,9 +404,10 @@ function enviarSmsAvisoCuponAprobado($telefono, $codigo) {
 // a codificar a JPEG) en vez de guardar los bytes tal cual: así, aunque el
 // "data:image/..." del payload fuera en realidad un archivo disfrazado
 // (polyglot), lo único que llega a quedar en disco son los píxeles reales
-// decodificados por GD, nunca los bytes originales. Devuelve la ruta
-// relativa guardada, o lanza una excepción con un mensaje apto para
-// mostrar al cliente si la imagen no es válida.
+// decodificados por GD, nunca los bytes originales. Devuelve ['ruta' =>
+// ruta relativa guardada, 'hash' => huella perceptual o null], o lanza una
+// excepción con un mensaje apto para mostrar al cliente si la imagen no es
+// válida.
 const RESENA_CAPTURA_MAX_BYTES = 3 * 1024 * 1024; // 3MB decodificados — de sobra para una captura ya comprimida en el móvil
 function guardarCapturaResena($dataUrl, $telefono) {
     if (!is_string($dataUrl) || $dataUrl === '') {
@@ -387,11 +442,16 @@ function guardarCapturaResena($dataUrl, $telefono) {
     // ante un archivo disfrazado de imagen. Si GD no estuviera disponible
     // en el hosting, se guardan los bytes ya validados por
     // getimagesizefromstring() como último recurso, en vez de romper la
-    // función entera.
+    // función entera. De paso, con la imagen ya decodificada en memoria,
+    // se calcula también su huella perceptual (ver _dpfHashPerceptualImagen)
+    // para poder detectar más adelante si esta misma captura ya se usó
+    // antes en otra solicitud.
     $guardado = false;
+    $hash = null;
     if (extension_loaded('gd')) {
         $im = @imagecreatefromstring($bytes);
         if ($im !== false) {
+            $hash = _dpfHashPerceptualImagen($im);
             $guardado = @imagejpeg($im, $rutaCompleta, 82);
             imagedestroy($im);
         }
@@ -402,7 +462,7 @@ function guardarCapturaResena($dataUrl, $telefono) {
     if (!$guardado) {
         throw new Exception('No se pudo guardar la imagen. Inténtalo de nuevo.');
     }
-    return 'uploads/resenas/' . $nombreArchivo;
+    return ['ruta' => 'uploads/resenas/' . $nombreArchivo, 'hash' => $hash];
 }
 
 // Genera el código de descuento del 10% ligado a este teléfono — mismo
@@ -516,10 +576,35 @@ try {
         // que se rechaza la solicitud entera si falta o no es una imagen
         // válida (ver guardarCapturaResena más arriba).
         try {
-            $capturaPath = guardarCapturaResena($payload['captura'] ?? null, $phone);
+            $capturaGuardada = guardarCapturaResena($payload['captura'] ?? null, $phone);
         } catch (Exception $eCaptura) {
             echo json_encode(['success' => false, 'error' => $eCaptura->getMessage()]);
             exit;
+        }
+        $capturaPath = $capturaGuardada['ruta'];
+        $capturaHash = $capturaGuardada['hash'];
+
+        // Detección de capturas reutilizadas: se compara la huella de esta
+        // imagen contra las de TODAS las solicitudes anteriores (config/
+        // cuponesResena/*) — si alguna de otro teléfono se parece mucho
+        // (ver RESENA_HASH_DISTANCIA_SOSPECHOSA), no se bloquea la
+        // solicitud (podría ser, p.ej., una pareja compartiendo teléfono),
+        // pero se marca para que la dueña lo vea de un vistazo en Alertas y
+        // decida ella con ese dato de más. Si algo falla leyendo el nodo, o
+        // no se pudo calcular la huella de esta imagen (GD no disponible),
+        // simplemente no hay aviso de duplicado — nunca bloquea la
+        // solicitud del cliente.
+        $capturaDuplicadaDe = null;
+        if ($capturaHash) {
+            $leidoTodos = fbGetConEtag($databaseURL, 'config/cuponesResena', $accessToken);
+            $todosLosCupones = is_array($leidoTodos['data']) ? $leidoTodos['data'] : [];
+            foreach ($todosLosCupones as $telOtro => $registroOtro) {
+                if ($telOtro === $phone || !is_array($registroOtro) || empty($registroOtro['capturaHash'])) continue;
+                if (_dpfDistanciaHamming($capturaHash, $registroOtro['capturaHash']) <= RESENA_HASH_DISTANCIA_SOSPECHOSA) {
+                    $capturaDuplicadaDe = $telOtro;
+                    break;
+                }
+            }
         }
 
         // Tope de solicitudes nuevas por teléfono y día — independiente del
@@ -533,11 +618,13 @@ try {
 
         $ahoraMs = (int)(microtime(true) * 1000);
         $nuevoRegistro = [
-            'estado'       => 'pendiente',
-            'nombreGoogle' => $nombreGoogle,
-            'comentario'   => $comentario,
-            'captura'      => $capturaPath,
-            'ts'           => $ahoraMs,
+            'estado'             => 'pendiente',
+            'nombreGoogle'       => $nombreGoogle,
+            'comentario'         => $comentario,
+            'captura'            => $capturaPath,
+            'capturaHash'        => $capturaHash,
+            'capturaDuplicadaDe' => $capturaDuplicadaDe,
+            'ts'                 => $ahoraMs,
         ];
         if (!fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, $nuevoRegistro, $leido['etag'])) {
             echo json_encode(['success' => false, 'error' => 'No se pudo guardar la solicitud. Inténtalo de nuevo.']);
@@ -547,11 +634,12 @@ try {
         $detalle = 'Dice haberla dejado como "' . $nombreGoogle . '"';
         if ($comentario !== '') $detalle .= ' — "' . $comentario . '"';
         fbAgregarActivityLog($databaseURL, $accessToken, '🎁 Cupón de reseña pendiente', [
-            'tipo'         => 'cupon_resena_pendiente',
-            'telefono'     => $phone,
-            'nombreGoogle' => $nombreGoogle,
-            'comentario'   => $comentario,
-            'captura'      => $capturaPath,
+            'tipo'               => 'cupon_resena_pendiente',
+            'telefono'           => $phone,
+            'nombreGoogle'       => $nombreGoogle,
+            'comentario'         => $comentario,
+            'captura'            => $capturaPath,
+            'capturaDuplicadaDe' => $capturaDuplicadaDe,
         ]);
 
         echo json_encode(['success' => true, 'estado' => 'pendiente', 'codigo' => null]);

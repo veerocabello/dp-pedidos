@@ -4920,6 +4920,7 @@ function getAlertEntries() {
         nombreGoogle: r.nombreGoogle || '',
         comentario: r.comentario || '',
         captura: r.captura || '',
+        capturaDuplicadaDe: r.capturaDuplicadaDe || '',
         resolved: false,
       };
     });
@@ -5378,12 +5379,16 @@ function _renderHistorialCuponesResena() {
     const capturaHtml = r.captura
       ? "<a href=\"".concat(escapeAttr(r.captura), "\" target=\"_blank\" rel=\"noopener\"><img src=\"").concat(escapeAttr(r.captura), "\" alt=\"Captura de la reseña\" style=\"max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e0e0e0;display:block\"></a>")
       : '';
+    const duplicadaHtml = r.capturaDuplicadaDe
+      ? '<div style="font-size:11px;font-weight:700;color:#c0392b">⚠️ Captura parecida a la del tel. ' + escapeHtml(r.capturaDuplicadaDe) + '</div>'
+      : '';
     return '<div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;background:#F7F3EC;border:1px solid #EEE3D0">'
       + '<div style="display:flex;justify-content:space-between;align-items:center">'
       + '<span style="font-size:11px;font-weight:700;color:' + (aprobado ? '#1e5c37' : '#8A6A4E') + '">' + (aprobado ? '✅ Aprobado' : '✕ Descartado') + '</span>'
       + '<span style="font-size:10.5px;color:#8A6A4E">' + escapeHtml(fecha) + '</span>'
       + '</div>'
       + '<div style="font-size:12.5px;color:#5a3e1b"><b>' + escapeHtml(r.nombreGoogle || '') + '</b> · ' + escapeHtml(tel) + (aprobado && r.codigo ? ' · <span style="font-weight:700">' + escapeHtml(r.codigo) + '</span>' : '') + '</div>'
+      + duplicadaHtml
       + capturaHtml
       + '</div>';
   }).join('');
@@ -5406,7 +5411,14 @@ function renderAlertas() {
         const capturaHtml = e.captura
           ? "<a href=\"".concat(escapeAttr(e.captura), "\" target=\"_blank\" rel=\"noopener\"><img src=\"").concat(escapeAttr(e.captura), "\" alt=\"Captura de la reseña\" style=\"max-width:160px;max-height:160px;border-radius:8px;border:1.5px solid #EFD6A9;display:block\"></a>")
           : "<span style=\"font-size:11.5px;color:#8A6A4E;font-style:italic\">Sin captura (solicitud anterior a pedirla)</span>";
-        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+        // Aviso de captura reutilizada (ver _dpfBuscarCapturaDuplicada en
+        // resena-cupon.php) — no bloquea nada, solo avisa para que se mire
+        // dos veces antes de aprobar. e.capturaDuplicadaDe es el teléfono
+        // de la OTRA solicitud con una captura muy parecida.
+        const duplicadaHtml = e.capturaDuplicadaDe
+          ? "<div style=\"font-size:11.5px;font-weight:700;color:#c0392b;background:#fdf0ee;border:1px solid #e74c3c;border-radius:8px;padding:6px 9px\">⚠️ Esta captura se parece mucho a la de otra solicitud (tel. ".concat(escapeHtml(e.capturaDuplicadaDe), ") — revísalo antes de aprobar.</div>")
+          : '';
+        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(duplicadaHtml, "\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
       }
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';
