@@ -5232,9 +5232,24 @@ async function aprobarCuponResena(ts, telefono) {
   if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = true);
   try {
     const data = await _resenaCuponAccion('aprobar', telefono);
-    if (actions) actions.innerHTML = '<span style="font-size:12.5px;font-weight:800;color:#1e5c37">✅ Cupón ' + escapeHtml(data.codigo || '') + ' generado</span>';
-    logActivity('✅ Cupón de reseña aprobado — ' + telefono + ': ' + (data.codigo || ''));
-    setTimeout(() => resolverAlerta(ts), 1200);
+    // El SMS automático (enviarSmsAvisoCuponAprobado en resena-cupon.php)
+    // es solo un aviso — el código en sí lo manda ella a mano por WhatsApp
+    // Business, así que la tarjeta se queda visible con el código bien
+    // grande (toca para copiar, mismo patrón que la pantalla de éxito del
+    // cliente) y un enlace directo a WhatsApp con el teléfono, en vez de
+    // desaparecer sola como antes — antes se ocultaba al segundo y pico,
+    // sin tiempo de copiarlo ni de abrir WhatsApp.
+    const codigo = data.codigo || '';
+    if (actions) {
+      actions.outerHTML = '<div style="display:flex;flex-direction:column;gap:8px;align-items:center;padding-top:4px">'
+        + '<div onclick="copiarTexto(\'' + escapeAttr(codigo) + '\', \'✅ Código copiado\')" title="Toca para copiar" style="cursor:pointer;background:#0d2417;color:#5ECC76;font-family:\'Anton\',sans-serif;letter-spacing:.02em;font-size:20px;padding:8px 18px;border-radius:10px">' + escapeHtml(codigo) + '</div>'
+        + '<div style="display:flex;gap:8px">'
+        + '<a href="https://wa.me/34' + escapeAttr(telefono) + '?text=' + encodeURIComponent('¡Hola! Aquí tienes tu 10% de descuento por la reseña: ' + codigo + ' — válido 60 días, un solo uso 🎉') + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;text-decoration:none;font-family:\'DM Sans\',sans-serif">💬 Abrir WhatsApp</a>'
+        + '<button onclick="resolverAlerta(\'' + escapeAttr(ts) + '\')" style="padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕ Listo, ya lo envié</button>'
+        + '</div>'
+        + '</div>';
+    }
+    logActivity('✅ Cupón de reseña aprobado — ' + telefono + ': ' + codigo);
   } catch (e) {
     if (actions) actions.querySelectorAll('button').forEach(b => b.disabled = false);
     if (statusEl) { statusEl.textContent = '❌ ' + e.message; statusEl.style.display = 'block'; }
