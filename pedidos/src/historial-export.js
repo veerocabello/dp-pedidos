@@ -137,6 +137,8 @@ function getAlertEntries() {
         comentario: r.comentario || '',
         captura: r.captura || '',
         capturaDuplicadaDe: r.capturaDuplicadaDe || '',
+        contactoMetodo: r.contactoMetodo || 'whatsapp',
+        instagramUsuario: r.instagramUsuario || '',
         resolved: false,
       };
     });
@@ -456,11 +458,22 @@ async function aprobarCuponResena(ts, telefono) {
     // desaparecer sola como antes — antes se ocultaba al segundo y pico,
     // sin tiempo de copiarlo ni de abrir WhatsApp.
     const codigo = data.codigo || '';
+    // El cliente eligió por dónde avisarle al pedirlo (contactoMetodo,
+    // resena-cupon-cliente.js) — se lee del registro en vivo para poner el
+    // botón de contacto correcto, WhatsApp o Instagram, en vez de asumir
+    // siempre WhatsApp.
+    const _registroContacto = _cuponesResenaPendientesLive[telefono] || {};
+    const _esInstagram = _registroContacto.contactoMetodo === 'instagram';
+    const _igUsuario = (_registroContacto.instagramUsuario || '').replace(/^@/, '');
+    const _mensaje = '¡Hola! Aquí tienes tu 10% de descuento por la reseña: ' + codigo + ' — válido 60 días, un solo uso 🎉';
+    const _contactoBtn = _esInstagram && _igUsuario
+      ? '<a href="https://ig.me/m/' + escapeAttr(_igUsuario) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #F3C6DA;background:#FDF1F6;color:#a3184f;text-decoration:none;font-family:\'DM Sans\',sans-serif">📷 Abrir Instagram (@' + escapeAttr(_igUsuario) + ')</a>'
+      : '<a href="https://wa.me/34' + escapeAttr(telefono) + '?text=' + encodeURIComponent(_mensaje) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;text-decoration:none;font-family:\'DM Sans\',sans-serif">💬 Abrir WhatsApp</a>';
     if (actions) {
       actions.outerHTML = '<div style="display:flex;flex-direction:column;gap:8px;align-items:center;padding-top:4px">'
         + '<div onclick="copiarTexto(\'' + escapeAttr(codigo) + '\', \'✅ Código copiado\')" title="Toca para copiar" style="cursor:pointer;background:#0d2417;color:#5ECC76;font-family:\'Anton\',sans-serif;letter-spacing:.02em;font-size:20px;padding:8px 18px;border-radius:10px">' + escapeHtml(codigo) + '</div>'
         + '<div style="display:flex;gap:8px">'
-        + '<a href="https://wa.me/34' + escapeAttr(telefono) + '?text=' + encodeURIComponent('¡Hola! Aquí tienes tu 10% de descuento por la reseña: ' + codigo + ' — válido 60 días, un solo uso 🎉') + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;border:1.5px solid #9FE1CB;background:#E6FAF0;color:#1a7a4a;text-decoration:none;font-family:\'DM Sans\',sans-serif">💬 Abrir WhatsApp</a>'
+        + _contactoBtn
         + '<button onclick="resolverAlerta(\'' + escapeAttr(ts) + '\')" style="padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕ Listo, ya lo envié</button>'
         + '</div>'
         + '</div>';
@@ -673,7 +686,13 @@ function renderAlertas() {
         const duplicadaHtml = e.capturaDuplicadaDe
           ? "<div style=\"font-size:11.5px;font-weight:700;color:#c0392b;background:#fdf0ee;border:1px solid #e74c3c;border-radius:8px;padding:6px 9px\">⚠️ Esta captura se parece mucho a la de otra solicitud (tel. ".concat(escapeHtml(e.capturaDuplicadaDe), ") — revísalo antes de aprobar.</div>")
           : '';
-        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(duplicadaHtml, "\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+        // Por dónde avisar al aprobar (elegido por el cliente al pedirlo) —
+        // WhatsApp usa el mismo teléfono de arriba, Instagram necesita el
+        // usuario aparte para saber a quién escribir.
+        const contactoHtml = e.contactoMetodo === 'instagram'
+          ? "<div style=\"font-size:11.5px;font-weight:700;color:#a3184f;background:#FDF1F6;border:1px solid #F3C6DA;border-radius:8px;padding:6px 9px\">📷 Avisar por Instagram: ".concat(escapeHtml(e.instagramUsuario || '(sin usuario)'), "</div>")
+          : "<div style=\"font-size:11.5px;font-weight:700;color:#1e5c37;background:#E8F5EC;border:1px solid #BFE3CB;border-radius:8px;padding:6px 9px\">💬 Avisar por WhatsApp (mismo número)</div>";
+        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(contactoHtml, "\n        ").concat(duplicadaHtml, "\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
       }
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';

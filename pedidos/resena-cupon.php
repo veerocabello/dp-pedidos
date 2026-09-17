@@ -32,7 +32,7 @@
 //  POST (JSON):
 //   {"action":"consultarEstado","phone":"6XXXXXXXX"}
 //     → {"success":true,"estado":"ninguno"|"pendiente"|"aprobado"|"descartado","codigo":"RESENA-XXXX"|null}
-//   {"action":"solicitar","phone":"...","nombreGoogle":"...","comentario":"...","captura":"data:image/jpeg;base64,..."}
+//   {"action":"solicitar","phone":"...","nombreGoogle":"...","comentario":"...","captura":"data:image/jpeg;base64,...","contactoMetodo":"whatsapp"|"instagram","instagramUsuario":"..."}
 //     → {"success":true,"estado":"pendiente"|"aprobado","codigo":"..."|null}
 //     captura es obligatoria (ver guardarCapturaResena) — una captura de
 //     pantalla de la reseña real en Google, para que la dueña la vea
@@ -42,6 +42,9 @@
 //     RESENA_HASH_DISTANCIA_SOSPECHOSA) — si se parece mucho a la de OTRO
 //     teléfono, no se bloquea la solicitud, pero queda marcada
 //     (capturaDuplicadaDe) para que se note en Alertas antes de aprobar.
+//     phone SIEMPRE hace falta (protege el código, ver discountCodeInvalido
+//     en guardar-pedido.php) — contactoMetodo solo dice por dónde avisar al
+//     aprobar; si es "instagram", instagramUsuario es obligatorio también.
 //   {"action":"aprobar","deviceId":"...","token":"...","phone":"..."}
 //     → {"success":true,"codigo":"RESENA-XXXX"}
 //   {"action":"descartar","deviceId":"...","token":"...","phone":"..."}
@@ -574,6 +577,18 @@ try {
         }
         $comentario = isset($payload['comentario']) && is_string($payload['comentario']) ? trim(mb_substr($payload['comentario'], 0, 300)) : '';
 
+        // Canal preferido para el aviso — el teléfono SIEMPRE hace falta (es
+        // lo que protege el código, ver discountCodeInvalido en
+        // guardar-pedido.php), esto solo dice por dónde prefiere que le
+        // escriban al aprobar: WhatsApp (mismo número) o Instagram (un
+        // usuario aparte, obligatorio en ese caso).
+        $contactoMetodo = (isset($payload['contactoMetodo']) && $payload['contactoMetodo'] === 'instagram') ? 'instagram' : 'whatsapp';
+        $instagramUsuario = isset($payload['instagramUsuario']) && is_string($payload['instagramUsuario']) ? trim(mb_substr($payload['instagramUsuario'], 0, 40)) : '';
+        if ($contactoMetodo === 'instagram' && $instagramUsuario === '') {
+            echo json_encode(['success' => false, 'error' => 'Escribe tu usuario de Instagram para poder avisarte ahí']);
+            exit;
+        }
+
         // Captura de pantalla obligatoria — sin ella no hay nada que
         // enseñarle a la dueña para confirmar la reseña a simple vista, así
         // que se rechaza la solicitud entera si falta o no es una imagen
@@ -627,6 +642,8 @@ try {
             'captura'            => $capturaPath,
             'capturaHash'        => $capturaHash,
             'capturaDuplicadaDe' => $capturaDuplicadaDe,
+            'contactoMetodo'     => $contactoMetodo,
+            'instagramUsuario'   => $instagramUsuario,
             'ts'                 => $ahoraMs,
         ];
         if (!fbPutSiCoincide($databaseURL, $cuponPath, $accessToken, $nuevoRegistro, $leido['etag'])) {
@@ -643,6 +660,8 @@ try {
             'comentario'         => $comentario,
             'captura'            => $capturaPath,
             'capturaDuplicadaDe' => $capturaDuplicadaDe,
+            'contactoMetodo'     => $contactoMetodo,
+            'instagramUsuario'   => $instagramUsuario,
         ]);
 
         echo json_encode(['success' => true, 'estado' => 'pendiente', 'codigo' => null]);

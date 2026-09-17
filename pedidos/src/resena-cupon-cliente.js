@@ -10,6 +10,40 @@
 
 let _resenaPhone = '';
 let _resenaCapturaBase64 = null;
+// El teléfono siempre se pide (protege el código: solo lo puede canjear ESE
+// número, ver discountCodeInvalido en guardar-pedido.php) — esto solo elige
+// por dónde se le avisa cuando se aprueba: WhatsApp (al mismo número) o
+// Instagram (a un usuario aparte, que hay que pedir también en ese caso).
+let _resenaContactoMetodo = 'whatsapp';
+
+function resenaSeleccionarContacto(metodo) {
+  _resenaContactoMetodo = metodo;
+  const btnWa = document.getElementById('resena-metodo-wa');
+  const btnIg = document.getElementById('resena-metodo-ig');
+  const igField = document.getElementById('resena-ig-field');
+  const nota = document.getElementById('resena-contacto-nota');
+  const esIg = metodo === 'instagram';
+  if (btnWa) {
+    btnWa.style.borderColor = esIg ? 'var(--warm)' : 'var(--brown)';
+    btnWa.style.background = esIg ? '#fff' : '#FCF8EF';
+    const lbl = btnWa.querySelector('span:last-child');
+    if (lbl) lbl.style.color = esIg ? 'var(--muted)' : 'var(--brown)';
+  }
+  if (btnIg) {
+    btnIg.style.borderColor = esIg ? '#cc2366' : 'var(--warm)';
+    btnIg.style.background = esIg ? '#FDF1F6' : '#fff';
+    const lbl = btnIg.querySelector('span:last-child');
+    if (lbl) lbl.style.color = esIg ? '#cc2366' : 'var(--muted)';
+  }
+  if (igField) igField.style.display = esIg ? 'block' : 'none';
+  if (nota) {
+    nota.style.background = esIg ? '#FDF1F6' : '#E8F5EC';
+    nota.style.borderColor = esIg ? '#F3C6DA' : '#BFE3CB';
+    nota.innerHTML = esIg
+      ? '<span style="font-size:16px;line-height:1.3">📷</span><span style="font-size:12px;color:#a3184f;font-weight:700;line-height:1.4">Te escribiremos por Instagram<br><span style="font-weight:500;color:#c33a76">En cuanto la confirmemos, te mandamos tu código de descuento por DM a esa cuenta.</span></span>'
+      : '<span style="font-size:16px;line-height:1.3">💬</span><span style="font-size:12px;color:#1e5c37;font-weight:700;line-height:1.4">Te escribiremos por WhatsApp<br><span style="font-weight:500;color:#2c6e46">En cuanto la confirmemos, te mandamos tu código de descuento a ese número.</span></span>';
+  }
+}
 
 // Comprime la captura en el propio móvil antes de mandarla (canvas, sin
 // depender de ninguna librería nueva): una foto de pantalla normal pesa
@@ -85,6 +119,9 @@ function abrirResenaCupon() {
   if (capturaPreview) capturaPreview.style.display = 'none';
   const capturaError = document.getElementById('resena-captura-error');
   if (capturaError) capturaError.style.display = 'none';
+  const igInput = document.getElementById('resena-instagram-input');
+  if (igInput) igInput.value = '';
+  if (document.getElementById('resena-metodo-wa')) resenaSeleccionarContacto('whatsapp');
   _resenaMostrarPaso('telefono');
   modal.style.display = 'flex';
 }
@@ -167,6 +204,12 @@ async function resenaEnviarSolicitud() {
     showAlert('Sube una captura de pantalla de tu reseña para poder confirmarla');
     return;
   }
+  const igInput = document.getElementById('resena-instagram-input');
+  const instagramUsuario = (igInput ? igInput.value : '').trim();
+  if (_resenaContactoMetodo === 'instagram' && !instagramUsuario) {
+    showAlert('Escribe tu usuario de Instagram para poder avisarte ahí');
+    return;
+  }
   const btn = document.getElementById('resena-btn-enviar-solicitud');
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
   try {
@@ -178,7 +221,9 @@ async function resenaEnviarSolicitud() {
         phone: _resenaPhone,
         nombreGoogle,
         comentario: (comentEl ? comentEl.value : '').trim(),
-        captura: _resenaCapturaBase64
+        captura: _resenaCapturaBase64,
+        contactoMetodo: _resenaContactoMetodo,
+        instagramUsuario: _resenaContactoMetodo === 'instagram' ? instagramUsuario : ''
       })
     }, 15000);
     const data = await res.json();
