@@ -415,6 +415,26 @@
       <div><div class="option-title" style="font-size:13.5px">Permitir quitar/cambiar ingredientes</div><div class="option-sub">Desactívalo si la mezcla no se puede alterar (como la 4 Quesos)</div></div>
       <input type="checkbox" id="carta-edit-quitar" style="width:20px;height:20px;flex-shrink:0">
     </label>
+    <div id="carta-edit-caps-group" style="display:none">
+      <div class="section-label">Qué se puede añadir</div>
+      <div class="settings-help" style="margin-top:0">Por si algún día se queda sin alguna de estas por error (como pasó con la 4 Quesos) — actívala aquí sin esperar a un cambio de código.</div>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Ingredientes extra</div></div>
+        <input type="checkbox" id="carta-edit-cap-ingextra" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Salsas extra</div></div>
+        <input type="checkbox" id="carta-edit-cap-salsaextra" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Gratinado</div></div>
+        <input type="checkbox" id="carta-edit-cap-gratinado" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Queso mozzarella extra</div></div>
+        <input type="checkbox" id="carta-edit-cap-quesoextra" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+    </div>
     <div class="settings-actions">
       <button class="btn-secondary" onclick="saveCartaEdit()">💾 Guardar cambios</button>
     </div>

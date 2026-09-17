@@ -2102,6 +2102,40 @@ function isQuitarBlocked(id) {
 const BONIATO_IDS = new Set([17, 18, 19, 20, 21, 51]); // no llevan queso/gratinado como extra, solo quitar ingredientes
 const BONIATO_GOAT_ID = 20; // Boniato G.O.A.T. — el único con queso de cabra, va aparte en el stock
 const BONIATO_FRIES_ID = 17; // el único Boniato "vacío" (sin receta cerrada) — el único que admite ingredientes/salsas extra
+// Interruptores manuales por producto para "qué se puede añadir"
+// (ingredientes extra, salsas extra, gratinado, queso extra) — pensados
+// para poder arreglarlo ella misma desde "✏️ Editar" si algún día se
+// pierde alguno por error (como pasó con la 4 Quesos, que se quedó sin
+// ingredientes/salsas extra sin querer), sin tener que esperar a un
+// cambio de código. null/ausente = usa el valor de fábrica de más abajo.
+const MENU_CAP_OVERRIDES_KEY = 'comandas_menu_cap_overrides_v1';
+function loadMenuCapOverrides() { try { return JSON.parse(localStorage.getItem(MENU_CAP_OVERRIDES_KEY) || '{}'); } catch (e) { return {}; } }
+function saveMenuCapOverrides(o) { localStorage.setItem(MENU_CAP_OVERRIDES_KEY, JSON.stringify(o)); }
+function getMenuCapOverride(id, cap) {
+  const o = loadMenuCapOverrides();
+  return (o[id] && Object.prototype.hasOwnProperty.call(o[id], cap)) ? !!o[id][cap] : null;
+}
+function setMenuCapOverride(id, cap, value) {
+  const o = loadMenuCapOverrides();
+  o[id] = Object.assign({}, o[id], { [cap]: value });
+  saveMenuCapOverrides(o);
+}
+// Los valores "de fábrica" son justo la lógica que ya había — así nada
+// cambia para nadie hasta que se toque una casilla a mano en Editar.
+function defaultPermiteIngExtra(item) {
+  if (BONIATO_IDS.has(item.id)) return item.id === BONIATO_FRIES_ID;
+  return !(isQuitarBlocked(item.id) && EXTRAS_SOLO_GRATINADO.has(item.id) && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id));
+}
+function defaultPermiteSalsaExtra(item) { return defaultPermiteIngExtra(item); }
+function defaultPermiteGratinado(item) { return !BONIATO_IDS.has(item.id); }
+function defaultPermiteQuesoExtra(item) {
+  if (BONIATO_IDS.has(item.id)) return false;
+  return !EXTRAS_SOLO_GRATINADO.has(item.id);
+}
+function permiteCapacidad(item, cap, defaultFn) {
+  const override = getMenuCapOverride(item.id, cap);
+  return override !== null ? override : defaultFn(item);
+}
 function parseBaseComponents(item) {
   if (item.components) return item.components;
   if (!item.desc) return [];
@@ -2356,18 +2390,6 @@ function renderExtrasBody(item) {
   } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
-  // Las patatas con la mezcla ya preparada (Ranchera y similares) no
-  // admiten nada más que gratinarlas — no tiene sentido añadir
-  // ingredientes o salsas sueltas encima de una receta ya cerrada. Nunca
-  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO). Carbonara,
-  // Boloñesa y 4 Quesos son la excepción: no se puede tocar su mezcla,
-  // pero sí añadir algo más encima (ver EXTRAS_ANADIR_AUNQUE_PREPARADA).
-  const soloGratinar = isQuitarBlocked(item.id) && soloGratinado && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id);
-  // El resto de recetas de Boniato (Lotus, Bacon, G.O.A.T., Pistacchio,
-  // Pulled Pork) van ya cerradas — solo Boniato Fries es una base vacía
-  // donde sí tiene sentido añadir ingredientes/salsas sueltas encima,
-  // igual que en una patata normal.
-  const puedeAnadirExtras = !isBoniato || item.id === BONIATO_FRIES_ID;
   // "Salsa aparte" (se sirve en su propio cacharro, sin quitarla del
   // pedido) — vale tanto para la salsa de serie del producto (si no está
   // quitada ni cambiada por otra) como para cualquier salsa extra ya
@@ -2386,53 +2408,61 @@ function renderExtrasBody(item) {
       html += `</div>`;
     }
   }
-  if (!isBoniato) {
-    const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
-    if (!yaLlevaQueso) {
-      html += `<label class="option-row" onclick="toggleExtra('queso')">
-        <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
-        <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
-      </label>`;
-    }
+  // Queso extra y gratinado ahora son dos interruptores independientes
+  // (ver permiteCapacidad) — por defecto siguen la lógica de siempre,
+  // pero se pueden activar/desactivar por producto desde "✏️ Editar" si
+  // algún día se pierden por error.
+  const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
+  if (permiteCapacidad(item, 'quesoExtra', defaultPermiteQuesoExtra) && !yaLlevaQueso) {
+    html += `<label class="option-row" onclick="toggleExtra('queso')">
+      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
+      <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
+    </label>`;
+  }
+  if (permiteCapacidad(item, 'gratinado', defaultPermiteGratinado)) {
     html += `<label class="option-row" onclick="toggleExtra('gratinado')">
       <div><div class="option-title">🔥 Gratinar${yaLlevaQueso ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${yaLlevaQueso ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
   }
-  // Ingredientes/salsas extra: para todas las patatas normales, y para
-  // Boniato solo en Boniato Fries (base vacía) — el resto de recetas de
-  // Boniato van ya cerradas.
-  if (puedeAnadirExtras && !soloGratinar) {
-    // Mismo estilo de chips que el customizer de Al Gusto/Bomba (en vez
-    // de las filas con casilla de antes) — aquí todo lo que se toca es
-    // siempre "extra" (esta patata no tiene ninguna incluida gratis), así
-    // que el chip marcado se pinta igual que un ingrediente de más ahí.
+  // Ingredientes/salsas extra: dos interruptores independientes también
+  // (antes iban siempre juntos con la misma condición) — mismo estilo de
+  // chips que el customizer de Al Gusto/Bomba, donde todo lo que se toca
+  // es siempre "extra" (esta patata no tiene ninguna incluida gratis), así
+  // que el chip marcado se pinta igual que un ingrediente de más ahí.
+  const permiteIng = permiteCapacidad(item, 'ingExtra', defaultPermiteIngExtra);
+  const permiteSalsa = permiteCapacidad(item, 'salsaExtra', defaultPermiteSalsaExtra);
+  if (permiteIng || permiteSalsa) {
     const paired = pairCurrentExtras(item);
     const doblesActuales = currentDoblesList();
-    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
-    sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-      const qty = extrasIngredientes[ing] || 0;
-      const on = qty > 0, mult = qty >= 2;
-      const cobrado = on ? extraPickChargedPrice(ing, false, paired, doblesActuales) : 0;
-      const label = !on ? ing
-        : mult ? ing + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
-        : cobrado > 0 ? ing + ' +' + fmt(cobrado) + '€' : ing;
-      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
-    });
-    html += `</div>`;
-    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
-    const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
-    html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
-    CUST_SAUCES.forEach(s => {
-      const qty = extrasSalsas[s] || 0;
-      const on = qty > 0, mult = qty >= 2;
-      const cobrado = on ? extraPickChargedPrice(s, true, paired, doblesActuales) : 0;
-      const label = !on ? s
-        : mult ? s + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
-        : cobrado > 0 ? s + ' +' + fmt(cobrado) + '€' : s;
-      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
-    });
-    html += `</div>`;
+    if (permiteIng) {
+      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+      sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
+        const qty = extrasIngredientes[ing] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const cobrado = on ? extraPickChargedPrice(ing, false, paired, doblesActuales) : 0;
+        const label = !on ? ing
+          : mult ? ing + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
+          : cobrado > 0 ? ing + ' +' + fmt(cobrado) + '€' : ing;
+        html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+      });
+      html += `</div>`;
+    }
+    if (permiteSalsa) {
+      html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+      const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
+      html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
+      CUST_SAUCES.forEach(s => {
+        const qty = extrasSalsas[s] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const cobrado = on ? extraPickChargedPrice(s, true, paired, doblesActuales) : 0;
+        const label = !on ? s
+          : mult ? s + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
+          : cobrado > 0 ? s + ' +' + fmt(cobrado) + '€' : s;
+        html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+      });
+      html += `</div>`;
+    }
   }
   // Guarda y restaura el scroll del modal: sin esto, cada vez que se marca
   // algo en "Ingredientes extra" / "Salsas extra" (más abajo del todo) el
@@ -4699,6 +4729,17 @@ function openCartaEdit(id) {
   document.getElementById('carta-edit-price').value = item.price;
   document.getElementById('carta-edit-desc').value = item.desc || '';
   document.getElementById('carta-edit-quitar').checked = !isQuitarBlocked(id);
+  // El resto de "qué se puede añadir" solo tiene sentido en patatas y
+  // boniatos (los que pasan por el modal de extras) — en paninis, tartas,
+  // bebidas... ni se muestra.
+  const admiteCapacidades = ALL_EXTRAS_IDS.has(id) || BONIATO_IDS.has(id);
+  document.getElementById('carta-edit-caps-group').style.display = admiteCapacidades ? '' : 'none';
+  if (admiteCapacidades) {
+    document.getElementById('carta-edit-cap-ingextra').checked = permiteCapacidad(item, 'ingExtra', defaultPermiteIngExtra);
+    document.getElementById('carta-edit-cap-salsaextra').checked = permiteCapacidad(item, 'salsaExtra', defaultPermiteSalsaExtra);
+    document.getElementById('carta-edit-cap-gratinado').checked = permiteCapacidad(item, 'gratinado', defaultPermiteGratinado);
+    document.getElementById('carta-edit-cap-quesoextra').checked = permiteCapacidad(item, 'quesoExtra', defaultPermiteQuesoExtra);
+  }
   // Aviso de qué producto es EXACTAMENTE el que se va a cambiar — con la
   // carta llena de iconos pequeños y pegados es fácil tocar el ✏️ de la
   // fila de al lado sin querer y renombrar un producto por otro sin darse
@@ -4730,6 +4771,12 @@ function saveCartaEdit() {
   const quitarOverrides = loadMenuQuitarOverrides();
   quitarOverrides[id] = !permitirQuitar;
   localStorage.setItem(MENU_QUITAR_OVERRIDES_KEY, JSON.stringify(quitarOverrides));
+  if (ALL_EXTRAS_IDS.has(id) || BONIATO_IDS.has(id)) {
+    setMenuCapOverride(id, 'ingExtra', document.getElementById('carta-edit-cap-ingextra').checked);
+    setMenuCapOverride(id, 'salsaExtra', document.getElementById('carta-edit-cap-salsaextra').checked);
+    setMenuCapOverride(id, 'gratinado', document.getElementById('carta-edit-cap-gratinado').checked);
+    setMenuCapOverride(id, 'quesoExtra', document.getElementById('carta-edit-cap-quesoextra').checked);
+  }
   renderMenu();
   renderCartaAdminList();
   closeCartaEdit();
