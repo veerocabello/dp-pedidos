@@ -150,7 +150,10 @@
         <button type="button" class="keypad-equals" onclick="keypadEquals()">=</button>
       </div>
     </div>
-    <div class="clear-link"><button type="button" onclick="clearCashReceived()">✕ Limpiar</button></div>
+    <div class="clear-link">
+      <button type="button" onclick="clearCashReceived()">✕ Limpiar</button>
+      <button type="button" class="cobrar-sin-imprimir-btn" onclick="cobrarSinImprimir()">💰 Cobrar sin imprimir</button>
+    </div>
     <button class="btn-print" id="print-btn" style="width:100%;margin-top:clamp(6px,1.2vh,14px)" onclick="cobrarBottomAction()">IMPRIMIR COMANDA</button>
   </div>
 </div>

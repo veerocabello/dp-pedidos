@@ -358,6 +358,29 @@ function finalizarCobroSinImprimir() {
   clearOrder(true);
   toast('✅ Pedido ' + order.num + ' cobrado');
 }
+// Enlace "💰 Cobrar sin imprimir" junto a "✕ Limpiar" — para un cobro
+// rápido que no necesita ticket en papel (p. ej. algo que ya se sirvió
+// sin comanda). Si el pedido venía de recuperar uno no pagado (ya
+// impreso de antes), se deja seguir por el mismo camino de siempre
+// (finalizarCobroSinImprimir) para no duplicar el número de comanda.
+function cobrarSinImprimir() {
+  closeCobrarModal();
+  if (pedidoACobrarSinImprimir) { finalizarCobroSinImprimir(); return; }
+  const hayCobroManual = cobrarTotalManual != null && cobrarTotalManual > 0;
+  if (!cartHasAnyItem() && !hayCobroManual) { toast('La comanda está vacía'); return; }
+  const order = buildOrderObject();
+  order.rawState = {
+    cart: { ...cart },
+    custCart: JSON.parse(JSON.stringify(custCart)),
+    extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    manualCart: JSON.parse(JSON.stringify(manualCart)),
+    orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+    lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
+  };
+  saveToHistorial(order);
+  clearOrder(true);
+  toast('✅ Comanda ' + order.num + ' cobrada (sin imprimir)');
+}
 function setPaymentMethod(m) {
   paymentMethod = m;
   document.getElementById('pay-method-cash').classList.toggle('active', m === 'efectivo');
