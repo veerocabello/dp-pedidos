@@ -931,14 +931,20 @@ function getExtrasItemLabel(e) {
 }
 function getExtrasItemDetails(e) {
   const out = [];
+  const aparte = new Set(e.salsaAparte || []);
   (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
   (e.dobles || []).forEach(d => out.push('+ ' + d + ' (extra)'));
   const cambiosCobrados = chargedCambios(e.cambios);
-  (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to + (cambiosCobrados.includes(c) ? ' (extra +' + fmt(priceOfCambio(c)) + '€)' : '')));
+  (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to + (cambiosCobrados.includes(c) ? ' (extra +' + fmt(priceOfCambio(c)) + '€)' : '') + (aparte.has(c.to) ? ' 🥡 aparte' : '')));
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push(s === SIN_SALSA ? '🚫 Sin salsa' : '+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push(s === SIN_SALSA ? '🚫 Sin salsa' : '+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)' + (aparte.has(s) ? ' 🥡 aparte' : '')));
+  // La salsa de serie sin tocar (no quitada, no cambiada, no es un
+  // extra) no genera ninguna otra línea — si se marcó aparte, hay que
+  // decirlo en una línea propia para que no se quede sin avisar.
+  const yaMencionadas = new Set([...(e.cambios || []).map(c => c.to), ...(e.salsasExtra || [])]);
+  aparte.forEach(name => { if (!yaMencionadas.has(name)) out.push('🥡 ' + name + ' aparte'); });
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -950,19 +956,25 @@ function getExtrasItemDetails(e) {
 // subrayadas en el ticket — igual que en la web de pedidos.
 function getExtrasItemTicketExtras(e) {
   const out = [];
+  const aparte = new Set(e.salsaAparte || []);
   (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q, underline: true }));
   (e.dobles || []).forEach(d => out.push({ name: d + ' (extra)', price: priceOfIngExtra(d) || 0, underline: true }));
   const cambiosCobrados = chargedCambios(e.cambios);
-  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to, price: cambiosCobrados.includes(c) ? priceOfCambio(c) : null, underline: true }));
+  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to + (aparte.has(c.to) ? ' - APARTE' : ''), price: cambiosCobrados.includes(c) ? priceOfCambio(c) : null, underline: true }));
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses(countFreeSwapQuitados(e.quitados), (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s + (aparte.has(s) ? ' - APARTE' : ''), price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
   if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
+  // La salsa de serie sin tocar (no quitada, no cambiada, no es un
+  // extra) no genera ninguna otra línea — si se marcó aparte, hay que
+  // decirlo en una línea propia para que no se quede sin avisar.
+  const yaMencionadas = new Set([...(e.cambios || []).map(c => c.to), ...(e.salsasExtra || [])]);
+  aparte.forEach(name => { if (!yaMencionadas.has(name)) out.push({ name: name + ' - APARTE', underline: true }); });
   return out;
 }
 function cartHasAnyItem() {
@@ -2071,6 +2083,28 @@ function parseBaseComponents(item) {
 }
 
 let extrasCurrentId = null, extrasQueso = false, extrasGratinado = false, extrasIngredientes = {}, extrasSalsas = {}, extrasQuitados = {}, extrasCambios = [], extrasEditKey = null;
+// Salsas marcadas para servir "aparte" (en su propio cacharro, sin
+// quitarlas del pedido) — vale tanto para la salsa de serie del producto
+// como para cualquier salsa extra añadida. Mapa nombre -> true.
+let extrasSalsaAparte = {};
+// Nombres de salsa "activos" ahora mismo para un producto: la de serie
+// (ya con el cambio aplicado si se cambió por otra, y solo si no está
+// quitada) más las salsas extra elegidas — la lista que se ofrece para
+// marcar aparte.
+function getActiveSalsaNames(item, quitadosList, cambiosList, salsasExtraList) {
+  const names = new Set();
+  parseBaseComponents(item).filter(c => esComponenteSalsa(c) && !isBaseGrasaComp(c)).forEach(comp => {
+    if ((quitadosList || []).includes(comp)) return;
+    const cambio = (cambiosList || []).find(c => c.from === comp);
+    names.add(cambio ? cambio.to : comp);
+  });
+  (salsasExtraList || []).forEach(s => { if (s !== SIN_SALSA) names.add(s); });
+  return names;
+}
+function toggleSalsaAparte(name) {
+  extrasSalsaAparte[name] = !extrasSalsaAparte[name];
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+}
 let extrasPickSeq = 0, extrasIngOrder = {}, extrasSalsaOrder = {};
 
 function getOrderedExtrasPicks() {
@@ -2093,6 +2127,8 @@ function openExtrasModal(id, editKey) {
   extrasSalsas = {};
   extrasQuitados = {};
   extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to, tipo: c.tipo })) : [] : [];
+  extrasSalsaAparte = {};
+  (existing && existing.salsaAparte || []).forEach(name => { extrasSalsaAparte[name] = true; });
   extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
     (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = 1);
@@ -2302,6 +2338,24 @@ function renderExtrasBody(item) {
   // donde sí tiene sentido añadir ingredientes/salsas sueltas encima,
   // igual que en una patata normal.
   const puedeAnadirExtras = !isBoniato || item.id === BONIATO_FRIES_ID;
+  // "Salsa aparte" (se sirve en su propio cacharro, sin quitarla del
+  // pedido) — vale tanto para la salsa de serie del producto (si no está
+  // quitada ni cambiada por otra) como para cualquier salsa extra ya
+  // elegida más abajo. Se recalcula en cada render porque depende de
+  // quitados/cambios/salsas extra, que pueden cambiar en cualquier orden.
+  if (!isBoniato) {
+    const quitadosActuales = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q);
+    const salsasExtraActuales = Object.entries(extrasSalsas).filter(([, q]) => q > 0).map(([s]) => s);
+    const salsasActivas = getActiveSalsaNames(item, quitadosActuales, extrasCambios, salsasExtraActuales);
+    if (salsasActivas.size) {
+      html += `<div class="section-label">🥡 Salsa aparte <span style="font-weight:400;text-transform:none;letter-spacing:0">(se sirve en su propio cacharro, sin quitarla del pedido)</span></div><div class="chip-grid">`;
+      Array.from(salsasActivas).forEach(name => {
+        const on = !!extrasSalsaAparte[name];
+        html += `<button class="chip ${on ? 'selected' : ''}" onclick="toggleSalsaAparte('${name.replace(/'/g, "\\'")}')">${on ? '🥡 ' : ''}${escapeHtml(name)}</button>`;
+      });
+      html += `</div>`;
+    }
+  }
   if (!isBoniato) {
     const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
     if (!yaLlevaQueso) {
@@ -2534,12 +2588,18 @@ function confirmExtras() {
   const cambiosList = paired.cambios;
   const pickOrder = paired.pickOrder;
   const dobles = paired.dobles.sort();
+  // Solo se guardan las marcas "aparte" de salsas que sigan activas de
+  // verdad tras emparejar cambios gratis (una que se quitó, o que ya no
+  // es ni de serie ni extra, no se queda marcada de mentira).
+  const salsasActivasFinal = getActiveSalsaNames(item, quitadosList, cambiosList, salsaList);
+  const salsaAparteList = Array.from(salsasActivasFinal).filter(n => extrasSalsaAparte[n]).sort();
   const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
     + (quitadosList.length ? 'X' + quitadosList.join('|') : '')
     + (dobles.length ? 'D' + dobles.join('|') : '')
-    + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '') || 'BASE';
+    + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '')
+    + (salsaAparteList.length ? 'AP' + salsaAparteList.join('|') : '') || 'BASE';
   const key = 'ext:' + id + ':' + sig;
   let qtyToSet = 1;
   if (extrasEditKey && extrasCart[extrasEditKey]) {
@@ -2547,7 +2607,7 @@ function confirmExtras() {
     delete extrasCart[extrasEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, key };
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, salsaAparte: salsaAparteList, key };
   // Se estaba personalizando una unidad que ya estaba en el carrito simple
   // (tocando su nombre) — se retira de ahí, ya está aquí personalizada.
   if (convertingSimpleId === id) {
