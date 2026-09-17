@@ -1144,7 +1144,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      una vez este ya se ha ejecutado). -->
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
-<script src="js/config.js?v=1789466873026" defer></script>
+<script src="js/config.js?v=1789674000000" defer></script>
 <script src="js/app.js?v=1789643915452" defer></script>
 <script src="js/auth.js?v=1789643915452" defer></script>
 <script>

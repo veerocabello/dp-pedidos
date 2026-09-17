@@ -104,12 +104,34 @@ function _initFirebase() {
     // exijan "auth != null" en escritura sin que el cliente público tenga
     // que identificarse con nada. Si ya hay sesión (anónima o de admin),
     // no se vuelve a iniciar sesión.
-    auth.onAuthStateChanged(function(user) {
-      if (!user) {
-        auth.signInAnonymously().catch(function(e) {
-          console.error('[fb] signInAnonymously falló:', e);
-        });
-      }
+    //
+    // Persistencia SESSION en vez de la LOCAL por defecto: LOCAL guarda la
+    // sesión en IndexedDB, que en el navegador integrado de Instagram (y
+    // Facebook) — por donde entra bastante gente real desde "link in bio",
+    // confirmado en Sentry con utm_source=ig — puede fallar con un error
+    // interno del propio SDK ("Attempt to get records from database
+    // without an in-progress transaction"), y sin sesión anónima ninguna
+    // escritura a Firebase funciona (las reglas exigen auth != null): nadie
+    // podría llegar a completar un pedido desde ahí. SESSION usa
+    // sessionStorage en vez de IndexedDB, evitando ese fallo — el único
+    // coste es que la sesión anónima no sobrevive a cerrar la pestaña, algo
+    // que no afecta a nada de lo que depende de ella aquí (se vuelve a
+    // iniciar sola en la siguiente visita).
+    function _iniciarSesionAnonimaConReintento(intentosRestantes) {
+      auth.signInAnonymously().catch(function(e) {
+        console.error('[fb] signInAnonymously falló:', e);
+        // Un reintento — el fallo de IndexedDB de arriba es intermitente en
+        // esos navegadores integrados; un segundo intento (aunque sea con
+        // la misma persistencia) suele funcionar.
+        if (intentosRestantes > 0) {
+          setTimeout(function() { _iniciarSesionAnonimaConReintento(intentosRestantes - 1); }, 800);
+        }
+      });
+    }
+    auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(function() {}).then(function() {
+      auth.onAuthStateChanged(function(user) {
+        if (!user) _iniciarSesionAnonimaConReintento(1);
+      });
     });
 
     return true;
