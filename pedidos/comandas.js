@@ -162,10 +162,6 @@ const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Pi
 const EXTRAS_ING_PRECIO = 1;
 const EXTRAS_SALSA_PRECIO = 1;
 const EXTRAS_PRECIO_ALTO = 1.20; // Philadelphia, Queso Mozzarella y 4 Quesos parten con este precio más alto
-// Precio fijo del botón "Añadir queso mozzarella" — distinto del precio de
-// "Queso Mozzarella" como ingrediente extra (EXTRAS_PRECIO_ALTO), son dos
-// cosas separadas con su propio precio de siempre.
-const QUESO_EXTRA_PRECIO = 1;
 const EXTRAS_ING_PRECIO_ALTO_DEFAULT = new Set(['Queso Mozzarella', '4 Quesos']);
 function defaultPriceOfIngExtra(name) { return EXTRAS_ING_PRECIO_ALTO_DEFAULT.has(name) ? EXTRAS_PRECIO_ALTO : EXTRAS_ING_PRECIO; }
 function defaultPriceOfSalsaExtra(name) { return name === 'Philadelphia' ? EXTRAS_PRECIO_ALTO : EXTRAS_SALSA_PRECIO; }
@@ -993,7 +989,7 @@ function getExtrasItemPrice(e) {
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
   const cambiosExtra = chargedCambios(e.cambios).reduce((s, c) => s + priceOfCambio(c), 0);
   const cambiosPremium = freeCambios(e.cambios).reduce((s, c) => s + premiumOfCambio(c), 0);
-  return core + cambiosExtra + cambiosPremium + (e.queso ? QUESO_EXTRA_PRECIO : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
+  return core + cambiosExtra + cambiosPremium + (e.queso ? priceOfIngExtra('Queso Mozzarella') : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
   return !!extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
@@ -1069,7 +1065,7 @@ function getExtrasItemTicketExtras(e) {
   const freeSet = freeSwapPickSet(e.pickOrder, free);
   (e.salsasExtra || []).forEach(s => out.push({ name: s + (aparte.has(s) ? ' - APARTE' : ''), price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
-  if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
+  if (e.queso) out.push({ name: 'Queso', price: priceOfIngExtra('Queso Mozzarella'), underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
   // La salsa de serie sin tocar (no quitada, no cambiada, no es un
   // extra) no genera ninguna otra línea — si se marcó aparte, hay que
@@ -2501,7 +2497,7 @@ function renderExtrasBody(item) {
   if (permiteCapacidad(item, 'quesoExtra', defaultPermiteQuesoExtra) && !yaLlevaQueso) {
     const quesoGratis = extrasQueso && !paired.queso;
     html += `<label class="option-row" onclick="toggleExtra('queso')">
-      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">${quesoGratis ? 'Gratis (cambio)' : '+' + fmt(QUESO_EXTRA_PRECIO) + ' €'}</div></div>
+      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">${quesoGratis ? 'Gratis (cambio)' : '+' + fmt(priceOfIngExtra('Queso Mozzarella')) + ' €'}</div></div>
       <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
     </label>`;
   }
@@ -2710,7 +2706,7 @@ function updateExtrasTotalPrice() {
   const core = computeExtrasCorePrice(item.price, paired.ingredientesExtra, paired.salsasExtra, paired.pickOrder, 0);
   const cambiosExtra = chargedCambios(paired.cambios).reduce((s, c) => s + priceOfCambio(c), 0);
   const cambiosPremium = freeCambios(paired.cambios).reduce((s, c) => s + premiumOfCambio(c), 0);
-  const p = core + cambiosExtra + cambiosPremium + (paired.queso ? QUESO_EXTRA_PRECIO : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
+  const p = core + cambiosExtra + cambiosPremium + (paired.queso ? priceOfIngExtra('Queso Mozzarella') : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
   if (noteEl) {
