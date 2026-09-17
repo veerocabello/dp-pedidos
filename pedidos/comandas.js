@@ -4700,6 +4700,16 @@ function renderCartaExtrasList() {
   html += sortEs(CUST_INGREDIENTS).map(i => cartaExtraPrecioRow('ing', i, precios.ing[i])).join('');
   el.innerHTML = html;
 }
+// La lista de precios (una fila por cada salsa/ingrediente) es larga y
+// tapa el resto de "Gestionar carta" — se queda oculta detrás de un botón,
+// solo hace falta abrirla de vez en cuando para tocar un precio suelto.
+function toggleCartaExtrasListVisible() {
+  const el = document.getElementById('carta-extras-list');
+  const btn = document.getElementById('carta-extras-list-toggle');
+  const abrir = el.style.display === 'none';
+  el.style.display = abrir ? '' : 'none';
+  btn.textContent = abrir ? '🔼 Ocultar precios de los extras' : '💰 Ver precios de los extras';
+}
 function setExtraPrecio(tipo, name, value) {
   const n = parseFloat(String(value).replace(',', '.'));
   if (!(n >= 0)) { toast('⚠️ Precio no válido'); renderCartaExtrasList(); return; }
