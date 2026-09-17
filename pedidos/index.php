@@ -376,6 +376,20 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
   </div>
 </div>
 
+<!-- Cupón por reseña — aviso arriba de la carta (ver src/resena-cupon-cliente.js
+     para el popup que abre). Tarjeta compacta en una sola fila, igual que se
+     decidió tras comparar varios diseños. -->
+<div style="padding:14px 20px 0;background:var(--cream)">
+  <div style="max-width:600px;margin:0 auto;display:flex;align-items:center;gap:10px;background:var(--text);border-radius:14px;padding:11px 12px">
+    <span style="font-size:20px;flex-shrink:0">⭐</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-family:'Oswald',sans-serif;font-size:12.5px;font-weight:700;color:var(--gold)">¿Ya dejaste tu reseña?</div>
+      <div style="font-size:10.5px;color:#E9D9BE;margin-top:1px">Consigue un 10% de descuento</div>
+    </div>
+    <button onclick="abrirResenaCupon()" style="flex-shrink:0;background:var(--gold);color:var(--brown);border:none;padding:7px 13px;border-radius:99px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap">Quiero mi 10%</button>
+  </div>
+</div>
+
 <main>
   <!-- LEFT: MENU -->
   <div id="carta">
