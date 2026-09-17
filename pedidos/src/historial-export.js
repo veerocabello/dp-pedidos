@@ -88,6 +88,14 @@ function isAlertEntry(action) {
 // nodo exige el UID de admin en las reglas de Firebase).
 let _cuponesResenaPendientesLive = {};
 let _cuponesResenaListenerRegistrado = false;
+// Qué teléfonos "pendiente" ya sonaron en este dispositivo — igual que
+// _pedidosPerdidosAvisados (nucleo-compartido.js) para el aviso de "pedido
+// no guardado": Firebase reenvía el nodo config/cuponesResena ENTERO cada
+// vez que cambia algo (una aprobación, un descarte...), no solo lo nuevo,
+// así que sin esto el sonido de cupón de reseña volvería a sonar en cada
+// snapshot mientras la solicitud siguiera pendiente, no solo al llegar.
+let _cuponesResenaAvisados = [];
+try { _cuponesResenaAvisados = JSON.parse(localStorage.getItem('dpf_cupones_resena_avisados') || '[]'); } catch (e) {}
 function _asegurarListenerCuponesResena() {
   if (_cuponesResenaListenerRegistrado) return;
   if (!window.fb_listenCuponesResenaPendientes) return;
@@ -95,6 +103,20 @@ function _asegurarListenerCuponesResena() {
   _cuponesResenaListenerRegistrado = true;
   window.fb_listenCuponesResenaPendientes(data => {
     _cuponesResenaPendientesLive = (data && typeof data === 'object') ? data : {};
+    const pendientesAhora = Object.keys(_cuponesResenaPendientesLive)
+      .filter(tel => _cuponesResenaPendientesLive[tel] && _cuponesResenaPendientesLive[tel].estado === 'pendiente');
+    const nuevos = pendientesAhora.filter(tel => !_cuponesResenaAvisados.includes(tel));
+    if (nuevos.length && typeof playNotificationSound === 'function' && typeof getSoundCuponResenaType === 'function') {
+      playNotificationSound(getSoundCuponResenaType());
+    }
+    // Se recalcula entera cada vez (en vez de solo añadir) para que un
+    // teléfono que ya no está pendiente (aprobado/descartado/borrado) se
+    // olvide de la lista — si vuelve a pedir el cupón más adelante, es una
+    // solicitud nueva de verdad y debe volver a sonar. Se guarda siempre,
+    // no solo cuando hay nuevos, para que este "olvido" también sobreviva
+    // a una recarga de página.
+    _cuponesResenaAvisados = pendientesAhora.slice(-200);
+    try { localStorage.setItem('dpf_cupones_resena_avisados', JSON.stringify(_cuponesResenaAvisados)); } catch (e) {}
     if (typeof updateAlertBadge === 'function') updateAlertBadge();
     const _sec = document.getElementById('admin-alertas');
     if (_sec && _sec.classList.contains('active')) renderAlertas();

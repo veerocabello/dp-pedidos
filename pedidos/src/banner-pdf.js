@@ -1030,6 +1030,7 @@ function showAdminSection(id, btn) {
   if (id === 'local') {
     loadSoundConfigUI();
     loadSoundDesconexionConfigUI();
+    loadSoundCuponResenaConfigUI();
     loadSlotTurnosUI();
     loadModifyWindowInput();
     if (typeof _renderAutoPausaUI === 'function') _renderAutoPausaUI();

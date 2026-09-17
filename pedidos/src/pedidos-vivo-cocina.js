@@ -674,6 +674,32 @@ function testSoundDesconexion() {
   const sel = document.getElementById('sound-desconexion-type');
   playNotificationSound((sel && sel.value) || 'urgente');
 }
+// Sonido de "cupón de reseña pendiente" — otro más, aparte de nuevo pedido
+// e impresora desconectada, para distinguir a oído que lo que acaba de
+// sonar es una solicitud del 10% y no un pedido o un fallo de impresora.
+// Se dispara desde _asegurarListenerCuponesResena (historial-export.js).
+const SOUND_CUPON_RESENA_KEY = 'dpf_sound_cupon_resena_config';
+function getSoundCuponResenaType() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(SOUND_CUPON_RESENA_KEY) || '{}');
+    return cfg.type || 'chime';
+  } catch { return 'chime'; }
+}
+function saveSoundCuponResenaConfig() {
+  const sel = document.getElementById('sound-cupon-resena-type');
+  const type = (sel && sel.value) || 'chime';
+  localStorage.setItem(SOUND_CUPON_RESENA_KEY, JSON.stringify({ type }));
+  showToast('local-toast');
+  logActivity('🎁 Sonido de cupón de reseña configurado: ' + type);
+}
+function loadSoundCuponResenaConfigUI() {
+  const sel = document.getElementById('sound-cupon-resena-type');
+  if (sel) sel.value = getSoundCuponResenaType();
+}
+function testSoundCuponResena() {
+  const sel = document.getElementById('sound-cupon-resena-type');
+  playNotificationSound((sel && sel.value) || 'chime');
+}
 function loadSoundConfigUI() {
   const cfg = getSoundConfig();
   const sel = document.getElementById('sound-type');
