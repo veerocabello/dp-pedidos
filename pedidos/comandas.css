@@ -769,6 +769,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cart-edit:hover { color: var(--amber-dark); background: rgba(224,129,42,.12); }
 .cart-remove:hover { color: var(--error); background: rgba(192,57,43,.1); }
+.cart-edit.aparte-on { background: var(--gold); }
+.cart-edit.aparte-on:hover { background: var(--gold); filter: brightness(1.05); }
 
 .cart-total-row {
   display: flex;

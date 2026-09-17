@@ -627,6 +627,27 @@ function editExtrasItem(key) {
   if (c.menuId === CHEDDAR_ID) openCheddarModal(key);
   else openExtrasModal(c.menuId, key);
 }
+// Botón rápido 🥡 de la línea del pedido: si el producto lleva una sola
+// salsa activa ahora mismo, la marca/desmarca aparte directamente, sin
+// abrir el modal entero. Si llevara más de una (raro — de serie + extra a
+// la vez), abre el modal normal para elegir cuál, que ya tiene su propia
+// sección "Salsa aparte" con todas listadas.
+function toggleSalsaAparteEnCarrito(key) {
+  const c = extrasCart[key];
+  if (!c) return;
+  const item = MENU.find(m => m.id == c.menuId);
+  if (!item) return;
+  const activas = Array.from(getActiveSalsaNames(item, c.quitados, c.cambios, c.salsasExtra));
+  if (!activas.length) return;
+  if (activas.length > 1) { editExtrasItem(key); return; }
+  const name = activas[0];
+  const aparte = new Set(c.salsaAparte || []);
+  const marcando = !aparte.has(name);
+  if (marcando) aparte.add(name); else aparte.delete(name);
+  c.salsaAparte = Array.from(aparte);
+  renderCart();
+  toast(marcando ? '🥡 ' + name + ' aparte' : 'Ya no va aparte');
+}
 // Una patata/boniato del carrito SIMPLE (añadido tal cual, tocando la
 // casilla) no tiene ninguna personalización todavía que "editar" — al
 // tocar su nombre se abre el modal de personalizar en modo "añadir"
@@ -1379,6 +1400,14 @@ function renderCart() {
     total += subtotal;
     const details = getExtrasItemDetails(c).join(' · ');
     const baseItem = MENU.find(m => m.id == c.menuId);
+    // Botón rápido "🥡 salsa aparte" directo en la línea del pedido, sin
+    // tener que abrir el modal entero — solo si el producto lleva alguna
+    // salsa ahora mismo (de serie o extra); si no lleva ninguna, ni se
+    // muestra el botón.
+    const salsasActivasLinea = baseItem ? getActiveSalsaNames(baseItem, c.quitados, c.cambios, c.salsasExtra) : new Set();
+    const salsaAparteBtn = salsasActivasLinea.size
+      ? `<button class="cart-edit ${(c.salsaAparte || []).length ? 'aparte-on' : ''}" onclick="toggleSalsaAparteEnCarrito('${c.key}')" title="Marcar salsa aparte">🥡</button>`
+      : '';
     rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: wrapSwipe('extras', c.key, `<div class="cart-line">
       <button type="button" class="cart-line-name cart-line-name-btn" onclick="editExtrasItem('${c.key}')" title="Editar">${escapeHtml(getExtrasItemLabel(c))}</button>
       <div class="cart-qty-mini">
@@ -1388,6 +1417,7 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
+      ${salsaAparteBtn}
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
       ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
