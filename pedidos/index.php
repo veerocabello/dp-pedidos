@@ -74,7 +74,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1789549941407">
+<link rel="stylesheet" href="css/style.min.css?v=1789636292205">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -1131,8 +1131,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789466873026" defer></script>
-<script src="js/app.js?v=1789549941407" defer></script>
-<script src="js/auth.js?v=1789549941407" defer></script>
+<script src="js/app.js?v=1789636292205" defer></script>
+<script src="js/auth.js?v=1789636292205" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar
@@ -1366,16 +1366,6 @@ setInterval(function() {
     </div>
 
   </div>
-</div>
-
-<!-- Botón flotante fijo de reseña/10% — siempre visible en cualquier parte
-     de la web (no depende de estar en la pantalla de confirmación del
-     pedido, que se pierde si se recarga la página). z-index bajo a
-     propósito: cualquier modal de la web (todos por encima de 2000) lo
-     tapa mientras esté abierto, en vez de quedar flotando encima. -->
-<div style="position:fixed;bottom:16px;right:16px;z-index:1000;display:flex;flex-direction:column;gap:8px;align-items:flex-end">
-  <a href="https://maps.app.goo.gl/fUoVZdJDtByWcYq16?g_st=ic" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:#4285F4;color:#FFFFFF;text-decoration:none;padding:10px 16px;border-radius:99px;font-size:12.5px;font-weight:700;font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,0.25)">⭐ Reseña</a>
-  <button onclick="abrirResenaCupon()" style="display:inline-flex;align-items:center;gap:6px;background:var(--gold);color:var(--brown);border:none;padding:10px 16px;border-radius:99px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,0.25)">🎁 10%</button>
 </div>
 
 <!-- Generación de PDF real (historial/tickets en el panel de admin) — ya no

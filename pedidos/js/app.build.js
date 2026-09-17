@@ -4458,6 +4458,16 @@ function _aplicarMenuDesdeFirebase(data) {
       if (saved.desc !== undefined) item.desc = saved.desc;
       item.hidden = saved.hidden || false;
       item.soldout = saved.soldout || false;
+      // Sin esto, "agotado permanente" (toggleSoldoutPermanente,
+      // admin-config.js) se perdía en cuanto este merge volvía a correr
+      // (p.ej. al recargar la página de admin, o al llegar una actualización
+      // de Firebase mientras la pestaña de admin sigue abierta) — el propio
+      // item.soldout SÍ se restauraba bien, pero soldoutPermanente se
+      // quedaba en su valor en memoria (false) en vez del guardado. Si esa
+      // misma pestaña de admin seguía abierta a medianoche,
+      // scheduleSlotMidnightReset ya no veía el producto como permanente y
+      // lo reactivaba solo, deshaciendo el marcado sin que nadie lo pidiera.
+      item.soldoutPermanente = !!saved.soldoutPermanente;
       item.tags = Array.isArray(saved.tags) ? saved.tags : [];
       // Antes se quedaban fuera de este merge — un visitante que nunca
       // hubiera tenido un dpf_menu completo en su localStorage (es decir,
