@@ -187,6 +187,20 @@ function saveExtraPrecio(tipo, name, value) {
 }
 function priceOfIngExtra(name) { return loadExtrasPrecios().ing[name]; }
 function priceOfSalsaExtra(name) { return name === SIN_SALSA ? 0 : loadExtrasPrecios().salsa[name]; }
+// Cuánto se cobra AHORA MISMO por un ingrediente/salsa extra marcado en el
+// modal, teniendo en cuenta que puede haber quedado emparejado como cambio
+// gratis (quitar uno + marcar este de extra) — sin esto, el chip seguía
+// mostrando su precio de siempre aunque el total de abajo ya no lo cobrara,
+// pareciendo que se estaba cobrando de más cuando en realidad era gratis.
+function extraPickChargedPrice(name, isSalsa, paired, doblesActuales) {
+  const precioUnidad = isSalsa ? priceOfSalsaExtra(name) : priceOfIngExtra(name);
+  const listaTrasEmparejar = isSalsa ? paired.salsasExtra : paired.ingredientesExtra;
+  const baseGratis = !listaTrasEmparejar.includes(name);
+  const doblesTotal = doblesActuales.filter(n => n === name).length;
+  const doblesLibres = doblesTotal - paired.dobles.filter(n => n === name).length;
+  const doblesCobrados = Math.max(0, doblesTotal - doblesLibres);
+  return (baseGratis ? 0 : precioUnidad) + doblesCobrados * precioUnidad;
+}
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
@@ -2286,12 +2300,16 @@ function renderExtrasBody(item) {
     // de las filas con casilla de antes) — aquí todo lo que se toca es
     // siempre "extra" (esta patata no tiene ninguna incluida gratis), así
     // que el chip marcado se pinta igual que un ingrediente de más ahí.
+    const paired = pairCurrentExtras(item);
+    const doblesActuales = currentDoblesList();
     html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
     sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-      const precio = priceOfIngExtra(ing);
       const qty = extrasIngredientes[ing] || 0;
       const on = qty > 0, mult = qty >= 2;
-      const label = mult ? ing + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? ing + ' +' + fmt(precio) + '€' : ing;
+      const cobrado = on ? extraPickChargedPrice(ing, false, paired, doblesActuales) : 0;
+      const label = !on ? ing
+        : mult ? ing + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
+        : cobrado > 0 ? ing + ' +' + fmt(cobrado) + '€' : ing;
       html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
@@ -2299,10 +2317,12 @@ function renderExtrasBody(item) {
     const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
     html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
     CUST_SAUCES.forEach(s => {
-      const precio = priceOfSalsaExtra(s);
       const qty = extrasSalsas[s] || 0;
       const on = qty > 0, mult = qty >= 2;
-      const label = mult ? s + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? s + ' +' + fmt(precio) + '€' : s;
+      const cobrado = on ? extraPickChargedPrice(s, true, paired, doblesActuales) : 0;
+      const label = !on ? s
+        : mult ? s + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
+        : cobrado > 0 ? s + ' +' + fmt(cobrado) + '€' : s;
       html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
     });
     html += `</div>`;
