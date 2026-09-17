@@ -229,6 +229,50 @@ const CUST_INGREDIENT_ALIASES = {
   'tronquitos': 'Tronquitos de Mar',
   'mozzarella': 'Queso Mozzarella',
 };
+/* ── Ingredientes/salsas extra añadidos a mano desde "🍽️ Carta", igual
+   que los productos de la carta — se guardan aparte y se meten en las
+   listas de fábrica de arriba al cargar, mutándolas directamente para que
+   el resto del código (que ya las usa por todos lados) no tenga que
+   cambiar. Los ingredientes van también a EXTRAS_ING_PRECIO07 — esas dos
+   listas ya no deciden el precio (cada uno tiene el suyo en
+   loadExtrasPrecios), solo qué aparece como chip en "Ingredientes extra"
+   y en el Cheddar-Bacon; sin esto, un ingrediente nuevo saldría en Al
+   Gusto/Bomba (que sí recorre CUST_INGREDIENTS entero) pero no ahí. ── */
+const CUST_EXTRAS_CUSTOM_KEY = 'comandas_cust_extras_custom_v1';
+function loadCustExtrasCustom() {
+  try { return JSON.parse(localStorage.getItem(CUST_EXTRAS_CUSTOM_KEY) || '{"ing":[],"salsa":[]}'); }
+  catch (e) { return { ing: [], salsa: [] }; }
+}
+function saveCustExtrasCustom(o) { localStorage.setItem(CUST_EXTRAS_CUSTOM_KEY, JSON.stringify(o)); }
+(function applyCustExtrasCustomizations() {
+  const custom = loadCustExtrasCustom();
+  (custom.ing || []).forEach(name => {
+    if (!CUST_INGREDIENTS.includes(name)) CUST_INGREDIENTS.push(name);
+    if (!EXTRAS_ING_PRECIO07.includes(name)) EXTRAS_ING_PRECIO07.push(name);
+  });
+  (custom.salsa || []).forEach(name => {
+    if (!CUST_SAUCES.includes(name)) CUST_SAUCES.push(name);
+  });
+})();
+// Añade un ingrediente o salsa nuevo a la lista de "extras" de toda la
+// carta (Ingredientes/Salsas extra de cualquier patata, Cheddar-Bacon, Al
+// Gusto, Bomba...) — para cuando hace falta uno que no estaba de fábrica.
+function addCustomExtra(tipo, name, price) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) { toast('⚠️ Escribe un nombre'); return false; }
+  if (!(price >= 0)) { toast('⚠️ Precio no válido'); return false; }
+  const lista = tipo === 'salsa' ? CUST_SAUCES : CUST_INGREDIENTS;
+  if (lista.some(n => n.toLowerCase() === trimmed.toLowerCase())) { toast('⚠️ Ya existe "' + trimmed + '"'); return false; }
+  const custom = loadCustExtrasCustom();
+  custom[tipo === 'salsa' ? 'salsa' : 'ing'].push(trimmed);
+  saveCustExtrasCustom(custom);
+  lista.push(trimmed);
+  if (tipo !== 'salsa') EXTRAS_ING_PRECIO07.push(trimmed);
+  saveExtraPrecio(tipo === 'salsa' ? 'salsa' : 'ing', trimmed, price);
+  renderCartaExtrasList();
+  toast('✅ "' + trimmed + '" añadido');
+  return true;
+}
 // "Doble" de un ingrediente (base o extra) solo se ofrece cuando hay un
 // precio de referencia con el que cobrarlo — si el componente no está en
 // la lista de ingredientes con precio (p.ej. "galletas Lotus" o "pulled
@@ -4618,6 +4662,14 @@ function setExtraPrecio(tipo, name, value) {
   if (!(n >= 0)) { toast('⚠️ Precio no válido'); renderCartaExtrasList(); return; }
   saveExtraPrecio(tipo, name, n);
   toast('✅ ' + name + ': ' + fmt(n) + ' €');
+}
+function submitCustomExtra() {
+  const tipo = document.getElementById('carta-new-extra-tipo').value;
+  const name = document.getElementById('carta-new-extra-name').value;
+  const price = parseFloat(String(document.getElementById('carta-new-extra-price').value).replace(',', '.'));
+  if (!addCustomExtra(tipo, name, price)) return;
+  document.getElementById('carta-new-extra-name').value = '';
+  document.getElementById('carta-new-extra-price').value = '';
 }
 // Arrastrar (drag & drop nativo del navegador) no funciona con el dedo en
 // una pantalla táctil — solo con ratón — así que además de dejarlo para
