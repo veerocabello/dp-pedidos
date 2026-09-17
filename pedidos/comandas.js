@@ -162,6 +162,10 @@ const EXTRAS_ING_PRECIO07 = ["Aceitunas", "Cebolla", "Champiñón", "Maíz", "Pi
 const EXTRAS_ING_PRECIO = 1;
 const EXTRAS_SALSA_PRECIO = 1;
 const EXTRAS_PRECIO_ALTO = 1.20; // Philadelphia, Queso Mozzarella y 4 Quesos parten con este precio más alto
+// Precio fijo del botón "Añadir queso mozzarella" — distinto del precio de
+// "Queso Mozzarella" como ingrediente extra (EXTRAS_PRECIO_ALTO), son dos
+// cosas separadas con su propio precio de siempre.
+const QUESO_EXTRA_PRECIO = 1;
 const EXTRAS_ING_PRECIO_ALTO_DEFAULT = new Set(['Queso Mozzarella', '4 Quesos']);
 function defaultPriceOfIngExtra(name) { return EXTRAS_ING_PRECIO_ALTO_DEFAULT.has(name) ? EXTRAS_PRECIO_ALTO : EXTRAS_ING_PRECIO; }
 function defaultPriceOfSalsaExtra(name) { return name === 'Philadelphia' ? EXTRAS_PRECIO_ALTO : EXTRAS_SALSA_PRECIO; }
@@ -888,6 +892,17 @@ function priceOfCambio(c) {
   return 0;
 }
 function chargedCambios(cambios) { return (cambios || []).slice(CAMBIOS_GRATIS_MAX); }
+function freeCambios(cambios) { return (cambios || []).slice(0, CAMBIOS_GRATIS_MAX); }
+// Un cambio gratis solo cubre hasta el precio normal de un ingrediente/
+// salsa (EXTRAS_ING_PRECIO/EXTRAS_SALSA_PRECIO) — si lo que se pide es de
+// "precio alto" (Queso Mozzarella, Philadelphia, 4 Quesos...), lo que se
+// pase de ahí se cobra igual aunque el cambio en sí salga gratis.
+function premiumOfCambio(c) {
+  let base = 0;
+  if (c.tipo === 'salsa') base = priceOfSalsaExtra(c.to) - EXTRAS_SALSA_PRECIO;
+  else if (c.tipo === 'ing') base = priceOfIngExtra(c.to) - EXTRAS_ING_PRECIO;
+  return Math.max(0, Math.round(base * 100) / 100);
+}
 // "Sal" y "pimienta" (los únicos quitables de la Patata Simple) no son
 // ingredientes de verdad — quitarlas no debe regalar un cambio gratis
 // (si a alguien se le olvida ponerlas, eso no es excusa para colar un
@@ -905,10 +920,10 @@ function countFreeSwapQuitados(quitadosNames) {
 // alguno, con el que quede. En la Simple nunca hay nada que emparejar:
 // sal/pimienta no cuentan para el cupo (countFreeSwapQuitados), así que
 // sus extras se quedan siempre como extras sueltos, nunca como cambio.
-function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder, doblesList) {
+function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder, doblesList, quesoOn) {
   const freePasses = computeFreeSwapPasses(countFreeSwapQuitados(quitadosList), explicitCambios.length);
   if (freePasses <= 0) {
-    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder, dobles: doblesList || [] };
+    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder, dobles: doblesList || [], queso: !!quesoOn };
   }
   const comps = parseBaseComponents(item);
   const realIngComponents = new Set(comps.filter(c => !esComponenteSalsa(c) && !isBaseGrasaComp(c) && !isElegirSalsaComp(c)));
@@ -919,17 +934,29 @@ function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambi
   let remainingDobles = [...(doblesList || [])];
   const newCambios = [];
   const consumed = new Set(); // "type:name" de picks ya emparejados, para limpiar pickOrder
-  (pickOrder || []).slice(0, freePasses).forEach(pick => {
-    const isIng = pick.type === 'ing';
-    let qIdx = remainingQuitados.findIndex(q => isIng ? realIngComponents.has(q) : realSalsaComponents.has(q));
+  // "Añadir queso mozzarella" cuenta como un pick más para el cupo de
+  // cambio gratis — se trata exactamente como si "Queso Mozzarella" se
+  // hubiera marcado en Ingredientes extra (mismo nombre, mismo tipo 'ing'),
+  // así hereda su precio real (más caro, ver EXTRAS_PRECIO_ALTO) para la
+  // prima que se cobra aparte incluso en un cambio gratis (ver
+  // premiumOfCambio) — solo el primer euro de un cambio es gratis de
+  // verdad, lo que pase de ahí (por ser un ingrediente "de precio alto")
+  // se cobra igual. Se ofrece el último, después de los ingredientes/
+  // salsas ya elegidos, que ya tenían su sitio en pickOrder por orden de
+  // selección.
+  const picksConQueso = quesoOn ? [...(pickOrder || []), { type: 'ing', name: 'Queso Mozzarella' }] : (pickOrder || []);
+  picksConQueso.slice(0, freePasses).forEach(pick => {
+    const prefiereSalsa = pick.type === 'salsa';
+    let qIdx = remainingQuitados.findIndex(q => prefiereSalsa ? realSalsaComponents.has(q) : realIngComponents.has(q));
     if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
     if (qIdx === -1) return; // no debería pasar si freePasses se calculó bien
     const from = remainingQuitados.splice(qIdx, 1)[0];
-    newCambios.push({ from, to: pick.name });
+    newCambios.push({ from, to: pick.name, tipo: pick.type });
     consumed.add(pick.type + ':' + pick.name);
-    if (isIng) remainingIng = remainingIng.filter(n => n !== pick.name);
+    if (pick.type === 'ing') remainingIng = remainingIng.filter(n => n !== pick.name);
     else remainingSalsa = remainingSalsa.filter(n => n !== pick.name);
   });
+  const quesoConsumido = quesoOn && consumed.has('ing:Queso Mozzarella');
   const newPickOrder = (pickOrder || []).filter(p => !consumed.has(p.type + ':' + p.name));
   // Si sobra cupo de cambio gratis y queda algún ingrediente/salsa pedido
   // doble/triple (ya estaba en la receta, no es un extra nuevo), se
@@ -945,12 +972,12 @@ function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambi
     if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
     if (qIdx === -1) continue;
     const from = remainingQuitados.splice(qIdx, 1)[0];
-    newCambios.push({ from, to: name });
+    newCambios.push({ from, to: name, tipo: isIng ? 'ing' : 'salsa' });
     dobleIdxConsumidos.push(i);
     freeLeft--;
   }
   dobleIdxConsumidos.reverse().forEach(i => remainingDobles.splice(i, 1));
-  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder, dobles: remainingDobles };
+  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder, dobles: remainingDobles, queso: !!quesoOn && !quesoConsumido };
 }
 // Mismo criterio que computeExtrasCorePrice: los primeros `freePasses`
 // picks por orden de selección van gratis — así el ticket muestra sin
@@ -965,7 +992,8 @@ function getExtrasItemPrice(e) {
   const free = computeFreeSwapPasses(countFreeSwapQuitados(e.quitados), (e.cambios || []).length);
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
   const cambiosExtra = chargedCambios(e.cambios).reduce((s, c) => s + priceOfCambio(c), 0);
-  return core + cambiosExtra + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
+  const cambiosPremium = freeCambios(e.cambios).reduce((s, c) => s + premiumOfCambio(c), 0);
+  return core + cambiosExtra + cambiosPremium + (e.queso ? QUESO_EXTRA_PRECIO : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
   return !!extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
@@ -1000,7 +1028,11 @@ function getExtrasItemDetails(e) {
   (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
   (e.dobles || []).forEach(d => out.push('+ ' + d + ' (extra)'));
   const cambiosCobrados = chargedCambios(e.cambios);
-  (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to + (cambiosCobrados.includes(c) ? ' (extra +' + fmt(priceOfCambio(c)) + '€)' : '') + (aparte.has(c.to) ? ' 🥡 aparte' : '')));
+  (e.cambios || []).forEach(c => {
+    const premium = premiumOfCambio(c);
+    const extraTxt = cambiosCobrados.includes(c) ? ' (extra +' + fmt(priceOfCambio(c)) + '€)' : (premium > 0 ? ' (+' + fmt(premium) + '€)' : '');
+    out.push('🔄 ' + c.from + ' → ' + c.to + extraTxt + (aparte.has(c.to) ? ' 🥡 aparte' : ''));
+  });
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
@@ -1025,7 +1057,11 @@ function getExtrasItemTicketExtras(e) {
   (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q, underline: true }));
   (e.dobles || []).forEach(d => out.push({ name: d + ' (extra)', price: priceOfIngExtra(d) || 0, underline: true }));
   const cambiosCobrados = chargedCambios(e.cambios);
-  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to + (aparte.has(c.to) ? ' - APARTE' : ''), price: cambiosCobrados.includes(c) ? priceOfCambio(c) : null, underline: true }));
+  (e.cambios || []).forEach(c => {
+    const premium = premiumOfCambio(c);
+    const precio = cambiosCobrados.includes(c) ? priceOfCambio(c) : (premium > 0 ? premium : null);
+    out.push({ name: c.from + ' por ' + c.to + (aparte.has(c.to) ? ' - APARTE' : ''), price: precio, underline: true });
+  });
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
@@ -2457,9 +2493,15 @@ function renderExtrasBody(item) {
   // pero se pueden activar/desactivar por producto desde "✏️ Editar" si
   // algún día se pierden por error.
   const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
+  // Se calcula una sola vez aquí (antes solo se hacía para Ingredientes/
+  // Salsas extra) porque ahora "Añadir queso mozzarella" también puede
+  // salir gratis si queda cupo de cambio (ver autoPairFreeSwaps/quesoOn).
+  const paired = pairCurrentExtras(item);
+  const doblesActuales = currentDoblesList();
   if (permiteCapacidad(item, 'quesoExtra', defaultPermiteQuesoExtra) && !yaLlevaQueso) {
+    const quesoGratis = extrasQueso && !paired.queso;
     html += `<label class="option-row" onclick="toggleExtra('queso')">
-      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
+      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">${quesoGratis ? 'Gratis (cambio)' : '+' + fmt(QUESO_EXTRA_PRECIO) + ' €'}</div></div>
       <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
     </label>`;
   }
@@ -2477,8 +2519,6 @@ function renderExtrasBody(item) {
   const permiteIng = permiteCapacidad(item, 'ingExtra', defaultPermiteIngExtra);
   const permiteSalsa = permiteCapacidad(item, 'salsaExtra', defaultPermiteSalsaExtra);
   if (permiteIng || permiteSalsa) {
-    const paired = pairCurrentExtras(item);
-    const doblesActuales = currentDoblesList();
     if (permiteIng) {
       html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
       sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
@@ -2654,7 +2694,8 @@ function pairCurrentExtras(item) {
     Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s),
     extrasCambios.map(c => ({ from: c.from, to: c.to, tipo: c.tipo })),
     getOrderedExtrasPicks(),
-    currentDoblesList()
+    currentDoblesList(),
+    extrasQueso
   );
 }
 function updateExtrasTotalPrice() {
@@ -2664,10 +2705,12 @@ function updateExtrasTotalPrice() {
   // paired.ingredientesExtra/salsasExtra/pickOrder ya vienen sin los que se
   // acaban de emparejar como cambio gratis (ver autoPairFreeSwaps), así que
   // aquí no queda ningún "free" que restar aparte — todo lo que queda en
-  // esas listas se cobra entero.
+  // esas listas se cobra entero. paired.queso ya viene en false si "Añadir
+  // queso mozzarella" se emparejó como cambio gratis (ver autoPairFreeSwaps).
   const core = computeExtrasCorePrice(item.price, paired.ingredientesExtra, paired.salsasExtra, paired.pickOrder, 0);
   const cambiosExtra = chargedCambios(paired.cambios).reduce((s, c) => s + priceOfCambio(c), 0);
-  const p = core + cambiosExtra + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
+  const cambiosPremium = freeCambios(paired.cambios).reduce((s, c) => s + premiumOfCambio(c), 0);
+  const p = core + cambiosExtra + cambiosPremium + (paired.queso ? QUESO_EXTRA_PRECIO : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
   if (noteEl) {
@@ -2697,7 +2740,7 @@ function confirmExtras() {
   // es ni de serie ni extra, no se queda marcada de mentira).
   const salsasActivasFinal = getActiveSalsaNames(item, quitadosList, cambiosList, salsaList);
   const salsaAparteList = Array.from(salsasActivasFinal).filter(n => extrasSalsaAparte[n]).sort();
-  const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
+  const sig = (paired.queso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
     + (quitadosList.length ? 'X' + quitadosList.join('|') : '')
@@ -2711,7 +2754,7 @@ function confirmExtras() {
     delete extrasCart[extrasEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, salsaAparte: salsaAparteList, key };
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: paired.queso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, salsaAparte: salsaAparteList, key };
   // Se estaba personalizando una unidad que ya estaba en el carrito simple
   // (tocando su nombre) — se retira de ahí, ya está aquí personalizada.
   if (convertingSimpleId === id) {
