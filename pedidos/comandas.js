@@ -149,11 +149,11 @@ const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
-// Carbonara y Boloñesa llevan la mezcla ya preparada (no se puede quitar
-// ni cambiar), pero SÍ se puede añadir algo más encima — igual que
-// cualquier otra patata. El resto de "solo gratinar" (4 Quesos, Ranchera,
+// Carbonara, Boloñesa y 4 Quesos llevan la mezcla ya preparada (no se
+// puede quitar ni cambiar), pero SÍ se puede añadir algo más encima —
+// igual que cualquier otra patata. El resto de "solo gratinar" (Ranchera,
 // Philadelphia, Granollers, Pulled Pork) se queda igual.
-const EXTRAS_ANADIR_AUNQUE_PREPARADA = new Set([4, 5]);
+const EXTRAS_ANADIR_AUNQUE_PREPARADA = new Set([4, 5, 8]);
 // Todos los ingredientes extra cuestan lo mismo (antes había dos precios
 // distintos, 1€/0,70€ según el ingrediente); estas dos listas se
 // conservan solo para agrupar/ordenar el desplegable, ya no para el precio.
@@ -1899,8 +1899,12 @@ function selectCheddarCarne(k) {
     cheddarCarne = k;
     cheddarCarneQty = 1;
   }
+  // La carne que pasa a ser la principal ya no tiene sentido como
+  // "ingrediente extra" aparte (se cobraría dos veces la misma carne).
+  delete cheddarIngredientesExtra[cheddarCarneCanonical()];
   renderCheddarCarneOptions();
   document.getElementById('cheddar-error').style.display = 'none';
+  renderCheddarExtras();
   updateCheddarPrice();
 }
 function renderCheddarCarneOptions() {
@@ -1917,14 +1921,16 @@ function renderCheddarCarneOptions() {
 // de patatas (ver renderExtrasBody) — aquí todo lo que se toca es siempre
 // "extra" (nada de esto viene incluido en la receta base del Cheddar), así
 // que el chip marcado se pinta igual que un extra ahí.
-// Carne Kebab/Carne Picada se excluyen de "Ingredientes extra": esas dos
-// ya tienen su propio selector arriba ("Elige la carne"), no tendría
-// sentido ofrecerlas otra vez sueltas.
+// La carne ya elegida arriba ("Elige la carne") no vuelve a salir en
+// "Ingredientes extra" (se doblaría con el propio selector) — pero la
+// OTRA carne sí, para poder pedir un Cheddar-Bacon con las dos mezcladas
+// (p.ej. base Carne Kebab + Carne Picada extra).
 function renderCheddarExtras() {
   const ingEl = document.getElementById('cheddar-ingredientes-list');
   if (ingEl) {
+    const carneActual = cheddarCarneCanonical();
     ingEl.innerHTML = sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07])
-      .filter(ing => ing !== 'Carne Kebab' && ing !== 'Carne Picada')
+      .filter(ing => ing !== carneActual)
       .map(ing => {
         const precio = priceOfIngExtra(ing);
         const qty = cheddarIngredientesExtra[ing] || 0;
@@ -2233,12 +2239,12 @@ function renderExtrasBody(item) {
   } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
-  // Las patatas con la mezcla ya preparada (4 Quesos y similares) no
+  // Las patatas con la mezcla ya preparada (Ranchera y similares) no
   // admiten nada más que gratinarlas — no tiene sentido añadir
   // ingredientes o salsas sueltas encima de una receta ya cerrada. Nunca
-  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO). Carbonara y
-  // Boloñesa son la excepción: no se puede tocar su mezcla, pero sí
-  // añadir algo más encima (ver EXTRAS_ANADIR_AUNQUE_PREPARADA).
+  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO). Carbonara,
+  // Boloñesa y 4 Quesos son la excepción: no se puede tocar su mezcla,
+  // pero sí añadir algo más encima (ver EXTRAS_ANADIR_AUNQUE_PREPARADA).
   const soloGratinar = isQuitarBlocked(item.id) && soloGratinado && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id);
   // El resto de recetas de Boniato (Lotus, Bacon, G.O.A.T., Pistacchio,
   // Pulled Pork) van ya cerradas — solo Boniato Fries es una base vacía
