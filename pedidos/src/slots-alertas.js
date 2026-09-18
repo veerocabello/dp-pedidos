@@ -21,12 +21,19 @@ async function closeAdmin() {
   if (eyeClosed) eyeClosed.style.display = 'none';
   stopAlertLoop();
   _alertPendingOrders = 0;
-  document.getElementById('admin-overlay').classList.remove('open');
+  // Mismos guardas que openAdmin (nucleo-compartido.js) — sin ellos, cerrar
+  // el panel cuando alguno de estos elementos no existiera (por lo que sea)
+  // reventaba con un TypeError en vez de simplemente no hacer nada ahí.
+  const closeOverlay = document.getElementById('admin-overlay');
+  const closeLogin = document.getElementById('admin-login');
+  const closePanel = document.getElementById('admin-panel');
+  const closeError = document.getElementById('admin-error');
+  if (closeOverlay) closeOverlay.classList.remove('open');
   // Resetear estado login/panel para la próxima apertura
-  document.getElementById('admin-login').style.display = 'block';
-  document.getElementById('admin-panel').style.display = 'none';
-  document.getElementById('admin-error').textContent = '';
-  document.getElementById('admin-pwd-input').value = '';
+  if (closeLogin) closeLogin.style.display = 'block';
+  if (closePanel) closePanel.style.display = 'none';
+  if (closeError) closeError.textContent = '';
+  if (input) input.value = '';
 }
 // admin-overlay se carga de forma diferida — esperar a que exista
 document.addEventListener('adminShellLoaded', function() {

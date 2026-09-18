@@ -843,7 +843,18 @@ async function openAdmin() {
   }
   // Asegurar que pointer-events está restaurado (por si stock lo dejó bloqueado)
   const adminOverlay = document.getElementById('admin-overlay');
-  if (adminOverlay) adminOverlay.style.pointerEvents = '';
+  // Defensa extra: _adminShellLoaded solo se pone a true cuando el HTML+JS
+  // del admin cargaron de verdad, pero si por lo que sea llegamos aquí sin
+  // que #admin-overlay exista (p.ej. dos toques casi a la vez, o un HTML de
+  // admin-shell.html servido a medias/desincronizado), las líneas de abajo
+  // (antes sin comprobar) reventaban con un TypeError en vez de avisar —
+  // visto en Sentry. Mejor abortar con un aviso claro que dejar el panel a
+  // medias con funciones que no van a encontrar sus elementos.
+  if (!adminOverlay) {
+    showAlert('No se ha podido abrir el panel de administración. Recarga la página e inténtalo de nuevo.');
+    return;
+  }
+  adminOverlay.style.pointerEvents = '';
   // Always reset to default section (Carta) so bimba config never bleeds through
   document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
@@ -852,14 +863,18 @@ async function openAdmin() {
   if (defaultSection) defaultSection.classList.add('active');
   if (defaultTab) defaultTab.classList.add('active');
   unlockAudioContext(); // desbloquear audio con el gesto del usuario
-  document.getElementById('admin-overlay').classList.add('open');
-  document.getElementById('admin-error').textContent = '';
-  document.getElementById('admin-pwd-input').value = '';
+  adminOverlay.classList.add('open');
+  const adminErrorEl = document.getElementById('admin-error');
+  const adminPwdInput = document.getElementById('admin-pwd-input');
+  const adminLoginEl = document.getElementById('admin-login');
+  const adminPanelEl = document.getElementById('admin-panel');
+  if (adminErrorEl) adminErrorEl.textContent = '';
+  if (adminPwdInput) adminPwdInput.value = '';
   // Si el dispositivo es de confianza, saltar el login directamente
   if (await isTrustedDevice()) {
     _adminLoggedIn = true; window._adminLoggedIn = true;
-    document.getElementById('admin-login').style.display = 'none';
-    document.getElementById('admin-panel').style.display = 'block';
+    if (adminLoginEl) adminLoginEl.style.display = 'none';
+    if (adminPanelEl) adminPanelEl.style.display = 'block';
     renderAdminProducts();
     loadAdminConfig();
     loadAdminHorario();
@@ -875,8 +890,8 @@ async function openAdmin() {
     if (typeof _pedirWakeLockCocina === 'function') _pedirWakeLockCocina();
     logActivity('📱 Acceso automático — dispositivo de confianza');
   } else {
-    document.getElementById('admin-login').style.display = 'block';
-    document.getElementById('admin-panel').style.display = 'none';
+    if (adminLoginEl) adminLoginEl.style.display = 'block';
+    if (adminPanelEl) adminPanelEl.style.display = 'none';
   }
   // Mostrar banner de audio solo si no está desbloqueado
   if (localStorage.getItem(AUDIO_PREF_KEY) === '1') unlockAudioContext();
