@@ -7414,14 +7414,18 @@ async function _submitOrderInner() {
     // por defecto (aceite), para no ensuciar el ticket de la inmensa mayoría
     // de pedidos que sí llevan aceite.
     if (c.base === 'mantequilla') extras.push({ name: '🧈 Mantequilla (en vez de aceite)', price: 0 });
-    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    // Orden fijo en el ticket: la salsa siempre primero, luego los
+    // ingredientes, y el queso siempre el último de los extras con
+    // precio (antes de gratinado) — igual que ya hacían Al Gusto/Bomba
+    // más arriba (custItems) y Comandas.
+    (c.salsasExtra || []).forEach(salsa => {
+      extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
+    });
     (c.ingredientesExtra || []).forEach(ing => {
       const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 1.00 : 0;
       extras.push({ name: 'Extra ' + ing, price: precioIng });
     });
-    (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
-    });
+    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
