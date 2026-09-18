@@ -307,6 +307,54 @@ function dobleSurcharge(dobles) {
 }
 
 const BOLSA_ID = 52;
+
+/* ── Bolsas automáticas: cada 2 patatas (categoría "Patatas" — incluye Al
+   Gusto/Bomba/Cheddar-Bacon) suman 1 bolsa, con 1 patata sola ya llevando
+   su bolsa (ceil(patatas/2)). El resto de categorías (boniato, paninis,
+   tartas...) nunca suman bolsas por su cuenta — solo "viajan" en las que
+   ya haya por las patatas; si no hay ninguna patata pero sí hay algo más
+   en el pedido, se pone 1 bolsa igualmente. Se recalcula sola en cada
+   cambio del carrito (ver sincronizarBolsaAuto, llamado desde
+   renderCart), pero en cuanto alguien la toca a mano (botón "Bolsa" o
+   +/− de su línea) se deja de tocar hasta la siguiente comanda — igual
+   que ya se hace con "efectivo"/"tarjeta" en Hacer Caja. ── */
+function contarPatatasEnCarrito() {
+  let n = 0;
+  Object.entries(cart).forEach(([id, qty]) => {
+    if (id == BOLSA_ID) return;
+    const item = MENU.find(m => m.id == id);
+    if (item && item.cat === 'Patatas') n += qty;
+  });
+  [custCart, extrasCart].forEach(c => {
+    Object.values(c).forEach(entry => {
+      const item = MENU.find(m => m.id == entry.menuId);
+      if (item && item.cat === 'Patatas') n += entry.qty;
+    });
+  });
+  return n;
+}
+function hayAlgoMasEnCarrito() {
+  if (Object.entries(cart).some(([id, qty]) => id != BOLSA_ID && qty > 0)) return true;
+  if (Object.values(custCart).some(c => c.qty > 0)) return true;
+  if (Object.values(extrasCart).some(c => c.qty > 0)) return true;
+  return false;
+}
+function bolsasSugeridas() {
+  const patatas = contarPatatasEnCarrito();
+  if (patatas > 0) return Math.ceil(patatas / 2);
+  return hayAlgoMasEnCarrito() ? 1 : 0;
+}
+let _bolsaAutoValor = 0; // último número que puso el propio cálculo — si lo que hay ahora no coincide, alguien lo ha tocado a mano
+let _bolsaOverride = false;
+function sincronizarBolsaAuto() {
+  if (_bolsaOverride) return;
+  const actual = cart[BOLSA_ID] || 0;
+  if (actual !== _bolsaAutoValor) { _bolsaOverride = true; return; }
+  const sugeridas = bolsasSugeridas();
+  if (sugeridas <= 0) delete cart[BOLSA_ID]; else cart[BOLSA_ID] = sugeridas;
+  _bolsaAutoValor = sugeridas;
+}
+
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
 // sin importar el orden en que estén los productos en MENU).
 const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas", "Snacks"];
@@ -1389,6 +1437,7 @@ function swipeRemoveByKey(type, key) {
 }
 
 function renderCart() {
+  sincronizarBolsaAuto();
   const bodyEl = document.getElementById('cart-body');
   const totalRowEl = document.getElementById('cart-total-row');
   const lines = Object.entries(cart);
@@ -1762,6 +1811,7 @@ function clearOrder(silent) {
     };
   }
   cart = {}; custCart = {}; extrasCart = {}; manualCart = {}; orderDiscount = null; lineDiscounts = {};
+  _bolsaAutoValor = 0; _bolsaOverride = false;
   document.getElementById('order-name').value = '';
   document.getElementById('pickup-time').value = '';
   clearCashReceived();
@@ -3477,6 +3527,10 @@ function modifyHistorialOrder(index) {
   manualCart = order.rawState.manualCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
+  // No se recalculan las bolsas al recuperar un pedido ya impreso — se
+  // respeta el número que llevaba (aunque se tocara a mano en su momento),
+  // en vez de que el cálculo automático se lo cambie solo al reabrirlo.
+  _bolsaAutoValor = 0; _bolsaOverride = true;
   document.getElementById('order-name').value = order.name || '';
   document.getElementById('pickup-time').value = order.pickupTime || '';
   setOrderPaid(!!order.paid);
@@ -3504,6 +3558,9 @@ function payHistorialOrder(index) {
   manualCart = order.rawState.manualCart || {};
   orderDiscount = order.rawState.orderDiscount || null;
   lineDiscounts = order.rawState.lineDiscounts || {};
+  // No se recalculan las bolsas al recuperar un pedido ya impreso (ver
+  // modifyHistorialOrder) — se respeta el número que llevaba.
+  _bolsaAutoValor = 0; _bolsaOverride = true;
   document.getElementById('order-name').value = order.name || '';
   document.getElementById('pickup-time').value = order.pickupTime || '';
   // Se guarda el pedido ORIGINAL entero (mismo número de ticket, ya
