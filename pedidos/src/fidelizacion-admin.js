@@ -493,17 +493,26 @@ async function cargarPedidosClienteFidelizacion(telefono) {
       return;
     }
     const fechas = await window.fb_loadAllTicketDates();
-    let pedidosCliente = [];
+    // Por número de pedido (no un array) — un mismo pedido puede haber
+    // quedado guardado bajo DOS claves distintas dentro de tickets/<fecha>
+    // (p.ej. de antes de que existiera la protección contra reenvíos
+    // duplicados en guardar-pedido.php), y sin deduplicar aquí esta lista
+    // los contaba y mostraba dos veces cada uno — visto en producción
+    // ("los tickets de fidelización salen dobles"), aunque el propio
+    // contador de sellos (que no sale de aquí) estuviera bien.
+    const pedidosPorNumero = {};
     for (const fecha of fechas) {
       const ticketsDelDia = await window.fb_loadTicketsByDate(fecha);
       if (!ticketsDelDia) continue;
       Object.entries(ticketsDelDia).forEach(([num, t]) => {
         const telTicket = (t.phone || '').replace(/\D/g, '');
         if (telTicket === telefono) {
-          pedidosCliente.push({ numero: t.orderNum || num, fecha: fecha, hora: t.slotTime || t.time || '', total: t.total });
+          const numero = t.orderNum || num;
+          pedidosPorNumero[numero] = { numero, fecha, hora: t.slotTime || t.time || '', total: t.total };
         }
       });
     }
+    const pedidosCliente = Object.values(pedidosPorNumero);
     if (!pedidosCliente.length) {
       el.innerHTML = '<div style="color:#8A6A4E">No se encontraron pedidos para este teléfono.</div>';
       return;
