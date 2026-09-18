@@ -797,18 +797,28 @@ function closeCustomizer() {
 function custSelTotal() {
   return custSelSauces.length + custSelIngredients.length;
 }
+// Si ya se eligió "Queso Mozzarella" o "4 Quesos" como ingrediente (gratis,
+// dentro del cupo), el gratinado ya tiene con qué gratinar — sin esto,
+// marcar "🔥 Gratinado" volvía a marcar también "🧀 Queso mozzarella
+// +1,00€" aunque el cliente ya tuviera queso puesto, como si no lo tuviera.
+function custTieneQuesoIngrediente() {
+  return custSelIngredients.includes('Queso Mozzarella') || custSelIngredients.includes('4 Quesos');
+}
 function toggleCustExtra(type) {
   if (type === 'queso') {
     custExtraQueso = !custExtraQueso;
-    // Si quita queso y no es solo gratinado, quitar también gratinado
-    if (!custExtraQueso && custExtraGratinado) {
+    // Si quita el queso extra y no es solo gratinado, quitar también
+    // gratinado — salvo que siga teniendo queso puesto como ingrediente,
+    // que entonces el gratinado sigue teniendo sentido.
+    if (!custExtraQueso && custExtraGratinado && !custTieneQuesoIngrediente()) {
       custExtraGratinado = false;
       updateCustExtraUI('gratinado', false);
     }
   } else {
     custExtraGratinado = !custExtraGratinado;
-    // Si activa gratinado, activar queso también
-    if (custExtraGratinado && !custExtraQueso) {
+    // Si activa gratinado y no lleva queso de ninguna forma (ni extra ni
+    // como ingrediente ya elegido), activar el queso extra también.
+    if (custExtraGratinado && !custExtraQueso && !custTieneQuesoIngrediente()) {
       custExtraQueso = true;
       updateCustExtraUI('queso', true);
     }
@@ -876,8 +886,17 @@ function toggleCustIng(el, name) {
   if (el.classList.contains('disabled')) return;
   const idx = custSelIngredients.indexOf(name);
   if (idx >= 0) custSelIngredients.splice(idx, 1);else custSelIngredients.push(name);
+  // Si se quita "Queso Mozzarella"/"4 Quesos" y el gratinado estaba
+  // activo apoyándose solo en ese ingrediente (sin el queso extra de
+  // pago), se activa el queso extra para que el gratinado siga teniendo
+  // con qué gratinar — en vez de quedarse "gratinando" sin queso alguno.
+  if ((name === 'Queso Mozzarella' || name === '4 Quesos') && custExtraGratinado && !custExtraQueso && !custTieneQuesoIngrediente()) {
+    custExtraQueso = true;
+    updateCustExtraUI('queso', true);
+  }
   renderCustChips();
   updateCustProgress();
+  updateCustTotalPrice();
 }
 function updateCustProgress() {
   const cfg = CUSTOMIZER_CONFIG[custType];
