@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Comandas">
 <link rel="apple-touch-icon" href="img/icon-192.png">
-<link rel="stylesheet" href="comandas.css?v=1789469357857">
+<link rel="stylesheet" href="comandas.css?v=1789728760896">
 </head>
 <body>
 
@@ -150,7 +150,10 @@
         <button type="button" class="keypad-equals" onclick="keypadEquals()">=</button>
       </div>
     </div>
-    <div class="clear-link"><button type="button" onclick="clearCashReceived()">✕ Limpiar</button></div>
+    <div class="clear-link">
+      <button type="button" onclick="clearCashReceived()">✕ Limpiar</button>
+      <button type="button" class="cobrar-sin-imprimir-btn" onclick="cobrarSinImprimir()">💰 Cobrar sin imprimir</button>
+    </div>
     <button class="btn-print" id="print-btn" style="width:100%;margin-top:clamp(6px,1.2vh,14px)" onclick="cobrarBottomAction()">IMPRIMIR COMANDA</button>
   </div>
 </div>
@@ -350,17 +353,32 @@
     <div class="modal-subtitle">Añade o quita productos sencillos (bebidas, tartas, cookies…) y marca o quita la etiqueta NUEVO. Se guarda en este ordenador.</div>
 
     <div class="section-label" style="margin-top:0">Añadir producto</div>
-    <div class="form-group"><label>Nombre</label><input id="carta-new-name" type="text" placeholder="Ej. Batido de fresa"></div>
+    <div class="form-group" id="carta-new-panini-tipo-group" style="display:none">
+      <label>Qué añadir</label>
+      <select id="carta-new-panini-tipo" onchange="onCartaPaniniTipoChange()">
+        <option value="entero">Panini entero (con su medio, si quieres)</option>
+        <option value="medio">Solo el medio de un panini que ya existe</option>
+      </select>
+    </div>
+    <div class="form-group" id="carta-new-mediopanini-whole-group" style="display:none">
+      <label>¿De qué panini entero es la mitad?</label>
+      <select id="carta-new-mediopanini-whole"></select>
+    </div>
+    <div class="form-group"><label id="carta-new-name-label">Nombre</label><input id="carta-new-name" type="text" placeholder="Ej. Batido de fresa"></div>
     <div class="settings-grid">
       <div class="form-group">
         <label>Categoría</label>
         <select id="carta-new-cat" onchange="onCartaCatSelectChange()"></select>
       </div>
-      <div class="form-group"><label>Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
+      <div class="form-group"><label id="carta-new-price-label">Precio (€)</label><input id="carta-new-price" type="number" min="0" step="0.01" placeholder="0,00"></div>
     </div>
     <div class="form-group" id="carta-new-cat-custom-group" style="display:none">
       <label>Nombre de la categoría nueva</label>
       <input id="carta-new-cat-custom" type="text" placeholder="Ej. Snacks">
+    </div>
+    <div class="form-group" id="carta-new-mediopanini-group" style="display:none">
+      <label>Precio del medio panini (€) <span style="font-weight:400;color:var(--muted)">— opcional, se crea junto con el entero</span></label>
+      <input id="carta-new-mediopanini-price" type="number" min="0" step="0.01" placeholder="Ej. 3,30">
     </div>
     <div class="form-group"><label>Descripción (opcional)</label><input id="carta-new-desc" type="text" placeholder="Ej. 500 ml"></div>
     <label class="option-row" style="padding:10px 14px">
@@ -382,7 +400,20 @@
     <div class="settings-help" style="margin-top:0">
       Precio de cada salsa o ingrediente al añadirse como "extra" — en Al Gusto, Bomba, o encima de cualquier patata normal. Cambia el número y listo, se guarda solo.
     </div>
-    <div id="carta-extras-list"></div>
+    <div class="settings-grid" style="margin-bottom:10px">
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="carta-new-extra-tipo">
+          <option value="ing">Ingrediente</option>
+          <option value="salsa">Salsa</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Nombre</label><input id="carta-new-extra-name" type="text" placeholder="Ej. Cheddar"></div>
+    </div>
+    <div class="form-group"><label>Precio (€)</label><input id="carta-new-extra-price" type="number" min="0" step="0.01" placeholder="1,00"></div>
+    <button class="btn-secondary" style="margin-bottom:14px" onclick="submitCustomExtra()">+ Añadir ingrediente/salsa nuevo</button>
+    <button type="button" class="btn-secondary" style="margin-bottom:10px" id="carta-extras-list-toggle" onclick="toggleCartaExtrasListVisible()">💰 Ver precios de los extras</button>
+    <div id="carta-extras-list" style="display:none"></div>
   </div>
 </div>
 
@@ -391,6 +422,7 @@
   <div class="modal-box" style="max-width:420px">
     <button class="modal-close" onclick="closeCartaEdit()">&#x2715;</button>
     <div class="modal-title">✏️ Editar producto</div>
+    <div class="modal-subtitle" id="carta-edit-subtitle" style="color:var(--error);font-weight:700"></div>
     <div class="form-group"><label>Nombre</label><input id="carta-edit-name" type="text"></div>
     <div class="form-group"><label>Precio (€)</label><input id="carta-edit-price" type="number" min="0" step="0.01"></div>
     <div class="form-group"><label>Descripción</label><input id="carta-edit-desc" type="text"></div>
@@ -398,6 +430,26 @@
       <div><div class="option-title" style="font-size:13.5px">Permitir quitar/cambiar ingredientes</div><div class="option-sub">Desactívalo si la mezcla no se puede alterar (como la 4 Quesos)</div></div>
       <input type="checkbox" id="carta-edit-quitar" style="width:20px;height:20px;flex-shrink:0">
     </label>
+    <div id="carta-edit-caps-group" style="display:none">
+      <div class="section-label">Qué se puede añadir</div>
+      <div class="settings-help" style="margin-top:0">Por si algún día se queda sin alguna de estas por error (como pasó con la 4 Quesos) — actívala aquí sin esperar a un cambio de código.</div>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Ingredientes extra</div></div>
+        <input type="checkbox" id="carta-edit-cap-ingextra" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Salsas extra</div></div>
+        <input type="checkbox" id="carta-edit-cap-salsaextra" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Gratinado</div></div>
+        <input type="checkbox" id="carta-edit-cap-gratinado" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+      <label class="option-row" style="padding:10px 14px">
+        <div><div class="option-title" style="font-size:13.5px">Queso mozzarella extra</div></div>
+        <input type="checkbox" id="carta-edit-cap-quesoextra" style="width:20px;height:20px;flex-shrink:0">
+      </label>
+    </div>
     <div class="settings-actions">
       <button class="btn-secondary" onclick="saveCartaEdit()">💾 Guardar cambios</button>
     </div>
@@ -613,6 +665,7 @@
   <div class="modal-box" style="max-width:280px">
     <button class="modal-close" onclick="closeNumpad()">&#x2715;</button>
     <div class="modal-title" id="numpad-title">Valor</div>
+    <div id="numpad-toggle-row" style="display:none"></div>
     <div class="cash-keypad">
       <div class="cash-keypad-display" id="numpad-display">0</div>
       <div class="cash-keypad-grid">
@@ -744,6 +797,6 @@
   <button onclick="undoClearOrder()">↩️ Deshacer</button>
 </div>
 
-<script src="comandas.js?v=1789469357857"></script>
+<script src="comandas.js?v=1789728760896"></script>
 </body>
 </html>

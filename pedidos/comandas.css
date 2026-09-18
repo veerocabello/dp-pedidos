@@ -769,6 +769,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .cart-edit:hover { color: var(--amber-dark); background: rgba(224,129,42,.12); }
 .cart-remove:hover { color: var(--error); background: rgba(192,57,43,.1); }
+.cart-edit.aparte-on { background: var(--gold); }
+.cart-edit.aparte-on:hover { background: var(--gold); filter: brightness(1.05); }
 
 .cart-total-row {
   display: flex;
@@ -924,9 +926,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 #cobrar-modal .modal-box { padding: clamp(14px, 2.5vh, 26px); max-height: 99vh; }
 #cobrar-modal .btn-print { padding: clamp(9px, 1.6vh, 15px); font-size: clamp(13px, 2vh, 16px); }
 
-.clear-link { display: block; text-align: center; margin: clamp(4px, 0.8vh, 8px) 0 0; }
+.clear-link { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; margin: clamp(4px, 0.8vh, 8px) 0 0; }
 .clear-link button {
   background: none; border: none; color: var(--error); font-size: 12.5px; font-weight: 700; cursor: pointer;
+  text-decoration: underline; padding: 2px 4px;
+}
+.clear-link .cobrar-sin-imprimir-btn { color: var(--amber-dark); }
+
+/* ── Enlace opcional bajo el título del teclado numérico genérico, para
+   alternar de qué se está pidiendo un valor (ej. dinero vs. cantidad de
+   monedas en Hacer Caja) — solo lo rellenan los flujos que lo necesitan;
+   el resto de usos del teclado lo dejan vacío y oculto. ── */
+#numpad-toggle-row { text-align: center; margin: -6px 0 6px; }
+.numpad-toggle-link {
+  background: none; border: none; color: var(--amber-dark); font-size: 12px; font-weight: 700; cursor: pointer;
   text-decoration: underline; padding: 2px 4px;
 }
 
@@ -1438,6 +1451,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .carta-nuevo-btn.on { background: var(--gold); filter: none; }
 .carta-remove-btn:hover { background: var(--error); filter: brightness(1.1); }
 .carta-admin-row.agotado { opacity: .6; }
+/* Flechas para subir/bajar de puesto y desplegable para cambiar de
+   categoría — la alternativa al arrastrar que sí funciona con el dedo en
+   una pantalla táctil. */
+.carta-move-col { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.carta-move-btn {
+  background: var(--warm); border: none; border-radius: 6px; width: 22px; height: 18px;
+  font-size: 9px; line-height: 1; color: var(--brown); cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.carta-move-btn:hover:not(:disabled) { background: var(--amber); }
+.carta-move-btn:disabled { opacity: .3; cursor: default; }
+.carta-cat-select {
+  background: var(--warm); border: none; border-radius: var(--radius-xs);
+  padding: 7px 6px; cursor: pointer; font-size: 12px; font-family: inherit; color: var(--text);
+  max-width: 108px;
+}
 .carta-agotado-tag {
   display: inline-block;
   background: var(--muted);

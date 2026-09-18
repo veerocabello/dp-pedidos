@@ -149,11 +149,11 @@ const CHEDDAR_ID = 50;
 const EXTRAS_SOLO_GRATINADO = new Set([4, 5, 6, 8, 11, 12, 14]); // ya llevan mozzarella
 const EXTRAS_QUESO_Y_GRATINADO = new Set([1, 2, 3, 7, 9, 10, 13]);
 const ALL_EXTRAS_IDS = new Set([...EXTRAS_SOLO_GRATINADO, ...EXTRAS_QUESO_Y_GRATINADO]);
-// Carbonara y Boloñesa llevan la mezcla ya preparada (no se puede quitar
-// ni cambiar), pero SÍ se puede añadir algo más encima — igual que
-// cualquier otra patata. El resto de "solo gratinar" (4 Quesos, Ranchera,
+// Carbonara, Boloñesa y 4 Quesos llevan la mezcla ya preparada (no se
+// puede quitar ni cambiar), pero SÍ se puede añadir algo más encima —
+// igual que cualquier otra patata. El resto de "solo gratinar" (Ranchera,
 // Philadelphia, Granollers, Pulled Pork) se queda igual.
-const EXTRAS_ANADIR_AUNQUE_PREPARADA = new Set([4, 5]);
+const EXTRAS_ANADIR_AUNQUE_PREPARADA = new Set([4, 5, 8]);
 // Todos los ingredientes extra cuestan lo mismo (antes había dos precios
 // distintos, 1€/0,70€ según el ingrediente); estas dos listas se
 // conservan solo para agrupar/ordenar el desplegable, ya no para el precio.
@@ -187,6 +187,20 @@ function saveExtraPrecio(tipo, name, value) {
 }
 function priceOfIngExtra(name) { return loadExtrasPrecios().ing[name]; }
 function priceOfSalsaExtra(name) { return name === SIN_SALSA ? 0 : loadExtrasPrecios().salsa[name]; }
+// Cuánto se cobra AHORA MISMO por un ingrediente/salsa extra marcado en el
+// modal, teniendo en cuenta que puede haber quedado emparejado como cambio
+// gratis (quitar uno + marcar este de extra) — sin esto, el chip seguía
+// mostrando su precio de siempre aunque el total de abajo ya no lo cobrara,
+// pareciendo que se estaba cobrando de más cuando en realidad era gratis.
+function extraPickChargedPrice(name, isSalsa, paired, doblesActuales) {
+  const precioUnidad = isSalsa ? priceOfSalsaExtra(name) : priceOfIngExtra(name);
+  const listaTrasEmparejar = isSalsa ? paired.salsasExtra : paired.ingredientesExtra;
+  const baseGratis = !listaTrasEmparejar.includes(name);
+  const doblesTotal = doblesActuales.filter(n => n === name).length;
+  const doblesLibres = doblesTotal - paired.dobles.filter(n => n === name).length;
+  const doblesCobrados = Math.max(0, doblesTotal - doblesLibres);
+  return (baseGratis ? 0 : precioUnidad) + doblesCobrados * precioUnidad;
+}
 
 const CUSTOMIZER_CONFIG = {
   algusto: { name: "Patata Al Gusto", price: 7.90, maxSauces: 1, maxIngredients: 6, maxTotal: null, subtitle: "Hasta 1 salsa y hasta 6 ingredientes a elegir" },
@@ -215,6 +229,50 @@ const CUST_INGREDIENT_ALIASES = {
   'tronquitos': 'Tronquitos de Mar',
   'mozzarella': 'Queso Mozzarella',
 };
+/* ── Ingredientes/salsas extra añadidos a mano desde "🍽️ Carta", igual
+   que los productos de la carta — se guardan aparte y se meten en las
+   listas de fábrica de arriba al cargar, mutándolas directamente para que
+   el resto del código (que ya las usa por todos lados) no tenga que
+   cambiar. Los ingredientes van también a EXTRAS_ING_PRECIO07 — esas dos
+   listas ya no deciden el precio (cada uno tiene el suyo en
+   loadExtrasPrecios), solo qué aparece como chip en "Ingredientes extra"
+   y en el Cheddar-Bacon; sin esto, un ingrediente nuevo saldría en Al
+   Gusto/Bomba (que sí recorre CUST_INGREDIENTS entero) pero no ahí. ── */
+const CUST_EXTRAS_CUSTOM_KEY = 'comandas_cust_extras_custom_v1';
+function loadCustExtrasCustom() {
+  try { return JSON.parse(localStorage.getItem(CUST_EXTRAS_CUSTOM_KEY) || '{"ing":[],"salsa":[]}'); }
+  catch (e) { return { ing: [], salsa: [] }; }
+}
+function saveCustExtrasCustom(o) { localStorage.setItem(CUST_EXTRAS_CUSTOM_KEY, JSON.stringify(o)); }
+(function applyCustExtrasCustomizations() {
+  const custom = loadCustExtrasCustom();
+  (custom.ing || []).forEach(name => {
+    if (!CUST_INGREDIENTS.includes(name)) CUST_INGREDIENTS.push(name);
+    if (!EXTRAS_ING_PRECIO07.includes(name)) EXTRAS_ING_PRECIO07.push(name);
+  });
+  (custom.salsa || []).forEach(name => {
+    if (!CUST_SAUCES.includes(name)) CUST_SAUCES.push(name);
+  });
+})();
+// Añade un ingrediente o salsa nuevo a la lista de "extras" de toda la
+// carta (Ingredientes/Salsas extra de cualquier patata, Cheddar-Bacon, Al
+// Gusto, Bomba...) — para cuando hace falta uno que no estaba de fábrica.
+function addCustomExtra(tipo, name, price) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) { toast('⚠️ Escribe un nombre'); return false; }
+  if (!(price >= 0)) { toast('⚠️ Precio no válido'); return false; }
+  const lista = tipo === 'salsa' ? CUST_SAUCES : CUST_INGREDIENTS;
+  if (lista.some(n => n.toLowerCase() === trimmed.toLowerCase())) { toast('⚠️ Ya existe "' + trimmed + '"'); return false; }
+  const custom = loadCustExtrasCustom();
+  custom[tipo === 'salsa' ? 'salsa' : 'ing'].push(trimmed);
+  saveCustExtrasCustom(custom);
+  lista.push(trimmed);
+  if (tipo !== 'salsa') EXTRAS_ING_PRECIO07.push(trimmed);
+  saveExtraPrecio(tipo === 'salsa' ? 'salsa' : 'ing', trimmed, price);
+  renderCartaExtrasList();
+  toast('✅ "' + trimmed + '" añadido');
+  return true;
+}
 // "Doble" de un ingrediente (base o extra) solo se ofrece cuando hay un
 // precio de referencia con el que cobrarlo — si el componente no está en
 // la lista de ingredientes con precio (p.ej. "galletas Lotus" o "pulled
@@ -344,6 +402,29 @@ function finalizarCobroSinImprimir() {
   clearOrder(true);
   toast('✅ Pedido ' + order.num + ' cobrado');
 }
+// Enlace "💰 Cobrar sin imprimir" junto a "✕ Limpiar" — para un cobro
+// rápido que no necesita ticket en papel (p. ej. algo que ya se sirvió
+// sin comanda). Si el pedido venía de recuperar uno no pagado (ya
+// impreso de antes), se deja seguir por el mismo camino de siempre
+// (finalizarCobroSinImprimir) para no duplicar el número de comanda.
+function cobrarSinImprimir() {
+  closeCobrarModal();
+  if (pedidoACobrarSinImprimir) { finalizarCobroSinImprimir(); return; }
+  const hayCobroManual = cobrarTotalManual != null && cobrarTotalManual > 0;
+  if (!cartHasAnyItem() && !hayCobroManual) { toast('La comanda está vacía'); return; }
+  const order = buildOrderObject();
+  order.rawState = {
+    cart: { ...cart },
+    custCart: JSON.parse(JSON.stringify(custCart)),
+    extrasCart: JSON.parse(JSON.stringify(extrasCart)),
+    manualCart: JSON.parse(JSON.stringify(manualCart)),
+    orderDiscount: orderDiscount ? { ...orderDiscount } : null,
+    lineDiscounts: JSON.parse(JSON.stringify(lineDiscounts)),
+  };
+  saveToHistorial(order);
+  clearOrder(true);
+  toast('✅ Comanda ' + order.num + ' cobrada (sin imprimir)');
+}
 function setPaymentMethod(m) {
   paymentMethod = m;
   document.getElementById('pay-method-cash').classList.toggle('active', m === 'efectivo');
@@ -460,13 +541,13 @@ function renderMenu() {
   const grid = document.getElementById('menu-grid');
   if (activeCategory === 'Todos') {
     grid.innerHTML = categories.filter(c => c !== 'Todos').map(cat => {
-      const items = MENU.filter(m => m.cat === cat && !m.hidden);
+      const items = MENU.filter(m => m.cat === cat);
       if (!items.length) return '';
       return `<div class="menu-cat-sep"><span class="cat-emoji">${CATEGORY_ICONS[cat] || ''}</span><span class="cat-name">${cat.toUpperCase()}</span></div>`
         + renderCategoryItems(cat, items);
     }).join('');
   } else {
-    grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory && !m.hidden));
+    grid.innerHTML = renderCategoryItems(activeCategory, MENU.filter(m => m.cat === activeCategory));
   }
   renderSidebarStockTally();
 }
@@ -589,6 +670,27 @@ function editExtrasItem(key) {
   if (!c) return;
   if (c.menuId === CHEDDAR_ID) openCheddarModal(key);
   else openExtrasModal(c.menuId, key);
+}
+// Botón rápido 🥡 de la línea del pedido: si el producto lleva una sola
+// salsa activa ahora mismo, la marca/desmarca aparte directamente, sin
+// abrir el modal entero. Si llevara más de una (raro — de serie + extra a
+// la vez), abre el modal normal para elegir cuál, que ya tiene su propia
+// sección "Salsa aparte" con todas listadas.
+function toggleSalsaAparteEnCarrito(key) {
+  const c = extrasCart[key];
+  if (!c) return;
+  const item = MENU.find(m => m.id == c.menuId);
+  if (!item) return;
+  const activas = Array.from(getActiveSalsaNames(item, c.quitados, c.cambios, c.salsasExtra));
+  if (!activas.length) return;
+  if (activas.length > 1) { editExtrasItem(key); return; }
+  const name = activas[0];
+  const aparte = new Set(c.salsaAparte || []);
+  const marcando = !aparte.has(name);
+  if (marcando) aparte.add(name); else aparte.delete(name);
+  c.salsaAparte = Array.from(aparte);
+  renderCart();
+  toast(marcando ? '🥡 ' + name + ' aparte' : 'Ya no va aparte');
 }
 // Una patata/boniato del carrito SIMPLE (añadido tal cual, tocando la
 // casilla) no tiene ninguna personalización todavía que "editar" — al
@@ -772,8 +874,30 @@ function offerNote(salsaCount, ingCount) {
 }
 // Tope 2 cambios "gratis" en total (quitar uno + añadir otro cuenta como
 // cambio igual que usar el selector dedicado), compartido entre ambos.
+const CAMBIOS_GRATIS_MAX = 2;
 function computeFreeSwapPasses(quitadosCount, cambiosCount) {
-  return Math.max(0, Math.min(quitadosCount || 0, 2 - (cambiosCount || 0)));
+  return Math.max(0, Math.min(quitadosCount || 0, CAMBIOS_GRATIS_MAX - (cambiosCount || 0)));
+}
+// A partir del cambio nº 3 (por orden de selección) ya no sale gratis —
+// se cobra como si el ingrediente/salsa nuevo se hubiera añadido suelto.
+// Los cambios "sin tipo" (p.ej. Aceite de oliva → Mantequilla en la
+// Patata Simple) nunca se cobran, son un caso aparte del selector normal.
+function priceOfCambio(c) {
+  if (c.tipo === 'salsa') return priceOfSalsaExtra(c.to);
+  if (c.tipo === 'ing') return priceOfIngExtra(c.to);
+  return 0;
+}
+function chargedCambios(cambios) { return (cambios || []).slice(CAMBIOS_GRATIS_MAX); }
+function freeCambios(cambios) { return (cambios || []).slice(0, CAMBIOS_GRATIS_MAX); }
+// Un cambio gratis solo cubre hasta el precio normal de un ingrediente/
+// salsa (EXTRAS_ING_PRECIO/EXTRAS_SALSA_PRECIO) — si lo que se pide es de
+// "precio alto" (Queso Mozzarella, Philadelphia, 4 Quesos...), lo que se
+// pase de ahí se cobra igual aunque el cambio en sí salga gratis.
+function premiumOfCambio(c) {
+  let base = 0;
+  if (c.tipo === 'salsa') base = priceOfSalsaExtra(c.to) - EXTRAS_SALSA_PRECIO;
+  else if (c.tipo === 'ing') base = priceOfIngExtra(c.to) - EXTRAS_ING_PRECIO;
+  return Math.max(0, Math.round(base * 100) / 100);
 }
 // "Sal" y "pimienta" (los únicos quitables de la Patata Simple) no son
 // ingredientes de verdad — quitarlas no debe regalar un cambio gratis
@@ -792,10 +916,10 @@ function countFreeSwapQuitados(quitadosNames) {
 // alguno, con el que quede. En la Simple nunca hay nada que emparejar:
 // sal/pimienta no cuentan para el cupo (countFreeSwapQuitados), así que
 // sus extras se quedan siempre como extras sueltos, nunca como cambio.
-function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder, doblesList) {
+function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambios, pickOrder, doblesList, quesoOn) {
   const freePasses = computeFreeSwapPasses(countFreeSwapQuitados(quitadosList), explicitCambios.length);
   if (freePasses <= 0) {
-    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder, dobles: doblesList || [] };
+    return { quitados: quitadosList, ingredientesExtra: ingList, salsasExtra: salsaList, cambios: explicitCambios, pickOrder, dobles: doblesList || [], queso: !!quesoOn };
   }
   const comps = parseBaseComponents(item);
   const realIngComponents = new Set(comps.filter(c => !esComponenteSalsa(c) && !isBaseGrasaComp(c) && !isElegirSalsaComp(c)));
@@ -806,17 +930,29 @@ function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambi
   let remainingDobles = [...(doblesList || [])];
   const newCambios = [];
   const consumed = new Set(); // "type:name" de picks ya emparejados, para limpiar pickOrder
-  (pickOrder || []).slice(0, freePasses).forEach(pick => {
-    const isIng = pick.type === 'ing';
-    let qIdx = remainingQuitados.findIndex(q => isIng ? realIngComponents.has(q) : realSalsaComponents.has(q));
+  // "Añadir queso mozzarella" cuenta como un pick más para el cupo de
+  // cambio gratis — se trata exactamente como si "Queso Mozzarella" se
+  // hubiera marcado en Ingredientes extra (mismo nombre, mismo tipo 'ing'),
+  // así hereda su precio real (más caro, ver EXTRAS_PRECIO_ALTO) para la
+  // prima que se cobra aparte incluso en un cambio gratis (ver
+  // premiumOfCambio) — solo el primer euro de un cambio es gratis de
+  // verdad, lo que pase de ahí (por ser un ingrediente "de precio alto")
+  // se cobra igual. Se ofrece el último, después de los ingredientes/
+  // salsas ya elegidos, que ya tenían su sitio en pickOrder por orden de
+  // selección.
+  const picksConQueso = quesoOn ? [...(pickOrder || []), { type: 'ing', name: 'Queso Mozzarella' }] : (pickOrder || []);
+  picksConQueso.slice(0, freePasses).forEach(pick => {
+    const prefiereSalsa = pick.type === 'salsa';
+    let qIdx = remainingQuitados.findIndex(q => prefiereSalsa ? realSalsaComponents.has(q) : realIngComponents.has(q));
     if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
     if (qIdx === -1) return; // no debería pasar si freePasses se calculó bien
     const from = remainingQuitados.splice(qIdx, 1)[0];
-    newCambios.push({ from, to: pick.name });
+    newCambios.push({ from, to: pick.name, tipo: pick.type });
     consumed.add(pick.type + ':' + pick.name);
-    if (isIng) remainingIng = remainingIng.filter(n => n !== pick.name);
+    if (pick.type === 'ing') remainingIng = remainingIng.filter(n => n !== pick.name);
     else remainingSalsa = remainingSalsa.filter(n => n !== pick.name);
   });
+  const quesoConsumido = quesoOn && consumed.has('ing:Queso Mozzarella');
   const newPickOrder = (pickOrder || []).filter(p => !consumed.has(p.type + ':' + p.name));
   // Si sobra cupo de cambio gratis y queda algún ingrediente/salsa pedido
   // doble/triple (ya estaba en la receta, no es un extra nuevo), se
@@ -832,12 +968,12 @@ function autoPairFreeSwaps(item, quitadosList, ingList, salsaList, explicitCambi
     if (qIdx === -1) qIdx = remainingQuitados.findIndex(q => !SEASONING_NAMES.has(q.trim().toLowerCase()));
     if (qIdx === -1) continue;
     const from = remainingQuitados.splice(qIdx, 1)[0];
-    newCambios.push({ from, to: name });
+    newCambios.push({ from, to: name, tipo: isIng ? 'ing' : 'salsa' });
     dobleIdxConsumidos.push(i);
     freeLeft--;
   }
   dobleIdxConsumidos.reverse().forEach(i => remainingDobles.splice(i, 1));
-  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder, dobles: remainingDobles };
+  return { quitados: remainingQuitados, ingredientesExtra: remainingIng, salsasExtra: remainingSalsa, cambios: [...explicitCambios, ...newCambios], pickOrder: newPickOrder, dobles: remainingDobles, queso: !!quesoOn && !quesoConsumido };
 }
 // Mismo criterio que computeExtrasCorePrice: los primeros `freePasses`
 // picks por orden de selección van gratis — así el ticket muestra sin
@@ -851,7 +987,9 @@ function freeSwapPickSet(pickOrder, freePasses) {
 function getExtrasItemPrice(e) {
   const free = computeFreeSwapPasses(countFreeSwapQuitados(e.quitados), (e.cambios || []).length);
   const core = computeExtrasCorePrice(e.basePrice, e.ingredientesExtra, e.salsasExtra, e.pickOrder, free);
-  return core + (e.queso ? 1 : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
+  const cambiosExtra = chargedCambios(e.cambios).reduce((s, c) => s + priceOfCambio(c), 0);
+  const cambiosPremium = freeCambios(e.cambios).reduce((s, c) => s + premiumOfCambio(c), 0);
+  return core + cambiosExtra + cambiosPremium + (e.queso ? priceOfIngExtra('Queso Mozzarella') : 0) + (e.gratinado ? 0.5 : 0) + dobleSurcharge(e.dobles);
 }
 function extrasIsAutoUpgraded(ingredientesExtra, salsasExtra) {
   return !!extrasAutoUpgradeType(ingredientesExtra, salsasExtra);
@@ -882,13 +1020,24 @@ function getExtrasItemLabel(e) {
 }
 function getExtrasItemDetails(e) {
   const out = [];
+  const aparte = new Set(e.salsaAparte || []);
   (e.quitados || []).forEach(q => out.push('🚫 Sin ' + q));
   (e.dobles || []).forEach(d => out.push('+ ' + d + ' (extra)'));
-  (e.cambios || []).forEach(c => out.push('🔄 ' + c.from + ' → ' + c.to));
+  const cambiosCobrados = chargedCambios(e.cambios);
+  (e.cambios || []).forEach(c => {
+    const premium = premiumOfCambio(c);
+    const extraTxt = cambiosCobrados.includes(c) ? ' (extra +' + fmt(priceOfCambio(c)) + '€)' : (premium > 0 ? ' (+' + fmt(premium) + '€)' : '');
+    out.push('🔄 ' + c.from + ' → ' + c.to + extraTxt + (aparte.has(c.to) ? ' 🥡 aparte' : ''));
+  });
   if (e.queso) out.push('+ Queso mozzarella');
   if (e.gratinado) out.push('+ Gratinado');
   (e.ingredientesExtra || []).forEach(i => out.push('+ ' + i));
-  (e.salsasExtra || []).forEach(s => out.push(s === SIN_SALSA ? '🚫 Sin salsa' : '+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)'));
+  (e.salsasExtra || []).forEach(s => out.push(s === SIN_SALSA ? '🚫 Sin salsa' : '+ ' + s + ' (salsa extra +' + fmt(priceOfSalsaExtra(s)) + '€)' + (aparte.has(s) ? ' 🥡 aparte' : '')));
+  // La salsa de serie sin tocar (no quitada, no cambiada, no es un
+  // extra) no genera ninguna otra línea — si se marcó aparte, hay que
+  // decirlo en una línea propia para que no se quede sin avisar.
+  const yaMencionadas = new Set([...(e.cambios || []).map(c => c.to), ...(e.salsasExtra || [])]);
+  aparte.forEach(name => { if (!yaMencionadas.has(name)) out.push('🥡 ' + name + ' aparte'); });
   return out;
 }
 // Igual que getExtrasItemDetails() pero como {name, price} — así el
@@ -900,18 +1049,29 @@ function getExtrasItemDetails(e) {
 // subrayadas en el ticket — igual que en la web de pedidos.
 function getExtrasItemTicketExtras(e) {
   const out = [];
+  const aparte = new Set(e.salsaAparte || []);
   (e.quitados || []).forEach(q => out.push({ name: 'Sin ' + q, underline: true }));
   (e.dobles || []).forEach(d => out.push({ name: d + ' (extra)', price: priceOfIngExtra(d) || 0, underline: true }));
-  (e.cambios || []).forEach(c => out.push({ name: c.from + ' por ' + c.to, underline: true }));
+  const cambiosCobrados = chargedCambios(e.cambios);
+  (e.cambios || []).forEach(c => {
+    const premium = premiumOfCambio(c);
+    const precio = cambiosCobrados.includes(c) ? priceOfCambio(c) : (premium > 0 ? premium : null);
+    out.push({ name: c.from + ' por ' + c.to + (aparte.has(c.to) ? ' - APARTE' : ''), price: precio, underline: true });
+  });
   // Orden fijo en el ticket: primero salsas, luego ingredientes, y el
   // queso/gratinado siempre al final, sin importar cuándo se eligieron.
   const upgraded = extrasIsAutoUpgraded(e.ingredientesExtra, e.salsasExtra);
   const free = upgraded ? 0 : computeFreeSwapPasses(countFreeSwapQuitados(e.quitados), (e.cambios || []).length);
   const freeSet = freeSwapPickSet(e.pickOrder, free);
-  (e.salsasExtra || []).forEach(s => out.push({ name: s, price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
+  (e.salsasExtra || []).forEach(s => out.push({ name: s + (aparte.has(s) ? ' - APARTE' : ''), price: (s === SIN_SALSA || upgraded || freeSet.has('salsa:' + s)) ? null : priceOfSalsaExtra(s), underline: true }));
   quesoLastKeepOrder(e.ingredientesExtra || []).forEach(i => out.push({ name: i, price: (upgraded || freeSet.has('ing:' + i)) ? null : priceOfIngExtra(i), underline: true }));
-  if (e.queso) out.push({ name: 'Queso', price: 1, underline: true });
+  if (e.queso) out.push({ name: 'Queso', price: priceOfIngExtra('Queso Mozzarella'), underline: true });
   if (e.gratinado) out.push({ name: 'Gratinado', price: 0.5, underline: true });
+  // La salsa de serie sin tocar (no quitada, no cambiada, no es un
+  // extra) no genera ninguna otra línea — si se marcó aparte, hay que
+  // decirlo en una línea propia para que no se quede sin avisar.
+  const yaMencionadas = new Set([...(e.cambios || []).map(c => c.to), ...(e.salsasExtra || [])]);
+  aparte.forEach(name => { if (!yaMencionadas.has(name)) out.push({ name: name + ' - APARTE', underline: true }); });
   return out;
 }
 function cartHasAnyItem() {
@@ -967,6 +1127,12 @@ function openNumpad(inputId, title) {
   const el = document.getElementById(inputId);
   numpadBuffer = el && el.value ? String(el.value).replace('.', ',') : '';
   document.getElementById('numpad-title').textContent = title || 'Valor';
+  // El enlace de alternar dinero/cantidad es propio de Hacer Caja — se
+  // oculta aquí por defecto y solo openCajaDenomNumpad lo vuelve a
+  // mostrar justo después, así el resto de usos del teclado (descuentos,
+  // cobro suelto...) no se quedan con un enlace de una vez anterior.
+  const toggleRow = document.getElementById('numpad-toggle-row');
+  if (toggleRow) toggleRow.style.display = 'none';
   updateNumpadDisplay();
   document.getElementById('numpad-modal').classList.add('open');
 }
@@ -1310,6 +1476,14 @@ function renderCart() {
     total += subtotal;
     const details = getExtrasItemDetails(c).join(' · ');
     const baseItem = MENU.find(m => m.id == c.menuId);
+    // Botón rápido "🥡 salsa aparte" directo en la línea del pedido, sin
+    // tener que abrir el modal entero — solo si el producto lleva alguna
+    // salsa ahora mismo (de serie o extra); si no lleva ninguna, ni se
+    // muestra el botón.
+    const salsasActivasLinea = baseItem ? getActiveSalsaNames(baseItem, c.quitados, c.cambios, c.salsasExtra) : new Set();
+    const salsaAparteBtn = salsasActivasLinea.size
+      ? `<button class="cart-edit ${(c.salsaAparte || []).length ? 'aparte-on' : ''}" onclick="toggleSalsaAparteEnCarrito('${c.key}')" title="Marcar salsa aparte">🥡</button>`
+      : '';
     rows.push({ rank: categoryRank(baseItem ? baseItem.cat : ''), html: wrapSwipe('extras', c.key, `<div class="cart-line">
       <button type="button" class="cart-line-name cart-line-name-btn" onclick="editExtrasItem('${c.key}')" title="Editar">${escapeHtml(getExtrasItemLabel(c))}</button>
       <div class="cart-qty-mini">
@@ -1319,6 +1493,7 @@ function renderCart() {
       </div>
       <span class="cart-line-price">${fmt(subtotal)} €</span>
       <button class="cart-edit" onclick="openDiscountModal('${c.key}')" title="Descuento en este producto">🏷️</button>
+      ${salsaAparteBtn}
       <button class="cart-remove" onclick="removeExtrasItem('${c.key}')" title="Quitar">🗑️</button>
       ${details ? `<div class="cart-line-extra">${escapeHtml(details)}</div>` : ''}
       ${discAmt > 0 ? `<div class="cart-line-extra">${escapeHtml(discountLineLabel(lineDiscounts[c.key]))} (-${fmt(discAmt)} €)</div>` : ''}
@@ -1893,8 +2068,12 @@ function selectCheddarCarne(k) {
     cheddarCarne = k;
     cheddarCarneQty = 1;
   }
+  // La carne que pasa a ser la principal ya no tiene sentido como
+  // "ingrediente extra" aparte (se cobraría dos veces la misma carne).
+  delete cheddarIngredientesExtra[cheddarCarneCanonical()];
   renderCheddarCarneOptions();
   document.getElementById('cheddar-error').style.display = 'none';
+  renderCheddarExtras();
   updateCheddarPrice();
 }
 function renderCheddarCarneOptions() {
@@ -1911,14 +2090,16 @@ function renderCheddarCarneOptions() {
 // de patatas (ver renderExtrasBody) — aquí todo lo que se toca es siempre
 // "extra" (nada de esto viene incluido en la receta base del Cheddar), así
 // que el chip marcado se pinta igual que un extra ahí.
-// Carne Kebab/Carne Picada se excluyen de "Ingredientes extra": esas dos
-// ya tienen su propio selector arriba ("Elige la carne"), no tendría
-// sentido ofrecerlas otra vez sueltas.
+// La carne ya elegida arriba ("Elige la carne") no vuelve a salir en
+// "Ingredientes extra" (se doblaría con el propio selector) — pero la
+// OTRA carne sí, para poder pedir un Cheddar-Bacon con las dos mezcladas
+// (p.ej. base Carne Kebab + Carne Picada extra).
 function renderCheddarExtras() {
   const ingEl = document.getElementById('cheddar-ingredientes-list');
   if (ingEl) {
+    const carneActual = cheddarCarneCanonical();
     ingEl.innerHTML = sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07])
-      .filter(ing => ing !== 'Carne Kebab' && ing !== 'Carne Picada')
+      .filter(ing => ing !== carneActual)
       .map(ing => {
         const precio = priceOfIngExtra(ing);
         const qty = cheddarIngredientesExtra[ing] || 0;
@@ -1997,6 +2178,40 @@ function isQuitarBlocked(id) {
 const BONIATO_IDS = new Set([17, 18, 19, 20, 21, 51]); // no llevan queso/gratinado como extra, solo quitar ingredientes
 const BONIATO_GOAT_ID = 20; // Boniato G.O.A.T. — el único con queso de cabra, va aparte en el stock
 const BONIATO_FRIES_ID = 17; // el único Boniato "vacío" (sin receta cerrada) — el único que admite ingredientes/salsas extra
+// Interruptores manuales por producto para "qué se puede añadir"
+// (ingredientes extra, salsas extra, gratinado, queso extra) — pensados
+// para poder arreglarlo ella misma desde "✏️ Editar" si algún día se
+// pierde alguno por error (como pasó con la 4 Quesos, que se quedó sin
+// ingredientes/salsas extra sin querer), sin tener que esperar a un
+// cambio de código. null/ausente = usa el valor de fábrica de más abajo.
+const MENU_CAP_OVERRIDES_KEY = 'comandas_menu_cap_overrides_v1';
+function loadMenuCapOverrides() { try { return JSON.parse(localStorage.getItem(MENU_CAP_OVERRIDES_KEY) || '{}'); } catch (e) { return {}; } }
+function saveMenuCapOverrides(o) { localStorage.setItem(MENU_CAP_OVERRIDES_KEY, JSON.stringify(o)); }
+function getMenuCapOverride(id, cap) {
+  const o = loadMenuCapOverrides();
+  return (o[id] && Object.prototype.hasOwnProperty.call(o[id], cap)) ? !!o[id][cap] : null;
+}
+function setMenuCapOverride(id, cap, value) {
+  const o = loadMenuCapOverrides();
+  o[id] = Object.assign({}, o[id], { [cap]: value });
+  saveMenuCapOverrides(o);
+}
+// Los valores "de fábrica" son justo la lógica que ya había — así nada
+// cambia para nadie hasta que se toque una casilla a mano en Editar.
+function defaultPermiteIngExtra(item) {
+  if (BONIATO_IDS.has(item.id)) return item.id === BONIATO_FRIES_ID;
+  return !(isQuitarBlocked(item.id) && EXTRAS_SOLO_GRATINADO.has(item.id) && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id));
+}
+function defaultPermiteSalsaExtra(item) { return defaultPermiteIngExtra(item); }
+function defaultPermiteGratinado(item) { return !BONIATO_IDS.has(item.id); }
+function defaultPermiteQuesoExtra(item) {
+  if (BONIATO_IDS.has(item.id)) return false;
+  return !EXTRAS_SOLO_GRATINADO.has(item.id);
+}
+function permiteCapacidad(item, cap, defaultFn) {
+  const override = getMenuCapOverride(item.id, cap);
+  return override !== null ? override : defaultFn(item);
+}
 function parseBaseComponents(item) {
   if (item.components) return item.components;
   if (!item.desc) return [];
@@ -2008,6 +2223,28 @@ function parseBaseComponents(item) {
 }
 
 let extrasCurrentId = null, extrasQueso = false, extrasGratinado = false, extrasIngredientes = {}, extrasSalsas = {}, extrasQuitados = {}, extrasCambios = [], extrasEditKey = null;
+// Salsas marcadas para servir "aparte" (en su propio cacharro, sin
+// quitarlas del pedido) — vale tanto para la salsa de serie del producto
+// como para cualquier salsa extra añadida. Mapa nombre -> true.
+let extrasSalsaAparte = {};
+// Nombres de salsa "activos" ahora mismo para un producto: la de serie
+// (ya con el cambio aplicado si se cambió por otra, y solo si no está
+// quitada) más las salsas extra elegidas — la lista que se ofrece para
+// marcar aparte.
+function getActiveSalsaNames(item, quitadosList, cambiosList, salsasExtraList) {
+  const names = new Set();
+  parseBaseComponents(item).filter(c => esComponenteSalsa(c) && !isBaseGrasaComp(c)).forEach(comp => {
+    if ((quitadosList || []).includes(comp)) return;
+    const cambio = (cambiosList || []).find(c => c.from === comp);
+    names.add(cambio ? cambio.to : comp);
+  });
+  (salsasExtraList || []).forEach(s => { if (s !== SIN_SALSA) names.add(s); });
+  return names;
+}
+function toggleSalsaAparte(name) {
+  extrasSalsaAparte[name] = !extrasSalsaAparte[name];
+  renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
+}
 let extrasPickSeq = 0, extrasIngOrder = {}, extrasSalsaOrder = {};
 
 function getOrderedExtrasPicks() {
@@ -2029,7 +2266,9 @@ function openExtrasModal(id, editKey) {
   extrasIngredientes = {};
   extrasSalsas = {};
   extrasQuitados = {};
-  extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to })) : [] : [];
+  extrasCambios = existing ? existing.cambios ? existing.cambios.map(c => ({ from: c.from, to: c.to, tipo: c.tipo })) : [] : [];
+  extrasSalsaAparte = {};
+  (existing && existing.salsaAparte || []).forEach(name => { extrasSalsaAparte[name] = true; });
   extrasPickSeq = 0; extrasIngOrder = {}; extrasSalsaOrder = {};
   if (existing) {
     (existing.ingredientesExtra || []).forEach(i => extrasIngredientes[i] = 1);
@@ -2227,59 +2466,83 @@ function renderExtrasBody(item) {
   } else if (ingredientesBloqueados) {
     html += `<div class="settings-help" style="margin-top:0">⚠️ Este producto lleva la mezcla ya preparada · no se pueden quitar ni cambiar ingredientes.</div>`;
   }
-  // Las patatas con la mezcla ya preparada (4 Quesos y similares) no
-  // admiten nada más que gratinarlas — no tiene sentido añadir
-  // ingredientes o salsas sueltas encima de una receta ya cerrada. Nunca
-  // aplica al Boniato (ninguno está en EXTRAS_SOLO_GRATINADO). Carbonara y
-  // Boloñesa son la excepción: no se puede tocar su mezcla, pero sí
-  // añadir algo más encima (ver EXTRAS_ANADIR_AUNQUE_PREPARADA).
-  const soloGratinar = isQuitarBlocked(item.id) && soloGratinado && !EXTRAS_ANADIR_AUNQUE_PREPARADA.has(item.id);
-  // El resto de recetas de Boniato (Lotus, Bacon, G.O.A.T., Pistacchio,
-  // Pulled Pork) van ya cerradas — solo Boniato Fries es una base vacía
-  // donde sí tiene sentido añadir ingredientes/salsas sueltas encima,
-  // igual que en una patata normal.
-  const puedeAnadirExtras = !isBoniato || item.id === BONIATO_FRIES_ID;
+  // "Salsa aparte" (se sirve en su propio cacharro, sin quitarla del
+  // pedido) — vale tanto para la salsa de serie del producto (si no está
+  // quitada ni cambiada por otra) como para cualquier salsa extra ya
+  // elegida más abajo. Se recalcula en cada render porque depende de
+  // quitados/cambios/salsas extra, que pueden cambiar en cualquier orden.
   if (!isBoniato) {
-    const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
-    if (!yaLlevaQueso) {
-      html += `<label class="option-row" onclick="toggleExtra('queso')">
-        <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">+1,00 €</div></div>
-        <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
-      </label>`;
+    const quitadosActuales = Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q);
+    const salsasExtraActuales = Object.entries(extrasSalsas).filter(([, q]) => q > 0).map(([s]) => s);
+    const salsasActivas = getActiveSalsaNames(item, quitadosActuales, extrasCambios, salsasExtraActuales);
+    if (salsasActivas.size) {
+      html += `<div class="section-label">🥡 Salsa aparte <span style="font-weight:400;text-transform:none;letter-spacing:0">(se sirve en su propio cacharro, sin quitarla del pedido)</span></div><div class="chip-grid">`;
+      Array.from(salsasActivas).forEach(name => {
+        const on = !!extrasSalsaAparte[name];
+        html += `<button class="chip ${on ? 'selected' : ''}" onclick="toggleSalsaAparte('${name.replace(/'/g, "\\'")}')">${on ? '🥡 ' : ''}${escapeHtml(name)}</button>`;
+      });
+      html += `</div>`;
     }
+  }
+  // Queso extra y gratinado ahora son dos interruptores independientes
+  // (ver permiteCapacidad) — por defecto siguen la lógica de siempre,
+  // pero se pueden activar/desactivar por producto desde "✏️ Editar" si
+  // algún día se pierden por error.
+  const yaLlevaQueso = soloGratinado || extrasHasQuesoIngredient();
+  // Se calcula una sola vez aquí (antes solo se hacía para Ingredientes/
+  // Salsas extra) porque ahora "Añadir queso mozzarella" también puede
+  // salir gratis si queda cupo de cambio (ver autoPairFreeSwaps/quesoOn).
+  const paired = pairCurrentExtras(item);
+  const doblesActuales = currentDoblesList();
+  if (permiteCapacidad(item, 'quesoExtra', defaultPermiteQuesoExtra) && !yaLlevaQueso) {
+    const quesoGratis = extrasQueso && !paired.queso;
+    html += `<label class="option-row" onclick="toggleExtra('queso')">
+      <div><div class="option-title">🧀 Añadir queso mozzarella</div><div class="option-sub">${quesoGratis ? 'Gratis (cambio)' : '+' + fmt(priceOfIngExtra('Queso Mozzarella')) + ' €'}</div></div>
+      <div class="option-check ${extrasQueso ? 'on' : ''}"></div>
+    </label>`;
+  }
+  if (permiteCapacidad(item, 'gratinado', defaultPermiteGratinado)) {
     html += `<label class="option-row" onclick="toggleExtra('gratinado')">
       <div><div class="option-title">🔥 Gratinar${yaLlevaQueso ? '' : ' (con queso)'}</div><div class="option-sub">+0,50 €${yaLlevaQueso ? '' : ' · incluye gratinado del queso'}</div></div>
       <div class="option-check ${extrasGratinado ? 'on' : ''}"></div>
     </label>`;
   }
-  // Ingredientes/salsas extra: para todas las patatas normales, y para
-  // Boniato solo en Boniato Fries (base vacía) — el resto de recetas de
-  // Boniato van ya cerradas.
-  if (puedeAnadirExtras && !soloGratinar) {
-    // Mismo estilo de chips que el customizer de Al Gusto/Bomba (en vez
-    // de las filas con casilla de antes) — aquí todo lo que se toca es
-    // siempre "extra" (esta patata no tiene ninguna incluida gratis), así
-    // que el chip marcado se pinta igual que un ingrediente de más ahí.
-    html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
-    sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
-      const precio = priceOfIngExtra(ing);
-      const qty = extrasIngredientes[ing] || 0;
-      const on = qty > 0, mult = qty >= 2;
-      const label = mult ? ing + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? ing + ' +' + fmt(precio) + '€' : ing;
-      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
-    });
-    html += `</div>`;
-    html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
-    const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
-    html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
-    CUST_SAUCES.forEach(s => {
-      const precio = priceOfSalsaExtra(s);
-      const qty = extrasSalsas[s] || 0;
-      const on = qty > 0, mult = qty >= 2;
-      const label = mult ? s + ' x' + qty + ' +' + fmt(precio * qty) + '€' : on ? s + ' +' + fmt(precio) + '€' : s;
-      html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
-    });
-    html += `</div>`;
+  // Ingredientes/salsas extra: dos interruptores independientes también
+  // (antes iban siempre juntos con la misma condición) — mismo estilo de
+  // chips que el customizer de Al Gusto/Bomba, donde todo lo que se toca
+  // es siempre "extra" (esta patata no tiene ninguna incluida gratis), así
+  // que el chip marcado se pinta igual que un ingrediente de más ahí.
+  const permiteIng = permiteCapacidad(item, 'ingExtra', defaultPermiteIngExtra);
+  const permiteSalsa = permiteCapacidad(item, 'salsaExtra', defaultPermiteSalsaExtra);
+  if (permiteIng || permiteSalsa) {
+    if (permiteIng) {
+      html += `<div class="section-label">Ingredientes extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+      sortIngredientsQuesoLast([...EXTRAS_ING_PRECIO1, ...EXTRAS_ING_PRECIO07]).forEach(ing => {
+        const qty = extrasIngredientes[ing] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const cobrado = on ? extraPickChargedPrice(ing, false, paired, doblesActuales) : 0;
+        const label = !on ? ing
+          : mult ? ing + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
+          : cobrado > 0 ? ing + ' +' + fmt(cobrado) + '€' : ing;
+        html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraIng('${ing.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+      });
+      html += `</div>`;
+    }
+    if (permiteSalsa) {
+      html += `<div class="section-label">Salsas extra <span style="font-weight:400;text-transform:none;letter-spacing:0">(toca varias veces para doble/triple)</span></div><div class="chip-grid">`;
+      const sinSalsaOn = !!extrasSalsas[SIN_SALSA];
+      html += `<button class="chip ${sinSalsaOn ? 'selected' : ''}" onclick="toggleExtraSalsa('${SIN_SALSA}')">🚫 Sin salsa</button>`;
+      CUST_SAUCES.forEach(s => {
+        const qty = extrasSalsas[s] || 0;
+        const on = qty > 0, mult = qty >= 2;
+        const cobrado = on ? extraPickChargedPrice(s, true, paired, doblesActuales) : 0;
+        const label = !on ? s
+          : mult ? s + ' x' + qty + (cobrado > 0 ? ' +' + fmt(cobrado) + '€' : '')
+          : cobrado > 0 ? s + ' +' + fmt(cobrado) + '€' : s;
+        html += `<button class="chip ${on ? 'extra' : ''}${mult ? ' doble' : ''}" onclick="toggleExtraSalsa('${s.replace(/'/g, "\\'")}')">${escapeHtml(label)}</button>`;
+      });
+      html += `</div>`;
+    }
   }
   // Guarda y restaura el scroll del modal: sin esto, cada vez que se marca
   // algo en "Ingredientes extra" / "Salsas extra" (más abajo del todo) el
@@ -2326,8 +2589,9 @@ function addExtraCambio(tipo) {
   const to = document.getElementById(tipo === 'salsa' ? 'cambio-salsa-to' : 'cambio-ing-to').value;
   if (!from || !to || from === to) return;
   if (extrasCambios.some(c => c.from === from)) return; // ya hay un cambio para ese ingrediente
-  if (extrasCambios.length >= 2) { toast('⚠️ Máximo 2 cambios de ingrediente'); return; }
-  extrasCambios.push({ from, to });
+  // A partir del tercer cambio no se bloquea — se deja hacer, pero se
+  // cobra como un ingrediente/salsa extra normal (ver chargedCambios).
+  extrasCambios.push({ from, to, tipo: tipo === 'salsa' ? 'salsa' : 'ing' });
   renderExtrasBody(MENU.find(m => m.id == extrasCurrentId));
   updateExtrasTotalPrice();
 }
@@ -2424,9 +2688,10 @@ function pairCurrentExtras(item) {
     Object.entries(extrasQuitados).filter(([, v]) => v === 'quitado').map(([q]) => q),
     Object.entries(extrasIngredientes).filter(([, q]) => q > 0).map(([ing]) => ing),
     Object.entries(extrasSalsas).filter(([, on]) => on).map(([s]) => s),
-    extrasCambios.map(c => ({ from: c.from, to: c.to })),
+    extrasCambios.map(c => ({ from: c.from, to: c.to, tipo: c.tipo })),
     getOrderedExtrasPicks(),
-    currentDoblesList()
+    currentDoblesList(),
+    extrasQueso
   );
 }
 function updateExtrasTotalPrice() {
@@ -2436,9 +2701,12 @@ function updateExtrasTotalPrice() {
   // paired.ingredientesExtra/salsasExtra/pickOrder ya vienen sin los que se
   // acaban de emparejar como cambio gratis (ver autoPairFreeSwaps), así que
   // aquí no queda ningún "free" que restar aparte — todo lo que queda en
-  // esas listas se cobra entero.
+  // esas listas se cobra entero. paired.queso ya viene en false si "Añadir
+  // queso mozzarella" se emparejó como cambio gratis (ver autoPairFreeSwaps).
   const core = computeExtrasCorePrice(item.price, paired.ingredientesExtra, paired.salsasExtra, paired.pickOrder, 0);
-  const p = core + (extrasQueso ? 1 : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
+  const cambiosExtra = chargedCambios(paired.cambios).reduce((s, c) => s + priceOfCambio(c), 0);
+  const cambiosPremium = freeCambios(paired.cambios).reduce((s, c) => s + premiumOfCambio(c), 0);
+  const p = core + cambiosExtra + cambiosPremium + (paired.queso ? priceOfIngExtra('Queso Mozzarella') : 0) + (extrasGratinado ? 0.5 : 0) + dobleSurcharge(paired.dobles);
   document.getElementById('extras-total-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('extras-price-note');
   if (noteEl) {
@@ -2463,12 +2731,18 @@ function confirmExtras() {
   const cambiosList = paired.cambios;
   const pickOrder = paired.pickOrder;
   const dobles = paired.dobles.sort();
-  const sig = (extrasQueso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
+  // Solo se guardan las marcas "aparte" de salsas que sigan activas de
+  // verdad tras emparejar cambios gratis (una que se quitó, o que ya no
+  // es ni de serie ni extra, no se queda marcada de mentira).
+  const salsasActivasFinal = getActiveSalsaNames(item, quitadosList, cambiosList, salsaList);
+  const salsaAparteList = Array.from(salsasActivasFinal).filter(n => extrasSalsaAparte[n]).sort();
+  const sig = (paired.queso ? 'Q' : '') + (extrasGratinado ? 'G' : '')
     + (ingList.length ? 'I' + ingList.join('|') : '')
     + (salsaList.length ? 'S' + salsaList.join('|') : '')
     + (quitadosList.length ? 'X' + quitadosList.join('|') : '')
     + (dobles.length ? 'D' + dobles.join('|') : '')
-    + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '') || 'BASE';
+    + (cambiosList.length ? 'C' + cambiosList.map(c => c.from + '>' + c.to).join('|') : '')
+    + (salsaAparteList.length ? 'AP' + salsaAparteList.join('|') : '') || 'BASE';
   const key = 'ext:' + id + ':' + sig;
   let qtyToSet = 1;
   if (extrasEditKey && extrasCart[extrasEditKey]) {
@@ -2476,7 +2750,7 @@ function confirmExtras() {
     delete extrasCart[extrasEditKey];
   }
   if (extrasCart[key]) extrasCart[key].qty += qtyToSet;
-  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: extrasQueso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, key };
+  else extrasCart[key] = { menuId: id, qty: qtyToSet, queso: paired.queso, gratinado: extrasGratinado, ingredientesExtra: ingList, salsasExtra: salsaList, quitados: quitadosList, dobles, cambios: cambiosList, pickOrder, basePrice: item.price, salsaAparte: salsaAparteList, key };
   // Se estaba personalizando una unidad que ya estaba en el carrito simple
   // (tocando su nombre) — se retira de ahí, ya está aquí personalizada.
   if (convertingSimpleId === id) {
@@ -2764,13 +3038,15 @@ function buildCajaResumenBlocks(fecha) {
   const divider = '-'.repeat(width);
   const fondo = loadCajaFondo(fecha);
   const t = loadCajaTotales(fecha);
+  const efectivoOverride = loadCajaNota('efectivo', fecha);
+  const efectivo = efectivoOverride != null ? efectivoOverride : t.efectivo;
   const tarjetaOverride = loadCajaNota('tarjeta', fecha);
   const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
   const web = loadCajaNota('web', fecha);
   const deliveryValores = CAJA_DELIVERY.map(d => loadCajaNota(d.id, fecha));
   const deliveryTotal = deliveryValores.reduce((s, v) => s + (v || 0), 0);
-  const facturado = t.efectivo + tarjeta + t.pendiente + deliveryTotal;
-  const esperadoCajon = fondo + t.efectivo;
+  const facturado = efectivo + tarjeta + t.pendiente + deliveryTotal;
+  const esperadoCajon = fondo + efectivo;
   const fechaFmt = foldAccents(new Date(fecha + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   const horaFmt = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   const B = [];
@@ -2790,7 +3066,7 @@ function buildCajaResumenBlocks(fecha) {
   // salta de línea a media palabra. Solo el TOTAL final va grande, y en su
   // propia línea corta, como ya se hacía con "Esperado en caja".
   B.push({ text: 'TIENDA', align: 'left' });
-  B.push({ text: '  Efectivo: ' + fmtEur(t.efectivo), align: 'left' });
+  B.push({ text: '  Efectivo: ' + fmtEur(efectivo), align: 'left' });
   B.push({ text: '  Tarjeta: ' + fmtEur(tarjeta), align: 'left' });
   if (web != null) {
     B.push({ text: '  (de la web: ' + fmtEur(web) + ')', align: 'left' });
@@ -3361,23 +3637,72 @@ function setCajaContadoManual(valorStr) {
 // tocarla se abre el teclado para escribir la cantidad exacta de una
 // vez, en vez de tener que tocar el botón esa cantidad de veces.
 let cajaDenomNumpadValue = null;
+// Dos formas de rellenar cada billete/moneda: por el DINERO que suman
+// (p.ej. "75" si hay 75€ en billetes de 5 — no hace falta calcular que
+// son 15 billetes) o por la CANTIDAD de unidades, como antes (útil si ya
+// las has contado una a una). Un enlace bajo el título alterna entre las
+// dos sin cerrar el teclado, convirtiendo lo ya escrito. Por dentro
+// siempre se guarda como unidades, para el contador ×N del círculo.
+let cajaDenomModoCantidad = false;
+// Solo 5/10/20/50€ son billetes de verdad — 1€ y 2€ son monedas (por eso
+// van en la fila "Monedas" del propio grid), así que no basta con mirar
+// si v >= 1 para decidir cómo llamarlas.
+const CAJA_BILLETES = new Set([5, 10, 20, 50]);
 function formatDenomLabel(v) {
   return v >= 1 ? Math.round(v) + ' euros' : Math.round(v * 100) + ' céntimos';
 }
+function tituloCajaDenomNumpad(v) {
+  const esBillete = CAJA_BILLETES.has(v);
+  const grupo = esBillete ? 'billetes' : 'monedas';
+  const cuantos = esBillete ? 'Cuántos' : 'Cuántas';
+  return cajaDenomModoCantidad
+    ? cuantos + ' ' + grupo + ' de ' + formatDenomLabel(v) + ' hay'
+    : 'Dinero en ' + grupo + ' de ' + formatDenomLabel(v);
+}
+function renderCajaDenomToggle(v) {
+  const row = document.getElementById('numpad-toggle-row');
+  if (!row) return;
+  row.style.display = 'block';
+  row.innerHTML = cajaDenomModoCantidad
+    ? '<button type="button" class="numpad-toggle-link" onclick="toggleCajaDenomModo()">💶 Escribir el dinero en vez de la cantidad</button>'
+    : '<button type="button" class="numpad-toggle-link" onclick="toggleCajaDenomModo()">🔢 Escribir la cantidad en vez del dinero</button>';
+}
+function toggleCajaDenomModo() {
+  if (cajaDenomNumpadValue == null) return;
+  const v = cajaDenomNumpadValue;
+  const actual = parseCashNum(numpadBuffer);
+  cajaDenomModoCantidad = !cajaDenomModoCantidad;
+  const convertido = cajaDenomModoCantidad ? Math.round(actual / v) : Math.round(actual * v * 100) / 100;
+  numpadBuffer = convertido > 0 ? String(convertido).replace('.', ',') : '';
+  updateNumpadDisplay();
+  document.getElementById('numpad-title').textContent = tituloCajaDenomNumpad(v);
+  renderCajaDenomToggle(v);
+}
 function openCajaDenomNumpad(v) {
   cajaDenomNumpadValue = v;
-  const current = cajaContado.counts[String(v)] || 0;
+  cajaDenomModoCantidad = true; // siempre se abre pidiendo la cantidad
+  const n = cajaContado.counts[String(v)] || 0;
   const input = document.getElementById('caja-denom-numpad-input');
-  input.value = current || '';
-  openNumpad('caja-denom-numpad-input', 'Cuántas de ' + formatDenomLabel(v));
+  input.value = n > 0 ? String(n) : '';
+  openNumpad('caja-denom-numpad-input', tituloCajaDenomNumpad(v));
+  renderCajaDenomToggle(v);
 }
 function onCajaDenomNumpadInput(valorStr) {
   if (cajaDenomNumpadValue == null) return;
-  setCajaDenomCantidad(cajaDenomNumpadValue, valorStr);
+  if (cajaDenomModoCantidad) setCajaDenomCantidad(cajaDenomNumpadValue, valorStr);
+  else setCajaDenomDinero(cajaDenomNumpadValue, valorStr);
 }
 function setCajaDenomCantidad(v, valorStr) {
   const key = String(v);
   const n = Math.max(0, Math.round(parseCashNum(valorStr) || 0));
+  guardarCajaDenomCantidad(key, n);
+}
+function setCajaDenomDinero(v, valorStr) {
+  const key = String(v);
+  const dinero = Math.max(0, parseCashNum(valorStr) || 0);
+  guardarCajaDenomCantidad(key, Math.round(dinero / v));
+}
+function guardarCajaDenomCantidad(key, n) {
   if (n <= 0) delete cajaContado.counts[key]; else cajaContado.counts[key] = n;
   // Se recalcula el total entero a partir de los conteos en vez de sumar
   // la diferencia — así no se puede descuadrar aunque se edite un salto
@@ -3390,7 +3715,7 @@ function setCajaDenomCantidad(v, valorStr) {
 function renderCajaContadoUI() {
   document.querySelectorAll('#caja-modal .denom-btn').forEach(btn => {
     // OJO: btn.dataset.v es el texto tal cual del HTML ("0.20", "0.10",
-    // "0.50" — con el cero final) pero tapCajaDenom/setCajaDenomCantidad
+    // "0.50" — con el cero final) pero tapCajaDenom/setCajaDenomDinero
     // guardan la clave con String(v) de un NÚMERO de JS, que para esos
     // mismos valores da "0.2"/"0.1"/"0.5" (sin el cero final) — sin pasar
     // por parseFloat aquí, esos tres círculos nunca encontraban su
@@ -3442,13 +3767,15 @@ function renderCaja() {
   // que el real en un día muy movido.
   const fondo = loadCajaFondo(cajaFechaSel);
   const t = loadCajaTotales(cajaFechaSel);
-  const efectivo = t.efectivo, pendiente = t.pendiente, nPedidos = t.count;
+  const pendiente = t.pendiente, nPedidos = t.count;
+  // "Efectivo" y "Tarjeta" parten del total que calcula la app sola (lo
+  // marcado pedido a pedido), pero se pueden tocar y corregir a mano —
+  // por si algo se marcó con el método equivocado y no se quiere ir pedido
+  // a pedido a arreglarlo, o para poner directamente lo que da el
+  // datáfono/lo que se ha contado sin más vueltas.
+  const efectivoOverride = loadCajaNota('efectivo', cajaFechaSel);
+  const efectivo = efectivoOverride != null ? efectivoOverride : t.efectivo;
   const esperadoCajon = fondo + efectivo;
-  // "Tarjeta" parte del total que calcula la app sola (lo marcado tarjeta
-  // pedido a pedido), pero se puede tocar y escribir el número real del
-  // datáfono a mano — igual que "Efectivo" tiene su "Contado" aparte, salvo
-  // que aquí no hay nada físico que contar, así que es un solo número
-  // editable en vez de dos filas.
   const tarjetaOverride = loadCajaNota('tarjeta', cajaFechaSel);
   const tarjeta = tarjetaOverride != null ? tarjetaOverride : t.tarjeta;
   const web = loadCajaNota('web', cajaFechaSel);
@@ -3473,7 +3800,7 @@ function renderCaja() {
   document.getElementById('caja-summary').innerHTML = avisoBackup
     + `<div class="section-label" style="margin-top:4px">Pedidos: ${nPedidos}</div>`
     + `<div class="section-label">Tienda</div>`
-    + row('💵 Efectivo', efectivo)
+    + notaRow('efectivo', '💵 Efectivo', efectivo, 'Efectivo', t.efectivo)
     + notaRow('tarjeta', '💳 Tarjeta', tarjeta, 'Tarjeta (segun el datafono)', t.tarjeta)
     + notaRow('web', '🌐 De tienda, cuánto es de la web', web, 'De tienda, cuanto es de la pagina web')
     + avisoPendiente
@@ -3552,7 +3879,7 @@ function _descargarArchivo(nombre, contenido, tipoMime) {
 }
 function construirCopiaJSON(fecha) {
   const notas = {};
-  ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
+  ['efectivo', 'tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => { notas[id] = loadCajaNota(id, fecha); });
   return {
     fecha,
     generadoEn: new Date().toLocaleString('es-ES'),
@@ -3677,7 +4004,7 @@ function importarCopiaJSON(event) {
     // día anterior sin querer.
     if (data.contado && typeof data.contado === 'object') localStorage.setItem(getCajaContadoKey(fecha), JSON.stringify(data.contado));
     else localStorage.removeItem(getCajaContadoKey(fecha));
-    ['tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
+    ['efectivo', 'tarjeta', 'web', ...CAJA_DELIVERY.map(d => d.id)].forEach(id => {
       const v = data.notas && typeof data.notas === 'object' ? data.notas[id] : null;
       saveCajaNota(id, fecha, typeof v === 'number' ? v : null);
     });
@@ -4660,17 +4987,55 @@ function openCartaAdmin() {
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
+  document.getElementById('carta-new-mediopanini-price').value = '';
+  document.getElementById('carta-new-mediopanini-group').style.display = 'none';
+  document.getElementById('carta-new-panini-tipo-group').style.display = 'none';
+  document.getElementById('carta-new-panini-tipo').value = 'entero';
+  document.getElementById('carta-new-mediopanini-whole-group').style.display = 'none';
+  document.getElementById('carta-new-name-label').textContent = 'Nombre';
+  document.getElementById('carta-new-price-label').textContent = 'Precio (€)';
   renderCartaAdminList();
   renderCartaExtrasList();
   document.getElementById('carta-modal').classList.add('open');
 }
 function closeCartaAdmin() { document.getElementById('carta-modal').classList.remove('open'); }
 // Al elegir "➕ Nueva categoría…" aparece un campo para escribir su nombre
-// (hasta ahora solo se podía elegir una categoría ya existente).
+// (hasta ahora solo se podía elegir una categoría ya existente). Al elegir
+// "Paninis" aparece el selector de "Panini entero" / "Solo el medio de uno
+// que ya existe" — todos los paninis se venden también por mitades, así
+// que el caso normal es darlos de alta juntos, pero también hace falta
+// poder añadir solo el medio si el entero ya estaba en la carta.
 function onCartaCatSelectChange() {
-  const esNueva = document.getElementById('carta-new-cat').value === CARTA_NEW_CAT_SENTINEL;
+  const catSelect = document.getElementById('carta-new-cat');
+  const esNueva = catSelect.value === CARTA_NEW_CAT_SENTINEL;
   document.getElementById('carta-new-cat-custom-group').style.display = esNueva ? '' : 'none';
   if (esNueva) document.getElementById('carta-new-cat-custom').focus();
+  const esPaninis = catSelect.value === 'Paninis';
+  document.getElementById('carta-new-panini-tipo-group').style.display = esPaninis ? '' : 'none';
+  if (!esPaninis) {
+    document.getElementById('carta-new-panini-tipo').value = 'entero';
+    document.getElementById('carta-new-mediopanini-price').value = '';
+  }
+  onCartaPaniniTipoChange();
+}
+// Cambia qué campos se ven según si se está dando de alta un panini
+// entero (con su medio opcional) o solo el medio de uno que ya existe.
+function onCartaPaniniTipoChange() {
+  const catSelect = document.getElementById('carta-new-cat');
+  const esPaninis = catSelect.value === 'Paninis';
+  const esMedio = esPaninis && document.getElementById('carta-new-panini-tipo').value === 'medio';
+  document.getElementById('carta-new-mediopanini-whole-group').style.display = esMedio ? '' : 'none';
+  document.getElementById('carta-new-mediopanini-group').style.display = (esPaninis && !esMedio) ? '' : 'none';
+  document.getElementById('carta-new-name-label').textContent = esMedio ? 'Nombre del medio (opcional)' : 'Nombre';
+  document.getElementById('carta-new-name').placeholder = esMedio ? 'Se pone "Medio <panini>" si lo dejas en blanco' : 'Ej. Batido de fresa';
+  document.getElementById('carta-new-price-label').textContent = esMedio ? 'Precio del medio (€)' : 'Precio (€)';
+  if (esMedio) {
+    const wholeSelect = document.getElementById('carta-new-mediopanini-whole');
+    const enteros = MENU.filter(m => m.cat === 'Paninis' && !m.mitadDe);
+    wholeSelect.innerHTML = enteros.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+  } else {
+    document.getElementById('carta-new-mediopanini-price').value = '';
+  }
 }
 function cartaExtraPrecioRow(tipo, name, precio) {
   return `<div class="option-row" style="cursor:default">
@@ -4692,28 +5057,57 @@ function renderCartaExtrasList() {
   html += sortEs(CUST_INGREDIENTS).map(i => cartaExtraPrecioRow('ing', i, precios.ing[i])).join('');
   el.innerHTML = html;
 }
+// La lista de precios (una fila por cada salsa/ingrediente) es larga y
+// tapa el resto de "Gestionar carta" — se queda oculta detrás de un botón,
+// solo hace falta abrirla de vez en cuando para tocar un precio suelto.
+function toggleCartaExtrasListVisible() {
+  const el = document.getElementById('carta-extras-list');
+  const btn = document.getElementById('carta-extras-list-toggle');
+  const abrir = el.style.display === 'none';
+  el.style.display = abrir ? '' : 'none';
+  btn.textContent = abrir ? '🔼 Ocultar precios de los extras' : '💰 Ver precios de los extras';
+}
 function setExtraPrecio(tipo, name, value) {
   const n = parseFloat(String(value).replace(',', '.'));
   if (!(n >= 0)) { toast('⚠️ Precio no válido'); renderCartaExtrasList(); return; }
   saveExtraPrecio(tipo, name, n);
   toast('✅ ' + name + ': ' + fmt(n) + ' €');
 }
+function submitCustomExtra() {
+  const tipo = document.getElementById('carta-new-extra-tipo').value;
+  const name = document.getElementById('carta-new-extra-name').value;
+  const price = parseFloat(String(document.getElementById('carta-new-extra-price').value).replace(',', '.'));
+  if (!addCustomExtra(tipo, name, price)) return;
+  document.getElementById('carta-new-extra-name').value = '';
+  document.getElementById('carta-new-extra-price').value = '';
+}
+// Arrastrar (drag & drop nativo del navegador) no funciona con el dedo en
+// una pantalla táctil — solo con ratón — así que además de dejarlo para
+// quien sí tenga ratón, cada fila lleva sus propias flechas ▲▼ para
+// reordenar dentro de su categoría, y un desplegable para moverla a otra
+// categoría entera, las dos cosas con un simple toque.
 function renderCartaAdminList() {
-  const html = categories.filter(c => c !== 'Todos').map(cat => {
+  const cats = categories.filter(c => c !== 'Todos');
+  const catOptions = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  const html = cats.map(cat => {
     const items = MENU.filter(m => m.cat === cat);
     if (!items.length) return '';
-    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map(item => `
+    return `<div class="section-label" style="margin-top:10px">${escapeHtml(cat)}</div>` + items.map((item, i) => `
       <div class="carta-admin-row ${item.hidden ? 'agotado' : ''}" draggable="true"
         ondragstart="onCartaDragStart(event, ${item.id})"
         ondragover="onCartaDragOver(event)"
         ondrop="onCartaDrop(event, ${item.id})"
         ondragend="onCartaDragEnd(event)">
-        <span class="carta-drag-handle" title="Arrastrar para mover">⠿</span>
+        <div class="carta-move-col">
+          <button class="carta-move-btn" onclick="moveCartaItem(${item.id},-1)" ${i === 0 ? 'disabled' : ''} title="Subir">▲</button>
+          <button class="carta-move-btn" onclick="moveCartaItem(${item.id},1)" ${i === items.length - 1 ? 'disabled' : ''} title="Bajar">▼</button>
+        </div>
         <div class="carta-admin-info">
           <span class="carta-admin-name">${escapeHtml(item.name)}${item.hidden ? ' <span class="carta-agotado-tag">Agotado</span>' : ''}</span>
           <span class="carta-admin-price">${fmt(item.price)} €</span>
         </div>
         <div class="carta-admin-actions">
+          <select class="carta-cat-select" onchange="setCartaCategoria(${item.id}, this.value)" title="Mover a otra categoría">${catOptions.replace(`value="${escapeHtml(cat)}"`, `value="${escapeHtml(cat)}" selected`)}</select>
           <button class="carta-nuevo-btn ${item.hidden ? 'on' : ''}" onclick="toggleCartaHidden(${item.id})" title="Ocultar/mostrar (agotado)">${item.hidden ? '🙈' : '👁️'}</button>
           <button class="carta-nuevo-btn ${item.nuevo ? 'on' : ''}" onclick="toggleCartaNuevo(${item.id})" title="Poner/quitar etiqueta NUEVO">🆕</button>
           <button class="carta-remove-btn" onclick="openCartaEdit(${item.id})" title="Editar nombre/descripción">✏️</button>
@@ -4752,6 +5146,42 @@ function onCartaDrop(e, targetId) {
   renderMenu();
   renderCartaAdminList();
 }
+// Subir/bajar un puesto dentro de su misma categoría, con las flechas
+// ▲▼ — la alternativa al arrastrar que sí funciona con el dedo.
+function moveCartaItem(id, delta) {
+  const item = MENU.find(m => m.id === id);
+  if (!item) return;
+  const mismaCat = MENU.filter(m => m.cat === item.cat);
+  const swapWith = mismaCat[mismaCat.indexOf(item) + delta];
+  if (!swapWith) return;
+  const i1 = MENU.indexOf(item), i2 = MENU.indexOf(swapWith);
+  MENU[i1] = swapWith;
+  MENU[i2] = item;
+  saveMenuOrder();
+  renderMenu();
+  renderCartaAdminList();
+}
+// Mover un producto a otra categoría entera desde el desplegable — se
+// manda al final de la carta (así aparece al final de su categoría
+// nueva) y la categoría queda grabada igual que el nombre/precio/desc,
+// para que sobreviva a recargar la página.
+function setCartaCategoria(id, nuevaCat) {
+  const item = MENU.find(m => m.id === id);
+  if (!item || !nuevaCat || item.cat === nuevaCat) return;
+  item.cat = nuevaCat;
+  MENU.splice(MENU.indexOf(item), 1);
+  MENU.push(item);
+  saveMenuOrder();
+  const edits = loadMenuEdits();
+  edits[id] = Object.assign({}, edits[id], { cat: nuevaCat });
+  localStorage.setItem(MENU_EDITS_KEY, JSON.stringify(edits));
+  const custom = loadMenuCustom();
+  const c = custom.find(i => i.id === id);
+  if (c) { c.cat = nuevaCat; localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom)); }
+  renderMenu();
+  renderCartaAdminList();
+  toast('✅ Movido a ' + nuevaCat);
+}
 let cartaEditingId = null;
 function openCartaEdit(id) {
   const item = MENU.find(m => m.id === id);
@@ -4761,6 +5191,22 @@ function openCartaEdit(id) {
   document.getElementById('carta-edit-price').value = item.price;
   document.getElementById('carta-edit-desc').value = item.desc || '';
   document.getElementById('carta-edit-quitar').checked = !isQuitarBlocked(id);
+  // El resto de "qué se puede añadir" solo tiene sentido en patatas y
+  // boniatos (los que pasan por el modal de extras) — en paninis, tartas,
+  // bebidas... ni se muestra.
+  const admiteCapacidades = ALL_EXTRAS_IDS.has(id) || BONIATO_IDS.has(id);
+  document.getElementById('carta-edit-caps-group').style.display = admiteCapacidades ? '' : 'none';
+  if (admiteCapacidades) {
+    document.getElementById('carta-edit-cap-ingextra').checked = permiteCapacidad(item, 'ingExtra', defaultPermiteIngExtra);
+    document.getElementById('carta-edit-cap-salsaextra').checked = permiteCapacidad(item, 'salsaExtra', defaultPermiteSalsaExtra);
+    document.getElementById('carta-edit-cap-gratinado').checked = permiteCapacidad(item, 'gratinado', defaultPermiteGratinado);
+    document.getElementById('carta-edit-cap-quesoextra').checked = permiteCapacidad(item, 'quesoExtra', defaultPermiteQuesoExtra);
+  }
+  // Aviso de qué producto es EXACTAMENTE el que se va a cambiar — con la
+  // carta llena de iconos pequeños y pegados es fácil tocar el ✏️ de la
+  // fila de al lado sin querer y renombrar un producto por otro sin darse
+  // cuenta (p. ej. sin querer un "Medio Panini" pasa a llamarse "Cookie").
+  document.getElementById('carta-edit-subtitle').textContent = 'Vas a cambiar: "' + item.name + '" (' + item.cat + ')';
   document.getElementById('carta-edit-modal').classList.add('open');
 }
 function closeCartaEdit() { document.getElementById('carta-edit-modal').classList.remove('open'); cartaEditingId = null; }
@@ -4779,7 +5225,7 @@ function saveCartaEdit() {
   item.price = price;
   item.desc = desc;
   const edits = loadMenuEdits();
-  edits[id] = { name, price, desc };
+  edits[id] = Object.assign({}, edits[id], { name, price, desc });
   localStorage.setItem(MENU_EDITS_KEY, JSON.stringify(edits));
   const custom = loadMenuCustom();
   const c = custom.find(i => i.id === id);
@@ -4787,34 +5233,21 @@ function saveCartaEdit() {
   const quitarOverrides = loadMenuQuitarOverrides();
   quitarOverrides[id] = !permitirQuitar;
   localStorage.setItem(MENU_QUITAR_OVERRIDES_KEY, JSON.stringify(quitarOverrides));
+  if (ALL_EXTRAS_IDS.has(id) || BONIATO_IDS.has(id)) {
+    setMenuCapOverride(id, 'ingExtra', document.getElementById('carta-edit-cap-ingextra').checked);
+    setMenuCapOverride(id, 'salsaExtra', document.getElementById('carta-edit-cap-salsaextra').checked);
+    setMenuCapOverride(id, 'gratinado', document.getElementById('carta-edit-cap-gratinado').checked);
+    setMenuCapOverride(id, 'quesoExtra', document.getElementById('carta-edit-cap-quesoextra').checked);
+  }
   renderMenu();
   renderCartaAdminList();
   closeCartaEdit();
   toast('✅ Producto actualizado');
 }
-function addCartaProduct() {
-  const name = document.getElementById('carta-new-name').value.trim();
-  const catSelect = document.getElementById('carta-new-cat').value;
-  const cat = catSelect === CARTA_NEW_CAT_SENTINEL
-    ? document.getElementById('carta-new-cat-custom').value.trim()
-    : catSelect;
-  const price = parseFloat(document.getElementById('carta-new-price').value);
-  const desc = document.getElementById('carta-new-desc').value.trim();
-  const nuevo = document.getElementById('carta-new-nuevo').checked;
-  if (!name || !cat || !(price >= 0)) {
-    toast(catSelect === CARTA_NEW_CAT_SENTINEL && !cat ? '⚠️ Escribe el nombre de la categoría nueva' : '⚠️ Rellena nombre, categoría y precio');
-    return;
-  }
-  const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
-  const item = { id: nextId, cat, name, desc, price };
-  if (nuevo) item.nuevo = true;
-  const custom = loadMenuCustom();
-  custom.push(item);
-  localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
-  MENU.push(item);
-  // Si la categoría es nueva de verdad, tiene que aparecer ya en la propia
-  // lista desplegable (y seguir seleccionada) por si se añaden más
-  // productos seguidos a esa misma categoría.
+// Deja el formulario de "Añadir producto" listo para el siguiente alta
+// (vuelve a montar el desplegable de categorías por si se creó una nueva)
+// y refresca carta/pestañas/lista — lo comparten los dos flujos de abajo.
+function resetCartaNewFormAndRefresh(catSelect, cat, mensaje) {
   refreshCategoriesFromMenu();
   const wasNewCat = catSelect === CARTA_NEW_CAT_SENTINEL;
   initTabs();
@@ -4824,13 +5257,71 @@ function addCartaProduct() {
   document.getElementById('carta-new-price').value = '';
   document.getElementById('carta-new-desc').value = '';
   document.getElementById('carta-new-nuevo').checked = false;
+  document.getElementById('carta-new-mediopanini-price').value = '';
   const newCatSelect = document.getElementById('carta-new-cat');
   newCatSelect.innerHTML = categories.filter(c => c !== 'Todos').map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
     + `<option value="${CARTA_NEW_CAT_SENTINEL}">➕ Nueva categoría…</option>`;
   if (wasNewCat) newCatSelect.value = cat;
+  else newCatSelect.value = catSelect;
   document.getElementById('carta-new-cat-custom-group').style.display = 'none';
   document.getElementById('carta-new-cat-custom').value = '';
-  toast(wasNewCat ? '✅ Categoría "' + cat + '" creada con este producto' : '✅ Producto añadido');
+  onCartaCatSelectChange();
+  toast(wasNewCat ? '✅ Categoría "' + cat + '" creada con este producto' : mensaje);
+}
+function addCartaProduct() {
+  const catSelect = document.getElementById('carta-new-cat').value;
+  const cat = catSelect === CARTA_NEW_CAT_SENTINEL
+    ? document.getElementById('carta-new-cat-custom').value.trim()
+    : catSelect;
+  const esMedio = catSelect === 'Paninis' && document.getElementById('carta-new-panini-tipo').value === 'medio';
+  const price = parseFloat(document.getElementById('carta-new-price').value);
+  const desc = document.getElementById('carta-new-desc').value.trim();
+  const nuevo = document.getElementById('carta-new-nuevo').checked;
+  let name = document.getElementById('carta-new-name').value.trim();
+
+  // Solo el medio de un panini entero que YA está en la carta — un único
+  // producto nuevo, ligado con mitadDe para compartir su stock.
+  if (esMedio) {
+    const wholeId = parseInt(document.getElementById('carta-new-mediopanini-whole').value, 10);
+    const whole = MENU.find(m => m.id === wholeId);
+    if (!whole) { toast('⚠️ Elige de qué panini entero es la mitad'); return; }
+    if (!name) name = 'Medio ' + whole.name;
+    if (!(price >= 0)) { toast('⚠️ Rellena el precio del medio'); return; }
+    const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
+    const medio = { id: nextId, cat: 'Paninis', name, desc: desc || 'La mitad de un panini entero', price, mitadDe: wholeId };
+    if (nuevo) medio.nuevo = true;
+    const custom = loadMenuCustom();
+    custom.push(medio);
+    MENU.push(medio);
+    localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
+    resetCartaNewFormAndRefresh(catSelect, cat, '✅ Medio panini añadido');
+    return;
+  }
+
+  const medioPrecioStr = document.getElementById('carta-new-mediopanini-price').value;
+  const medioPrecio = catSelect === 'Paninis' && medioPrecioStr !== '' ? parseFloat(medioPrecioStr) : null;
+  if (!name || !cat || !(price >= 0)) {
+    toast(catSelect === CARTA_NEW_CAT_SENTINEL && !cat ? '⚠️ Escribe el nombre de la categoría nueva' : '⚠️ Rellena nombre, categoría y precio');
+    return;
+  }
+  if (medioPrecioStr !== '' && !(medioPrecio >= 0)) { toast('⚠️ Precio del medio panini no válido'); return; }
+  const nextId = Math.max(0, ...MENU.map(m => m.id)) + 1;
+  const item = { id: nextId, cat, name, desc, price };
+  if (nuevo) item.nuevo = true;
+  const custom = loadMenuCustom();
+  custom.push(item);
+  MENU.push(item);
+  // Todos los paninis se venden también por mitades — al dar de alta un
+  // panini entero con precio de medio se crea también su "Medio X" de una
+  // sola vez, compartiendo el cupo de "Quedan hoy" (ver mitadDe/paniniRestante).
+  if (medioPrecio != null) {
+    const medioId = nextId + 1;
+    const medio = { id: medioId, cat: 'Paninis', name: 'Medio ' + name, desc: 'La mitad de un panini entero', price: medioPrecio, mitadDe: nextId };
+    custom.push(medio);
+    MENU.push(medio);
+  }
+  localStorage.setItem(MENU_CUSTOM_KEY, JSON.stringify(custom));
+  resetCartaNewFormAndRefresh(catSelect, cat, medioPrecio != null ? '✅ Panini y su medio añadidos' : '✅ Producto añadido');
 }
 function removeCartaProduct(id, name) {
   if (!confirm('¿Quitar "' + name + '" de la carta?')) return;
@@ -5039,6 +5530,11 @@ function getStockRestanteForItem(item) {
 // un entero necesita 2 — si solo queda 1 mitad, el entero ya no cabe
 // pero sí otro medio.
 function isItemAgotado(item) {
+  // Marcado a mano como agotado desde "Gestionar carta" (👁️/🙈) — antes
+  // esto quitaba el producto del todo de la carta (item.hidden filtraba
+  // en renderMenu); ahora se trata igual que el agotado por stock: se ve
+  // en su sitio, en gris, con el aviso "Agotado", en vez de desaparecer.
+  if (item.hidden) return true;
   const r = getStockRestanteForItem(item);
   if (r === null) return false;
   const min = item.mitadDe ? 1 : 2;
