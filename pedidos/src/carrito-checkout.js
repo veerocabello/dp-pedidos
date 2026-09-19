@@ -53,20 +53,16 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   // refleja el valor real aunque se marcara desde el otro formulario.
   const _estudianteCheckedDrawer = !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeLabel = getFeeLabel();
-  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
-  // El código local exime al gasto fijo etiquetado como "de gestión", sea
-  // el 1º o el 2º — ver el comentario largo en carta.js/renderCart() para
-  // el porqué (identificarlo por posición se rompía si se configuraban al
-  // revés de lo esperado).
-  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
-  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
-  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
-  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
-  const feeAmount = getFeeAmount();
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2AmountEfectivo = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
-  const fee2LabelEfectiva = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : fee2Label;
+  // Cálculo único, compartido con carta.js/renderCart() y con el envío
+  // del pedido más abajo — ver calcularFeesEfectivos() en
+  // nucleo-compartido.js.
+  const _feesEfectivosDrawer = calcularFeesEfectivos(_sinGastosPorCodigoLocal);
+  const feeLabel = _feesEfectivosDrawer.feeLabel;
+  const feeEnabled = _feesEfectivosDrawer.feeEnabled;
+  const feeAmount = _feesEfectivosDrawer.feeAmount;
+  const fee2Enabled = _feesEfectivosDrawer.fee2Enabled;
+  const fee2AmountEfectivo = _feesEfectivosDrawer.fee2Amount;
+  const fee2LabelEfectiva = _feesEfectivosDrawer.fee2Label;
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
@@ -1221,18 +1217,15 @@ async function _submitOrderInner() {
   // con el valor nuevo — un ticket con turno asignado Y exonerado como
   // pedido de mostrador a la vez, dos cosas que no deberían coexistir.
   const _sinGastosPorCodigoLocalSubmit = _enTiendaSubmit;
-  const feeLabel = getFeeLabel();
-  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
-  // Ver comentario largo en carta.js/renderCart(): el código local exime
-  // al gasto etiquetado como "de gestión", sea el 1º o el 2º.
-  const _fee1EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
-  const _fee2EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
-  const _ningunaEsGestionSubmit = !_fee1EsGestionSubmit && !_fee2EsGestionSubmit;
-  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocalSubmit && (_fee1EsGestionSubmit || _ningunaEsGestionSubmit));
-  const feeAmount = feeEnabled ? getFeeAmount() : 0;
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
-  const fee2Amount = fee2Enabled && typeof getFee2AmountEfectivo === 'function' ? getFee2AmountEfectivo() : 0;
-  const fee2LabelSubmit = fee2Enabled && typeof getFee2LabelEfectiva === 'function' ? getFee2LabelEfectiva() : fee2Label;
+  // Cálculo único, compartido con carta.js/renderCart() y el cajón móvil
+  // — ver calcularFeesEfectivos() en nucleo-compartido.js.
+  const _feesEfectivosSubmit = calcularFeesEfectivos(_sinGastosPorCodigoLocalSubmit);
+  const feeLabel = _feesEfectivosSubmit.feeLabel;
+  const feeEnabled = _feesEfectivosSubmit.feeEnabled;
+  const feeAmount = _feesEfectivosSubmit.feeAmount;
+  const fee2Enabled = _feesEfectivosSubmit.fee2Enabled;
+  const fee2Amount = _feesEfectivosSubmit.fee2Amount;
+  const fee2LabelSubmit = _feesEfectivosSubmit.fee2Label;
   // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
   // terminar de escribir el teléfono (con un pequeño margen + una llamada
   // al servidor) — si el cliente confirma el pedido muy rápido justo

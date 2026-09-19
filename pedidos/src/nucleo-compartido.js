@@ -1920,6 +1920,30 @@ function getFee2LabelEfectiva() {
   return label + (n > 1 ? ' ×' + n : '');
 }
 
+// ── GASTOS DE GESTIÓN / BOLSA — cálculo único, compartido por el carrito
+// de escritorio (carta.js), el cajón móvil y el envío del pedido
+// (carrito-checkout.js), para no tener que acordarse de tocar los tres
+// sitios cada vez que cambia algo aquí (como pasó con el bug de
+// queso/gratinado). `sinGastosPorCodigoLocal` es el único dato que cada
+// llamador puede necesitar de forma distinta: la vista en vivo del
+// carrito lo lee de _modoLocalActivo() al momento, mientras que el envío
+// del pedido usa el valor ya fijado al reservar el turno (ver comentario
+// junto a _enTiendaSubmit en carrito-checkout.js) — por eso se recibe
+// como parámetro en vez de decidirse aquí dentro.
+function calcularFeesEfectivos(sinGastosPorCodigoLocal) {
+  const feeLabel = getFeeLabel();
+  const fee2LabelBase = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee1EsGestion = _esEtiquetaDeGestion(feeLabel);
+  const fee2EsGestion = _esEtiquetaDeGestion(fee2LabelBase);
+  const ningunaEsGestion = !fee1EsGestion && !fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(sinGastosPorCodigoLocal && (fee1EsGestion || ningunaEsGestion));
+  const feeAmount = feeEnabled ? getFeeAmount() : 0;
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(sinGastosPorCodigoLocal && fee2EsGestion);
+  const fee2Amount = fee2Enabled && typeof getFee2AmountEfectivo === 'function' ? getFee2AmountEfectivo() : 0;
+  const fee2Label = fee2Enabled && typeof getFee2LabelEfectiva === 'function' ? getFee2LabelEfectiva() : fee2LabelBase;
+  return { feeEnabled, feeAmount, feeLabel, fee2Enabled, fee2Amount, fee2Label };
+}
+
 // ── DESCUENTO ESTUDIANTE/JUBILADO (lectura — el cliente marca la casilla) ──
 // ── VERIFICACIÓN SMS OBLIGATORIA (interruptor de emergencia) ── — por
 // defecto activada (si nunca se ha guardado nada, se trata como 'true'

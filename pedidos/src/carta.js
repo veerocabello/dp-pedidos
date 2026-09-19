@@ -1150,18 +1150,10 @@ function renderCart() {
   // cliente haya metido el código de "pedido desde el local" (para cuando
   // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeLabel = getFeeLabel();
-  // El código local exime SIEMPRE al gasto fijo que sea "de gestión" —
-  // puede ser el 1º o el 2º según cómo estén configurados ahora mismo, así
-  // que se identifica por su etiqueta, no por su posición. Si ninguno de
-  // los dos menciona "gestión" (p.ej. se renombraron del todo), se exime
-  // el primero por defecto para no perder la exención.
-  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
-  const _fee2LabelParaExencion = (typeof getFee2Label === 'function') ? getFee2Label() : '';
-  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(_fee2LabelParaExencion);
-  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
-  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
-  const feeAmount = getFeeAmount();
+  const _feesEfectivos = calcularFeesEfectivos(_sinGastosPorCodigoLocal);
+  const feeLabel = _feesEfectivos.feeLabel;
+  const feeEnabled = _feesEfectivos.feeEnabled;
+  const feeAmount = _feesEfectivos.feeAmount;
   const feeEl = document.getElementById('cart-fee-row');
   if (feeEl) {
     if (feeEnabled) {
@@ -1180,10 +1172,10 @@ function renderCart() {
   if (localCodeRowEl) localCodeRowEl.style.display = (_hayGestionQueQuitar && getLocalFeeCode()) ? 'block' : 'none';
   // Segundo gasto fijo, independiente del anterior (su propio interruptor) —
   // también se exime con el código local si es este el que está etiquetado
-  // como "de gestión" (ver arriba).
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2Amount = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
-  const fee2Label = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : '';
+  // como "de gestión" (ver calcularFeesEfectivos en nucleo-compartido.js).
+  const fee2Enabled = _feesEfectivos.fee2Enabled;
+  const fee2Amount = _feesEfectivos.fee2Amount;
+  const fee2Label = _feesEfectivos.fee2Label;
   const fee2El = document.getElementById('cart-fee2-row');
   if (fee2El) {
     if (fee2Enabled) {

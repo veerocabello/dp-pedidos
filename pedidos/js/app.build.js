@@ -1920,6 +1920,30 @@ function getFee2LabelEfectiva() {
   return label + (n > 1 ? ' ×' + n : '');
 }
 
+// ── GASTOS DE GESTIÓN / BOLSA — cálculo único, compartido por el carrito
+// de escritorio (carta.js), el cajón móvil y el envío del pedido
+// (carrito-checkout.js), para no tener que acordarse de tocar los tres
+// sitios cada vez que cambia algo aquí (como pasó con el bug de
+// queso/gratinado). `sinGastosPorCodigoLocal` es el único dato que cada
+// llamador puede necesitar de forma distinta: la vista en vivo del
+// carrito lo lee de _modoLocalActivo() al momento, mientras que el envío
+// del pedido usa el valor ya fijado al reservar el turno (ver comentario
+// junto a _enTiendaSubmit en carrito-checkout.js) — por eso se recibe
+// como parámetro en vez de decidirse aquí dentro.
+function calcularFeesEfectivos(sinGastosPorCodigoLocal) {
+  const feeLabel = getFeeLabel();
+  const fee2LabelBase = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee1EsGestion = _esEtiquetaDeGestion(feeLabel);
+  const fee2EsGestion = _esEtiquetaDeGestion(fee2LabelBase);
+  const ningunaEsGestion = !fee1EsGestion && !fee2EsGestion;
+  const feeEnabled = getFeeEnabled() && !(sinGastosPorCodigoLocal && (fee1EsGestion || ningunaEsGestion));
+  const feeAmount = feeEnabled ? getFeeAmount() : 0;
+  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(sinGastosPorCodigoLocal && fee2EsGestion);
+  const fee2Amount = fee2Enabled && typeof getFee2AmountEfectivo === 'function' ? getFee2AmountEfectivo() : 0;
+  const fee2Label = fee2Enabled && typeof getFee2LabelEfectiva === 'function' ? getFee2LabelEfectiva() : fee2LabelBase;
+  return { feeEnabled, feeAmount, feeLabel, fee2Enabled, fee2Amount, fee2Label };
+}
+
 // ── DESCUENTO ESTUDIANTE/JUBILADO (lectura — el cliente marca la casilla) ──
 // ── VERIFICACIÓN SMS OBLIGATORIA (interruptor de emergencia) ── — por
 // defecto activada (si nunca se ha guardado nada, se trata como 'true'
@@ -5852,18 +5876,10 @@ function renderCart() {
   // cliente haya metido el código de "pedido desde el local" (para cuando
   // hay cola y se pide desde el móvil sin cargo, solo ese pedido)
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeLabel = getFeeLabel();
-  // El código local exime SIEMPRE al gasto fijo que sea "de gestión" —
-  // puede ser el 1º o el 2º según cómo estén configurados ahora mismo, así
-  // que se identifica por su etiqueta, no por su posición. Si ninguno de
-  // los dos menciona "gestión" (p.ej. se renombraron del todo), se exime
-  // el primero por defecto para no perder la exención.
-  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
-  const _fee2LabelParaExencion = (typeof getFee2Label === 'function') ? getFee2Label() : '';
-  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(_fee2LabelParaExencion);
-  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
-  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
-  const feeAmount = getFeeAmount();
+  const _feesEfectivos = calcularFeesEfectivos(_sinGastosPorCodigoLocal);
+  const feeLabel = _feesEfectivos.feeLabel;
+  const feeEnabled = _feesEfectivos.feeEnabled;
+  const feeAmount = _feesEfectivos.feeAmount;
   const feeEl = document.getElementById('cart-fee-row');
   if (feeEl) {
     if (feeEnabled) {
@@ -5882,10 +5898,10 @@ function renderCart() {
   if (localCodeRowEl) localCodeRowEl.style.display = (_hayGestionQueQuitar && getLocalFeeCode()) ? 'block' : 'none';
   // Segundo gasto fijo, independiente del anterior (su propio interruptor) —
   // también se exime con el código local si es este el que está etiquetado
-  // como "de gestión" (ver arriba).
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2Amount = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
-  const fee2Label = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : '';
+  // como "de gestión" (ver calcularFeesEfectivos en nucleo-compartido.js).
+  const fee2Enabled = _feesEfectivos.fee2Enabled;
+  const fee2Amount = _feesEfectivos.fee2Amount;
+  const fee2Label = _feesEfectivos.fee2Label;
   const fee2El = document.getElementById('cart-fee2-row');
   if (fee2El) {
     if (fee2Enabled) {
@@ -6168,20 +6184,16 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   // refleja el valor real aunque se marcara desde el otro formulario.
   const _estudianteCheckedDrawer = !!(document.getElementById('student-discount-checkbox') || {}).checked;
   const _sinGastosPorCodigoLocal = (typeof _modoLocalActivo === 'function') && _modoLocalActivo();
-  const feeLabel = getFeeLabel();
-  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
-  // El código local exime al gasto fijo etiquetado como "de gestión", sea
-  // el 1º o el 2º — ver el comentario largo en carta.js/renderCart() para
-  // el porqué (identificarlo por posición se rompía si se configuraban al
-  // revés de lo esperado).
-  const _fee1EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
-  const _fee2EsGestion = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
-  const _ningunaEsGestion = !_fee1EsGestion && !_fee2EsGestion;
-  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
-  const feeAmount = getFeeAmount();
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2AmountEfectivo = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
-  const fee2LabelEfectiva = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : fee2Label;
+  // Cálculo único, compartido con carta.js/renderCart() y con el envío
+  // del pedido más abajo — ver calcularFeesEfectivos() en
+  // nucleo-compartido.js.
+  const _feesEfectivosDrawer = calcularFeesEfectivos(_sinGastosPorCodigoLocal);
+  const feeLabel = _feesEfectivosDrawer.feeLabel;
+  const feeEnabled = _feesEfectivosDrawer.feeEnabled;
+  const feeAmount = _feesEfectivosDrawer.feeAmount;
+  const fee2Enabled = _feesEfectivosDrawer.fee2Enabled;
+  const fee2AmountEfectivo = _feesEfectivosDrawer.fee2Amount;
+  const fee2LabelEfectiva = _feesEfectivosDrawer.fee2Label;
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
@@ -7336,18 +7348,15 @@ async function _submitOrderInner() {
   // con el valor nuevo — un ticket con turno asignado Y exonerado como
   // pedido de mostrador a la vez, dos cosas que no deberían coexistir.
   const _sinGastosPorCodigoLocalSubmit = _enTiendaSubmit;
-  const feeLabel = getFeeLabel();
-  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
-  // Ver comentario largo en carta.js/renderCart(): el código local exime
-  // al gasto etiquetado como "de gestión", sea el 1º o el 2º.
-  const _fee1EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(feeLabel);
-  const _fee2EsGestionSubmit = (typeof _esEtiquetaDeGestion === 'function') && _esEtiquetaDeGestion(fee2Label);
-  const _ningunaEsGestionSubmit = !_fee1EsGestionSubmit && !_fee2EsGestionSubmit;
-  const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocalSubmit && (_fee1EsGestionSubmit || _ningunaEsGestionSubmit));
-  const feeAmount = feeEnabled ? getFeeAmount() : 0;
-  const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
-  const fee2Amount = fee2Enabled && typeof getFee2AmountEfectivo === 'function' ? getFee2AmountEfectivo() : 0;
-  const fee2LabelSubmit = fee2Enabled && typeof getFee2LabelEfectiva === 'function' ? getFee2LabelEfectiva() : fee2Label;
+  // Cálculo único, compartido con carta.js/renderCart() y el cajón móvil
+  // — ver calcularFeesEfectivos() en nucleo-compartido.js.
+  const _feesEfectivosSubmit = calcularFeesEfectivos(_sinGastosPorCodigoLocalSubmit);
+  const feeLabel = _feesEfectivosSubmit.feeLabel;
+  const feeEnabled = _feesEfectivosSubmit.feeEnabled;
+  const feeAmount = _feesEfectivosSubmit.feeAmount;
+  const fee2Enabled = _feesEfectivosSubmit.fee2Enabled;
+  const fee2Amount = _feesEfectivosSubmit.fee2Amount;
+  const fee2LabelSubmit = _feesEfectivosSubmit.fee2Label;
   // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
   // terminar de escribir el teléfono (con un pequeño margen + una llamada
   // al servidor) — si el cliente confirma el pedido muy rápido justo
