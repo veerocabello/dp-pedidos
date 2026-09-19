@@ -65,7 +65,8 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
   const feeAmount = getFeeAmount();
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2AmountEfectivo = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
+  const fee2LabelEfectiva = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : fee2Label;
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
@@ -73,7 +74,7 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   if (fee2Enabled) {
-    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2LabelEfectiva, "</span><span>").concat(fee2AmountEfectivo.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
   // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
@@ -1230,7 +1231,8 @@ async function _submitOrderInner() {
   const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocalSubmit && (_fee1EsGestionSubmit || _ningunaEsGestionSubmit));
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
-  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  const fee2Amount = fee2Enabled && typeof getFee2AmountEfectivo === 'function' ? getFee2AmountEfectivo() : 0;
+  const fee2LabelSubmit = fee2Enabled && typeof getFee2LabelEfectiva === 'function' ? getFee2LabelEfectiva() : fee2Label;
   // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
   // terminar de escribir el teléfono (con un pequeño margen + una llamada
   // al servidor) — si el cliente confirma el pedido muy rápido justo
@@ -1415,7 +1417,7 @@ async function _submitOrderInner() {
     isFee: true
   }] : [];
   const fee2Items = fee2Enabled ? [{
-    name: fee2Label,
+    name: fee2LabelSubmit,
     qty: 1,
     subtotal: fee2Amount,
     isFee: true

@@ -1182,8 +1182,8 @@ function renderCart() {
   // también se exime con el código local si es este el que está etiquetado
   // como "de gestión" (ver arriba).
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
-  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee2Amount = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
+  const fee2Label = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : '';
   const fee2El = document.getElementById('cart-fee2-row');
   if (fee2El) {
     if (fee2Enabled) {

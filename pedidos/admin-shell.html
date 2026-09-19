@@ -1853,14 +1853,18 @@
           <span style="font-size:13px;font-weight:700;color:var(--text)">💶 Otro gasto fijo</span>
           <input type="checkbox" id="tc-fee2-enabled" style="width:20px;height:20px;flex-shrink:0">
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer">
+          <input type="checkbox" id="tc-fee2-modo-bolsas" onchange="_actualizarPistaFee2Modo()" style="width:18px;height:18px;flex-shrink:0">
+          <span style="font-size:12.5px;color:var(--text)">🛍️ Calcular solo como bolsas (cada 2 patatas = 1 bolsa)</span>
+        </label>
         <div style="display:grid;grid-template-columns:80px 1fr;gap:8px">
           <div style="display:flex;align-items:center;gap:4px">
             <input type="number" id="tc-fee2-amount" min="0" max="10" step="0.10" value="0.50" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
-            <span style="font-size:12px;color:var(--muted)">€</span>
+            <span id="tc-fee2-amount-unit" style="font-size:12px;color:var(--muted);white-space:nowrap">€</span>
           </div>
           <input type="text" id="tc-fee2-label" value="Otro gasto fijo" maxlength="40" style="width:100%;padding:8px 10px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;box-sizing:border-box">
         </div>
-        <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Independiente del anterior — se enciende y se apaga por su cuenta.</p>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 0" id="tc-fee2-hint">Independiente del anterior — se enciende y se apaga por su cuenta.</p>
       </div>
 
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Descuentos</div>

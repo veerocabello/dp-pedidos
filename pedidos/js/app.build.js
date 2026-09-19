@@ -1832,6 +1832,7 @@ function _esEtiquetaDeGestion(label) {
 const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
 const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
 const FEE2_LABEL_KEY = 'dpf_fee2_label';
+const FEE2_MODO_KEY = 'dpf_fee2_modo';
 function getFee2Enabled() {
   return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
 }
@@ -1841,6 +1842,13 @@ function getFee2Amount() {
 function getFee2Label() {
   return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
 }
+// 'fijo' (de siempre, importe único por pedido) o 'bolsas' (se calcula
+// solo: cada 2 patatas = 1 bolsa, ver bolsasSugeridasWeb() más abajo). En
+// modo 'bolsas', getFee2Amount() deja de ser el importe total y pasa a
+// ser el PRECIO POR BOLSA — así no hace falta un campo nuevo en Firebase.
+function getFee2Modo() {
+  return localStorage.getItem(FEE2_MODO_KEY) === 'bolsas' ? 'bolsas' : 'fijo';
+}
 function loadFee2FromFirebase() {
   if (window.fb_loadFee2Config) {
     window.fb_loadFee2Config().then(function (cfg) {
@@ -1848,6 +1856,7 @@ function loadFee2FromFirebase() {
         if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
         if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
         if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+        if (cfg.modo !== undefined) localStorage.setItem(FEE2_MODO_KEY, cfg.modo);
         renderCart();
       }
     }).catch(function () {}).finally(function () { window._fee2ConfigListo = true; });
@@ -1859,8 +1868,56 @@ function loadFee2FromFirebase() {
     if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
     if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
     if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+    if (cfg.modo !== undefined) localStorage.setItem(FEE2_MODO_KEY, cfg.modo);
     renderCart();
   });
+}
+
+/* ── Bolsas automáticas (mismo criterio que en Comandas): cada 2 patatas
+   (categoría "Patatas" de la carta — Al Gusto/Bomba/Cheddar-Bacon
+   incluidas) suman 1 bolsa, con 1 patata sola ya llevando la suya. El
+   resto de categorías (boniato, paninis, tartas...) nunca suman bolsa
+   por su cuenta, solo viajan en la que ya haya; sin ninguna patata pero
+   con algo más en el carrito, se pone 1 bolsa igual. ── */
+function contarPatatasWeb() {
+  let n = 0;
+  Object.entries(cart).forEach(([id, qty]) => {
+    const item = MENU.find(m => m.id == id);
+    if (item && item.cat === 'Patatas') n += qty;
+  });
+  [custCart, extrasCart].forEach(c => {
+    Object.values(c).forEach(entry => {
+      if (!(entry.qty > 0)) return;
+      const item = MENU.find(m => m.id == entry.menuId);
+      if (item && item.cat === 'Patatas') n += entry.qty;
+    });
+  });
+  return n;
+}
+function hayAlgoMasEnCarritoWeb() {
+  if (Object.values(cart).some(qty => qty > 0)) return true;
+  if (Object.values(custCart).some(c => c.qty > 0)) return true;
+  if (Object.values(extrasCart).some(c => c.qty > 0)) return true;
+  if (typeof promosCart !== 'undefined' && Object.values(promosCart).some(c => c.qty > 0)) return true;
+  return false;
+}
+function bolsasSugeridasWeb() {
+  const patatas = contarPatatasWeb();
+  if (patatas > 0) return Math.ceil(patatas / 2);
+  return hayAlgoMasEnCarritoWeb() ? 1 : 0;
+}
+// Importe/etiqueta de fee2 que de verdad se cobra — en modo 'fijo' son
+// los mismos de siempre; en modo 'bolsas', el importe se calcula del
+// carrito y la etiqueta muestra la cantidad (p.ej. "Bolsa ×2").
+function getFee2AmountEfectivo() {
+  if (getFee2Modo() === 'bolsas') return Math.round(bolsasSugeridasWeb() * getFee2Amount() * 100) / 100;
+  return getFee2Amount();
+}
+function getFee2LabelEfectiva() {
+  const label = getFee2Label();
+  if (getFee2Modo() !== 'bolsas') return label;
+  const n = bolsasSugeridasWeb();
+  return label + (n > 1 ? ' ×' + n : '');
 }
 
 // ── DESCUENTO ESTUDIANTE/JUBILADO (lectura — el cliente marca la casilla) ──
@@ -5827,8 +5884,8 @@ function renderCart() {
   // también se exime con el código local si es este el que está etiquetado
   // como "de gestión" (ver arriba).
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
-  const fee2Label = (typeof getFee2Label === 'function') ? getFee2Label() : '';
+  const fee2Amount = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
+  const fee2Label = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : '';
   const fee2El = document.getElementById('cart-fee2-row');
   if (fee2El) {
     if (fee2Enabled) {
@@ -6123,7 +6180,8 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
   const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocal && (_fee1EsGestion || _ningunaEsGestion));
   const feeAmount = getFeeAmount();
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocal && _fee2EsGestion);
-  const fee2Amount = (typeof getFee2Amount === 'function') ? getFee2Amount() : 0;
+  const fee2AmountEfectivo = (typeof getFee2AmountEfectivo === 'function') ? getFee2AmountEfectivo() : 0;
+  const fee2LabelEfectiva = (typeof getFee2LabelEfectiva === 'function') ? getFee2LabelEfectiva() : fee2Label;
   discountAmt = discountAmt || 0;
   fidelizacionAmt = fidelizacionAmt || 0;
   let html = cartHtml;
@@ -6131,7 +6189,7 @@ function _syncCartDrawer(cartHtml, total, discountAmt, discountCode, fidelizacio
     html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(feeLabel, "</span><span>").concat(feeAmount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   if (fee2Enabled) {
-    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2Label, "</span><span>").concat(fee2Amount.toFixed(2).replace('.', ','), " \u20AC</span></div>");
+    html += "<div style=\"display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;color:#8A6A4E;border-top:1px dashed #F5E6C8;margin-top:8px\"><span>".concat(fee2LabelEfectiva, "</span><span>").concat(fee2AmountEfectivo.toFixed(2).replace('.', ','), " \u20AC</span></div>");
   }
   // Enlace para meter el c\u00F3digo de "pedido desde el local" \u2014 se lee el valor
   // actual del campo (si ya exist\u00EDa) para no borrarlo en cada repintado.
@@ -7288,7 +7346,8 @@ async function _submitOrderInner() {
   const feeEnabled = getFeeEnabled() && !(_sinGastosPorCodigoLocalSubmit && (_fee1EsGestionSubmit || _ningunaEsGestionSubmit));
   const feeAmount = feeEnabled ? getFeeAmount() : 0;
   const fee2Enabled = (typeof getFee2Enabled === 'function') && getFee2Enabled() && !(_sinGastosPorCodigoLocalSubmit && _fee2EsGestionSubmit);
-  const fee2Amount = fee2Enabled && typeof getFee2Amount === 'function' ? getFee2Amount() : 0;
+  const fee2Amount = fee2Enabled && typeof getFee2AmountEfectivo === 'function' ? getFee2AmountEfectivo() : 0;
+  const fee2LabelSubmit = fee2Enabled && typeof getFee2LabelEfectiva === 'function' ? getFee2LabelEfectiva() : fee2Label;
   // _comprobarPremioFidelizacion() se dispara sola en segundo plano al
   // terminar de escribir el teléfono (con un pequeño margen + una llamada
   // al servidor) — si el cliente confirma el pedido muy rápido justo
@@ -7473,7 +7532,7 @@ async function _submitOrderInner() {
     isFee: true
   }] : [];
   const fee2Items = fee2Enabled ? [{
-    name: fee2Label,
+    name: fee2LabelSubmit,
     qty: 1,
     subtotal: fee2Amount,
     isFee: true

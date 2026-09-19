@@ -878,14 +878,33 @@ function saveFeeConfig(enabled, amount, label) {
   logActivity((enabled ? '✅' : '⛔') + ' Gastos de gestión ' + (enabled ? 'activados' : 'desactivados') + ' — ' + amount.toFixed(2) + '€');
 }
 
+// Cambia el texto de ayuda y el "€"/"€ por bolsa" bajo el importe según
+// esté marcado o no "Calcular solo como bolsas" — solo es una pista
+// visual, no toca ningún dato (eso lo hace bimbaGuardarTicketConfig al
+// pulsar "Guardar").
+function _actualizarPistaFee2Modo() {
+  const modoEl = document.getElementById('tc-fee2-modo-bolsas');
+  const hintEl = document.getElementById('tc-fee2-hint');
+  const amountUnitEl = document.getElementById('tc-fee2-amount-unit');
+  const esBolsas = !!(modoEl && modoEl.checked);
+  if (hintEl) hintEl.textContent = esBolsas
+    ? 'Se calcula sola: cada 2 patatas de la carta suman 1 bolsa (1 sola ya lleva la suya); el resto de productos no suman ninguna por su cuenta.'
+    : 'Independiente del anterior — se enciende y se apaga por su cuenta.';
+  if (amountUnitEl) amountUnitEl.textContent = esBolsas ? '€/bolsa' : '€';
+}
+
 // ── SEGUNDO GASTO FIJO (guardar desde el panel) ──
-function saveFee2Config(enabled, amount, label) {
+// modo: 'fijo' (importe único por pedido, de siempre) o 'bolsas' (se
+// calcula solo — cada 2 patatas = 1 bolsa; `amount` pasa a ser el precio
+// POR BOLSA en vez del importe total, ver getFee2AmountEfectivo()).
+function saveFee2Config(enabled, amount, label, modo) {
   localStorage.setItem(FEE2_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE2_LABEL_KEY, label);
-  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
+  localStorage.setItem(FEE2_MODO_KEY, modo || 'fijo');
+  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label, modo).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
   renderCart();
-  logActivity((enabled ? '✅' : '⛔') + ' Otro gasto fijo ' + (enabled ? 'activado' : 'desactivado') + ' — ' + amount.toFixed(2) + '€');
+  logActivity((enabled ? '✅' : '⛔') + ' Otro gasto fijo ' + (enabled ? 'activado' : 'desactivado') + ' — ' + (modo === 'bolsas' ? amount.toFixed(2) + '€/bolsa (automático)' : amount.toFixed(2) + '€'));
 }
 
 // ── DESCUENTO ESTUDIANTE/JUBILADO (guardar desde el panel) ──
@@ -1158,6 +1177,8 @@ function bimbaPintarTicketConfig() {
   if (fee2AmountEl) fee2AmountEl.value = getFee2Amount().toFixed(2);
   const fee2LabelEl = document.getElementById('tc-fee2-label');
   if (fee2LabelEl) fee2LabelEl.value = getFee2Label();
+  const fee2ModoEl = document.getElementById('tc-fee2-modo-bolsas');
+  if (fee2ModoEl) { fee2ModoEl.checked = getFee2Modo() === 'bolsas'; if (typeof _actualizarPistaFee2Modo === 'function') _actualizarPistaFee2Modo(); }
 
   const studentEnabledEl = document.getElementById('tc-student-discount-enabled');
   if (studentEnabledEl) studentEnabledEl.checked = getStudentDiscountEnabled();
@@ -1209,6 +1230,7 @@ function bimbaGuardarTicketConfig() {
   const fee2EnabledEl = document.getElementById('tc-fee2-enabled');
   const fee2AmountEl = document.getElementById('tc-fee2-amount');
   const fee2LabelEl = document.getElementById('tc-fee2-label');
+  const fee2ModoEl = document.getElementById('tc-fee2-modo-bolsas');
   if (fee2EnabledEl && fee2AmountEl && fee2LabelEl) {
     saveFee2Config(
       fee2EnabledEl.checked,
@@ -1216,7 +1238,8 @@ function bimbaGuardarTicketConfig() {
       // sin el aviso pensado solo para NaN/0 — un importe negativo aquí se
       // resta directo del total de cada pedido (carta.js/carrito-checkout.js).
       Math.max(0, parseFloat(fee2AmountEl.value) || 0.50),
-      fee2LabelEl.value.trim() || 'Otro gasto fijo'
+      fee2LabelEl.value.trim() || 'Otro gasto fijo',
+      (fee2ModoEl && fee2ModoEl.checked) ? 'bolsas' : 'fijo'
     );
   }
 

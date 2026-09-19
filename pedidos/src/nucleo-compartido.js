@@ -1832,6 +1832,7 @@ function _esEtiquetaDeGestion(label) {
 const FEE2_ENABLED_KEY = 'dpf_fee2_enabled';
 const FEE2_AMOUNT_KEY = 'dpf_fee2_amount';
 const FEE2_LABEL_KEY = 'dpf_fee2_label';
+const FEE2_MODO_KEY = 'dpf_fee2_modo';
 function getFee2Enabled() {
   return localStorage.getItem(FEE2_ENABLED_KEY) === 'true';
 }
@@ -1841,6 +1842,13 @@ function getFee2Amount() {
 function getFee2Label() {
   return localStorage.getItem(FEE2_LABEL_KEY) || 'Otro gasto fijo';
 }
+// 'fijo' (de siempre, importe único por pedido) o 'bolsas' (se calcula
+// solo: cada 2 patatas = 1 bolsa, ver bolsasSugeridasWeb() más abajo). En
+// modo 'bolsas', getFee2Amount() deja de ser el importe total y pasa a
+// ser el PRECIO POR BOLSA — así no hace falta un campo nuevo en Firebase.
+function getFee2Modo() {
+  return localStorage.getItem(FEE2_MODO_KEY) === 'bolsas' ? 'bolsas' : 'fijo';
+}
 function loadFee2FromFirebase() {
   if (window.fb_loadFee2Config) {
     window.fb_loadFee2Config().then(function (cfg) {
@@ -1848,6 +1856,7 @@ function loadFee2FromFirebase() {
         if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
         if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
         if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+        if (cfg.modo !== undefined) localStorage.setItem(FEE2_MODO_KEY, cfg.modo);
         renderCart();
       }
     }).catch(function () {}).finally(function () { window._fee2ConfigListo = true; });
@@ -1859,8 +1868,56 @@ function loadFee2FromFirebase() {
     if (cfg.enabled !== undefined) localStorage.setItem(FEE2_ENABLED_KEY, cfg.enabled ? 'true' : 'false');
     if (cfg.amount !== undefined) localStorage.setItem(FEE2_AMOUNT_KEY, String(cfg.amount));
     if (cfg.label !== undefined) localStorage.setItem(FEE2_LABEL_KEY, cfg.label);
+    if (cfg.modo !== undefined) localStorage.setItem(FEE2_MODO_KEY, cfg.modo);
     renderCart();
   });
+}
+
+/* ── Bolsas automáticas (mismo criterio que en Comandas): cada 2 patatas
+   (categoría "Patatas" de la carta — Al Gusto/Bomba/Cheddar-Bacon
+   incluidas) suman 1 bolsa, con 1 patata sola ya llevando la suya. El
+   resto de categorías (boniato, paninis, tartas...) nunca suman bolsa
+   por su cuenta, solo viajan en la que ya haya; sin ninguna patata pero
+   con algo más en el carrito, se pone 1 bolsa igual. ── */
+function contarPatatasWeb() {
+  let n = 0;
+  Object.entries(cart).forEach(([id, qty]) => {
+    const item = MENU.find(m => m.id == id);
+    if (item && item.cat === 'Patatas') n += qty;
+  });
+  [custCart, extrasCart].forEach(c => {
+    Object.values(c).forEach(entry => {
+      if (!(entry.qty > 0)) return;
+      const item = MENU.find(m => m.id == entry.menuId);
+      if (item && item.cat === 'Patatas') n += entry.qty;
+    });
+  });
+  return n;
+}
+function hayAlgoMasEnCarritoWeb() {
+  if (Object.values(cart).some(qty => qty > 0)) return true;
+  if (Object.values(custCart).some(c => c.qty > 0)) return true;
+  if (Object.values(extrasCart).some(c => c.qty > 0)) return true;
+  if (typeof promosCart !== 'undefined' && Object.values(promosCart).some(c => c.qty > 0)) return true;
+  return false;
+}
+function bolsasSugeridasWeb() {
+  const patatas = contarPatatasWeb();
+  if (patatas > 0) return Math.ceil(patatas / 2);
+  return hayAlgoMasEnCarritoWeb() ? 1 : 0;
+}
+// Importe/etiqueta de fee2 que de verdad se cobra — en modo 'fijo' son
+// los mismos de siempre; en modo 'bolsas', el importe se calcula del
+// carrito y la etiqueta muestra la cantidad (p.ej. "Bolsa ×2").
+function getFee2AmountEfectivo() {
+  if (getFee2Modo() === 'bolsas') return Math.round(bolsasSugeridasWeb() * getFee2Amount() * 100) / 100;
+  return getFee2Amount();
+}
+function getFee2LabelEfectiva() {
+  const label = getFee2Label();
+  if (getFee2Modo() !== 'bolsas') return label;
+  const n = bolsasSugeridasWeb();
+  return label + (n > 1 ? ' ×' + n : '');
 }
 
 // ── DESCUENTO ESTUDIANTE/JUBILADO (lectura — el cliente marca la casilla) ──

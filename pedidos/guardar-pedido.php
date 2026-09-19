@@ -1359,6 +1359,40 @@ function _esEtiquetaDeGestionPHP($label) {
     $l = mb_strtolower((string)$label);
     return (mb_strpos($l, 'gestión') !== false) || (mb_strpos($l, 'gestion') !== false);
 }
+// Cuántas bolsas corresponden a un pedido — mismo criterio que en
+// Comandas/carta.js (bolsasSugeridasWeb): cada 2 patatas (categoría
+// "Patatas" de config/menu) suman 1 bolsa, 1 patata sola ya lleva la
+// suya; el resto de categorías nunca suman por su cuenta, solo si no hay
+// ninguna patata pero sí algo más en el pedido se pone 1 bolsa igual. Se
+// cuenta sobre $items YA corregidos (catálogo/extras/promos), nunca
+// sobre lo que mande el cliente, para que no se pueda manipular.
+function _bolsasEsperadasPHP($databaseURL, $accessToken, $items) {
+    $menuResp = fbGetJsonStringConEtag($databaseURL, 'config/menu', $accessToken);
+    $menuData = $menuResp['data'] ?? null;
+    if (is_array($menuData) && isset($menuData['items']) && is_array($menuData['items'])) {
+        $menuItems = $menuData['items'];
+    } elseif (is_array($menuData)) {
+        $menuItems = $menuData;
+    } else {
+        $menuItems = [];
+    }
+    $catPorNombre = [];
+    foreach ($menuItems as $mi) {
+        if (isset($mi['name'])) $catPorNombre[$mi['name']] = $mi['cat'] ?? null;
+    }
+    $patatas = 0;
+    $hayAlgo = false;
+    foreach ($items as $it) {
+        if (!empty($it['isFee'])) continue;
+        $qty = (float)($it['qty'] ?? 0);
+        if ($qty <= 0) continue;
+        $hayAlgo = true;
+        $nombre = $it['name'] ?? null;
+        if ($nombre !== null && ($catPorNombre[$nombre] ?? null) === 'Patatas') $patatas += $qty;
+    }
+    if ($patatas > 0) return (int)ceil($patatas / 2);
+    return $hayAlgo ? 1 : 0;
+}
 function corregirFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLocal) {
     $feeResp = fbGetConEtag($databaseURL, 'config/feeConfig', $accessToken);
     $fee = is_array($feeResp['data']) ? $feeResp['data'] : null;
@@ -1373,33 +1407,70 @@ function corregirFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLoca
     $avisos = [];
     $deltaTotal = 0;
     $revisar = [];
-    if ($fee) $revisar[] = ['cfg' => $fee, 'esperado' => !empty($fee['enabled']) && !($esPedidoLocal && ($fee1EsGestion || $ningunaEsGestion))];
-    if ($fee2) $revisar[] = ['cfg' => $fee2, 'esperado' => !empty($fee2['enabled']) && !($esPedidoLocal && $fee2EsGestion)];
+    if ($fee) {
+        $revisar[] = [
+            'labelBase' => trim((string)($fee['label'] ?? '')),
+            'montoEsperado' => round((float)($fee['amount'] ?? 0), 2),
+            'labelEsperada' => trim((string)($fee['label'] ?? '')),
+            'esperado' => !empty($fee['enabled']) && !($esPedidoLocal && ($fee1EsGestion || $ningunaEsGestion)),
+            'prefijo' => false,
+        ];
+    }
+    if ($fee2) {
+        $label2Base = trim((string)($fee2['label'] ?? ''));
+        $esperado2 = !empty($fee2['enabled']) && !($esPedidoLocal && $fee2EsGestion);
+        // Modo 'bolsas': el navegador ya no decide el importe/etiqueta —
+        // aquí se recalculan de cero contra $items (ver comentario de
+        // _bolsasEsperadasPHP), así nadie puede forjar una bolsa a precio
+        // distinto o para un carrito que no la necesita.
+        if (($fee2['modo'] ?? 'fijo') === 'bolsas') {
+            $bolsas = _bolsasEsperadasPHP($databaseURL, $accessToken, $items);
+            $revisar[] = [
+                'labelBase' => $label2Base,
+                'montoEsperado' => round($bolsas * (float)($fee2['amount'] ?? 0), 2),
+                'labelEsperada' => $label2Base . ($bolsas > 1 ? ' ×' . $bolsas : ''),
+                'esperado' => $esperado2 && $bolsas > 0,
+                'prefijo' => true, // el nombre que mande el cliente puede traer " ×N"
+            ];
+        } else {
+            $revisar[] = [
+                'labelBase' => $label2Base,
+                'montoEsperado' => round((float)($fee2['amount'] ?? 0), 2),
+                'labelEsperada' => $label2Base,
+                'esperado' => $esperado2,
+                'prefijo' => false,
+            ];
+        }
+    }
 
     foreach ($revisar as $r) {
-        $label = trim((string)($r['cfg']['label'] ?? ''));
-        if ($label === '') continue;
-        $montoReal = round((float)($r['cfg']['amount'] ?? 0), 2);
+        if ($r['labelBase'] === '') continue;
+        $montoReal = $r['montoEsperado'];
+        $labelEsperada = $r['labelEsperada'];
         $idxEnItems = null;
         foreach ($items as $i => $it) {
-            if (!empty($it['isFee']) && trim((string)($it['name'] ?? '')) === $label) { $idxEnItems = $i; break; }
+            if (empty($it['isFee'])) continue;
+            $nombreItem = trim((string)($it['name'] ?? ''));
+            if ($r['prefijo'] ? (strpos($nombreItem, $r['labelBase']) === 0) : ($nombreItem === $r['labelBase'])) { $idxEnItems = $i; break; }
         }
         if ($r['esperado']) {
             if ($idxEnItems === null) {
-                $avisos[] = 'faltaba "' . $label . '" (' . number_format($montoReal, 2) . '€, añadido)';
-                $items[] = ['name' => $label, 'qty' => 1, 'subtotal' => $montoReal, 'isFee' => true];
+                $avisos[] = 'faltaba "' . $labelEsperada . '" (' . number_format($montoReal, 2) . '€, añadido)';
+                $items[] = ['name' => $labelEsperada, 'qty' => 1, 'subtotal' => $montoReal, 'isFee' => true];
                 $deltaTotal += $montoReal;
             } else {
+                $nombreActual = trim((string)($items[$idxEnItems]['name'] ?? ''));
                 $subtotalActual = (float)($items[$idxEnItems]['subtotal'] ?? 0);
-                if (abs($subtotalActual - $montoReal) > 0.01) {
-                    $avisos[] = '"' . $label . '" cobrado ' . number_format($subtotalActual, 2) . '€ en vez de ' . number_format($montoReal, 2) . '€ (corregido)';
+                if ($nombreActual !== $labelEsperada || abs($subtotalActual - $montoReal) > 0.01) {
+                    $avisos[] = '"' . $nombreActual . '" cobrado ' . number_format($subtotalActual, 2) . '€ en vez de "' . $labelEsperada . '" ' . number_format($montoReal, 2) . '€ (corregido)';
                     $deltaTotal += ($montoReal - $subtotalActual);
                     $items[$idxEnItems]['subtotal'] = $montoReal;
+                    $items[$idxEnItems]['name'] = $labelEsperada;
                 }
             }
         } elseif ($idxEnItems !== null) {
             $subtotalActual = (float)($items[$idxEnItems]['subtotal'] ?? 0);
-            $avisos[] = '"' . $label . '" cobrado (' . number_format($subtotalActual, 2) . '€) cuando no debía aplicarse (quitado)';
+            $avisos[] = '"' . trim((string)($items[$idxEnItems]['name'] ?? '')) . '" cobrado (' . number_format($subtotalActual, 2) . '€) cuando no debía aplicarse (quitado)';
             $deltaTotal -= $subtotalActual;
             array_splice($items, $idxEnItems, 1);
         }
