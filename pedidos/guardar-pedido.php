@@ -699,6 +699,35 @@ function registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey) {
     }
 }
 
+// Contador "de toda la vida" por cliente, para la pestaña Clientes —
+// mismo nodo fidelizacion/<telefono> que ya usa el programa de sellos
+// (fidelizacion.php), así que se lee-modifica-escribe con el mismo patrón
+// de ETag+reintento para no pisar un sello que se esté registrando casi
+// a la vez: solo se tocan pedidosTotales/gastoTotal/primerPedido/
+// ultimoPedido/nombreUltimo, el resto del registro (sellos,
+// premiosPendientes, historialSellos...) se deja tal cual estuviera.
+// Antes la pestaña Clientes solo sabía sumar los pedidos de los últimos
+// 30 días (getHistorial() en el navegador, capado a propósito para no
+// llenar el localStorage de la tablet) — un cliente de toda la vida con
+// pedidos más viejos que eso aparecía como si acabara de llegar. Se
+// llama aquí, con cada pedido, para que el contador real no dependa de
+// esa ventana de 30 días. Nunca debe poder tumbar un pedido ya guardado
+// si falla — por eso el llamador lo envuelve en try/catch y solo avisa.
+function actualizarClienteLifetime($databaseURL, $accessToken, $telefono, $nombre, $fecha, $total) {
+    $path = 'fidelizacion/' . $telefono;
+    for ($intento = 0; $intento < 5; $intento++) {
+        $leido = fbGetJsonStringConEtag($databaseURL, $path, $accessToken);
+        $cliente = is_array($leido['data']) ? $leido['data'] : [];
+        $cliente['pedidosTotales'] = (is_numeric($cliente['pedidosTotales'] ?? null) ? (int)$cliente['pedidosTotales'] : 0) + 1;
+        $cliente['gastoTotal'] = round((is_numeric($cliente['gastoTotal'] ?? null) ? (float)$cliente['gastoTotal'] : 0) + $total, 2);
+        if (empty($cliente['primerPedido'])) $cliente['primerPedido'] = $fecha;
+        $cliente['ultimoPedido'] = $fecha;
+        $cliente['nombreUltimo'] = $nombre;
+        if (fbPutJsonStringSiCoincide($databaseURL, $path, $accessToken, $cliente, $leido['etag'])) return;
+        usleep(rand(20000, 80000));
+    }
+}
+
 // Lee el aforo máximo configurado por turno (config/slotConfig.max) con la
 // cuenta de servicio — si no hay nada guardado, usa el valor por defecto
 // que ya usaba el navegador (4).
@@ -2745,6 +2774,14 @@ try {
 
     // ── 4. REGISTRAR EN phoneLog (para el cooldown/límite diario de próximos pedidos) ──
     registrarPhoneLog($databaseURL, $accessToken, $phoneClean, $todayKey);
+
+    // ── 4.5. CONTADOR "DE TODA LA VIDA" DEL CLIENTE (pestaña Clientes) ──
+    // No debe poder tumbar un pedido ya guardado con éxito si esto falla.
+    try {
+        actualizarClienteLifetime($databaseURL, $accessToken, $phoneClean, $name, $todayKey, $total);
+    } catch (Exception $e) {
+        error_log('[guardar-pedido] No se pudo actualizar el contador de cliente para ' . $phoneClean . ': ' . $e->getMessage());
+    }
 
     // ── 5. ESTADÍSTICA DE LA SUGERENCIA "¿ALGO DULCE DE POSTRE?" ──
     // Solo cuenta, nunca bloquea el pedido si falla. Se guarda un nodo por

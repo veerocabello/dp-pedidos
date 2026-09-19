@@ -9261,9 +9261,34 @@ function exportTicketPDF(num, name, time, total, slot, items, phone, notes, btn)
     </div>`;
   _descargarHtmlComoPDF(body, 'ticket-' + (num || 'pedido') + '.pdf', btn);
 }
+// _clientesLifetimeCache (phone → {pedidosTotales, gastoTotal, primerPedido,
+// ultimoPedido, nombreUltimo, ...}) se rellena con loadClientesLifetimeFromFirebase()
+// desde fidelizacion/<telefono> — el mismo nodo que actualiza guardar-pedido.php
+// en CADA pedido (ver actualizarClienteLifetime allí), así que no está limitado a
+// los 30 días de getHistorial(). Antes count/total salían solo de sumar los
+// pedidos de esos 30 días — un cliente de toda la vida sin pedidos muy
+// recientes aparecía con menos de los que llevaba en realidad, o ni
+// aparecía. Los pedidos de ANTES de que este contador existiera no están
+// incluidos (no hay backfill retroactivo): el conteo empieza a sumar desde
+// que se desplegó esta función, no desde el primer pedido histórico real.
 function _buildClientesMap() {
   const hist = getHistorial();
+  const lifetime = (typeof _clientesLifetimeCache !== 'undefined' && _clientesLifetimeCache) || {};
   const map = {}; // phone → { phone, names, count, total, lastDate, lastOrder, orders[] }
+  Object.entries(lifetime).forEach(([phone, c]) => {
+    if (!c || !(c.pedidosTotales > 0)) return;
+    map[phone] = {
+      phone,
+      names: new Set([c.nombreUltimo || '—']),
+      count: c.pedidosTotales,
+      total: Math.round((c.gastoTotal || 0) * 100) / 100,
+      lastDate: c.ultimoPedido || '',
+      primerPedido: c.primerPedido || '',
+      lastOrder: null,
+      orders: [],
+      _conteoDeToalaVida: true
+    };
+  });
   hist.forEach(day => {
     (day.orders || []).forEach(o => {
       // Mismo criterio de normalización que la comprobación de lista negra
@@ -9284,10 +9309,19 @@ function _buildClientesMap() {
         orders: []
       };
       map[phone].names.add(name);
-      map[phone].count++;
-      map[phone].total = parseFloat((map[phone].total + (o.total || 0)).toFixed(2));
-      if (!map[phone].lastDate || day.date > map[phone].lastDate) {
-        map[phone].lastDate = day.date;
+      // Si ya hay contador de toda la vida para este teléfono, count/total
+      // vienen de ahí (arriba) — aquí solo se añaden los pedidos recientes
+      // al detalle, sin volver a sumarlos por su cuenta (se contarían dos
+      // veces). Sin contador todavía (cliente aún no registrado ahí, caso
+      // raro), se sigue sumando de los últimos 30 días como antes.
+      if (!map[phone]._conteoDeToalaVida) {
+        map[phone].count++;
+        map[phone].total = parseFloat((map[phone].total + (o.total || 0)).toFixed(2));
+        if (!map[phone].lastDate || day.date > map[phone].lastDate) {
+          map[phone].lastDate = day.date;
+          map[phone].lastOrder = o;
+        }
+      } else if (!map[phone].lastOrder || day.date > (map[phone].lastOrder.date || '')) {
         map[phone].lastOrder = o;
       }
       map[phone].orders.push({
@@ -9308,6 +9342,22 @@ async function loadClientesOcultosFromFirebase() {
       const oc = await window.fb_loadClientesOcultos();
       if (oc) saveClientesOcultosLocal(oc);
     } catch {}
+  }
+  renderClientes();
+}
+// Contador "de toda la vida" por cliente (ver _buildClientesMap) — mismo
+// nodo fidelizacion/ que ya usa la pestaña de sellos, así que se reutiliza
+// el mismo cargador (window.fb_loadFidelizacionAll) en vez de duplicar la
+// lectura. Se deja en un objeto aparte (no se mezcla con el de sellos) por
+// si algún día conviene cachear cada uno con su propio ritmo.
+let _clientesLifetimeCache = {};
+async function loadClientesLifetimeFromFirebase() {
+  if (window.fb_loadFidelizacionAll) {
+    try {
+      _clientesLifetimeCache = (await window.fb_loadFidelizacionAll()) || {};
+    } catch (e) {
+      console.warn('[clientes] No se pudo cargar el contador de toda la vida:', e);
+    }
   }
   renderClientes();
 }
@@ -9425,15 +9475,17 @@ function renderClientes() {
   const todos = _buildClientesMap();
   const ocultos = getClientesOcultos();
   // ocultos (config/clientesOcultos) es la lista de TELÉFONOS ocultados
-  // alguna vez, sin fecha — pero todos (_buildClientesMap) solo conoce los
-  // pedidos de los últimos 30 días (getHistorial() está capado a eso, ver
-  // el título "Clientes de los últimos 30 días"). Si un cliente oculto no
-  // ha vuelto a pedir en esos 30 días, ocultos.length lo sigue contando
-  // pero no hay ningún pedido suyo del que sacar su tarjeta — el botón
-  // "Ocultos (N)" prometía un número que la lista de abajo nunca podía
-  // cumplir, saliendo vacía aunque N fuera mayor que 0. ocultosEnVentana
-  // es el único subconjunto que SÍ se puede enseñar de verdad, así que el
-  // contador del botón usa ese número en vez del bruto de Firebase.
+  // alguna vez, sin fecha — pero todos (_buildClientesMap) solo trae una
+  // tarjeta por cliente si tiene contador de toda la vida (fidelizacion/) O
+  // algún pedido en los últimos 30 días (getHistorial()). Un cliente oculto
+  // sin ninguna de las dos cosas (nunca pidió con este contador activo, o
+  // hace más de 30 días de su último pedido y aun así no llegó a
+  // registrarse ahí) sigue contando en ocultos.length pero no tiene tarjeta
+  // de la que sacarlo — el botón "Ocultos (N)" prometía un número que la
+  // lista de abajo no podía cumplir, saliendo vacía aunque N fuera mayor
+  // que 0. ocultosEnVentana es el único subconjunto que SÍ se puede
+  // enseñar de verdad, así que el contador del botón usa ese número en vez
+  // del bruto de Firebase.
   const ocultosEnVentana = todos.filter(c => ocultos.includes(c.phone));
   const clientes = _clientesMostrarOcultos
     ? ocultosEnVentana
@@ -9580,8 +9632,8 @@ function renderClientes() {
       + actionBtns
       + '<div id="cliente-detalle-' + phoneId + '" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #F5E6C8">'
         + aliasFull
-        + '<div style="font-size:11px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Historial de pedidos</div>'
-        + ordersHtml
+        + '<div style="font-size:11px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Pedidos recientes (\u00FAltimos 30 d\u00EDas)</div>'
+        + (ordersHtml || '<div style="font-size:12px;color:#8A6A4E">Sin pedidos en los \u00FAltimos 30 d\u00EDas \u2014 el total de arriba es de toda la vida.</div>')
         + (c.orders.length > 20 ? '<div style="font-size:11px;color:#8A6A4E;margin-top:6px">...y ' + (c.orders.length - 20) + ' m\u00E1s</div>' : '')
       + '</div>'
     + '</div>';
@@ -10037,7 +10089,7 @@ function showAdminSection(id, btn) {
   // historial por días (p.ej. una tablet usada solo para pedidos en vivo)
   // mostraría la lista de Clientes vacía, con solo lo que hubiera quedado
   // en su localStorage local.
-  if (id === 'historial') { loadClientesOcultosFromFirebase(); loadHistorial(renderClientes); }
+  if (id === 'historial') { loadClientesOcultosFromFirebase(); loadClientesLifetimeFromFirebase(); loadHistorial(renderClientes); }
   if (id === 'pedidos') {
     _adminLoggedIn = true; window._adminLoggedIn = true;
     stopAlertLoop();
