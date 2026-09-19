@@ -246,6 +246,49 @@ function _bimbaPintarRangoTexto() {
 let _equipoPagoConfig = {};
 let _equipoHorasManual = {};
 let _equipoUltimoTotalPersonal = 0;
+// Facturación real del periodo, sacada de stats/<fecha>.total (lo mismo que
+// ya se guarda por cada pedido en guardar-pedido.php) — mismo patrón que
+// _estrellasObtenerVentas() de más abajo para ventasProductos, ya que
+// stats/ también está indexado por fecha. Antes había que teclear este
+// número a mano cada vez; ahora se rellena solo y se puede seguir
+// editando encima (por si hay ventas en mano/otro sitio que sumar).
+async function _facturacionObtenerTotal(inicio, fin) {
+  let total = 0;
+  try {
+    const snap = await firebase.database().ref('stats').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snap.exists()) {
+      snap.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        total += Number(dia.total) || 0;
+      });
+    }
+    // stats/ solo son los pedidos de la web — los pedidos hechos desde el
+    // mostrador con Comandas se guardan aparte, en statsTienda/<fecha>
+    // (ver la acción registrarVentaTienda en guardar-pedido.php). Sin
+    // esto, cualquier día con ventas reales en tienda física dejaba la
+    // "Facturación real del periodo" por debajo de la de verdad, e
+    // inflaba de más el % de coste de personal sobre facturación que ve
+    // este mismo panel.
+    const snapTienda = await firebase.database().ref('statsTienda').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snapTienda.exists()) {
+      snapTienda.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        total += Number(dia.total) || 0;
+      });
+    }
+  } catch (e) {
+    console.warn('[equipo] error leyendo facturación real', e);
+  }
+  return total;
+}
+async function _equipoRellenarFacturacionAuto() {
+  const { inicio, fin } = _equipoRangoPeriodo();
+  const facturacionEl = document.getElementById('equipo-facturacion');
+  if (!facturacionEl) return;
+  const total = await _facturacionObtenerTotal(inicio, fin);
+  facturacionEl.value = total > 0 ? total.toFixed(2) : '';
+  bimbaEquipoFacturacionChange();
+}
 async function bimbaRenderEquipoFacturacion() {
   _equipoHorasManual = {};
   const customDiv = document.getElementById('equipo-fechas-custom');
@@ -269,6 +312,7 @@ async function bimbaRenderEquipoFacturacion() {
   _bimbaPintarConfigEquipo(empleados);
   _bimbaPintarRangoTexto();
   _bimbaPintarCalcEquipo(empleados);
+  _equipoRellenarFacturacionAuto();
 }
 function _bimbaPintarConfigEquipo(empleados) {
   const el = document.getElementById('config-empleados');
@@ -417,6 +461,7 @@ function bimbaEquipoPeriodoChange() {
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarRangoTexto();
   _bimbaPintarCalcEquipo(empleados);
+  _equipoRellenarFacturacionAuto();
 }
 function bimbaEquipoFacturacionChange() {
   _bimbaPintarResultadoEquipo(_equipoUltimoTotalPersonal);
@@ -450,6 +495,22 @@ async function _estrellasObtenerVentas(inicio, fin) {
     const snap = await firebase.database().ref('ventasProductos').orderByKey().startAt(inicio).endAt(fin).once('value');
     if (snap.exists()) {
       snap.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        Object.keys(dia).forEach(pid => {
+          totales[pid] = (totales[pid] || 0) + dia[pid];
+        });
+      });
+    }
+    // ventasProductos/ solo cuenta lo vendido por la web — lo vendido desde
+    // el mostrador con Comandas se guarda aparte, en
+    // ventasProductosTienda/<fecha> (mismo id de producto, resuelto por
+    // nombre en los dos sitios — ver registrarVentasProductos en
+    // guardar-pedido.php). Sin sumar esto, un producto que se vende bien
+    // en tienda pero poco por la web podía salir como "Perdedor" (candidato
+    // a quitar de la carta) sin serlo de verdad.
+    const snapTienda = await firebase.database().ref('ventasProductosTienda').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snapTienda.exists()) {
+      snapTienda.forEach(diaSnap => {
         const dia = diaSnap.val() || {};
         Object.keys(dia).forEach(pid => {
           totales[pid] = (totales[pid] || 0) + dia[pid];
@@ -607,15 +668,20 @@ async function bimbaGuardarVentasManualesCarta() {
   msgEl.textContent = 'Guardando...';
   msgEl.style.color = '#8A6A4E';
   try {
-    const ref = firebase.database().ref('ventasProductos/' + fecha);
-    const sn = await ref.once('value');
-    const actual = sn.exists() ? sn.val() : {};
-    inputs.forEach(i => {
-      const id = i.dataset.id;
-      const cantidad = parseInt(i.value, 10);
-      actual[id] = (actual[id] || 0) + cantidad;
+    // Transacción real (no leer-y-set) — este mismo nodo lo toca cada
+    // pedido real que se guarda ese día (registrarVentasProductos en
+    // guardar-pedido.php); con un simple set() sobre una copia leída
+    // momentos antes, un pedido nuevo llegado justo en ese rato se perdía
+    // sin más al guardar estas ventas manuales.
+    await firebase.database().ref('ventasProductos/' + fecha).transaction(current => {
+      const actual = (current && typeof current === 'object') ? Object.assign({}, current) : {};
+      inputs.forEach(i => {
+        const id = i.dataset.id;
+        const cantidad = parseInt(i.value, 10);
+        actual[id] = (actual[id] || 0) + cantidad;
+      });
+      return actual;
     });
-    await ref.set(actual);
     msgEl.textContent = '✅ Guardado: ' + inputs.length + ' producto(s) el ' + _fechaCorta(fecha);
     msgEl.style.color = '#27855a';
     bimbaLimpiarVentaManual();
@@ -632,64 +698,3 @@ function openEstrellasOverlay() {
 function closeEstrellasOverlay() {
   document.getElementById('estrellas-overlay').classList.remove('open');
 }
-function openIngredientesStockOverlay() {
-  document.getElementById('ingredientes-stock-overlay').classList.add('open');
-  if (typeof loadStockAdminList === 'function') loadStockAdminList();
-  if (typeof renderStockHistorial === 'function') renderStockHistorial();
-}
-function closeIngredientesStockOverlay() {
-  document.getElementById('ingredientes-stock-overlay').classList.remove('open');
-}
-
-function bimbaPintarTicketConfig() {
-  const tc = getTicketConfig();
-  const nombreEl = document.getElementById('tc-nombre');
-  if (!nombreEl) return;
-  nombreEl.value = tc.nombre;
-  document.getElementById('tc-direccion').value = tc.direccion;
-  document.getElementById('tc-telefono').value = tc.telefono;
-  document.getElementById('tc-despedida').value = tc.despedida;
-  document.getElementById('tc-texto-pago').value = tc.textoPago;
-  document.getElementById('tc-ancho-papel').value = String(tc.anchoPapel || 80);
-  document.getElementById('tc-copias').value = tc.copias || 1;
-  const autoEl = document.getElementById('tc-auto-imprimir');
-  autoEl.checked = tc.autoImprimir !== false;
-  document.getElementById('tc-auto-row').style.background = autoEl.checked ? '#fff' : 'rgba(192,57,43,0.06)';
-}
-function openTicketConfigOverlay() {
-  document.getElementById('ticket-config-overlay').classList.add('open');
-  bimbaPintarTicketConfig();
-}
-function closeTicketConfigOverlay() {
-  document.getElementById('ticket-config-overlay').classList.remove('open');
-}
-function bimbaGuardarTicketConfig() {
-  const msgEl = document.getElementById('tc-msg');
-  const cfg = {
-    nombre: document.getElementById('tc-nombre').value.trim() || TICKET_CONFIG_DEFAULTS.nombre,
-    direccion: document.getElementById('tc-direccion').value.trim() || TICKET_CONFIG_DEFAULTS.direccion,
-    telefono: document.getElementById('tc-telefono').value.trim() || TICKET_CONFIG_DEFAULTS.telefono,
-    despedida: document.getElementById('tc-despedida').value.trim() || TICKET_CONFIG_DEFAULTS.despedida,
-    textoPago: document.getElementById('tc-texto-pago').value.trim() || TICKET_CONFIG_DEFAULTS.textoPago,
-    anchoPapel: parseInt(document.getElementById('tc-ancho-papel').value, 10) || 80,
-    copias: Math.max(1, parseInt(document.getElementById('tc-copias').value, 10) || 1),
-    autoImprimir: document.getElementById('tc-auto-imprimir').checked
-  };
-  saveTicketConfig(cfg);
-  if (msgEl) {
-    msgEl.style.color = '#27855a';
-    msgEl.textContent = '✅ Guardado';
-    setTimeout(() => { msgEl.textContent = ''; }, 2500);
-  }
-}
-
-function toggleIngredientesPanel(btn) {
-  const panel = document.getElementById('ingredientes-panel');
-  if (!panel) return;
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  btn.textContent = open ? '✏️ Editar' : '✕ Cerrar';
-  btn.style.background = open ? '#3D1F0D' : '#F5E6C8';
-  btn.style.color = open ? '#FFF8EE' : '#3D1F0D';
-}
-

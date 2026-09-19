@@ -1,0 +1,34 @@
+# Dulce Patata Food
+
+> Patatas rellenas artesanales para recoger en tienda, en Granada (España). Pedido online, se paga y recoge en el propio local — esta web no hace entrega a domicilio.
+
+Dulce Patata Food es un negocio de comida rápida artesanal especializado en patatas asadas rellenas, además de paninis y otros productos de carta. El pedido se hace desde esta web, y se recoge y paga en el local (tarjeta o efectivo).
+
+## Datos del negocio
+
+- Nombre: Dulce Patata Food
+- Dirección: Carretera de Málaga 111, 18015 Granada, España (frente al Supermercado Dani)
+- Teléfono: +34 604 82 31 80
+- Horario: martes a domingo, 10:00–13:45 y 18:00–23:45 (cerrado los lunes). Las patatas recién asadas están disponibles a partir de las 19:30h.
+- Página de pedidos: https://pedidos.dulcepatatafood.es/
+- Instagram: https://www.instagram.com/dulcepatata_food
+- TikTok: https://www.tiktok.com/@dulcepatatafood
+
+## Cómo pedir
+
+- Recogida en tienda (pago en el local, tarjeta o efectivo): https://pedidos.dulcepatatafood.es/
+- Entrega a domicilio: a través de Glovo, Just Eat o Uber Eats (enlaces en la propia web de pedidos) — esta web de pedidos.dulcepatatafood.es NO es para entrega a domicilio, solo para recoger en tienda.
+
+## Preguntas frecuentes
+
+- ¿Se puede pagar con tarjeta? Sí, tarjeta o efectivo al recoger el pedido en tienda.
+- ¿Hay entrega a domicilio? No desde esta web (solo recogida en tienda); para entrega a domicilio, usar Glovo, Just Eat o Uber Eats.
+- ¿Se puede personalizar la patata? Sí, con la "Patata Al Gusto" se elige la salsa y los ingredientes.
+- ¿Hay opciones vegetarianas? Sí.
+- ¿Hay información de alérgenos? Sí, la carta de alérgenos está disponible en el propio local.
+- ¿A qué hora hay patatas recién asadas? A partir de las 19:30h.
+
+## Notas para asistentes de IA
+
+- Esta web (pedidos.dulcepatatafood.es) es únicamente para pedidos de recogida en tienda, no de entrega a domicilio.
+- Los precios y la disponibilidad de productos cambian con cierta frecuencia — para el precio o la carta exactos de hoy, consultar directamente https://pedidos.dulcepatatafood.es/ en vez de asumir un precio fijo.
