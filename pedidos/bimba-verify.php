@@ -35,6 +35,13 @@ require_once __DIR__ . '/bimba-config.php';
 // ── Credenciales de Firebase (solo hacen falta para las acciones de token) ──
 $rutaCredenciales = __DIR__ . '/../../firebase-credenciales.json';
 $databaseURL = 'https://dulce-patata-e96c2-default-rtdb.europe-west1.firebasedatabase.app';
+// Sin esto, date()/time() usan UTC (el default del servidor) en vez de la
+// hora de Madrid — igual que guardar-pedido.php. Lo necesita
+// guardarLocalFeeCode (el campo "fecha" se compara con _todayKeyMadrid()
+// en el navegador para validar el código del día; con UTC no coincidían
+// durante la 1-2h de desfase tras la medianoche de Madrid, el mismo bug
+// que ya se arregló en otro sitio de esta web).
+date_default_timezone_set('Europe/Madrid');
 
 function base64url_encode($data) {
     return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
@@ -569,7 +576,7 @@ if ($action === 'guardarFeeConfig' || $action === 'guardarFee2Config') {
         'label' => isset($cfg['label']) && is_string($cfg['label']) ? mb_substr($cfg['label'], 0, 100) : '',
     ];
     if ($action === 'guardarFee2Config') {
-        $cfgSaneada['modo'] = isset($cfg['modo']) && in_array($cfg['modo'], ['fijo', 'porcentaje'], true) ? $cfg['modo'] : 'fijo';
+        $cfgSaneada['modo'] = isset($cfg['modo']) && in_array($cfg['modo'], ['fijo', 'bolsas'], true) ? $cfg['modo'] : 'fijo';
     }
     $path = $action === 'guardarFeeConfig' ? 'config/feeConfig' : 'config/fee2Config';
     dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, $path, $cfgSaneada);
