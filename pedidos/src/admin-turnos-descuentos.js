@@ -152,7 +152,7 @@ function saveSlotConfig(inputId) {
 // ══════════════════════════════════════════
 function saveBlockedCats(cats) {
   localStorage.setItem(CAT_BLOCK_KEY, JSON.stringify(cats));
-  if (window.fb_saveBlockedCats) window.fb_saveBlockedCats(cats).catch(e => console.warn('Firebase blockedCats error', e));
+  _guardarViaConfianza('guardarBlockedCats', { cats }, window.fb_saveBlockedCats ? function () { return window.fb_saveBlockedCats(cats); } : null).catch(e => console.warn('Firebase blockedCats error', e));
 }
 function getCatsFromMenu() {
   return [...new Set(MENU.map(i => i.cat))];

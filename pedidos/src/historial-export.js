@@ -754,7 +754,7 @@ function saveAutoDelete() {
   if (!sel) return;
   const days = parseInt(sel.value, 10);
   localStorage.setItem(AUTODELETE_KEY, days);
-  if (window.fb_saveAutoDelete) window.fb_saveAutoDelete(days).catch(() => {});
+  _guardarViaConfianza('guardarAutoDeleteDays', { days }, window.fb_saveAutoDelete ? function () { return window.fb_saveAutoDelete(days); } : null).catch(() => {});
   applyAutoDelete();
   const info = document.getElementById('autodelete-info');
   if (info) info.textContent = days === 0 ? 'Desactivado' : "✅ Se borrar\xE1n entradas con m\xE1s de ".concat(days, " d\xEDas");

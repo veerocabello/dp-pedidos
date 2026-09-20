@@ -2254,7 +2254,7 @@ function saveSlotConfig(inputId) {
 // ══════════════════════════════════════════
 function saveBlockedCats(cats) {
   localStorage.setItem(CAT_BLOCK_KEY, JSON.stringify(cats));
-  if (window.fb_saveBlockedCats) window.fb_saveBlockedCats(cats).catch(e => console.warn('Firebase blockedCats error', e));
+  _guardarViaConfianza('guardarBlockedCats', { cats }, window.fb_saveBlockedCats ? function () { return window.fb_saveBlockedCats(cats); } : null).catch(e => console.warn('Firebase blockedCats error', e));
 }
 function getCatsFromMenu() {
   return [...new Set(MENU.map(i => i.cat))];
@@ -3362,7 +3362,8 @@ function importarConfig(input) {
       }
       if (backup.autoDelete !== undefined) {
         localStorage.setItem(AUTODELETE_KEY, backup.autoDelete);
-        if (window.fb_saveAutoDelete) window.fb_saveAutoDelete(parseInt(backup.autoDelete) || 0).catch(() => {});
+        const _days = parseInt(backup.autoDelete) || 0;
+        _guardarViaConfianza('guardarAutoDeleteDays', { days: _days }, window.fb_saveAutoDelete ? function () { return window.fb_saveAutoDelete(_days); } : null).catch(() => {});
       }
       if (backup.ordersOpen !== undefined) {
         localStorage.setItem(ORDERS_KEY, backup.ordersOpen);
@@ -3392,15 +3393,17 @@ function importarConfig(input) {
       }
       if (backup.blockedCats) {
         localStorage.setItem(CAT_BLOCK_KEY, JSON.stringify(backup.blockedCats));
-        if (window.fb_saveBlockedCats) window.fb_saveBlockedCats(backup.blockedCats).catch(() => {});
+        _guardarViaConfianza('guardarBlockedCats', { cats: backup.blockedCats }, window.fb_saveBlockedCats ? function () { return window.fb_saveBlockedCats(backup.blockedCats); } : null).catch(() => {});
       }
       if (backup.stockData) {
         localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(backup.stockData));
-        if (window.fb_saveStockData) window.fb_saveStockData(backup.stockData).catch(() => {});
+        // snapshot vacío a propósito: un backup restaurado debe pisar TODOS
+        // los grupos con lo que trae el fichero, no solo los "tocados".
+        _guardarViaConfianza('guardarStockData', { data: backup.stockData, snapshot: {} }, window.fb_saveStockData ? function () { return window.fb_saveStockData(backup.stockData); } : null).catch(() => {});
       }
       if (backup.empresa !== undefined) {
         localStorage.setItem(EMP_EMPRESA_KEY, backup.empresa);
-        if (window.fb_saveEmpresa) window.fb_saveEmpresa(backup.empresa, backup.cif || '').catch(() => {});
+        _guardarViaConfianza('guardarEmpresa', { empresa: backup.empresa, cif: backup.cif || '' }, window.fb_saveEmpresa ? function () { return window.fb_saveEmpresa(backup.empresa, backup.cif || ''); } : null).catch(() => {});
       }
       if (backup.cif !== undefined) {
         localStorage.setItem(EMP_CIF_KEY, backup.cif);
@@ -3704,13 +3707,7 @@ function _persistirMenuDeletedIds() {
     localStorage.setItem(MENU_DELETED_IDS_KEY, JSON.stringify(Array.from(window._menuDeletedIds)));
   } catch {}
 }
-function saveMenu() {
-  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
-  localStorage.setItem(MENU_KEY + '_ts', Date.now());
-  if (!window.fb_transactJsonString) {
-    if (window.fb_saveMenu) window.fb_saveMenu({ items: MENU, ts: Date.now() }).catch(function (e) { _avisarSiFalloGuardado(e, 'la carta'); });
-    return Promise.resolve(true);
-  }
+function _fbTransactMenu() {
   const antesPorId = {};
   (window._menuSyncedSnapshot || []).forEach(function (i) { antesPorId[i.id] = i; });
   const localPorId = {};
@@ -3746,13 +3743,55 @@ function saveMenu() {
   }).then(function (finalData) {
     if (finalData && Array.isArray(finalData.items)) window._menuSyncedSnapshot = finalData.items;
     return true;
-  }).catch(function (e) {
+  });
+}
+// config/menu hereda el ".write" de "config" (exige sesión de Firebase
+// Auth real) igual que el resto de esta pasada — fb_transactJsonString es
+// una transacción nativa, así que le afecta lo mismo. Se intenta primero
+// por bimba-verify.php (acción guardarMenu, que hace ahí mismo el MISMO
+// merge "por producto tocado" contra lo último que haya en el servidor,
+// leído con la cuenta de servicio); si no hay dispositivo de confianza
+// aquí, o ya no vale, cae a la transacción nativa de siempre.
+async function saveMenu() {
+  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
+  localStorage.setItem(MENU_KEY + '_ts', Date.now());
+  if (!window.fb_transactJsonString && !window.fb_saveMenu) return true;
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  try {
+    if (deviceId && token) {
+      let res, r;
+      try {
+        res = await fetch('bimba-verify.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'guardarMenu', deviceId, token,
+            local: MENU, antes: window._menuSyncedSnapshot || [], deletedIds: Array.from(window._menuDeletedIds)
+          })
+        });
+        r = await res.json().catch(() => ({ success: false }));
+      } catch (e) {
+        r = { success: false };
+      }
+      if (r.success) {
+        if (Array.isArray(r.items)) window._menuSyncedSnapshot = r.items;
+        return true;
+      }
+      localStorage.removeItem('dpf_trusted_device');
+      localStorage.removeItem('dpf_trusted_device_name');
+      localStorage.removeItem('dpf_trusted_token');
+    }
+    if (window.fb_transactJsonString) return await _fbTransactMenu();
+    if (window.fb_saveMenu) { await window.fb_saveMenu({ items: MENU, ts: Date.now() }); return true; }
+    return true;
+  } catch (e) {
     console.warn('[saveMenu] fallo al guardar en Firebase:', e);
     if (typeof showAlert === 'function') {
       showAlert('No se ha podido guardar en el servidor (revisa la conexión). El cambio se ha quedado solo en este dispositivo por ahora — vuelve a intentarlo en unos segundos.', 'Aviso de guardado');
     }
     return false;
-  });
+  }
 }
 function renderAdminProducts() {
   const cats = [...new Set(MENU.map(i => i.cat))];
@@ -4279,9 +4318,7 @@ function resetDiasMartDom() {
   } catch {}
   h.diasAbiertos = [2, 3, 4, 5, 6, 0]; // Mar, Mié, Jue, Vie, Sáb, Dom
   localStorage.setItem('dpf_horario', JSON.stringify(h));
-  if (window.fb_saveHorario) {
-    window.fb_saveHorario(h).catch(e => console.warn('Error guardando horario en Firebase:', e));
-  }
+  _guardarViaConfianza('guardarHorario', { horario: h }, window.fb_saveHorario ? function () { return window.fb_saveHorario(h); } : null).catch(e => console.warn('Error guardando horario en Firebase:', e));
   loadAdminHorario();
   verDiasGuardados();
   showToast('local-toast');
@@ -4361,9 +4398,7 @@ function saveHorario() {
   };
   localStorage.setItem(HORARIO_KEY, JSON.stringify(h));
   // Guardar también en Firebase para sincronizar con otros dispositivos y cuentas
-  if (window.fb_saveHorario) {
-    window.fb_saveHorario(h).catch(e => console.warn("Error guardando horario en Firebase:", e));
-  }
+  _guardarViaConfianza('guardarHorario', { horario: h }, window.fb_saveHorario ? function () { return window.fb_saveHorario(h); } : null).catch(e => console.warn("Error guardando horario en Firebase:", e));
   updateFooterHorario(h);
   showToast('local-toast');
   verDiasGuardados();
@@ -5681,7 +5716,7 @@ function saveAutoDelete() {
   if (!sel) return;
   const days = parseInt(sel.value, 10);
   localStorage.setItem(AUTODELETE_KEY, days);
-  if (window.fb_saveAutoDelete) window.fb_saveAutoDelete(days).catch(() => {});
+  _guardarViaConfianza('guardarAutoDeleteDays', { days }, window.fb_saveAutoDelete ? function () { return window.fb_saveAutoDelete(days); } : null).catch(() => {});
   applyAutoDelete();
   const info = document.getElementById('autodelete-info');
   if (info) info.textContent = days === 0 ? 'Desactivado' : "✅ Se borrar\xE1n entradas con m\xE1s de ".concat(days, " d\xEDas");
@@ -11120,11 +11155,43 @@ function getStockData() {
 // lo que este dispositivo tenía sincronizado, se combinan los dos cambios
 // grupo a grupo en vez de que uno pise al otro entero — solo se sobreescribe
 // de verdad el/los grupo(s) que este dispositivo tocó.
-function saveStockData(data) {
+// config/stockData hereda el ".write" de "config" (exige sesión de
+// Firebase Auth real) igual que el resto de esta pasada —
+// fb_transactJsonString es una transacción nativa, así que le afecta lo
+// mismo. Se intenta primero por bimba-verify.php (acción guardarStockData,
+// que hace ahí mismo el MISMO merge "por grupo tocado" contra lo último
+// que haya en el servidor); si no hay dispositivo de confianza aquí, o ya
+// no vale, cae a la transacción nativa de siempre.
+async function saveStockData(data) {
   localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(data));
+  window._stockDataLocalWrite = Date.now();
+  const _antesDeEsteGuardado = window._stockDataSyncedSnapshot || {};
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    let res, r;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'guardarStockData', deviceId, token, data, snapshot: _antesDeEsteGuardado })
+      });
+      r = await res.json().catch(() => ({ success: false }));
+    } catch (e) {
+      r = { success: false };
+    }
+    if (r.success) {
+      if (r.data) {
+        window._stockDataSyncedSnapshot = r.data;
+        localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(r.data));
+      }
+      return;
+    }
+    localStorage.removeItem('dpf_trusted_device');
+    localStorage.removeItem('dpf_trusted_device_name');
+    localStorage.removeItem('dpf_trusted_token');
+  }
   if (window.fb_transactJsonString) {
-    window._stockDataLocalWrite = Date.now();
-    const _antesDeEsteGuardado = window._stockDataSyncedSnapshot || {};
     window.fb_transactJsonString('config/stockData', function (remoto) {
       const base = remoto || {};
       const grupos = new Set([...Object.keys(base), ...Object.keys(data)]);
@@ -11143,7 +11210,6 @@ function saveStockData(data) {
       }
     }).catch(function (e) { console.warn('[stock] fallo al guardar en Firebase:', e); });
   } else if (window.fb_saveStockData) {
-    window._stockDataLocalWrite = Date.now();
     window.fb_saveStockData(data).catch(() => {});
   }
 }
@@ -11677,8 +11743,37 @@ function getStockHistorial() {
 // más recientes automáticamente; el botón manual sigue ahí para limpiar
 // antes si se quiere.
 const STOCK_HISTORIAL_MAX = 100;
-function saveToStockHistorial(ts, lines) {
+// stock/historial hereda el ".write" del nodo "stock" (exige sesión de
+// Firebase Auth real) igual que el resto de esta pasada —
+// fb_transactNative es una transacción nativa, así que le afecta lo
+// mismo. Se intenta primero por bimba-verify.php (acción
+// guardarStockHistorialEntrada, que AÑADE la entrada a lo último que haya
+// en el servidor, igual que hacía la transacción); si no hay dispositivo
+// de confianza aquí, o ya no vale, cae a la transacción nativa de siempre.
+async function saveToStockHistorial(ts, lines) {
   const entrada = { ts, lines };
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    let res, r;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'guardarStockHistorialEntrada', deviceId, token, ts, lines })
+      });
+      r = await res.json().catch(() => ({ success: false }));
+    } catch (e) {
+      r = { success: false };
+    }
+    if (r.success) {
+      localStorage.setItem(STOCK_HISTORIAL_KEY, JSON.stringify(Array.isArray(r.historial) ? r.historial : [entrada]));
+      return;
+    }
+    localStorage.removeItem('dpf_trusted_device');
+    localStorage.removeItem('dpf_trusted_device_name');
+    localStorage.removeItem('dpf_trusted_token');
+  }
   if (window.fb_transactNative) {
     window._stockLocalWrite = Date.now();
     window.fb_transactNative('stock/historial', function (remoto) {

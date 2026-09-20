@@ -889,6 +889,265 @@ if ($action === 'guardarPromos') {
     dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/promos', $valor);
 }
 
+// ── Horario, categorías bloqueadas, empresa/CIF y auto-borrado de
+// historial — última tanda, misma familia de bug (config/* exige sesión
+// de Firebase Auth real).
+if ($action === 'guardarHorario') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $h = isset($data['horario']) && is_array($data['horario']) ? $data['horario'] : null;
+    if ($deviceId === '' || $token === '' || $h === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $horaOk = function ($v) { return is_string($v) && preg_match('/^\d{2}:\d{2}$/', $v); };
+    $diasAbiertos = [];
+    if (isset($h['diasAbiertos']) && is_array($h['diasAbiertos'])) {
+        foreach ($h['diasAbiertos'] as $d) {
+            $d = (int)$d;
+            if ($d >= 0 && $d <= 6) $diasAbiertos[] = $d;
+        }
+    }
+    $hSaneado = [
+        'manOpen' => $horaOk($h['manOpen'] ?? null) ? $h['manOpen'] : '',
+        'manClose' => $horaOk($h['manClose'] ?? null) ? $h['manClose'] : '',
+        'tarOpen' => $horaOk($h['tarOpen'] ?? null) ? $h['tarOpen'] : '',
+        'tarClose' => $horaOk($h['tarClose'] ?? null) ? $h['tarClose'] : '',
+        'diasAbiertos' => array_values(array_unique($diasAbiertos)),
+        'closedMsgMid' => isset($h['closedMsgMid']) && is_string($h['closedMsgMid']) ? mb_substr($h['closedMsgMid'], 0, 200) : '',
+        'closedMsgNight' => isset($h['closedMsgNight']) && is_string($h['closedMsgNight']) ? mb_substr($h['closedMsgNight'], 0, 200) : '',
+        'closedMsgDay' => isset($h['closedMsgDay']) && is_string($h['closedMsgDay']) ? mb_substr($h['closedMsgDay'], 0, 200) : '',
+    ];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/horario', $hSaneado);
+}
+if ($action === 'guardarAutoDeleteDays') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = max(0, (int)($data['days'] ?? 0));
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/autoDeleteDays', $valor);
+}
+if ($action === 'guardarBlockedCats') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $cats = isset($data['cats']) && is_array($data['cats']) ? $data['cats'] : null;
+    if ($deviceId === '' || $token === '' || $cats === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $saneados = [];
+    foreach ($cats as $c) {
+        if (is_string($c) && $c !== '') $saneados[] = mb_substr($c, 0, 60);
+    }
+    $valor = json_encode(array_values(array_unique($saneados)));
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/blockedCats', $valor);
+}
+if ($action === 'guardarEmpresa') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $empresa = isset($data['empresa']) && is_string($data['empresa']) ? mb_substr($data['empresa'], 0, 200) : '';
+    $cif = isset($data['cif']) && is_string($data['cif']) ? mb_substr($data['cif'], 0, 30) : '';
+    $valor = json_encode(['empresa' => $empresa, 'cif' => $cif]);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/empresa', $valor);
+}
+// ── Carta/menú: config/menu se guarda como objeto nativo {items, ts}, con
+// el mismo merge "por producto tocado" que ya hacía fb_transactJsonString
+// en el navegador (saveMenu, admin-config.js) — se lee lo último que haya
+// en Firebase con la cuenta de servicio y solo se sobreescriben los
+// productos que ESTE dispositivo tocó de verdad (comparando con la última
+// foto sincronizada que mandó junto al guardado); lo demás se respeta tal
+// cual esté en el servidor, para no perder cambios de otro dispositivo.
+if ($action === 'guardarMenu') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $local = isset($data['local']) && is_array($data['local']) ? $data['local'] : null;
+    $antes = isset($data['antes']) && is_array($data['antes']) ? $data['antes'] : [];
+    $deletedIds = isset($data['deletedIds']) && is_array($data['deletedIds']) ? array_map('strval', $data['deletedIds']) : [];
+    if ($deviceId === '' || $token === '' || $local === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    if (count($local) > 500) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $remoto = fbGetNodoConCuentaServicio($databaseURL, 'config/menu', $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $remotoItems = (is_array($remoto) && isset($remoto['items']) && is_array($remoto['items'])) ? $remoto['items'] : (is_array($remoto) ? $remoto : []);
+    $antesPorId = [];
+    foreach ($antes as $i) { if (is_array($i) && isset($i['id'])) $antesPorId[(string)$i['id']] = $i; }
+    $localPorId = [];
+    $localOrden = [];
+    foreach ($local as $i) { if (is_array($i) && isset($i['id'])) { $localPorId[(string)$i['id']] = $i; $localOrden[] = (string)$i['id']; } }
+    $merged = [];
+    $ordenIds = [];
+    foreach ($remotoItems as $ri) {
+        if (!is_array($ri) || !isset($ri['id'])) continue;
+        $rid = (string)$ri['id'];
+        $tocadoAqui = json_encode($localPorId[$rid] ?? null) !== json_encode($antesPorId[$rid] ?? null);
+        if (array_key_exists($rid, $localPorId)) {
+            $merged[$rid] = $tocadoAqui ? $localPorId[$rid] : $ri;
+            $ordenIds[] = $rid;
+        } elseif (in_array($rid, $deletedIds, true)) {
+            // Borrado de verdad — se respeta, no se resucita.
+        } else {
+            $merged[$rid] = $ri;
+            $ordenIds[] = $rid;
+        }
+    }
+    foreach ($localOrden as $lid) {
+        if (!array_key_exists($lid, $merged)) {
+            $merged[$lid] = $localPorId[$lid];
+            $ordenIds[] = $lid;
+        }
+    }
+    $itemsFinal = array_map(function ($id) use ($merged) { return $merged[$id]; }, $ordenIds);
+    $valor = ['items' => array_values($itemsFinal), 'ts' => round(microtime(true) * 1000)];
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/menu', $rutaCredenciales, $valor);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        $fp2 = @fopen($ip_file, 'c+');
+        if ($fp2 !== false) { flock($fp2, LOCK_EX); ftruncate($fp2, 0); flock($fp2, LOCK_UN); fclose($fp2); }
+        echo json_encode(['success' => true, 'items' => $valor['items']]);
+        exit();
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+// ── Stock: config/stockData se guarda como string JSON con merge "por
+// grupo tocado" (mismo criterio que saveStockData en stock-empleados.js);
+// stock/historial es un array nativo al que solo se AÑADE una entrada
+// nueva sobre lo más fresco del servidor (nunca se sobreescribe entero).
+if ($action === 'guardarStockData') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $local = isset($data['data']) && is_array($data['data']) ? $data['data'] : null;
+    $snapshot = isset($data['snapshot']) && is_array($data['snapshot']) ? $data['snapshot'] : [];
+    if ($deviceId === '' || $token === '' || $local === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $remotoRaw = fbGetNodoConCuentaServicio($databaseURL, 'config/stockData', $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $remoto = is_string($remotoRaw) ? (json_decode($remotoRaw, true) ?: []) : (is_array($remotoRaw) ? $remotoRaw : []);
+    $grupos = array_unique(array_merge(array_keys($remoto), array_keys($local)));
+    $merged = [];
+    foreach ($grupos as $g) {
+        $tocadoAqui = json_encode($local[$g] ?? null) !== json_encode($snapshot[$g] ?? null);
+        $merged[$g] = $tocadoAqui ? ($local[$g] ?? null) : (array_key_exists($g, $remoto) ? $remoto[$g] : ($local[$g] ?? null));
+    }
+    $valor = json_encode($merged);
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/stockData', $rutaCredenciales, $valor);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        $fp2 = @fopen($ip_file, 'c+');
+        if ($fp2 !== false) { flock($fp2, LOCK_EX); ftruncate($fp2, 0); flock($fp2, LOCK_UN); fclose($fp2); }
+        echo json_encode(['success' => true, 'data' => $merged]);
+        exit();
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+if ($action === 'guardarStockHistorialEntrada') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $ts = isset($data['ts']) && is_numeric($data['ts']) ? (float)$data['ts'] : null;
+    $lines = isset($data['lines']) && is_array($data['lines']) ? $data['lines'] : null;
+    if ($deviceId === '' || $token === '' || $ts === null || $lines === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $remoto = fbGetNodoConCuentaServicio($databaseURL, 'stock/historial', $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $arr = is_array($remoto) ? array_values($remoto) : [];
+    $arr[] = ['ts' => $ts, 'lines' => $lines];
+    if (count($arr) > 100) $arr = array_slice($arr, count($arr) - 100);
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'stock/historial', $rutaCredenciales, $arr);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        $fp2 = @fopen($ip_file, 'c+');
+        if ($fp2 !== false) { flock($fp2, LOCK_EX); ftruncate($fp2, 0); flock($fp2, LOCK_UN); fclose($fp2); }
+        echo json_encode(['success' => true, 'historial' => $arr]);
+        exit();
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+
 // ── Auto-borrado de "dispositivo de confianza" propio (caducado, o
 // rechazado por checkTrustedDevice de arriba porque el admin lo expulsó
 // desde otro sitio) — setTrustedDevice(false) en admin-accesos.js borraba

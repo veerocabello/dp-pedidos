@@ -101,13 +101,7 @@ function _persistirMenuDeletedIds() {
     localStorage.setItem(MENU_DELETED_IDS_KEY, JSON.stringify(Array.from(window._menuDeletedIds)));
   } catch {}
 }
-function saveMenu() {
-  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
-  localStorage.setItem(MENU_KEY + '_ts', Date.now());
-  if (!window.fb_transactJsonString) {
-    if (window.fb_saveMenu) window.fb_saveMenu({ items: MENU, ts: Date.now() }).catch(function (e) { _avisarSiFalloGuardado(e, 'la carta'); });
-    return Promise.resolve(true);
-  }
+function _fbTransactMenu() {
   const antesPorId = {};
   (window._menuSyncedSnapshot || []).forEach(function (i) { antesPorId[i.id] = i; });
   const localPorId = {};
@@ -143,13 +137,55 @@ function saveMenu() {
   }).then(function (finalData) {
     if (finalData && Array.isArray(finalData.items)) window._menuSyncedSnapshot = finalData.items;
     return true;
-  }).catch(function (e) {
+  });
+}
+// config/menu hereda el ".write" de "config" (exige sesión de Firebase
+// Auth real) igual que el resto de esta pasada — fb_transactJsonString es
+// una transacción nativa, así que le afecta lo mismo. Se intenta primero
+// por bimba-verify.php (acción guardarMenu, que hace ahí mismo el MISMO
+// merge "por producto tocado" contra lo último que haya en el servidor,
+// leído con la cuenta de servicio); si no hay dispositivo de confianza
+// aquí, o ya no vale, cae a la transacción nativa de siempre.
+async function saveMenu() {
+  localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
+  localStorage.setItem(MENU_KEY + '_ts', Date.now());
+  if (!window.fb_transactJsonString && !window.fb_saveMenu) return true;
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  try {
+    if (deviceId && token) {
+      let res, r;
+      try {
+        res = await fetch('bimba-verify.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'guardarMenu', deviceId, token,
+            local: MENU, antes: window._menuSyncedSnapshot || [], deletedIds: Array.from(window._menuDeletedIds)
+          })
+        });
+        r = await res.json().catch(() => ({ success: false }));
+      } catch (e) {
+        r = { success: false };
+      }
+      if (r.success) {
+        if (Array.isArray(r.items)) window._menuSyncedSnapshot = r.items;
+        return true;
+      }
+      localStorage.removeItem('dpf_trusted_device');
+      localStorage.removeItem('dpf_trusted_device_name');
+      localStorage.removeItem('dpf_trusted_token');
+    }
+    if (window.fb_transactJsonString) return await _fbTransactMenu();
+    if (window.fb_saveMenu) { await window.fb_saveMenu({ items: MENU, ts: Date.now() }); return true; }
+    return true;
+  } catch (e) {
     console.warn('[saveMenu] fallo al guardar en Firebase:', e);
     if (typeof showAlert === 'function') {
       showAlert('No se ha podido guardar en el servidor (revisa la conexión). El cambio se ha quedado solo en este dispositivo por ahora — vuelve a intentarlo en unos segundos.', 'Aviso de guardado');
     }
     return false;
-  });
+  }
 }
 function renderAdminProducts() {
   const cats = [...new Set(MENU.map(i => i.cat))];
@@ -676,9 +712,7 @@ function resetDiasMartDom() {
   } catch {}
   h.diasAbiertos = [2, 3, 4, 5, 6, 0]; // Mar, Mié, Jue, Vie, Sáb, Dom
   localStorage.setItem('dpf_horario', JSON.stringify(h));
-  if (window.fb_saveHorario) {
-    window.fb_saveHorario(h).catch(e => console.warn('Error guardando horario en Firebase:', e));
-  }
+  _guardarViaConfianza('guardarHorario', { horario: h }, window.fb_saveHorario ? function () { return window.fb_saveHorario(h); } : null).catch(e => console.warn('Error guardando horario en Firebase:', e));
   loadAdminHorario();
   verDiasGuardados();
   showToast('local-toast');
@@ -758,9 +792,7 @@ function saveHorario() {
   };
   localStorage.setItem(HORARIO_KEY, JSON.stringify(h));
   // Guardar también en Firebase para sincronizar con otros dispositivos y cuentas
-  if (window.fb_saveHorario) {
-    window.fb_saveHorario(h).catch(e => console.warn("Error guardando horario en Firebase:", e));
-  }
+  _guardarViaConfianza('guardarHorario', { horario: h }, window.fb_saveHorario ? function () { return window.fb_saveHorario(h); } : null).catch(e => console.warn("Error guardando horario en Firebase:", e));
   updateFooterHorario(h);
   showToast('local-toast');
   verDiasGuardados();

@@ -213,7 +213,8 @@ function importarConfig(input) {
       }
       if (backup.autoDelete !== undefined) {
         localStorage.setItem(AUTODELETE_KEY, backup.autoDelete);
-        if (window.fb_saveAutoDelete) window.fb_saveAutoDelete(parseInt(backup.autoDelete) || 0).catch(() => {});
+        const _days = parseInt(backup.autoDelete) || 0;
+        _guardarViaConfianza('guardarAutoDeleteDays', { days: _days }, window.fb_saveAutoDelete ? function () { return window.fb_saveAutoDelete(_days); } : null).catch(() => {});
       }
       if (backup.ordersOpen !== undefined) {
         localStorage.setItem(ORDERS_KEY, backup.ordersOpen);
@@ -243,15 +244,17 @@ function importarConfig(input) {
       }
       if (backup.blockedCats) {
         localStorage.setItem(CAT_BLOCK_KEY, JSON.stringify(backup.blockedCats));
-        if (window.fb_saveBlockedCats) window.fb_saveBlockedCats(backup.blockedCats).catch(() => {});
+        _guardarViaConfianza('guardarBlockedCats', { cats: backup.blockedCats }, window.fb_saveBlockedCats ? function () { return window.fb_saveBlockedCats(backup.blockedCats); } : null).catch(() => {});
       }
       if (backup.stockData) {
         localStorage.setItem(STOCK_DATA_KEY, JSON.stringify(backup.stockData));
-        if (window.fb_saveStockData) window.fb_saveStockData(backup.stockData).catch(() => {});
+        // snapshot vacío a propósito: un backup restaurado debe pisar TODOS
+        // los grupos con lo que trae el fichero, no solo los "tocados".
+        _guardarViaConfianza('guardarStockData', { data: backup.stockData, snapshot: {} }, window.fb_saveStockData ? function () { return window.fb_saveStockData(backup.stockData); } : null).catch(() => {});
       }
       if (backup.empresa !== undefined) {
         localStorage.setItem(EMP_EMPRESA_KEY, backup.empresa);
-        if (window.fb_saveEmpresa) window.fb_saveEmpresa(backup.empresa, backup.cif || '').catch(() => {});
+        _guardarViaConfianza('guardarEmpresa', { empresa: backup.empresa, cif: backup.cif || '' }, window.fb_saveEmpresa ? function () { return window.fb_saveEmpresa(backup.empresa, backup.cif || ''); } : null).catch(() => {});
       }
       if (backup.cif !== undefined) {
         localStorage.setItem(EMP_CIF_KEY, backup.cif);
