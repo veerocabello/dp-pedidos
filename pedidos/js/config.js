@@ -154,7 +154,19 @@ function _initFirebase() {
   window.fb_listenServerTimeOffset = function(cb) {
     return db.ref('.info/serverTimeOffset').on('value', function(sn) { cb(sn.val() || 0); });
   };
-  var tK = function() { return new Date().toISOString().slice(0,10); };
+  // Antes usaba new Date().toISOString().slice(0,10) — la fecha en UTC, no
+  // en la hora de Madrid del negocio. Madrid va por delante de UTC (1-2h
+  // según la época del año), así que justo después de la medianoche de
+  // Madrid esto seguía devolviendo el día ANTERIOR durante esa 1-2h de
+  // desfase — mismo bug que ya se había corregido en el resto de la web
+  // con _todayKeyMadrid() (antifraude.js) y date_default_timezone_set()
+  // en los endpoints PHP, pero se había quedado sin tocar aquí. slots/,
+  // orderStatus/, tickets/ (fb_saveTicket), printedOrders/ y la fecha de
+  // config/localFeeCode se guardan/leen todos con esta clave — durante esa
+  // ventana, un pedido guardado por guardar-pedido.php (que SÍ usa la
+  // fecha de Madrid) podía marcarse "listo" en cocina y quedar escrito bajo
+  // el día equivocado aquí, invisible para quien mirara con la fecha real.
+  var tK = function() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); };
   var jset = function(r,v) { return db.ref(r).set(v); };
   var jget = function(r) { return db.ref(r).once("value"); };
   var jlisten = function(r,cb,errCb) { return errCb ? db.ref(r).on("value",cb,errCb) : db.ref(r).on("value",cb); };
