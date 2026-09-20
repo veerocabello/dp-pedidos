@@ -1031,6 +1031,49 @@ function guardarAutoPausaConfig() {
   showToast('auto-pausa-toast');
 }
 
+// config/avisoSaturacionConfig hereda el ".write" de "config" (exige sesión
+// de Firebase Auth REAL de admin) — "dispositivo de confianza" no la
+// garantiza. Mismo motivo/patrón exacto que _guardarBannerDiaServidor en
+// banner-pdf.js: se pasa por bimba-verify.php (acción
+// guardarAvisoSaturacionConfig), verificado con el mismo dispositivo de
+// confianza que ya usa el resto del panel, en vez de depender de si hay
+// una sesión de Auth viva en ese instante concreto — encontrado en
+// producción: el interruptor cambiaba en pantalla (valor solo local) pero
+// nunca llegaba a Firebase de verdad.
+async function _guardarAvisoSaturacionConfigServidor(cfg) {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    let res;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'guardarAvisoSaturacionConfig', deviceId, token, config: cfg })
+      });
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor: ' + e.message);
+    }
+    const r = await res.json().catch(() => ({ success: false }));
+    if (r.success) return;
+    // Token de confianza ya no vale — se limpia (igual que
+    // _guardarBannerDiaServidor) y se prueba la escritura directa por si
+    // hay una sesión de Firebase Auth real viva ahora mismo.
+    localStorage.removeItem('dpf_trusted_device');
+    localStorage.removeItem('dpf_trusted_device_name');
+    localStorage.removeItem('dpf_trusted_token');
+    if (window.fb_saveAvisoSaturacionConfig) {
+      await window.fb_saveAvisoSaturacionConfig(cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido);
+      return;
+    }
+    throw new Error('Este dispositivo ya no está reconocido como de confianza. Cierra sesión y vuelve a entrar con tu contraseña real.');
+  }
+  if (window.fb_saveAvisoSaturacionConfig) {
+    await window.fb_saveAvisoSaturacionConfig(cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido);
+    return;
+  }
+  throw new Error('No hay forma de guardar en este dispositivo.');
+}
 // getAvisoSaturacionConfig/AVISO_SAT_CONFIG_KEY viven en nucleo-compartido.js
 // (los necesita saveAvisoSaturacionConfig de aquí abajo).
 function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPedido) {
@@ -1042,7 +1085,7 @@ function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPed
     minPorPedido: Math.max(0, parseInt(minPorPedido, 10) || 3)
   };
   localStorage.setItem(AVISO_SAT_CONFIG_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido).catch(function (e) { _avisarSiFalloGuardado(e, 'aviso de saturación'); });
+  _guardarAvisoSaturacionConfigServidor(cfg).catch(function (e) { _avisarSiFalloGuardado(e, 'aviso de saturación'); });
   logActivity((cfg.enabled ? '✅' : '⛔') + ' Aviso previo de saturación ' + (cfg.enabled ? 'activado' : 'desactivado') + ' — a partir de ' + cfg.umbral + ' pedidos pendientes');
   // Recalcula el banner ya mismo con la config nueva — sin esto, apagar el
   // aviso lo dejaba tal cual estuviera hasta el próximo pedido nuevo/

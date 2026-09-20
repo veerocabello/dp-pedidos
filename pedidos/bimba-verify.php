@@ -467,6 +467,99 @@ if ($action === 'guardarBannerDia') {
     }
 }
 
+// ── Aviso previo de saturación: config y estado, mismo motivo exacto que
+// guardarBannerDia — config/avisoSaturacionConfig y .../avisoSaturacionEstado
+// heredan el ".write" de "config" (exige sesión de Firebase Auth real de
+// admin), que un "dispositivo de confianza" no garantiza. Encontrado en
+// producción: desactivar el aviso en Ajustes parecía guardarse (el
+// interruptor cambiaba en pantalla, valor solo local) pero el banner de
+// "hay bastante ambiente" seguía saliendo — el guardado de verdad nunca
+// llegaba a Firebase. Dos acciones separadas (no una combinada) porque
+// _actualizarAvisoSaturacion (pedidos-vivo-cocina.js) recalcula y publica
+// el ESTADO solo, con cada cambio en el nº de pedidos pendientes — mucho
+// más a menudo que la CONFIG, que solo cambia cuando alguien la toca a
+// mano en Ajustes.
+if ($action === 'guardarAvisoSaturacionConfig') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $cfg = isset($data['config']) && is_array($data['config']) ? $data['config'] : null;
+    if ($deviceId === '' || $token === '' || $cfg === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $cfgSaneada = [
+        'enabled' => !empty($cfg['enabled']),
+        'umbral' => max(1, (int)($cfg['umbral'] ?? 8)),
+        'msg' => isset($cfg['msg']) && is_string($cfg['msg']) ? mb_substr($cfg['msg'], 0, 200) : '',
+        'minutosSalto' => max(0, (int)($cfg['minutosSalto'] ?? 30)),
+        'minPorPedido' => max(0, (int)($cfg['minPorPedido'] ?? 3)),
+    ];
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/avisoSaturacionConfig', $rutaCredenciales, $cfgSaneada);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        dpf_bimba_acierto_tras_red($ip_file);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+if ($action === 'guardarAvisoSaturacionEstado') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $estadoSaneado = [
+        'activo' => !empty($data['activo']),
+        'msg' => isset($data['msg']) && is_string($data['msg']) ? mb_substr($data['msg'], 0, 200) : '',
+    ];
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/avisoSaturacionEstado', $rutaCredenciales, $estadoSaneado);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        dpf_bimba_acierto_tras_red($ip_file);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+
 // ── Auto-borrado de "dispositivo de confianza" propio (caducado, o
 // rechazado por checkTrustedDevice de arriba porque el admin lo expulsó
 // desde otro sitio) — setTrustedDevice(false) en admin-accesos.js borraba

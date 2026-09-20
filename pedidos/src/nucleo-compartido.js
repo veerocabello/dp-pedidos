@@ -2160,8 +2160,37 @@ function loadAvisoSaturacionFromFirebase() {
     });
   }
 }
+// config/avisoSaturacionEstado hereda el ".write" de "config" (exige
+// sesión de Firebase Auth REAL de admin) — "dispositivo de confianza" no
+// la garantiza (ver el comentario largo junto a _guardarBannerDiaServidor
+// en banner-pdf.js, mismo motivo exacto): sin esto, apagar el aviso en
+// Ajustes cambiaba el valor local pero el banner público nunca se
+// enteraba, porque el guardado de verdad nunca llegaba a Firebase.
+// Se pasa por bimba-verify.php (acción guardarAvisoSaturacionEstado),
+// verificado con el mismo dispositivo de confianza que ya usa el resto
+// del panel — en silencio, sin avisar con un toast: esto se llama solo
+// (no por una acción explícita de la dueña) cada vez que cambia el nº de
+// pedidos pendientes, así que un fallo puntual de red no debe interrumpir
+// nada; el próximo cambio de pendientes (o el listener de config, ver
+// loadAvisoSaturacionFromFirebase) lo vuelve a intentar solo.
 function _setAvisoSaturacionEstado(activo, msg) {
-  if (window.fb_saveAvisoSaturacionEstado) window.fb_saveAvisoSaturacionEstado(!!activo, msg || '').catch(() => {});
+  const payload = { activo: !!activo, msg: msg || '' };
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    fetch('bimba-verify.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ action: 'guardarAvisoSaturacionEstado', deviceId, token }, payload))
+    }).then(res => res.json()).then(r => {
+      // Si el dispositivo de confianza ya no vale, se intenta igual la
+      // escritura directa por si hay una sesión de Firebase Auth real
+      // viva ahora mismo (p.ej. justo se acaba de entrar con contraseña).
+      if (!r || !r.success) { if (window.fb_saveAvisoSaturacionEstado) window.fb_saveAvisoSaturacionEstado(payload.activo, payload.msg).catch(() => {}); }
+    }).catch(() => { if (window.fb_saveAvisoSaturacionEstado) window.fb_saveAvisoSaturacionEstado(payload.activo, payload.msg).catch(() => {}); });
+    return;
+  }
+  if (window.fb_saveAvisoSaturacionEstado) window.fb_saveAvisoSaturacionEstado(payload.activo, payload.msg).catch(() => {});
 }
 // Cuántos pedidos hay pendientes de verdad AHORA MISMO (ni listo, ni
 // cancelado, ni entregado), a partir de la última foto de stats/<hoy> que
