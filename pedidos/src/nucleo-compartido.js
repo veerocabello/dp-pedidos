@@ -2151,6 +2151,24 @@ function loadAvisoSaturacionFromFirebase() {
 function _setAvisoSaturacionEstado(activo, msg) {
   if (window.fb_saveAvisoSaturacionEstado) window.fb_saveAvisoSaturacionEstado(!!activo, msg || '').catch(() => {});
 }
+// Cuántos pedidos hay pendientes de verdad AHORA MISMO (ni listo, ni
+// cancelado, ni entregado), a partir de la última foto de stats/<hoy> que
+// ya tengamos en caché — misma cuenta que hace _procesarSnapshotStatsPedidos
+// al recibir cada actualización en vivo. Sirve para poder recalcular el
+// aviso de saturación fuera de ese listener (ver guardarAvisoSaturacionConfig
+// en admin-config.js): activar/desactivar el aviso desde Ajustes cambiaba la
+// config pero el banner ya activo se quedaba tal cual hasta el próximo
+// pedido nuevo/entregado — el único momento en que se volvía a calcular.
+function _pendientesActualesDesdeCache() {
+  if (typeof getOrderStatus !== 'function') return 0;
+  let stats;
+  try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || 'null'); } catch { stats = null; }
+  if (!stats || !stats.orders) return 0;
+  return stats.orders.filter(o => {
+    const s = getOrderStatus(o.num);
+    return s !== 'entregado' && s !== 'listo' && s !== 'cancelado';
+  }).length;
+}
 
 // ── PAUSA EXPRÉS — la cuenta atrás que ve el cliente en el candado
 // (lanzarla/cancelarla es cosa de admin, ver admin-config.js) ──

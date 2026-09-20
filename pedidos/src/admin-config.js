@@ -1044,6 +1044,13 @@ function saveAvisoSaturacionConfig(enabled, umbral, msg, minutosSalto, minPorPed
   localStorage.setItem(AVISO_SAT_CONFIG_KEY, JSON.stringify(cfg));
   if (window.fb_saveAvisoSaturacionConfig) window.fb_saveAvisoSaturacionConfig(cfg.enabled, cfg.umbral, cfg.msg, cfg.minutosSalto, cfg.minPorPedido).catch(function (e) { _avisarSiFalloGuardado(e, 'aviso de saturación'); });
   logActivity((cfg.enabled ? '✅' : '⛔') + ' Aviso previo de saturación ' + (cfg.enabled ? 'activado' : 'desactivado') + ' — a partir de ' + cfg.umbral + ' pedidos pendientes');
+  // Recalcula el banner ya mismo con la config nueva — sin esto, apagar el
+  // aviso lo dejaba tal cual estuviera hasta el próximo pedido nuevo/
+  // entregado (el único momento en que se volvía a evaluar), así que
+  // parecía que el interruptor "no hacía nada".
+  if (typeof _actualizarAvisoSaturacion === 'function' && typeof _pendientesActualesDesdeCache === 'function') {
+    _actualizarAvisoSaturacion(_pendientesActualesDesdeCache());
+  }
 }
 function _renderAvisoSaturacionUI() {
   const cfg = getAvisoSaturacionConfig();
