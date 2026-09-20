@@ -2169,8 +2169,11 @@ function loadAvisoSaturacionFromFirebase() {
 // ahora mismo. Centraliza aquí el bloque que ya usan
 // _guardarAvisoSaturacionConfigServidor (admin-config.js) y
 // _guardarBannerDiaServidor (banner-pdf.js) para las acciones nuevas, sin
-// repetirlo una vez por cada ajuste.
-async function _guardarViaConfianza(action, payload, fallbackFn) {
+// repetirlo una vez por cada ajuste. valorLocal es opcional — lo que se
+// devuelve si bimba-verify.php confirma el guardado (para los ajustes
+// donde quien llama necesita el valor final, p.ej. un array ya
+// fusionado); si no se pasa, se devuelve undefined igual que antes.
+async function _guardarViaConfianza(action, payload, fallbackFn, valorLocal) {
   const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
   const token = localStorage.getItem('dpf_trusted_token');
   if (deviceId && token) {
@@ -2185,14 +2188,14 @@ async function _guardarViaConfianza(action, payload, fallbackFn) {
       throw new Error('Sin conexión con el servidor: ' + e.message);
     }
     const r = await res.json().catch(() => ({ success: false }));
-    if (r.success) return;
+    if (r.success) return valorLocal;
     localStorage.removeItem('dpf_trusted_device');
     localStorage.removeItem('dpf_trusted_device_name');
     localStorage.removeItem('dpf_trusted_token');
-    if (fallbackFn) { await fallbackFn(); return; }
+    if (fallbackFn) { return await fallbackFn(); }
     throw new Error(r.error || 'Este dispositivo ya no está reconocido como de confianza. Cierra sesión y vuelve a entrar con tu contraseña real.');
   }
-  if (fallbackFn) { await fallbackFn(); return; }
+  if (fallbackFn) { return await fallbackFn(); }
   throw new Error('No hay forma de guardar en este dispositivo.');
 }
 // config/avisoSaturacionEstado hereda el ".write" de "config" (exige

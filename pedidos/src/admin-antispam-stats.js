@@ -32,7 +32,7 @@ async function saveAntiSpamConfig() {
     dailyLimit
   };
   localStorage.setItem(ANTISPAM_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAntiSpamCfg) await window.fb_saveAntiSpamCfg(cfg).catch(() => {});
+  await _guardarViaConfianza('guardarAntiSpamCfg', { config: cfg }, window.fb_saveAntiSpamCfg ? function () { return window.fb_saveAntiSpamCfg(cfg); } : null).catch(() => {});
   showToast('antispam-toast');
 }
 
@@ -52,7 +52,7 @@ async function addToBlacklist() {
   }
   list.push(phone);
   saveBlacklistLocal(list);
-  if (window.fb_saveBlacklist) await window.fb_saveBlacklist(list).catch(() => {});
+  await _guardarViaConfianza('guardarBlacklist', { list }, window.fb_saveBlacklist ? function () { return window.fb_saveBlacklist(list); } : null).catch(() => {});
   input.value = '';
   renderBlacklist();
   showToast('blacklist-toast');
@@ -62,7 +62,7 @@ async function addToBlacklist() {
 async function removeFromBlacklist(phone) {
   const list = getBlacklist().filter(p => p !== phone);
   saveBlacklistLocal(list);
-  if (window.fb_saveBlacklist) await window.fb_saveBlacklist(list).catch(() => {});
+  await _guardarViaConfianza('guardarBlacklist', { list }, window.fb_saveBlacklist ? function () { return window.fb_saveBlacklist(list); } : null).catch(() => {});
   renderBlacklist();
   showToast('blacklist-toast');
 }

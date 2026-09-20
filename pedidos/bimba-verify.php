@@ -746,6 +746,149 @@ if ($action === 'borrarCodigoDescuento') {
     dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'discounts/' . $code, null);
 }
 
+// ── Lista negra de teléfonos, config antispam, SMS obligatorio, código
+// "pedido desde el local", descuento estudiante/jubilado y días de
+// caducidad del dispositivo de confianza — misma familia de bug otra vez:
+// heredan el ".write" de "config" sin override propio.
+if ($action === 'guardarBlacklist') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $list = isset($data['list']) && is_array($data['list']) ? $data['list'] : null;
+    if ($deviceId === '' || $token === '' || $list === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $saneada = [];
+    foreach ($list as $tel) {
+        if (is_string($tel) && preg_match('/^\d{9}$/', $tel)) $saneada[] = $tel;
+    }
+    $saneada = array_values(array_unique($saneada));
+    $valor = json_encode($saneada);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/blacklist', $valor);
+}
+if ($action === 'guardarAntiSpamCfg') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $cfg = isset($data['config']) && is_array($data['config']) ? $data['config'] : null;
+    if ($deviceId === '' || $token === '' || $cfg === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $cfgSaneada = [
+        'cooldown' => max(0, (int)($cfg['cooldown'] ?? 45)),
+        'dailyLimit' => max(0, (int)($cfg['dailyLimit'] ?? 3)),
+    ];
+    $valor = json_encode($cfgSaneada);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/antiSpamCfg', $valor);
+}
+if ($action === 'guardarSmsVerificacionActiva') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = !empty($data['activa']);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/smsVerificacionActiva', $valor);
+}
+if ($action === 'guardarLocalFeeCode') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $code = isset($data['code']) && is_string($data['code']) ? mb_substr(strtoupper(trim($data['code'])), 0, 20) : '';
+    $valor = ['code' => $code, 'fecha' => date('Y-m-d')];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/localFeeCode', $valor);
+}
+if ($action === 'guardarStudentDiscountConfig') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = [
+        'enabled' => !empty($data['enabled']),
+        'pct' => max(0, min(100, (int)($data['pct'] ?? 0))),
+    ];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/studentDiscountConfig', $valor);
+}
+if ($action === 'guardarTrustedDays') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = max(1, (int)($data['days'] ?? 30));
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/trustedDeviceDays', $valor);
+}
+// ── Ruleta y Rasca: NO viven bajo "config" (nodos propios ruleta_config/
+// rasca_config), y su ".write" solo permite el UID admin principal (ni
+// siquiera el segundo admin puede escribir ahí directo) — mismo problema
+// de fondo (exige sesión de Firebase Auth real), la cuenta de servicio lo
+// sortea igual que con "config".
+if ($action === 'guardarRuletaConfig' || $action === 'guardarRascaConfig') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $cfg = isset($data['config']) && is_array($data['config']) ? $data['config'] : null;
+    if ($deviceId === '' || $token === '' || $cfg === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $premios = [];
+    if (isset($cfg['premios']) && is_array($cfg['premios'])) {
+        foreach ($cfg['premios'] as $p) {
+            if (!is_array($p)) continue;
+            $nombre = isset($p['nombre']) && is_string($p['nombre']) ? mb_substr($p['nombre'], 0, 60) : '';
+            if ($nombre === '') continue;
+            $premios[] = [
+                'id' => isset($p['id']) && is_string($p['id']) ? mb_substr($p['id'], 0, 60) : uniqid('premio_'),
+                'emoji' => isset($p['emoji']) && is_string($p['emoji']) ? mb_substr($p['emoji'], 0, 10) : '🎁',
+                'nombre' => $nombre,
+                'pct' => max(0, min(100, (int)($p['pct'] ?? 0))),
+                'peso' => max(0, (int)($p['peso'] ?? 1)),
+            ];
+        }
+    }
+    $cfgSaneada = [
+        'activa' => !empty($cfg['activa']),
+        'premios' => $premios,
+        'topeDiario' => max(0, (int)($cfg['topeDiario'] ?? 0)),
+    ];
+    $path = $action === 'guardarRuletaConfig' ? 'ruleta_config' : 'rasca_config';
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, $path, $cfgSaneada);
+}
+// ── Promos: config/promos se guarda como string JSON (igual que jstr() en
+// el navegador). El array final ya lo calcula el panel admin en local
+// (crear/editar/borrar/ocultar una promo) — aquí solo se sanea y se
+// escribe, igual que ya hacía guardarSlotConfig como reserva cuando no
+// hay transacción disponible.
+if ($action === 'guardarPromos') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $promos = isset($data['promos']) && is_array($data['promos']) ? $data['promos'] : null;
+    if ($deviceId === '' || $token === '' || $promos === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $saneadas = [];
+    foreach ($promos as $p) {
+        if (!is_array($p)) continue;
+        $nombre = isset($p['nombre']) && is_string($p['nombre']) ? mb_substr($p['nombre'], 0, 100) : '';
+        if ($nombre === '') continue;
+        $precio = is_numeric($p['precio'] ?? null) ? max(0, (float)$p['precio']) : 0;
+        $precioAntes = is_numeric($p['precioAntes'] ?? null) ? (float)$p['precioAntes'] : null;
+        $saneadas[] = [
+            'id' => isset($p['id']) && is_string($p['id']) ? mb_substr($p['id'], 0, 60) : ('promo_' . count($saneadas)),
+            'nombre' => $nombre,
+            'descripcion' => isset($p['descripcion']) && is_string($p['descripcion']) ? mb_substr($p['descripcion'], 0, 300) : '',
+            'precio' => $precio,
+            'precioAntes' => $precioAntes,
+            'opcionQueso' => !empty($p['opcionQueso']),
+            'opcionGratinado' => !empty($p['opcionGratinado']),
+            'permiteNota' => !empty($p['permiteNota']),
+            'visible' => !array_key_exists('visible', $p) || $p['visible'] !== false,
+        ];
+    }
+    $valor = json_encode($saneadas);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/promos', $valor);
+}
+
 // ── Auto-borrado de "dispositivo de confianza" propio (caducado, o
 // rechazado por checkTrustedDevice de arriba porque el admin lo expulsó
 // desde otro sitio) — setTrustedDevice(false) en admin-accesos.js borraba

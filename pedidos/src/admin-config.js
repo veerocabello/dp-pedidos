@@ -911,7 +911,7 @@ function saveFee2Config(enabled, amount, label, modo) {
 function saveStudentDiscountConfig(enabled, pct) {
   localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
-  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function (e) { _avisarSiFalloGuardado(e, 'descuento estudiante/jubilado'); });
+  _guardarViaConfianza('guardarStudentDiscountConfig', { enabled: !!enabled, pct }, window.fb_saveStudentDiscountConfig ? function () { return window.fb_saveStudentDiscountConfig(enabled, pct); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'descuento estudiante/jubilado'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
 }
@@ -920,7 +920,7 @@ function saveStudentDiscountConfig(enabled, pct) {
 function saveLocalFeeCode(code) {
   const clean = (code || '').trim().toUpperCase();
   localStorage.setItem(LOCAL_FEE_CODE_KEY, clean);
-  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(clean).catch(function (e) { _avisarSiFalloGuardado(e, 'código de pedido desde el local'); });
+  _guardarViaConfianza('guardarLocalFeeCode', { code: clean }, window.fb_saveLocalFeeCode ? function () { return window.fb_saveLocalFeeCode(clean); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'código de pedido desde el local'); });
   logActivity(clean ? ('🏪 Código "pedido desde el local" actualizado: ' + clean) : '🏪 Código "pedido desde el local" desactivado');
 }
 function generarCodigoLocalNuevo() {
@@ -1172,7 +1172,7 @@ async function toggleSmsVerificacionActivaAdmin() {
   const nuevoEstado = !window._smsVerificacionActivaAdmin;
   if (btn) btn.textContent = 'Cargando…';
   try {
-    if (window.fb_saveSmsVerificacionActiva) await window.fb_saveSmsVerificacionActiva(nuevoEstado);
+    await _guardarViaConfianza('guardarSmsVerificacionActiva', { activa: nuevoEstado }, window.fb_saveSmsVerificacionActiva ? function () { return window.fb_saveSmsVerificacionActiva(nuevoEstado); } : null);
     localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, nuevoEstado ? 'true' : 'false');
     _renderSmsVerifBtn(nuevoEstado);
     logActivity(nuevoEstado ? '📵 Verificación SMS obligatoria reactivada' : '🚨 Verificación SMS DESACTIVADA — cualquiera puede pedir sin confirmar su móvil');

@@ -563,12 +563,24 @@ async function bimbaGuardarPromo() {
   const esNueva = !idEl.value;
   const datosPromo = { id, nombre, descripcion, precio, precioAntes, opcionQueso, opcionGratinado, permiteNota, visible };
   try {
-    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
-      const arr = Array.isArray(remoto) ? remoto.slice() : [];
-      const idx = arr.findIndex(function(x) { return x.id === id; });
-      if (idx >= 0) arr[idx] = datosPromo; else arr.push(datosPromo);
-      return arr;
-    });
+    // config/promos hereda el ".write" de "config" (exige sesión de
+    // Firebase Auth real) igual que el resto de esta pasada —
+    // fb_transactJsonString es una transacción nativa, así que le afecta
+    // lo mismo. Se calcula el array final en local (igual que hacía el
+    // mutator de la transacción) y se intenta primero por bimba-verify.php;
+    // si no hay dispositivo de confianza aquí, o ya no vale, cae a la
+    // transacción nativa de siempre.
+    const arrLocal = promosLoad().slice();
+    const idxLocal = arrLocal.findIndex(function(x) { return x.id === id; });
+    if (idxLocal >= 0) arrLocal[idxLocal] = datosPromo; else arrLocal.push(datosPromo);
+    const finalArr = await _guardarViaConfianza('guardarPromos', { promos: arrLocal }, function () {
+      return window.fb_transactJsonString('config/promos', function(remoto) {
+        const arr = Array.isArray(remoto) ? remoto.slice() : [];
+        const idx = arr.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) arr[idx] = datosPromo; else arr.push(datosPromo);
+        return arr;
+      });
+    }, arrLocal);
     localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || [datosPromo]));
     renderPromos();
     bimbaRenderPromos();
@@ -586,10 +598,13 @@ async function bimbaPromoEliminar(id) {
   if (!confirm('¿Eliminar la promoción "' + p.nombre + '"? Esto no afecta a los pedidos ya hechos con ella.')) return;
   if (!window.fb_transactJsonString) { alert('Firebase no disponible'); return; }
   try {
-    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
-      const arr = Array.isArray(remoto) ? remoto.slice() : [];
-      return arr.filter(function(x) { return x.id !== id; });
-    });
+    const arrLocal = promosLoad().filter(function(x) { return x.id !== id; });
+    const finalArr = await _guardarViaConfianza('guardarPromos', { promos: arrLocal }, function () {
+      return window.fb_transactJsonString('config/promos', function(remoto) {
+        const arr = Array.isArray(remoto) ? remoto.slice() : [];
+        return arr.filter(function(x) { return x.id !== id; });
+      });
+    }, arrLocal);
     localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || []));
     renderPromos();
     bimbaRenderPromos();
@@ -603,12 +618,17 @@ async function bimbaPromoEliminar(id) {
 async function bimbaPromoToggleVisible(id) {
   if (!window.fb_transactJsonString) { alert('Firebase no disponible'); return; }
   try {
-    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
-      const arr = Array.isArray(remoto) ? remoto.slice() : [];
-      const idx = arr.findIndex(function(x) { return x.id === id; });
-      if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], { visible: arr[idx].visible === false });
-      return arr;
-    });
+    const arrLocal = promosLoad().slice();
+    const idxLocal = arrLocal.findIndex(function(x) { return x.id === id; });
+    if (idxLocal >= 0) arrLocal[idxLocal] = Object.assign({}, arrLocal[idxLocal], { visible: arrLocal[idxLocal].visible === false });
+    const finalArr = await _guardarViaConfianza('guardarPromos', { promos: arrLocal }, function () {
+      return window.fb_transactJsonString('config/promos', function(remoto) {
+        const arr = Array.isArray(remoto) ? remoto.slice() : [];
+        const idx = arr.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], { visible: arr[idx].visible === false });
+        return arr;
+      });
+    }, arrLocal);
     localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || []));
     renderPromos();
     bimbaRenderPromos();

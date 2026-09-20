@@ -101,7 +101,7 @@ function saveTrustedExpiry() {
   // desde el móvil no se reflejaba al marcar de confianza el ordenador del
   // local (cada uno usaba su propio valor, o el de por defecto), aunque el
   // mensaje diera a entender que era un ajuste global. Ahora se sincroniza.
-  if (window.fb_saveTrustedDays) window.fb_saveTrustedDays(days).catch(function () {});
+  _guardarViaConfianza('guardarTrustedDays', { days }, window.fb_saveTrustedDays ? function () { return window.fb_saveTrustedDays(days); } : null).catch(function () {});
   logActivity('🔐 Expiración de sesión configurada: ' + days + ' días (todos los dispositivos)');
   alert('✅ Guardado. Se aplicará en el próximo inicio de sesión, en cualquier dispositivo.');
 }

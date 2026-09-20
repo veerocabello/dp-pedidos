@@ -109,7 +109,7 @@ async function ruletaAdminGuardar() {
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _ruletaTopeActual();
   try {
-    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
+    await _guardarViaConfianza('guardarRuletaConfig', { config: { activa, premios, topeDiario } }, window.fb_saveRuletaConfig ? function () { return window.fb_saveRuletaConfig({ activa, premios, topeDiario }); } : null);
     logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
     showToast('ruleta-config-toast');
   } catch (e) {
@@ -124,7 +124,7 @@ async function ruletaAdminToggleActiva(checked) {
   _actualizarTrack('ruleta-admin-toggle-track', checked);
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   try {
-    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
+    await _guardarViaConfianza('guardarRuletaConfig', { config: { activa: checked, premios, topeDiario: _ruletaTopeActual() } }, window.fb_saveRuletaConfig ? function () { return window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() }); } : null);
     logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
   } catch (e) {
     // Deshacer lo que ya se había pintado ANTES de saber si el guardado
@@ -169,7 +169,7 @@ async function rascaAdminGuardar() {
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _rascaTopeActual();
   try {
-    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
+    await _guardarViaConfianza('guardarRascaConfig', { config: { activa, premios, topeDiario } }, window.fb_saveRascaConfig ? function () { return window.fb_saveRascaConfig({ activa, premios, topeDiario }); } : null);
     logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
     showToast('rasca-config-toast');
   } catch (e) {
@@ -181,7 +181,7 @@ async function rascaAdminToggleActiva(checked) {
   _actualizarTrack('rasca-admin-toggle-track', checked);
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   try {
-    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
+    await _guardarViaConfianza('guardarRascaConfig', { config: { activa: checked, premios, topeDiario: _rascaTopeActual() } }, window.fb_saveRascaConfig ? function () { return window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() }); } : null);
     logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
   } catch (e) {
     // Ver el comentario equivalente en ruletaAdminToggleActiva() más arriba.

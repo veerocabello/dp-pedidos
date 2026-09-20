@@ -1915,7 +1915,7 @@ async function saveAntiSpamConfig() {
     dailyLimit
   };
   localStorage.setItem(ANTISPAM_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAntiSpamCfg) await window.fb_saveAntiSpamCfg(cfg).catch(() => {});
+  await _guardarViaConfianza('guardarAntiSpamCfg', { config: cfg }, window.fb_saveAntiSpamCfg ? function () { return window.fb_saveAntiSpamCfg(cfg); } : null).catch(() => {});
   showToast('antispam-toast');
 }
 
@@ -1935,7 +1935,7 @@ async function addToBlacklist() {
   }
   list.push(phone);
   saveBlacklistLocal(list);
-  if (window.fb_saveBlacklist) await window.fb_saveBlacklist(list).catch(() => {});
+  await _guardarViaConfianza('guardarBlacklist', { list }, window.fb_saveBlacklist ? function () { return window.fb_saveBlacklist(list); } : null).catch(() => {});
   input.value = '';
   renderBlacklist();
   showToast('blacklist-toast');
@@ -1945,7 +1945,7 @@ async function addToBlacklist() {
 async function removeFromBlacklist(phone) {
   const list = getBlacklist().filter(p => p !== phone);
   saveBlacklistLocal(list);
-  if (window.fb_saveBlacklist) await window.fb_saveBlacklist(list).catch(() => {});
+  await _guardarViaConfianza('guardarBlacklist', { list }, window.fb_saveBlacklist ? function () { return window.fb_saveBlacklist(list); } : null).catch(() => {});
   renderBlacklist();
   showToast('blacklist-toast');
 }
@@ -2665,12 +2665,24 @@ async function bimbaGuardarPromo() {
   const esNueva = !idEl.value;
   const datosPromo = { id, nombre, descripcion, precio, precioAntes, opcionQueso, opcionGratinado, permiteNota, visible };
   try {
-    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
-      const arr = Array.isArray(remoto) ? remoto.slice() : [];
-      const idx = arr.findIndex(function(x) { return x.id === id; });
-      if (idx >= 0) arr[idx] = datosPromo; else arr.push(datosPromo);
-      return arr;
-    });
+    // config/promos hereda el ".write" de "config" (exige sesión de
+    // Firebase Auth real) igual que el resto de esta pasada —
+    // fb_transactJsonString es una transacción nativa, así que le afecta
+    // lo mismo. Se calcula el array final en local (igual que hacía el
+    // mutator de la transacción) y se intenta primero por bimba-verify.php;
+    // si no hay dispositivo de confianza aquí, o ya no vale, cae a la
+    // transacción nativa de siempre.
+    const arrLocal = promosLoad().slice();
+    const idxLocal = arrLocal.findIndex(function(x) { return x.id === id; });
+    if (idxLocal >= 0) arrLocal[idxLocal] = datosPromo; else arrLocal.push(datosPromo);
+    const finalArr = await _guardarViaConfianza('guardarPromos', { promos: arrLocal }, function () {
+      return window.fb_transactJsonString('config/promos', function(remoto) {
+        const arr = Array.isArray(remoto) ? remoto.slice() : [];
+        const idx = arr.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) arr[idx] = datosPromo; else arr.push(datosPromo);
+        return arr;
+      });
+    }, arrLocal);
     localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || [datosPromo]));
     renderPromos();
     bimbaRenderPromos();
@@ -2688,10 +2700,13 @@ async function bimbaPromoEliminar(id) {
   if (!confirm('¿Eliminar la promoción "' + p.nombre + '"? Esto no afecta a los pedidos ya hechos con ella.')) return;
   if (!window.fb_transactJsonString) { alert('Firebase no disponible'); return; }
   try {
-    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
-      const arr = Array.isArray(remoto) ? remoto.slice() : [];
-      return arr.filter(function(x) { return x.id !== id; });
-    });
+    const arrLocal = promosLoad().filter(function(x) { return x.id !== id; });
+    const finalArr = await _guardarViaConfianza('guardarPromos', { promos: arrLocal }, function () {
+      return window.fb_transactJsonString('config/promos', function(remoto) {
+        const arr = Array.isArray(remoto) ? remoto.slice() : [];
+        return arr.filter(function(x) { return x.id !== id; });
+      });
+    }, arrLocal);
     localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || []));
     renderPromos();
     bimbaRenderPromos();
@@ -2705,12 +2720,17 @@ async function bimbaPromoEliminar(id) {
 async function bimbaPromoToggleVisible(id) {
   if (!window.fb_transactJsonString) { alert('Firebase no disponible'); return; }
   try {
-    const finalArr = await window.fb_transactJsonString('config/promos', function(remoto) {
-      const arr = Array.isArray(remoto) ? remoto.slice() : [];
-      const idx = arr.findIndex(function(x) { return x.id === id; });
-      if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], { visible: arr[idx].visible === false });
-      return arr;
-    });
+    const arrLocal = promosLoad().slice();
+    const idxLocal = arrLocal.findIndex(function(x) { return x.id === id; });
+    if (idxLocal >= 0) arrLocal[idxLocal] = Object.assign({}, arrLocal[idxLocal], { visible: arrLocal[idxLocal].visible === false });
+    const finalArr = await _guardarViaConfianza('guardarPromos', { promos: arrLocal }, function () {
+      return window.fb_transactJsonString('config/promos', function(remoto) {
+        const arr = Array.isArray(remoto) ? remoto.slice() : [];
+        const idx = arr.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], { visible: arr[idx].visible === false });
+        return arr;
+      });
+    }, arrLocal);
     localStorage.setItem(PROMOS_KEY, JSON.stringify(finalArr || []));
     renderPromos();
     bimbaRenderPromos();
@@ -2949,7 +2969,7 @@ function saveTrustedExpiry() {
   // desde el móvil no se reflejaba al marcar de confianza el ordenador del
   // local (cada uno usaba su propio valor, o el de por defecto), aunque el
   // mensaje diera a entender que era un ajuste global. Ahora se sincroniza.
-  if (window.fb_saveTrustedDays) window.fb_saveTrustedDays(days).catch(function () {});
+  _guardarViaConfianza('guardarTrustedDays', { days }, window.fb_saveTrustedDays ? function () { return window.fb_saveTrustedDays(days); } : null).catch(function () {});
   logActivity('🔐 Expiración de sesión configurada: ' + days + ' días (todos los dispositivos)');
   alert('✅ Guardado. Se aplicará en el próximo inicio de sesión, en cualquier dispositivo.');
 }
@@ -4494,7 +4514,7 @@ function saveFee2Config(enabled, amount, label, modo) {
 function saveStudentDiscountConfig(enabled, pct) {
   localStorage.setItem(STUDENT_DISCOUNT_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(STUDENT_DISCOUNT_PCT_KEY, String(pct));
-  if (window.fb_saveStudentDiscountConfig) window.fb_saveStudentDiscountConfig(enabled, pct).catch(function (e) { _avisarSiFalloGuardado(e, 'descuento estudiante/jubilado'); });
+  _guardarViaConfianza('guardarStudentDiscountConfig', { enabled: !!enabled, pct }, window.fb_saveStudentDiscountConfig ? function () { return window.fb_saveStudentDiscountConfig(enabled, pct); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'descuento estudiante/jubilado'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Descuento estudiante/jubilado ' + (enabled ? 'activado' : 'desactivado') + ' — ' + pct + '%');
 }
@@ -4503,7 +4523,7 @@ function saveStudentDiscountConfig(enabled, pct) {
 function saveLocalFeeCode(code) {
   const clean = (code || '').trim().toUpperCase();
   localStorage.setItem(LOCAL_FEE_CODE_KEY, clean);
-  if (window.fb_saveLocalFeeCode) window.fb_saveLocalFeeCode(clean).catch(function (e) { _avisarSiFalloGuardado(e, 'código de pedido desde el local'); });
+  _guardarViaConfianza('guardarLocalFeeCode', { code: clean }, window.fb_saveLocalFeeCode ? function () { return window.fb_saveLocalFeeCode(clean); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'código de pedido desde el local'); });
   logActivity(clean ? ('🏪 Código "pedido desde el local" actualizado: ' + clean) : '🏪 Código "pedido desde el local" desactivado');
 }
 function generarCodigoLocalNuevo() {
@@ -4755,7 +4775,7 @@ async function toggleSmsVerificacionActivaAdmin() {
   const nuevoEstado = !window._smsVerificacionActivaAdmin;
   if (btn) btn.textContent = 'Cargando…';
   try {
-    if (window.fb_saveSmsVerificacionActiva) await window.fb_saveSmsVerificacionActiva(nuevoEstado);
+    await _guardarViaConfianza('guardarSmsVerificacionActiva', { activa: nuevoEstado }, window.fb_saveSmsVerificacionActiva ? function () { return window.fb_saveSmsVerificacionActiva(nuevoEstado); } : null);
     localStorage.setItem(SMS_VERIFICACION_ACTIVA_KEY, nuevoEstado ? 'true' : 'false');
     _renderSmsVerifBtn(nuevoEstado);
     logActivity(nuevoEstado ? '📵 Verificación SMS obligatoria reactivada' : '🚨 Verificación SMS DESACTIVADA — cualquiera puede pedir sin confirmar su móvil');
@@ -12174,7 +12194,7 @@ async function ruletaAdminGuardar() {
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _ruletaTopeActual();
   try {
-    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa, premios, topeDiario });
+    await _guardarViaConfianza('guardarRuletaConfig', { config: { activa, premios, topeDiario } }, window.fb_saveRuletaConfig ? function () { return window.fb_saveRuletaConfig({ activa, premios, topeDiario }); } : null);
     logActivity('🎡 Configuración de la ruleta actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
     showToast('ruleta-config-toast');
   } catch (e) {
@@ -12189,7 +12209,7 @@ async function ruletaAdminToggleActiva(checked) {
   _actualizarTrack('ruleta-admin-toggle-track', checked);
   const premios = _ruletaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   try {
-    if (window.fb_saveRuletaConfig) await window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() });
+    await _guardarViaConfianza('guardarRuletaConfig', { config: { activa: checked, premios, topeDiario: _ruletaTopeActual() } }, window.fb_saveRuletaConfig ? function () { return window.fb_saveRuletaConfig({ activa: checked, premios, topeDiario: _ruletaTopeActual() }); } : null);
     logActivity(checked ? '🎡 Ruleta activada' : '🎡 Ruleta desactivada');
   } catch (e) {
     // Deshacer lo que ya se había pintado ANTES de saber si el guardado
@@ -12234,7 +12254,7 @@ async function rascaAdminGuardar() {
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   const topeDiario = _rascaTopeActual();
   try {
-    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa, premios, topeDiario });
+    await _guardarViaConfianza('guardarRascaConfig', { config: { activa, premios, topeDiario } }, window.fb_saveRascaConfig ? function () { return window.fb_saveRascaConfig({ activa, premios, topeDiario }); } : null);
     logActivity('🎫 Configuración del rasca actualizada (' + premios.length + ' premios' + (topeDiario ? ', tope ' + topeDiario + '/día' : '') + ')');
     showToast('rasca-config-toast');
   } catch (e) {
@@ -12246,7 +12266,7 @@ async function rascaAdminToggleActiva(checked) {
   _actualizarTrack('rasca-admin-toggle-track', checked);
   const premios = _rascaAdminPremios.filter(p => p.nombre && p.nombre.trim());
   try {
-    if (window.fb_saveRascaConfig) await window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() });
+    await _guardarViaConfianza('guardarRascaConfig', { config: { activa: checked, premios, topeDiario: _rascaTopeActual() } }, window.fb_saveRascaConfig ? function () { return window.fb_saveRascaConfig({ activa: checked, premios, topeDiario: _rascaTopeActual() }); } : null);
     logActivity(checked ? '🎫 Rasca y gana activado' : '🎫 Rasca y gana desactivado');
   } catch (e) {
     // Ver el comentario equivalente en ruletaAdminToggleActiva() más arriba.
