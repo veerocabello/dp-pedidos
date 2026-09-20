@@ -217,11 +217,12 @@ function importarConfig(input) {
       }
       if (backup.ordersOpen !== undefined) {
         localStorage.setItem(ORDERS_KEY, backup.ordersOpen);
-        if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(backup.ordersOpen === 'true' || backup.ordersOpen === true).catch(() => {});
+        const _open = backup.ordersOpen === 'true' || backup.ordersOpen === true;
+        _guardarViaConfianza('guardarOrdersOpen', { open: _open }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(_open); } : null).catch(() => {});
       }
       if (backup.ordersMsg) {
         localStorage.setItem(ORDERS_MSG_KEY, backup.ordersMsg);
-        if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(backup.ordersMsg).catch(() => {});
+        _guardarViaConfianza('guardarOrdersMsg', { msg: backup.ordersMsg }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(backup.ordersMsg); } : null).catch(() => {});
       }
       if (backup.openLocal !== undefined) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
@@ -234,7 +235,7 @@ function importarConfig(input) {
       // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
-        if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
+        _guardarViaConfianza('guardarSlotConfig', { turnos: backup.slotTurnos, max: parseInt(backup.slotMax, 10) || 4 }, window.fb_saveSlotConfig ? function () { return window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4'); } : null).catch(() => {});
       }
       if (backup.slotMax) {
         localStorage.setItem(SLOT_MAX_KEY, backup.slotMax);

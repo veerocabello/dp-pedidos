@@ -2160,6 +2160,41 @@ function loadAvisoSaturacionFromFirebase() {
     });
   }
 }
+// ── Guardado genérico "con dispositivo de confianza" para el lado del
+// navegador — misma idea que dpf_bimba_guardar_con_confianza en
+// bimba-verify.php (que hace lo mismo en el servidor): intenta primero
+// pasar por bimba-verify.php con el deviceId+token guardados; si el
+// dispositivo ya no vale, limpia las claves locales y cae a la escritura
+// directa (fallbackFn) por si hay una sesión de Firebase Auth real viva
+// ahora mismo. Centraliza aquí el bloque que ya usan
+// _guardarAvisoSaturacionConfigServidor (admin-config.js) y
+// _guardarBannerDiaServidor (banner-pdf.js) para las acciones nuevas, sin
+// repetirlo una vez por cada ajuste.
+async function _guardarViaConfianza(action, payload, fallbackFn) {
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  if (deviceId && token) {
+    let res;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ action, deviceId, token }, payload))
+      });
+    } catch (e) {
+      throw new Error('Sin conexión con el servidor: ' + e.message);
+    }
+    const r = await res.json().catch(() => ({ success: false }));
+    if (r.success) return;
+    localStorage.removeItem('dpf_trusted_device');
+    localStorage.removeItem('dpf_trusted_device_name');
+    localStorage.removeItem('dpf_trusted_token');
+    if (fallbackFn) { await fallbackFn(); return; }
+    throw new Error(r.error || 'Este dispositivo ya no está reconocido como de confianza. Cierra sesión y vuelve a entrar con tu contraseña real.');
+  }
+  if (fallbackFn) { await fallbackFn(); return; }
+  throw new Error('No hay forma de guardar en este dispositivo.');
+}
 // config/avisoSaturacionEstado hereda el ".write" de "config" (exige
 // sesión de Firebase Auth REAL de admin) — "dispositivo de confianza" no
 // la garantiza (ver el comentario largo junto a _guardarBannerDiaServidor

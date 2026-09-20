@@ -786,7 +786,7 @@ function loadOpenStatus() {
 function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
-  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+  _guardarViaConfianza('guardarOrdersOpen', { open: next }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(next); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
   // Toggle manual → la auto-pausa se aparta 30 min y no reabre/cierra por su
   // cuenta encima de esta decisión (mismo mecanismo que activarFinDeNoche,
   // con un cooldown más corto porque esto es una pausa del día a día, no un
@@ -873,7 +873,7 @@ function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE_LABEL_KEY, label);
-  if (window.fb_saveFeeConfig) window.fb_saveFeeConfig(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
+  _guardarViaConfianza('guardarFeeConfig', { config: { enabled: !!enabled, amount, label } }, window.fb_saveFeeConfig ? function () { return window.fb_saveFeeConfig(enabled, amount, label); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Gastos de gestión ' + (enabled ? 'activados' : 'desactivados') + ' — ' + amount.toFixed(2) + '€');
 }
@@ -902,7 +902,7 @@ function saveFee2Config(enabled, amount, label, modo) {
   localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE2_LABEL_KEY, label);
   localStorage.setItem(FEE2_MODO_KEY, modo || 'fijo');
-  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label, modo).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
+  _guardarViaConfianza('guardarFee2Config', { config: { enabled: !!enabled, amount, label, modo: (modo || 'fijo') } }, window.fb_saveFee2Config ? function () { return window.fb_saveFee2Config(enabled, amount, label, modo); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Otro gasto fijo ' + (enabled ? 'activado' : 'desactivado') + ' — ' + (modo === 'bolsas' ? amount.toFixed(2) + '€/bolsa (automático)' : amount.toFixed(2) + '€'));
 }
@@ -952,7 +952,7 @@ function getAutoPausaConfig() {
 function saveAutoPausaConfig(enabled, umbral, msg) {
   const cfg = { enabled: !!enabled, umbral: Math.max(1, parseInt(umbral, 10) || 15), msg: msg || '🔥 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.' };
   localStorage.setItem(AUTO_PAUSA_CONFIG_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(cfg.enabled, cfg.umbral, cfg.msg).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración de auto-pausa'); });
+  _guardarViaConfianza('guardarAutoPausaConfig', { config: cfg }, window.fb_saveAutoPausaConfig ? function () { return window.fb_saveAutoPausaConfig(cfg.enabled, cfg.umbral, cfg.msg); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración de auto-pausa'); });
   logActivity((cfg.enabled ? '✅' : '⛔') + ' Auto-pausa por saturación ' + (cfg.enabled ? 'activada' : 'desactivada') + ' — a partir de ' + cfg.umbral + ' pedidos pendientes');
 }
 function loadAutoPausaConfigFromFirebase() {
@@ -970,7 +970,7 @@ function getAutoPausaEstado() {
 function _setAutoPausaEstado(activa, cooldownUntil) {
   const estado = { activa: !!activa, cooldownUntil: cooldownUntil || 0 };
   localStorage.setItem(AUTO_PAUSA_ESTADO_KEY, JSON.stringify(estado));
-  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(estado.activa, estado.cooldownUntil).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de auto-pausa'); });
+  _guardarViaConfianza('guardarAutoPausaEstado', { activa: estado.activa, cooldownUntil: estado.cooldownUntil }, window.fb_saveAutoPausaEstado ? function () { return window.fb_saveAutoPausaEstado(estado.activa, estado.cooldownUntil); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de auto-pausa'); });
 }
 function loadAutoPausaEstadoFromFirebase() {
   if (!window.fb_listenAutoPausaEstado) return;
@@ -987,8 +987,8 @@ function _aplicarAutoPausa(activar) {
   if (activar) {
     if (!getOrdersOpen()) return; // ya está pausado (por lo que sea) — no hay nada que activar
     localStorage.setItem(ORDERS_KEY, 'false');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg || '').catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
+    _guardarViaConfianza('guardarOrdersOpen', { open: false }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(false); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+    _guardarViaConfianza('guardarOrdersMsg', { msg: cfg.msg || '' }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(cfg.msg || ''); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
     localStorage.setItem(ORDERS_MSG_KEY, cfg.msg || '');
     _setAutoPausaEstado(true, 0);
     updateOrdersUI(false, cfg.msg);
@@ -996,7 +996,7 @@ function _aplicarAutoPausa(activar) {
   } else {
     if (!estado.activa) return; // el cierre actual no lo puso la auto-pausa — no reabrir solo
     localStorage.setItem(ORDERS_KEY, 'true');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+    _guardarViaConfianza('guardarOrdersOpen', { open: true }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(true); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
     _setAutoPausaEstado(false, 0);
     updateOrdersUI(true);
     logActivity('✅ Auto-pausa desactivada — la cola ha bajado, pedidos reactivados solos');
@@ -1130,13 +1130,13 @@ function guardarAvisoSaturacionConfig() {
 // vive en nucleo-compartido.js) ──
 function pausarExpres(minutos) {
   const hasta = Date.now() + Math.max(1, parseInt(minutos, 10) || 15) * 60000;
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
+  _guardarViaConfianza('guardarPausaExpresHasta', { hasta }, window.fb_savePausaExpresHasta ? function () { return window.fb_savePausaExpresHasta(hasta); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
   localStorage.setItem('dpf_pausa_expres_hasta', String(hasta));
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(hasta);
   logActivity('⏸️ Pausa exprés activada (' + minutos + ' min)');
 }
 function cancelarPausaExpres() {
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
+  _guardarViaConfianza('guardarPausaExpresHasta', { hasta: 0 }, window.fb_savePausaExpresHasta ? function () { return window.fb_savePausaExpresHasta(0); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
   localStorage.setItem('dpf_pausa_expres_hasta', '0');
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(0);
   logActivity('▶️ Pausa exprés cancelada a mano');
@@ -1313,10 +1313,10 @@ function savePauseMsg() {
   const msg = document.getElementById('orders-pause-msg').value.trim();
   if (msg) {
     localStorage.setItem(ORDERS_MSG_KEY, msg);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
+    _guardarViaConfianza('guardarOrdersMsg', { msg }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(msg); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
   } else {
     localStorage.removeItem(ORDERS_MSG_KEY);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg('').catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
+    _guardarViaConfianza('guardarOrdersMsg', { msg: '' }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(''); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');

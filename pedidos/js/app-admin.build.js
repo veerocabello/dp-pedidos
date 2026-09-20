@@ -2131,15 +2131,23 @@ function _mutateSlotTurnos(mutatorFn) {
   const turnos = getSlotTurnos();
   mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  if (window.fb_transactJsonString) {
-    window.fb_transactJsonString('config/slotConfig', function (current) {
-      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
-      mutatorFn(t);
-      return { turnos: t, max: (current && current.max) || getSlotMax() };
-    }).catch(e => console.warn('Firebase slotConfig error', e));
-  } else if (window.fb_saveSlotConfig) {
-    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
-  }
+  // config/slotConfig hereda el ".write" de "config" (exige sesión de
+  // Firebase Auth real) igual que el resto de ajustes de esta pasada —
+  // fb_transactJsonString es una transacción NATIVA, así que le afecta lo
+  // mismo. Se intenta primero por bimba-verify.php (deviceId+token del
+  // dispositivo de confianza); si no hay dispositivo de confianza guardado
+  // aquí, o ya no vale, cae a la transacción real de siempre.
+  _guardarViaConfianza('guardarSlotConfig', { turnos, max: getSlotMax() }, function () {
+    if (window.fb_transactJsonString) {
+      return window.fb_transactJsonString('config/slotConfig', function (current) {
+        const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+        mutatorFn(t);
+        return { turnos: t, max: (current && current.max) || getSlotMax() };
+      });
+    } else if (window.fb_saveSlotConfig) {
+      return window.fb_saveSlotConfig(turnos, getSlotMax());
+    }
+  }).catch(e => console.warn('Firebase slotConfig error', e));
   return turnos;
 }
 function addSlotTurno() {
@@ -2224,14 +2232,16 @@ function saveSlotConfig(inputId) {
   // encima con la copia de turnos que este dispositivo tenía en caché,
   // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
   // patrón para las demás ediciones de turnos.
-  if (window.fb_transactJsonString) {
-    window.fb_transactJsonString('config/slotConfig', function (current) {
-      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
-      return { turnos: t, max: max };
-    }).catch(e => console.warn('Firebase slotConfig error', e));
-  } else if (window.fb_saveSlotConfig) {
-    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
-  }
+  _guardarViaConfianza('guardarSlotConfig', { turnos: turnosLocal, max }, function () {
+    if (window.fb_transactJsonString) {
+      return window.fb_transactJsonString('config/slotConfig', function (current) {
+        const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+        return { turnos: t, max: max };
+      });
+    } else if (window.fb_saveSlotConfig) {
+      return window.fb_saveSlotConfig(turnosLocal, max);
+    }
+  }).catch(e => console.warn('Firebase slotConfig error', e));
   showToast('slot-config-toast');
   logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
@@ -2318,7 +2328,7 @@ async function activarFinDeNoche() {
   localStorage.setItem(OPEN_KEY, 'false');
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
-  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  _guardarViaConfianza('guardarOrdersOpen', { open: false }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(false); } : null).catch(() => {});
   // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
   // no la "reabra sola" pensando que fue ella quien la puso.
   if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
@@ -2497,8 +2507,8 @@ async function dcCrear() {
   if (!window.fb_transactNative) { alert('Firebase no disponible'); return; }
   // Aviso previo, no atómico — solo UX para que el admin vea de un vistazo
   // que el código ya existe y pueda cancelar sin más. La protección real
-  // pasa por la transacción de abajo, así que da igual si esto queda
-  // desfasado entre el aviso y el guardado.
+  // pasa por la transacción/comprobación real de abajo, así que da igual
+  // si esto queda desfasado entre el aviso y el guardado.
   if (window.fb_loadDiscounts) {
     const existentes = await window.fb_loadDiscounts().catch(() => ({}));
     if (existentes && existentes[code]) {
@@ -2514,23 +2524,55 @@ async function dcCrear() {
   }
   const datos = { pct, maxUses, uses: 0, createdAt: Date.now() };
   if (dias !== null) datos.expiraEn = Date.now() + dias * 24 * 60 * 60 * 1000;
-  // Comprobación real y escritura en UNA sola transacción atómica de
-  // Firebase sobre discounts/<code> — antes se leía por separado con
-  // fb_loadDiscounts y se escribía después con un jset() plano (fb_saveDiscount),
-  // sin nada que impidiera que dos admins creando casi a la vez el mismo
-  // código, o un código que justo se generó como premio de la Ruleta/Rasca
-  // de un cliente, se pisaran: ninguna de las dos escrituras veía la otra.
-  // El mutator de abajo corre dentro de la transacción (Firebase lo
-  // reintenta con el valor más reciente del servidor si hace falta) y
-  // nunca sobrescribe un premio real de cliente, pase lo que pase con el
-  // aviso de arriba.
-  const result = await window.fb_transactNative('discounts/' + code, function (current) {
-    if (current && current.origen) return; // aborta la transacción: es un premio real, nunca se pisa
-    return datos;
-  });
-  if (!result) {
-    alert('No se pudo crear: justo se ha generado ese código como premio de un cliente. Prueba con otro código.');
-    return;
+  // discounts/<code> hereda el ".write" de "config" (exige sesión de
+  // Firebase Auth real) igual que el resto — fb_transactNative es una
+  // transacción nativa, así que le afecta lo mismo. Se intenta primero por
+  // bimba-verify.php (acción crearCodigoDescuento, que hace ahí mismo la
+  // MISMA comprobación de "nunca pisar un premio real" antes de escribir);
+  // si no hay dispositivo de confianza aquí, o ya no vale, cae a la
+  // transacción nativa de siempre. El rechazo por ser un premio real de
+  // cliente (reason:'origen') NO es un fallo de dispositivo — se avisa tal
+  // cual, sin limpiar nada ni caer a la transacción.
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  let creado = false;
+  if (deviceId && token) {
+    let res, r;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'crearCodigoDescuento', deviceId, token, code, pct, maxUses, dias })
+      });
+      r = await res.json().catch(() => ({ success: false }));
+    } catch (e) {
+      r = { success: false };
+    }
+    if (r.success) {
+      creado = true;
+    } else if (r.reason === 'origen') {
+      alert('Ese código ya existe como premio de la Ruleta/Rasca de un cliente — no se puede reutilizar.');
+      return;
+    } else {
+      localStorage.removeItem('dpf_trusted_device');
+      localStorage.removeItem('dpf_trusted_device_name');
+      localStorage.removeItem('dpf_trusted_token');
+    }
+  }
+  if (!creado) {
+    // Comprobación real y escritura en UNA sola transacción atómica de
+    // Firebase sobre discounts/<code> — el mutator corre dentro de la
+    // transacción (Firebase lo reintenta con el valor más reciente del
+    // servidor si hace falta) y nunca sobrescribe un premio real de
+    // cliente, pase lo que pase con el aviso de arriba.
+    const result = await window.fb_transactNative('discounts/' + code, function (current) {
+      if (current && current.origen) return; // aborta la transacción: es un premio real, nunca se pisa
+      return datos;
+    });
+    if (!result) {
+      alert('No se pudo crear: justo se ha generado ese código como premio de un cliente. Prueba con otro código.');
+      return;
+    }
   }
   document.getElementById('dc-code').value = '';
   document.getElementById('dc-pct').value = '';
@@ -2542,7 +2584,7 @@ async function dcCrear() {
 
 async function dcEliminar(code) {
   if (!confirm('¿Eliminar el código ' + code + '?')) return;
-  if (window.fb_deleteDiscount) await window.fb_deleteDiscount(code);
+  await _guardarViaConfianza('borrarCodigoDescuento', { code }, window.fb_deleteDiscount ? function () { return window.fb_deleteDiscount(code); } : null).catch(() => {});
   logActivity('🗑️ Código de descuento eliminado: ' + code);
   dcCargar();
 }
@@ -2752,7 +2794,7 @@ async function orLanzar() {
   }
   const fin = Date.now() + minutos * 60000;
   const oferta = { tipo: alcance, productoIds, pct, fin };
-  await window.fb_saveOfertaRelampago(oferta);
+  await _guardarViaConfianza('guardarOfertaRelampago', { oferta }, function () { return window.fb_saveOfertaRelampago(oferta); }).catch(function (e) { _avisarSiFalloGuardado(e, 'oferta relámpago'); });
   const destino = alcance === 'producto' ? _orNombresProductos(productoIds) : 'todo el pedido';
   logActivity('⚡ Oferta relámpago lanzada: -' + pct + '% en ' + destino + ' durante ' + minutos + ' min');
   orRenderEstado(oferta);
@@ -2767,7 +2809,7 @@ function _orNombresProductos(productoIds) {
 
 async function orCancelar() {
   if (!confirm('¿Cancelar la oferta relámpago activa?')) return;
-  if (window.fb_saveOfertaRelampago) await window.fb_saveOfertaRelampago(null);
+  await _guardarViaConfianza('guardarOfertaRelampago', { oferta: null }, window.fb_saveOfertaRelampago ? function () { return window.fb_saveOfertaRelampago(null); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'oferta relámpago'); });
   logActivity('⚡ Oferta relámpago cancelada a mano');
   orRenderEstado(null);
 }
@@ -3304,11 +3346,12 @@ function importarConfig(input) {
       }
       if (backup.ordersOpen !== undefined) {
         localStorage.setItem(ORDERS_KEY, backup.ordersOpen);
-        if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(backup.ordersOpen === 'true' || backup.ordersOpen === true).catch(() => {});
+        const _open = backup.ordersOpen === 'true' || backup.ordersOpen === true;
+        _guardarViaConfianza('guardarOrdersOpen', { open: _open }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(_open); } : null).catch(() => {});
       }
       if (backup.ordersMsg) {
         localStorage.setItem(ORDERS_MSG_KEY, backup.ordersMsg);
-        if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(backup.ordersMsg).catch(() => {});
+        _guardarViaConfianza('guardarOrdersMsg', { msg: backup.ordersMsg }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(backup.ordersMsg); } : null).catch(() => {});
       }
       if (backup.openLocal !== undefined) {
         localStorage.setItem(OPEN_KEY, backup.openLocal);
@@ -3321,7 +3364,7 @@ function importarConfig(input) {
       // "backup" por uno legítimo. Se regeneran desde sus botones en Ajustes.
       if (backup.slotTurnos) {
         localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(backup.slotTurnos));
-        if (window.fb_saveSlotConfig) window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4').catch(() => {});
+        _guardarViaConfianza('guardarSlotConfig', { turnos: backup.slotTurnos, max: parseInt(backup.slotMax, 10) || 4 }, window.fb_saveSlotConfig ? function () { return window.fb_saveSlotConfig(backup.slotTurnos, backup.slotMax || '4'); } : null).catch(() => {});
       }
       if (backup.slotMax) {
         localStorage.setItem(SLOT_MAX_KEY, backup.slotMax);
@@ -4326,7 +4369,7 @@ function loadOpenStatus() {
 function toggleOrdersAccepting() {
   const next = !getOrdersOpen();
   localStorage.setItem(ORDERS_KEY, next);
-  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(next).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+  _guardarViaConfianza('guardarOrdersOpen', { open: next }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(next); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
   // Toggle manual → la auto-pausa se aparta 30 min y no reabre/cierra por su
   // cuenta encima de esta decisión (mismo mecanismo que activarFinDeNoche,
   // con un cooldown más corto porque esto es una pausa del día a día, no un
@@ -4413,7 +4456,7 @@ function saveFeeConfig(enabled, amount, label) {
   localStorage.setItem(FEE_ENABLED_KEY, enabled ? 'true' : 'false');
   localStorage.setItem(FEE_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE_LABEL_KEY, label);
-  if (window.fb_saveFeeConfig) window.fb_saveFeeConfig(enabled, amount, label).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
+  _guardarViaConfianza('guardarFeeConfig', { config: { enabled: !!enabled, amount, label } }, window.fb_saveFeeConfig ? function () { return window.fb_saveFeeConfig(enabled, amount, label); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'gastos de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Gastos de gestión ' + (enabled ? 'activados' : 'desactivados') + ' — ' + amount.toFixed(2) + '€');
 }
@@ -4442,7 +4485,7 @@ function saveFee2Config(enabled, amount, label, modo) {
   localStorage.setItem(FEE2_AMOUNT_KEY, String(amount));
   localStorage.setItem(FEE2_LABEL_KEY, label);
   localStorage.setItem(FEE2_MODO_KEY, modo || 'fijo');
-  if (window.fb_saveFee2Config) window.fb_saveFee2Config(enabled, amount, label, modo).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
+  _guardarViaConfianza('guardarFee2Config', { config: { enabled: !!enabled, amount, label, modo: (modo || 'fijo') } }, window.fb_saveFee2Config ? function () { return window.fb_saveFee2Config(enabled, amount, label, modo); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'segundo gasto de gestión'); });
   renderCart();
   logActivity((enabled ? '✅' : '⛔') + ' Otro gasto fijo ' + (enabled ? 'activado' : 'desactivado') + ' — ' + (modo === 'bolsas' ? amount.toFixed(2) + '€/bolsa (automático)' : amount.toFixed(2) + '€'));
 }
@@ -4492,7 +4535,7 @@ function getAutoPausaConfig() {
 function saveAutoPausaConfig(enabled, umbral, msg) {
   const cfg = { enabled: !!enabled, umbral: Math.max(1, parseInt(umbral, 10) || 15), msg: msg || '🔥 Estamos a tope ahora mismo. Vuelve a intentarlo en unos minutos.' };
   localStorage.setItem(AUTO_PAUSA_CONFIG_KEY, JSON.stringify(cfg));
-  if (window.fb_saveAutoPausaConfig) window.fb_saveAutoPausaConfig(cfg.enabled, cfg.umbral, cfg.msg).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración de auto-pausa'); });
+  _guardarViaConfianza('guardarAutoPausaConfig', { config: cfg }, window.fb_saveAutoPausaConfig ? function () { return window.fb_saveAutoPausaConfig(cfg.enabled, cfg.umbral, cfg.msg); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'configuración de auto-pausa'); });
   logActivity((cfg.enabled ? '✅' : '⛔') + ' Auto-pausa por saturación ' + (cfg.enabled ? 'activada' : 'desactivada') + ' — a partir de ' + cfg.umbral + ' pedidos pendientes');
 }
 function loadAutoPausaConfigFromFirebase() {
@@ -4510,7 +4553,7 @@ function getAutoPausaEstado() {
 function _setAutoPausaEstado(activa, cooldownUntil) {
   const estado = { activa: !!activa, cooldownUntil: cooldownUntil || 0 };
   localStorage.setItem(AUTO_PAUSA_ESTADO_KEY, JSON.stringify(estado));
-  if (window.fb_saveAutoPausaEstado) window.fb_saveAutoPausaEstado(estado.activa, estado.cooldownUntil).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de auto-pausa'); });
+  _guardarViaConfianza('guardarAutoPausaEstado', { activa: estado.activa, cooldownUntil: estado.cooldownUntil }, window.fb_saveAutoPausaEstado ? function () { return window.fb_saveAutoPausaEstado(estado.activa, estado.cooldownUntil); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de auto-pausa'); });
 }
 function loadAutoPausaEstadoFromFirebase() {
   if (!window.fb_listenAutoPausaEstado) return;
@@ -4527,8 +4570,8 @@ function _aplicarAutoPausa(activar) {
   if (activar) {
     if (!getOrdersOpen()) return; // ya está pausado (por lo que sea) — no hay nada que activar
     localStorage.setItem(ORDERS_KEY, 'false');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(cfg.msg || '').catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
+    _guardarViaConfianza('guardarOrdersOpen', { open: false }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(false); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+    _guardarViaConfianza('guardarOrdersMsg', { msg: cfg.msg || '' }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(cfg.msg || ''); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
     localStorage.setItem(ORDERS_MSG_KEY, cfg.msg || '');
     _setAutoPausaEstado(true, 0);
     updateOrdersUI(false, cfg.msg);
@@ -4536,7 +4579,7 @@ function _aplicarAutoPausa(activar) {
   } else {
     if (!estado.activa) return; // el cierre actual no lo puso la auto-pausa — no reabrir solo
     localStorage.setItem(ORDERS_KEY, 'true');
-    if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(true).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
+    _guardarViaConfianza('guardarOrdersOpen', { open: true }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(true); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'estado de pedidos'); });
     _setAutoPausaEstado(false, 0);
     updateOrdersUI(true);
     logActivity('✅ Auto-pausa desactivada — la cola ha bajado, pedidos reactivados solos');
@@ -4670,13 +4713,13 @@ function guardarAvisoSaturacionConfig() {
 // vive en nucleo-compartido.js) ──
 function pausarExpres(minutos) {
   const hasta = Date.now() + Math.max(1, parseInt(minutos, 10) || 15) * 60000;
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(hasta).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
+  _guardarViaConfianza('guardarPausaExpresHasta', { hasta }, window.fb_savePausaExpresHasta ? function () { return window.fb_savePausaExpresHasta(hasta); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
   localStorage.setItem('dpf_pausa_expres_hasta', String(hasta));
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(hasta);
   logActivity('⏸️ Pausa exprés activada (' + minutos + ' min)');
 }
 function cancelarPausaExpres() {
-  if (window.fb_savePausaExpresHasta) window.fb_savePausaExpresHasta(0).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
+  _guardarViaConfianza('guardarPausaExpresHasta', { hasta: 0 }, window.fb_savePausaExpresHasta ? function () { return window.fb_savePausaExpresHasta(0); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'pausa exprés'); });
   localStorage.setItem('dpf_pausa_expres_hasta', '0');
   if (typeof _renderPausaExpresUI === 'function') _renderPausaExpresUI(0);
   logActivity('▶️ Pausa exprés cancelada a mano');
@@ -4853,10 +4896,10 @@ function savePauseMsg() {
   const msg = document.getElementById('orders-pause-msg').value.trim();
   if (msg) {
     localStorage.setItem(ORDERS_MSG_KEY, msg);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg(msg).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
+    _guardarViaConfianza('guardarOrdersMsg', { msg }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(msg); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
   } else {
     localStorage.removeItem(ORDERS_MSG_KEY);
-    if (window.fb_saveOrdersMsg) window.fb_saveOrdersMsg('').catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
+    _guardarViaConfianza('guardarOrdersMsg', { msg: '' }, window.fb_saveOrdersMsg ? function () { return window.fb_saveOrdersMsg(''); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'mensaje de pedidos pausados'); });
   }
   updateOrdersUI(getOrdersOpen());
   showToast('local-toast');

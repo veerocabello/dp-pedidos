@@ -214,6 +214,49 @@ function fbSetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales, $val
     return $httpCode === 200;
 }
 
+// ── Guardado genérico "con dispositivo de confianza" — mismo patrón que
+// guardarBannerDia: comprueba deviceId+token contra
+// config/trustedDevices/<deviceId> y, si es válido, escribe $valor en
+// $path con la cuenta de servicio (nunca depende de si hay o no una
+// sesión de Firebase Auth realmente viva en el navegador en ese
+// instante). Centraliza aquí el bloque que se repetía en cada acción de
+// este tipo (avisoSaturacion, y las que se añadan después) — mismos
+// pasos, mismos mensajes de error, para que no diverjan por accidente
+// entre una acción y otra. Siempre termina la petición (echo + exit) —
+// nunca vuelve al llamador.
+function dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, $path, $valor) {
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, $path, $rutaCredenciales, $valor);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if ($ok) {
+        dpf_bimba_acierto_tras_red($ip_file);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
+        exit();
+    }
+}
+
 // ── LÍMITE DE INTENTOS: máximo 5 intentos por IP cada 10 minutos ──
 // Compartido entre el PIN y los tokens de URL — todos son intentos de
 // adivinar el mismo tipo de secreto de acceso al panel.
@@ -493,6 +536,164 @@ if ($action === 'guardarAvisoSaturacionConfig') {
         'minutosSalto' => max(0, (int)($cfg['minutosSalto'] ?? 30)),
         'minPorPedido' => max(0, (int)($cfg['minPorPedido'] ?? 3)),
     ];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/avisoSaturacionConfig', $cfgSaneada);
+}
+if ($action === 'guardarAvisoSaturacionEstado') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $estadoSaneado = [
+        'activo' => !empty($data['activo']),
+        'msg' => isset($data['msg']) && is_string($data['msg']) ? mb_substr($data['msg'], 0, 200) : '',
+    ];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/avisoSaturacionEstado', $estadoSaneado);
+}
+
+// ── Gastos de gestión (Fee1/Fee2), pausar/reabrir pedidos, auto-pausa por
+// saturación, pausa exprés y oferta relámpago — misma familia exacta de
+// bug que avisoSaturacion*: todos heredan el ".write" de "config" sin
+// override propio, así que un guardado desde un "dispositivo de
+// confianza" sin sesión de Firebase Auth viva fallaba en silencio.
+if ($action === 'guardarFeeConfig' || $action === 'guardarFee2Config') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $cfg = isset($data['config']) && is_array($data['config']) ? $data['config'] : null;
+    if ($deviceId === '' || $token === '' || $cfg === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $cfgSaneada = [
+        'enabled' => !empty($cfg['enabled']),
+        'amount' => is_numeric($cfg['amount'] ?? null) ? (float)$cfg['amount'] : 0,
+        'label' => isset($cfg['label']) && is_string($cfg['label']) ? mb_substr($cfg['label'], 0, 100) : '',
+    ];
+    if ($action === 'guardarFee2Config') {
+        $cfgSaneada['modo'] = isset($cfg['modo']) && in_array($cfg['modo'], ['fijo', 'porcentaje'], true) ? $cfg['modo'] : 'fijo';
+    }
+    $path = $action === 'guardarFeeConfig' ? 'config/feeConfig' : 'config/fee2Config';
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, $path, $cfgSaneada);
+}
+if ($action === 'guardarOrdersOpen') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = !empty($data['open']);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/ordersOpen', $valor);
+}
+if ($action === 'guardarOrdersMsg') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = isset($data['msg']) && is_string($data['msg']) ? mb_substr($data['msg'], 0, 300) : '';
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/ordersMsg', $valor);
+}
+if ($action === 'guardarAutoPausaConfig') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $cfg = isset($data['config']) && is_array($data['config']) ? $data['config'] : null;
+    if ($deviceId === '' || $token === '' || $cfg === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $cfgSaneada = [
+        'enabled' => !empty($cfg['enabled']),
+        'umbral' => max(1, (int)($cfg['umbral'] ?? 8)),
+        'msg' => isset($cfg['msg']) && is_string($cfg['msg']) ? mb_substr($cfg['msg'], 0, 200) : '',
+    ];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/autoPausaConfig', $cfgSaneada);
+}
+if ($action === 'guardarAutoPausaEstado') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $estadoSaneado = [
+        'activa' => !empty($data['activa']),
+        'cooldownUntil' => is_numeric($data['cooldownUntil'] ?? null) ? (float)$data['cooldownUntil'] : 0,
+    ];
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/autoPausaEstado', $estadoSaneado);
+}
+if ($action === 'guardarPausaExpresHasta') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $valor = is_numeric($data['hasta'] ?? null) ? (float)$data['hasta'] : 0;
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/pausaExpresHasta', $valor);
+}
+if ($action === 'guardarOfertaRelampago') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    // null cancela la oferta activa (orCancelar en admin-turnos-descuentos.js).
+    $oferta = isset($data['oferta']) && is_array($data['oferta']) ? $data['oferta'] : null;
+    $valor = null;
+    if ($oferta !== null) {
+        $tipo = isset($oferta['tipo']) && in_array($oferta['tipo'], ['total', 'producto'], true) ? $oferta['tipo'] : 'total';
+        $productoIds = null;
+        if ($tipo === 'producto' && isset($oferta['productoIds']) && is_array($oferta['productoIds'])) {
+            $productoIds = array_values(array_map('intval', $oferta['productoIds']));
+        }
+        $valor = [
+            'tipo' => $tipo,
+            'productoIds' => $productoIds,
+            'pct' => max(1, min(90, (int)($oferta['pct'] ?? 0))),
+            'fin' => is_numeric($oferta['fin'] ?? null) ? (float)$oferta['fin'] : 0,
+        ];
+    }
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/ofertaRelampago', $valor);
+}
+// ── Turnos/aforo: se guarda como string JSON (igual que jstr() en el
+// navegador) porque así lo espera getSlotTurnos()/getSlotMax() al leerlo.
+// El array final de turnos ya lo calcula el panel admin en local (añadir/
+// quitar/editar turno) — aquí solo se sanea y se escribe, igual que ya
+// hacía fb_saveSlotConfig como reserva cuando no había transacción
+// disponible.
+if ($action === 'guardarSlotConfig') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $turnos = isset($data['turnos']) && is_array($data['turnos']) ? $data['turnos'] : null;
+    if ($deviceId === '' || $token === '' || $turnos === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $turnosSaneados = [];
+    foreach ($turnos as $t) {
+        if (!is_array($t)) continue;
+        $start = isset($t['start']) && is_string($t['start']) && preg_match('/^\d{2}:\d{2}$/', $t['start']) ? $t['start'] : '00:00';
+        $end = isset($t['end']) && is_string($t['end']) && preg_match('/^\d{2}:\d{2}$/', $t['end']) ? $t['end'] : '00:00';
+        $interval = in_array((int)($t['interval'] ?? 30), [15, 20, 30, 45, 60], true) ? (int)$t['interval'] : 30;
+        $turnosSaneados[] = ['start' => $start, 'end' => $end, 'interval' => $interval];
+    }
+    $max = max(1, (int)($data['max'] ?? 4));
+    $valor = json_encode(['turnos' => $turnosSaneados, 'max' => $max]);
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/slotConfig', $valor);
+}
+// ── Crear/borrar código de descuento a mano. Antes esto pasaba por una
+// transacción nativa de Firebase (fb_transactNative), que exige una
+// sesión de Firebase Auth realmente viva — mismo problema que todo lo de
+// arriba. Aquí se hace la misma comprobación (nunca pisar un código que
+// ya sea premio real de un cliente, campo "origen") pero leyendo y
+// escribiendo con la cuenta de servicio en vez de una transacción nativa;
+// con el volumen de uso de este panel (una persona, de vez en cuando) el
+// hueco entre leer y escribir es irrelevante en la práctica.
+if ($action === 'crearCodigoDescuento') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $code = isset($data['code']) && is_string($data['code']) ? strtoupper(trim($data['code'])) : '';
+    if ($deviceId === '' || $token === '' || $code === '' || strlen($code) > 40 || !preg_match('/^[A-Z0-9_-]+$/', $code) || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    $pct = max(1, min(100, (int)($data['pct'] ?? 0)));
+    $maxUses = max(1, (int)($data['maxUses'] ?? 0));
+    $dias = is_numeric($data['dias'] ?? null) ? max(1, (int)$data['dias']) : null;
     dpf_bimba_liberar_lock_temprano($fp);
     try {
         $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
@@ -507,7 +708,21 @@ if ($action === 'guardarAvisoSaturacionConfig') {
         dpf_bimba_fallo_tras_red($ip_file, $window);
     }
     try {
-        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/avisoSaturacionConfig', $rutaCredenciales, $cfgSaneada);
+        $existente = fbGetNodoConCuentaServicio($databaseURL, 'discounts/' . $code, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    if (is_array($existente) && !empty($existente['origen'])) {
+        http_response_code(409);
+        echo json_encode(['success' => false, 'reason' => 'origen', 'error' => 'Ese código ya existe como premio de la Ruleta/Rasca de un cliente — no se puede reutilizar.']);
+        exit();
+    }
+    $datos = ['pct' => $pct, 'maxUses' => $maxUses, 'uses' => 0, 'createdAt' => round(microtime(true) * 1000)];
+    if ($dias !== null) $datos['expiraEn'] = round(microtime(true) * 1000) + $dias * 24 * 60 * 60 * 1000;
+    try {
+        $ok = fbSetNodoConCuentaServicio($databaseURL, 'discounts/' . $code, $rutaCredenciales, $datos);
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Error interno']);
@@ -521,43 +736,14 @@ if ($action === 'guardarAvisoSaturacionConfig') {
         exit();
     }
 }
-if ($action === 'guardarAvisoSaturacionEstado') {
+if ($action === 'borrarCodigoDescuento') {
     $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
     $token = isset($data['token']) ? (string)$data['token'] : '';
-    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+    $code = isset($data['code']) && is_string($data['code']) ? strtoupper(trim($data['code'])) : '';
+    if ($deviceId === '' || $token === '' || $code === '' || strlen($code) > 40 || !preg_match('/^[A-Z0-9_-]+$/', $code) || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
         dpf_bimba_fallo($fp, $log, $now);
     }
-    $estadoSaneado = [
-        'activo' => !empty($data['activo']),
-        'msg' => isset($data['msg']) && is_string($data['msg']) ? mb_substr($data['msg'], 0, 200) : '',
-    ];
-    dpf_bimba_liberar_lock_temprano($fp);
-    try {
-        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Error interno']);
-        exit();
-    }
-    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
-    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
-    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
-        dpf_bimba_fallo_tras_red($ip_file, $window);
-    }
-    try {
-        $ok = fbSetNodoConCuentaServicio($databaseURL, 'config/avisoSaturacionEstado', $rutaCredenciales, $estadoSaneado);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Error interno']);
-        exit();
-    }
-    if ($ok) {
-        dpf_bimba_acierto_tras_red($ip_file);
-    } else {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'No se pudo guardar en Firebase']);
-        exit();
-    }
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'discounts/' . $code, null);
 }
 
 // ── Auto-borrado de "dispositivo de confianza" propio (caducado, o

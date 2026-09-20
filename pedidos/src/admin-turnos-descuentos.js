@@ -29,15 +29,23 @@ function _mutateSlotTurnos(mutatorFn) {
   const turnos = getSlotTurnos();
   mutatorFn(turnos);
   localStorage.setItem(SLOT_TURNOS_KEY, JSON.stringify(turnos));
-  if (window.fb_transactJsonString) {
-    window.fb_transactJsonString('config/slotConfig', function (current) {
-      const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
-      mutatorFn(t);
-      return { turnos: t, max: (current && current.max) || getSlotMax() };
-    }).catch(e => console.warn('Firebase slotConfig error', e));
-  } else if (window.fb_saveSlotConfig) {
-    window.fb_saveSlotConfig(turnos, getSlotMax()).catch(e => console.warn('Firebase slotConfig error', e));
-  }
+  // config/slotConfig hereda el ".write" de "config" (exige sesión de
+  // Firebase Auth real) igual que el resto de ajustes de esta pasada —
+  // fb_transactJsonString es una transacción NATIVA, así que le afecta lo
+  // mismo. Se intenta primero por bimba-verify.php (deviceId+token del
+  // dispositivo de confianza); si no hay dispositivo de confianza guardado
+  // aquí, o ya no vale, cae a la transacción real de siempre.
+  _guardarViaConfianza('guardarSlotConfig', { turnos, max: getSlotMax() }, function () {
+    if (window.fb_transactJsonString) {
+      return window.fb_transactJsonString('config/slotConfig', function (current) {
+        const t = current && Array.isArray(current.turnos) ? current.turnos.slice() : [];
+        mutatorFn(t);
+        return { turnos: t, max: (current && current.max) || getSlotMax() };
+      });
+    } else if (window.fb_saveSlotConfig) {
+      return window.fb_saveSlotConfig(turnos, getSlotMax());
+    }
+  }).catch(e => console.warn('Firebase slotConfig error', e));
   return turnos;
 }
 function addSlotTurno() {
@@ -122,14 +130,16 @@ function saveSlotConfig(inputId) {
   // encima con la copia de turnos que este dispositivo tenía en caché,
   // revirtiendo ese cambio ajeno. _mutateSlotTurnos() ya usa este mismo
   // patrón para las demás ediciones de turnos.
-  if (window.fb_transactJsonString) {
-    window.fb_transactJsonString('config/slotConfig', function (current) {
-      const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
-      return { turnos: t, max: max };
-    }).catch(e => console.warn('Firebase slotConfig error', e));
-  } else if (window.fb_saveSlotConfig) {
-    window.fb_saveSlotConfig(turnosLocal, max).catch(e => console.warn('Firebase slotConfig error', e));
-  }
+  _guardarViaConfianza('guardarSlotConfig', { turnos: turnosLocal, max }, function () {
+    if (window.fb_transactJsonString) {
+      return window.fb_transactJsonString('config/slotConfig', function (current) {
+        const t = current && Array.isArray(current.turnos) ? current.turnos : turnosLocal;
+        return { turnos: t, max: max };
+      });
+    } else if (window.fb_saveSlotConfig) {
+      return window.fb_saveSlotConfig(turnosLocal, max);
+    }
+  }).catch(e => console.warn('Firebase slotConfig error', e));
   showToast('slot-config-toast');
   logActivity('🕐 Turnos actualizados — ' + turnosLocal.length + ' franjas · max ' + max + ' pedidos/turno');
   renderSlotPicker();
@@ -216,7 +226,7 @@ async function activarFinDeNoche() {
   localStorage.setItem(OPEN_KEY, 'false');
   localStorage.setItem(ORDERS_KEY, 'false');
   if (window.fb_saveOpenLocal) window.fb_saveOpenLocal(false).catch(() => {});
-  if (window.fb_saveOrdersOpen) window.fb_saveOrdersOpen(false).catch(() => {});
+  _guardarViaConfianza('guardarOrdersOpen', { open: false }, window.fb_saveOrdersOpen ? function () { return window.fb_saveOrdersOpen(false); } : null).catch(() => {});
   // Esta pausa es por cierre del día, no por saturación — que la auto-pausa
   // no la "reabra sola" pensando que fue ella quien la puso.
   if (typeof _setAutoPausaEstado === 'function') _setAutoPausaEstado(false, Date.now() + 12 * 60 * 60 * 1000);
@@ -395,8 +405,8 @@ async function dcCrear() {
   if (!window.fb_transactNative) { alert('Firebase no disponible'); return; }
   // Aviso previo, no atómico — solo UX para que el admin vea de un vistazo
   // que el código ya existe y pueda cancelar sin más. La protección real
-  // pasa por la transacción de abajo, así que da igual si esto queda
-  // desfasado entre el aviso y el guardado.
+  // pasa por la transacción/comprobación real de abajo, así que da igual
+  // si esto queda desfasado entre el aviso y el guardado.
   if (window.fb_loadDiscounts) {
     const existentes = await window.fb_loadDiscounts().catch(() => ({}));
     if (existentes && existentes[code]) {
@@ -412,23 +422,55 @@ async function dcCrear() {
   }
   const datos = { pct, maxUses, uses: 0, createdAt: Date.now() };
   if (dias !== null) datos.expiraEn = Date.now() + dias * 24 * 60 * 60 * 1000;
-  // Comprobación real y escritura en UNA sola transacción atómica de
-  // Firebase sobre discounts/<code> — antes se leía por separado con
-  // fb_loadDiscounts y se escribía después con un jset() plano (fb_saveDiscount),
-  // sin nada que impidiera que dos admins creando casi a la vez el mismo
-  // código, o un código que justo se generó como premio de la Ruleta/Rasca
-  // de un cliente, se pisaran: ninguna de las dos escrituras veía la otra.
-  // El mutator de abajo corre dentro de la transacción (Firebase lo
-  // reintenta con el valor más reciente del servidor si hace falta) y
-  // nunca sobrescribe un premio real de cliente, pase lo que pase con el
-  // aviso de arriba.
-  const result = await window.fb_transactNative('discounts/' + code, function (current) {
-    if (current && current.origen) return; // aborta la transacción: es un premio real, nunca se pisa
-    return datos;
-  });
-  if (!result) {
-    alert('No se pudo crear: justo se ha generado ese código como premio de un cliente. Prueba con otro código.');
-    return;
+  // discounts/<code> hereda el ".write" de "config" (exige sesión de
+  // Firebase Auth real) igual que el resto — fb_transactNative es una
+  // transacción nativa, así que le afecta lo mismo. Se intenta primero por
+  // bimba-verify.php (acción crearCodigoDescuento, que hace ahí mismo la
+  // MISMA comprobación de "nunca pisar un premio real" antes de escribir);
+  // si no hay dispositivo de confianza aquí, o ya no vale, cae a la
+  // transacción nativa de siempre. El rechazo por ser un premio real de
+  // cliente (reason:'origen') NO es un fallo de dispositivo — se avisa tal
+  // cual, sin limpiar nada ni caer a la transacción.
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  let creado = false;
+  if (deviceId && token) {
+    let res, r;
+    try {
+      res = await fetch('bimba-verify.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'crearCodigoDescuento', deviceId, token, code, pct, maxUses, dias })
+      });
+      r = await res.json().catch(() => ({ success: false }));
+    } catch (e) {
+      r = { success: false };
+    }
+    if (r.success) {
+      creado = true;
+    } else if (r.reason === 'origen') {
+      alert('Ese código ya existe como premio de la Ruleta/Rasca de un cliente — no se puede reutilizar.');
+      return;
+    } else {
+      localStorage.removeItem('dpf_trusted_device');
+      localStorage.removeItem('dpf_trusted_device_name');
+      localStorage.removeItem('dpf_trusted_token');
+    }
+  }
+  if (!creado) {
+    // Comprobación real y escritura en UNA sola transacción atómica de
+    // Firebase sobre discounts/<code> — el mutator corre dentro de la
+    // transacción (Firebase lo reintenta con el valor más reciente del
+    // servidor si hace falta) y nunca sobrescribe un premio real de
+    // cliente, pase lo que pase con el aviso de arriba.
+    const result = await window.fb_transactNative('discounts/' + code, function (current) {
+      if (current && current.origen) return; // aborta la transacción: es un premio real, nunca se pisa
+      return datos;
+    });
+    if (!result) {
+      alert('No se pudo crear: justo se ha generado ese código como premio de un cliente. Prueba con otro código.');
+      return;
+    }
   }
   document.getElementById('dc-code').value = '';
   document.getElementById('dc-pct').value = '';
@@ -440,7 +482,7 @@ async function dcCrear() {
 
 async function dcEliminar(code) {
   if (!confirm('¿Eliminar el código ' + code + '?')) return;
-  if (window.fb_deleteDiscount) await window.fb_deleteDiscount(code);
+  await _guardarViaConfianza('borrarCodigoDescuento', { code }, window.fb_deleteDiscount ? function () { return window.fb_deleteDiscount(code); } : null).catch(() => {});
   logActivity('🗑️ Código de descuento eliminado: ' + code);
   dcCargar();
 }
@@ -650,7 +692,7 @@ async function orLanzar() {
   }
   const fin = Date.now() + minutos * 60000;
   const oferta = { tipo: alcance, productoIds, pct, fin };
-  await window.fb_saveOfertaRelampago(oferta);
+  await _guardarViaConfianza('guardarOfertaRelampago', { oferta }, function () { return window.fb_saveOfertaRelampago(oferta); }).catch(function (e) { _avisarSiFalloGuardado(e, 'oferta relámpago'); });
   const destino = alcance === 'producto' ? _orNombresProductos(productoIds) : 'todo el pedido';
   logActivity('⚡ Oferta relámpago lanzada: -' + pct + '% en ' + destino + ' durante ' + minutos + ' min');
   orRenderEstado(oferta);
@@ -665,7 +707,7 @@ function _orNombresProductos(productoIds) {
 
 async function orCancelar() {
   if (!confirm('¿Cancelar la oferta relámpago activa?')) return;
-  if (window.fb_saveOfertaRelampago) await window.fb_saveOfertaRelampago(null);
+  await _guardarViaConfianza('guardarOfertaRelampago', { oferta: null }, window.fb_saveOfertaRelampago ? function () { return window.fb_saveOfertaRelampago(null); } : null).catch(function (e) { _avisarSiFalloGuardado(e, 'oferta relámpago'); });
   logActivity('⚡ Oferta relámpago cancelada a mano');
   orRenderEstado(null);
 }
