@@ -1155,6 +1155,35 @@ if ($action === 'guardarStockHistorialEntrada') {
     }
 }
 
+// ── Registro de actividad (pestaña Alertas) — config/activityLog hereda
+// el ".write" de "config" (exige sesión de Firebase Auth real) igual que
+// el resto de esta pasada. Sin esto, "Descartar"/"Reintentar" en Alertas
+// (resolverAlerta, historial-export.js) y "Borrar log" (clearActivityLog)
+// solo actualizaban la copia local del navegador desde un dispositivo de
+// confianza sin sesión de Auth viva (_persistActivityLog comprobaba
+// fb_getAdminUser() antes de intentar guardar, y si no había sesión real
+// simplemente NO lo intentaba) — el aviso "descartado" volvía a aparecer
+// en cuanto se recargaba la página, porque el guardado de verdad en
+// Firebase nunca llegaba a pasar. El array final (ya editado en local:
+// una entrada marcada resolved, o vacío entero si es "Borrar log") se
+// acepta tal cual y se sanea solo lo justo (límite de tamaño) — cada
+// entrada ya salió saneada de su propio origen (logActivity en el
+// navegador, o fbAgregarActivityLog en el servidor).
+if ($action === 'guardarActivityLog') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    $activityLog = isset($data['log']) && is_array($data['log']) ? array_values($data['log']) : null;
+    if ($deviceId === '' || $token === '' || $activityLog === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    if (count($activityLog) > 200) $activityLog = array_slice($activityLog, 0, 200);
+    $valor = json_encode($activityLog);
+    if ($valor === false || strlen($valor) > 500000) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/activityLog', $valor);
+}
+
 // ── Auto-borrado de "dispositivo de confianza" propio (caducado, o
 // rechazado por checkTrustedDevice de arriba porque el admin lo expulsó
 // desde otro sitio) — setTrustedDevice(false) en admin-accesos.js borraba

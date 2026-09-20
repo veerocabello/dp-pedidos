@@ -5227,8 +5227,23 @@ async function marcarIncidenciaResuelta(key) {
 // marcar una entrada.
 function _persistActivityLog(log) {
   localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
-  if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
-    window.fb_saveActivityLog(log).catch(() => {});
+  // config/activityLog hereda el ".write" de "config" (exige sesión de
+  // Firebase Auth real) igual que el resto de ajustes ya arreglados —
+  // antes esto solo intentaba guardar si fb_getAdminUser() era una
+  // sesión REAL, así que "Descartar"/"Reintentar" (resolverAlerta) desde
+  // un dispositivo de confianza sin esa sesión viva se quedaban solo en
+  // este navegador: el aviso "descartado" volvía a aparecer en cuanto se
+  // recargaba la página, porque la copia de Firebase nunca se llegaba a
+  // tocar. Se intenta primero por bimba-verify.php (deviceId+token del
+  // dispositivo de confianza); si no hay uno guardado aquí, o ya no
+  // vale, cae a la escritura directa de siempre (solo posible con sesión
+  // real).
+  const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const token = localStorage.getItem('dpf_trusted_token');
+  const esAdminReal = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+  const fallback = (esAdminReal && window.fb_saveActivityLog) ? function () { return window.fb_saveActivityLog(log); } : null;
+  if ((deviceId && token) || esAdminReal) {
+    _guardarViaConfianza('guardarActivityLog', { log }, fallback).catch(() => {});
   }
 }
 // Identificador único de una entrada del log para poder descartarla/
@@ -5718,7 +5733,11 @@ function renderAlertas() {
 function clearActivityLog() {
   if (!confirm('¿Borrar todo el log de actividad?')) return;
   localStorage.removeItem(ACTIVITY_LOG_KEY);
-  if (window.fb_saveActivityLog) window.fb_saveActivityLog([]).catch(() => {});
+  // Mismo motivo que _persistActivityLog — un set() directo exige sesión
+  // de Firebase Auth real, así que desde un dispositivo de confianza sin
+  // ella este botón parecía funcionar (la lista se vaciaba en pantalla)
+  // pero el log volvía tal cual al recargar la página.
+  _persistActivityLog([]);
   renderActivityLog();
 }
 

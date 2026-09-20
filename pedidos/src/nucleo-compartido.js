@@ -3760,9 +3760,28 @@ function logActivity(action, extra) {
   log.unshift(entry);
   const trimmed = log.slice(0, 200);
   localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(trimmed));
-  // Solo guardar en Firebase si hay sesión activa (evita permission_denied en intentos de login)
-  if (window.fb_saveActivityLog && window.fb_getAdminUser && window.fb_getAdminUser()) {
-    window.fb_saveActivityLog(trimmed).catch(() => {});
+  // Un cliente normal (sin sesión de admin ni dispositivo de confianza)
+  // no tiene nada que sincronizar aquí — esta llamada solo le sirve para
+  // dejar constancia en SU PROPIO localStorage (logActivity() también la
+  // llama carrito-checkout.js si su pedido no llega a guardarse), así que
+  // no se intenta nada más y no hace falta avisar de ningún fallo.
+  // config/activityLog hereda el ".write" de "config" (exige sesión de
+  // Firebase Auth real) igual que el resto de ajustes de esta pasada — un
+  // dispositivo de confianza sin esa sesión viva no podía guardar aquí
+  // directo (_persistActivityLog en historial-export.js tiene el mismo
+  // problema con "Descartar"/"Borrar log"). Se intenta primero por
+  // bimba-verify.php si hay dispositivo de confianza; si no, y solo si
+  // hay sesión de Auth real, la escritura directa de siempre.
+  const _deviceIdLog = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+  const _tokenLog = localStorage.getItem('dpf_trusted_token');
+  const _esAdminRealLog = !!(window.fb_getAdminUser && window.fb_getAdminUser());
+  if (_deviceIdLog && _tokenLog || _esAdminRealLog) {
+    const _fallbackLog = (_esAdminRealLog && window.fb_saveActivityLog) ? function () { return window.fb_saveActivityLog(trimmed); } : null;
+    if (typeof _guardarViaConfianza === 'function') {
+      _guardarViaConfianza('guardarActivityLog', { log: trimmed }, _fallbackLog).catch(() => {});
+    } else if (_fallbackLog) {
+      _fallbackLog().catch(() => {});
+    }
   }
   if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
