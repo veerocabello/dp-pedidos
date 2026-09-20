@@ -3178,7 +3178,7 @@ function renderTicketPreview(order) {
    ningún diálogo, así que esta es la única forma de comprobar el
    ticket antes o después de imprimirlo). ── */
 function peekNextOrderNum() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   let data;
   try { data = JSON.parse(localStorage.getItem(ORDER_COUNTER_KEY) || '{}'); } catch (e) { data = {}; }
   if (data.date !== today) data = { date: today, n: 0 };
@@ -3278,7 +3278,7 @@ function buildEscPosBytes(order) {
 /* ── Numeración diaria de comandas ── */
 const ORDER_COUNTER_KEY = 'dpf_comandas_counter';
 function getNextOrderNum() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   let data;
   try { data = JSON.parse(localStorage.getItem(ORDER_COUNTER_KEY) || '{}'); } catch (e) { data = {}; }
   if (data.date !== today) data = { date: today, n: 0 };
@@ -3288,7 +3288,30 @@ function getNextOrderNum() {
 }
 
 /* ── Historial (para reimprimir/consultar, hoy y días anteriores) ── */
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+// Antes usaba new Date().toISOString().slice(0,10) — la fecha en UTC, no
+// en la hora de Madrid del negocio. Madrid va por delante de UTC (1-2h
+// según la época del año), así que justo después de la medianoche de
+// Madrid esto seguía devolviendo el día ANTERIOR durante esa ventana —
+// mismo bug ya corregido en el resto de la web (_todayKeyMadrid() en
+// antifraude.js, tK() en js/config.js) pero que se había quedado sin
+// tocar aquí. Todo el historial/caja/resumen de Comandas usa esta
+// función como "hoy" — durante esa 1-2h, revertir/modificar una venta
+// de hoy (revertirVentaTienda, guardar-pedido.php, que SÍ usa la fecha
+// real de Madrid) podía mandar la fecha de AYER y no encontrar nada que
+// revertir en las estadísticas del día correcto.
+function todayISO() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+// Formatea un Date que ya representa una medianoche LOCAL concreta (p.ej.
+// new Date('2026-09-20T00:00:00'), o new Date(año,mes,1)) como "YYYY-MM-DD"
+// usando sus campos LOCALES — nunca .toISOString().slice(0,10), que pasa
+// primero por UTC: como Madrid va por delante de UTC, la medianoche local
+// de un día cualquiera cae en la TARDE-NOCHE del día UTC anterior, así que
+// ese patrón devolvía SIEMPRE el día anterior al que de verdad representaba
+// el Date, no solo en la ventana de después de medianoche — encontrado en
+// _rangoFechas/resumenPreset/resumenPresetMesActual ("Resumen por fechas"
+// del panel de Comandas mostraba siempre un día antes del rango elegido).
+function _fechaISOLocal(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 // Cuántas comandas guarda como máximo cada día en "Pedidos de hoy" (para
 // reimprimir/ver/buscar). Con mucho flujo de clientes 100 se quedaba
 // corto; 1000/día da mucho margen y localStorage aguanta de sobra (unos
@@ -3314,7 +3337,7 @@ function purgarHistorialAntiguoSiToca() {
   if (localStorage.getItem(HISTORIAL_ULTIMA_PURGA_KEY) === hoy) return; // ya comprobado hoy, no repetir en cada carga de página
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - HISTORIAL_DETALLE_RETENCION_DIAS);
-  const cutoffISO = cutoff.toISOString().slice(0, 10);
+  const cutoffISO = _fechaISOLocal(cutoff);
   const aBorrar = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -4174,7 +4197,7 @@ function _rangoFechas(desde, hasta) {
   const fin = new Date(hasta + 'T00:00:00');
   let guard = 0;
   while (d <= fin && guard < 400) {
-    out.push(d.toISOString().slice(0, 10));
+    out.push(_fechaISOLocal(d));
     d.setDate(d.getDate() + 1);
     guard++;
   }
@@ -4195,7 +4218,7 @@ function resumenPreset(dias) {
   const hoy = new Date();
   const desde = new Date(hoy);
   desde.setDate(hoy.getDate() - (dias - 1));
-  resumenDesde = desde.toISOString().slice(0, 10);
+  resumenDesde = _fechaISOLocal(desde);
   resumenHasta = todayISO();
   document.getElementById('resumen-desde').value = resumenDesde;
   document.getElementById('resumen-hasta').value = resumenHasta;
@@ -4203,7 +4226,7 @@ function resumenPreset(dias) {
 }
 function resumenPresetMesActual() {
   const hoy = new Date();
-  resumenDesde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10);
+  resumenDesde = _fechaISOLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
   resumenHasta = todayISO();
   document.getElementById('resumen-desde').value = resumenDesde;
   document.getElementById('resumen-hasta').value = resumenHasta;
