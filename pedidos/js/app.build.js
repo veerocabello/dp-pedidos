@@ -2138,6 +2138,18 @@ function loadAvisoSaturacionFromFirebase() {
     window.fb_listenAvisoSaturacionConfig(function (cfg) {
       localStorage.setItem(AVISO_SAT_CONFIG_KEY, JSON.stringify(cfg || {}));
       if (typeof _renderAvisoSaturacionUI === 'function') _renderAvisoSaturacionUI();
+      // Re-sincroniza el estado publicado (config/avisoSaturacionEstado) en
+      // cuanto la config cambia — este listener solo dispara de verdad en
+      // una sesión de admin (ver comentario de arriba), así que es un buen
+      // sitio para que cualquier dispositivo de admin que tenga la web
+      // abierta autocorrija un banner que se hubiera quedado encendido de
+      // antes (p.ej. si guardarAvisoSaturacionConfig() falló al escribir
+      // el estado, o si este apagado viene de un cambio hecho antes de que
+      // existiera esta autocorrección) — no hace falta esperar a que
+      // cambie el nº de pendientes ni a volver a guardar la config a mano.
+      if (typeof _actualizarAvisoSaturacion === 'function' && typeof _pendientesActualesDesdeCache === 'function') {
+        _actualizarAvisoSaturacion(_pendientesActualesDesdeCache());
+      }
     });
   }
   // Estado público (activo/mensaje) — este SÍ lo recibe cualquier cliente,
