@@ -621,13 +621,36 @@ async function renderAccesosLog() {
   if (!el) return;
   el.innerHTML = '<div style="font-size:13px;color:#8A6A4E">Cargando...</div>';
   try {
-    if (!window.fb_loadLoginLog) {
-      el.innerHTML = '<div style="font-size:13px;color:#c0392b">Firebase no disponible.</div>';
-      return;
-    }
     const user = window.fb_getAdminUser ? window.fb_getAdminUser() : null;
     console.log('[accesos] usuario activo:', user ? user.email : 'ninguno');
-    const logs = await window.fb_loadLoginLog();
+    // loginLog/ solo lo puede LEER directo una de las dos cuentas de admin
+    // (ni siquiera la segunda) — un "dispositivo de confianza" sin esa
+    // sesión real siempre veía aquí "permission_denied" aunque el resto
+    // del panel funcionara. Se intenta primero por bimba-verify.php
+    // (acción leerLoginLog, con la cuenta de servicio); si no hay
+    // dispositivo de confianza guardado aquí, se cae a la lectura directa
+    // de siempre (necesita esa sesión real).
+    const deviceId = typeof getDeviceId === 'function' ? getDeviceId() : localStorage.getItem('dpf_device_id');
+    const token = localStorage.getItem('dpf_trusted_token');
+    let logs = null;
+    if (deviceId && token) {
+      try {
+        const res = await fetch('bimba-verify.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'leerLoginLog', deviceId, token })
+        });
+        const r = await res.json().catch(() => ({ success: false }));
+        if (r.success && Array.isArray(r.log)) logs = r.log;
+      } catch (e) {}
+    }
+    if (logs === null) {
+      if (!window.fb_loadLoginLog) {
+        el.innerHTML = '<div style="font-size:13px;color:#c0392b">Firebase no disponible.</div>';
+        return;
+      }
+      logs = await window.fb_loadLoginLog();
+    }
     console.log('[accesos] logs recibidos:', logs ? logs.length : 'null');
     if (!logs || !logs.length) {
       el.innerHTML = '<div style="font-size:13px;color:#8A6A4E">Sin registros aún.</div>';

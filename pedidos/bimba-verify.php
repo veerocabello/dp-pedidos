@@ -1184,6 +1184,55 @@ if ($action === 'guardarActivityLog') {
     dpf_bimba_guardar_con_confianza($databaseURL, $rutaCredenciales, $ip_file, $window, $fp, $log, $now, $deviceId, $token, 'config/activityLog', $valor);
 }
 
+// ── Leer "Intentos de acceso" (pestaña Accesos) — loginLog/ solo lo puede
+// LEER directo una de las dos cuentas de admin (ni siquiera la segunda),
+// así que un "dispositivo de confianza" siempre veía aquí
+// "permission_denied" aunque el resto del panel funcionara bien — no es
+// un guardado que falla en silencio como el resto de esta pasada, es una
+// lectura que falla de forma visible. Mismo patrón, pero leyendo con la
+// cuenta de servicio en vez de escribiendo.
+if ($action === 'leerLoginLog') {
+    $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
+    $token = isset($data['token']) ? (string)$data['token'] : '';
+    if ($deviceId === '' || $token === '' || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
+        dpf_bimba_fallo($fp, $log, $now);
+    }
+    dpf_bimba_liberar_lock_temprano($fp);
+    try {
+        $registro = fbGetNodoConCuentaServicio($databaseURL, 'config/trustedDevices/' . $deviceId, $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    $tokenHashReal = is_array($registro) && isset($registro['tokenHash']) ? (string)$registro['tokenHash'] : '';
+    $expiradoDispositivo = is_array($registro) && isset($registro['expiresAt']) && is_numeric($registro['expiresAt']) && (float)$registro['expiresAt'] < (microtime(true) * 1000);
+    if ($expiradoDispositivo || $tokenHashReal === '' || !hash_equals($tokenHashReal, hash('sha256', $token))) {
+        dpf_bimba_fallo_tras_red($ip_file, $window);
+    }
+    try {
+        $loginLog = fbGetNodoConCuentaServicio($databaseURL, 'loginLog', $rutaCredenciales);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Error interno']);
+        exit();
+    }
+    // Firebase devuelve loginLog como un objeto {sid: {...}} — igual que
+    // fb_loadLoginLog() en config.js, se pasa a array ordenado por más
+    // reciente primero y se recorta a 100.
+    $entradas = is_array($loginLog) ? array_values($loginLog) : [];
+    usort($entradas, function ($a, $b) {
+        $ta = is_array($a) && is_numeric($a['ts'] ?? null) ? (float)$a['ts'] : 0;
+        $tb = is_array($b) && is_numeric($b['ts'] ?? null) ? (float)$b['ts'] : 0;
+        return $tb <=> $ta;
+    });
+    $entradas = array_slice($entradas, 0, 100);
+    $fp2 = @fopen($ip_file, 'c+');
+    if ($fp2 !== false) { flock($fp2, LOCK_EX); ftruncate($fp2, 0); flock($fp2, LOCK_UN); fclose($fp2); }
+    echo json_encode(['success' => true, 'log' => $entradas]);
+    exit();
+}
+
 // ── Auto-borrado de "dispositivo de confianza" propio (caducado, o
 // rechazado por checkTrustedDevice de arriba porque el admin lo expulsó
 // desde otro sitio) — setTrustedDevice(false) en admin-accesos.js borraba
