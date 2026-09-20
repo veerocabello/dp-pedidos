@@ -5231,19 +5231,33 @@ function _persistActivityLog(log) {
     window.fb_saveActivityLog(log).catch(() => {});
   }
 }
+// Identificador único de una entrada del log para poder descartarla/
+// reintentarla desde el panel — "ts" NO sirve para eso: dos entradas
+// pueden compartir el mismo segundo exacto (p.ej. dos avisos del mismo
+// pedido rechazado, o dos pedidos rechazados casi a la vez), y buscar por
+// ts entonces siempre encuentra la MISMA (la primera del array) sin
+// importar en cuál tarjeta se pulsara — el botón de la otra no hacía nada
+// nunca (bug reportado: "pincho descartar y no descarta"). Las entradas
+// nuevas ya traen "id" (logActivity()/fbAgregarActivityLog en el
+// servidor); las que ya hubiera guardadas de antes no lo tienen, así que
+// se cae a "ts" para esas — siguen teniendo el mismo riesgo de colisión
+// que antes, pero solo hasta que se descarten y desaparezcan del todo.
+function _alertaId(e) {
+  return (e && e.id) || (e && e.ts) || '';
+}
 // Marca una alerta como resuelta (desaparece de la lista y del badge, pero
 // sigue existiendo en el registro de actividad completo). Se usa tanto al
 // pulsar "Descartar" como automáticamente tras un "Reintentar" con éxito.
-function resolverAlerta(ts) {
+function resolverAlerta(id) {
   const log = getActivityLog();
-  const entry = log.find(e => e.ts === ts);
+  const entry = log.find(e => _alertaId(e) === id);
   if (!entry) return;
   entry.resolved = true;
   _persistActivityLog(log);
   renderAlertas();
 }
-function _alertaDomId(ts) {
-  return 'alerta-' + String(ts).replace(/[^a-zA-Z0-9]/g, '');
+function _alertaDomId(id) {
+  return 'alerta-' + String(id).replace(/[^a-zA-Z0-9]/g, '');
 }
 async function reintentarGuardadoPedido(ts, orderNum, fecha) {
   const card = document.getElementById(_alertaDomId(ts));
@@ -5676,22 +5690,22 @@ function renderAlertas() {
         const contactoHtml = e.contactoMetodo === 'instagram'
           ? "<div style=\"font-size:11.5px;font-weight:700;color:#a3184f;background:#FDF1F6;border:1px solid #F3C6DA;border-radius:8px;padding:6px 9px\">📷 Avisar por Instagram: ".concat(escapeHtml(e.instagramUsuario || '(sin usuario)'), "</div>")
           : "<div style=\"font-size:11.5px;font-weight:700;color:#1e5c37;background:#E8F5EC;border:1px solid #BFE3CB;border-radius:8px;padding:6px 9px\">💬 Avisar por WhatsApp (mismo número)</div>";
-        return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(contactoHtml, "\n        ").concat(duplicadaHtml, "\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+        return "\n      <div id=\"".concat(_alertaDomId(_alertaId(e)), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:#FDECD5;border:1px solid #EFD6A9\">\n        <div style=\"font-size:13px;font-weight:800;color:#2A1506\">🎁 Cupón de reseña pendiente</div>\n        <div style=\"font-size:12.5px;color:#5a3e1b;line-height:1.5\">\n          <b>").concat(escapeHtml(e.nombreGoogle || ''), "</b> · ").concat(escapeHtml(e.telefono), "<br>\n          Dice haberla dejado como <b>\"").concat(escapeHtml(e.nombreGoogle || ''), "\"</b>\n          ").concat(e.comentario ? '<br><span style="font-style:italic">"' + escapeHtml(e.comentario) + '"</span>' : '', "\n        </div>\n        ").concat(contactoHtml, "\n        ").concat(duplicadaHtml, "\n        ").concat(capturaHtml, "\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div class=\"resena-actions\" style=\"display:flex;gap:8px;justify-content:flex-end\">\n          <button onclick=\"aprobarCuponResena('").concat(escapeAttr(_alertaId(e)), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:#5ECC76;color:#0d2417;border:none;border-radius:7px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif\">✅ Aprobar</button>\n          <button onclick=\"descartarCuponResena('").concat(escapeAttr(_alertaId(e)), "','").concat(escapeAttr(e.telefono), "')\" style=\"padding:7px 14px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
       }
       const critico = e.action.indexOf('🚨') === 0;
       const bg = critico ? '#FBEAE7' : '#FDECD5';
       const border = critico ? '#F0CFC8' : '#EFD6A9';
       let retryBtn = '';
       if (e.tipo === 'pedido_no_guardado' && e.orderNum && e.fecha) {
-        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>");
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarGuardadoPedido('".concat(escapeAttr(_alertaId(e)), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🔧 Reintentar guardado</button>");
       } else if (e.tipo === 'ticket_no_impreso' && e.orderNum && e.fecha) {
-        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarImpresionTicket('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🖨️ Reintentar impresión</button>");
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarImpresionTicket('".concat(escapeAttr(_alertaId(e)), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.fecha), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🖨️ Reintentar impresión</button>");
       } else if (e.tipo === 'sello_no_registrado' && e.orderNum && e.telefono) {
-        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarSelloFidelizacion('".concat(escapeAttr(_alertaId(e)), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.nombre || ''), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">🎁 Reintentar sello</button>");
       } else if (e.tipo === 'sello_no_revertido' && e.orderNum && e.telefono) {
-        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarRevertirSelloFidelizacion('".concat(escapeAttr(e.ts), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">↩️ Reintentar anular</button>");
+        retryBtn = "<button class=\"alerta-retry-btn\" onclick=\"reintentarRevertirSelloFidelizacion('".concat(escapeAttr(_alertaId(e)), "','").concat(escapeAttr(e.orderNum), "','").concat(escapeAttr(e.telefono), "','").concat(escapeAttr(e.fecha || ''), "')\" style=\"padding:6px 12px;background:var(--brown);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">↩️ Reintentar anular</button>");
       }
-      return "\n      <div id=\"".concat(_alertaDomId(e.ts), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(e.ts), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
+      return "\n      <div id=\"".concat(_alertaDomId(_alertaId(e)), "\" style=\"display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:").concat(bg, ";border:1px solid ").concat(border, "\">\n        <div style=\"display:flex;gap:10px;align-items:flex-start\">\n          <span style=\"font-size:13px;color:#2A1506;flex:1\">").concat(escapeHtml(e.action), "</span>\n          <span style=\"font-size:10.5px;color:#8A6A4E;white-space:nowrap\">").concat(escapeHtml(e.time), "</span>\n        </div>\n        <div class=\"alerta-retry-status\" style=\"display:none;font-size:11.5px;color:#c0392b;font-weight:600\"></div>\n        <div style=\"display:flex;gap:8px;justify-content:flex-end\">\n          ").concat(retryBtn, "\n          <button onclick=\"resolverAlerta('").concat(escapeAttr(_alertaId(e)), "')\" style=\"padding:6px 12px;background:transparent;color:#8A6A4E;border:1.5px solid #D8C6AE;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif\">✕ Descartar</button>\n        </div>\n      </div>");
     }).join('');
   }
   el.innerHTML += _renderHistorialCuponesResena();

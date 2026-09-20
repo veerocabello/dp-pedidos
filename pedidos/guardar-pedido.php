@@ -778,7 +778,14 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje, $extra = [],
         $leido = fbGetJsonStringConEtag($databaseURL, 'config/activityLog', $accessToken);
         $log = $leido['data'] ?: [];
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        // 'id' identifica la entrada de forma única para "Descartar"/
+        // "Reintentar" en el panel (ver resolverAlerta, historial-export.js)
+        // — 'ts' (resolución de 1 segundo) no basta: dos avisos del mismo
+        // pedido pueden compartir el mismo segundo exacto, y antes
+        // "Descartar" buscaba por ts, así que con dos coincidiendo siempre
+        // resolvía la primera del array sin importar cuál se pulsara.
         array_unshift($log, $extra + [
+            'id'     => uniqid('', true),
             'ts'     => $ahora->format('c'),
             'time'   => $ahora->format('d/m/Y, H:i:s'),
             'action' => $mensaje,

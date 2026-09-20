@@ -3736,7 +3736,16 @@ function logActivity(action, extra) {
   // a una alerta, para que renderAlertas() pueda ofrecer un botón de
   // "reintentar" en vez de solo "descartar" — igual que ya hacía
   // fbAgregarActivityLog() en el servidor para "pedido_no_guardado".
+  // "id" identifica la entrada de forma única para poder descartarla/
+  // reintentarla desde el panel (ver resolverAlerta en historial-export.js)
+  // — "ts" NO sirve para eso: dos entradas pueden compartir el mismo
+  // segundo exacto (p.ej. dos avisos del mismo pedido rechazado), y antes
+  // "Descartar" buscaba la entrada por ts, así que con dos coincidiendo
+  // siempre resolvía la MISMA (la primera del array) sin importar en cuál
+  // de las dos tarjetas se pulsara — el botón de la otra no hacía nada
+  // nunca (bug reportado: "pincho descartar y no descarta").
   const entry = Object.assign({}, extra, {
+    id: now.getTime() + '_' + Math.random().toString(36).slice(2, 8),
     ts: now.toISOString(),
     time: now.toLocaleString('es-ES', {
       day: '2-digit',

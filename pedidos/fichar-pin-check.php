@@ -396,7 +396,11 @@ function fbAgregarActivityLog($databaseURL, $accessToken, $mensaje) {
         $leido = fbGetArrayStringConEtag($databaseURL, 'config/activityLog', $accessToken);
         $log = $leido['arr'];
         $ahora = new DateTime('now', new DateTimeZone('Europe/Madrid'));
+        // 'id' único — ver el mismo comentario en guardar-pedido.php
+        // (resolverAlerta en el panel necesita algo más fino que 'ts',
+        // que puede repetirse dentro del mismo segundo).
         array_unshift($log, [
+            'id'     => uniqid('', true),
             'ts'     => $ahora->format('c'),
             'time'   => $ahora->format('d/m/Y, H:i:s'),
             'action' => $mensaje,
