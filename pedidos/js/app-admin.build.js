@@ -6631,7 +6631,15 @@ async function refreshKitchenGrid() {
     }).map(function (it) {
       if (it.extras && it.extras.length > 0) {
         return '<div style="border-left:3px solid #3D1F0D;padding-left:8px;margin:5px 0">' + '<div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:4px">' + it.qty + 'x ' + escapeHtml(it.name || '') + '</div>' + '<div style="display:flex;flex-wrap:wrap">' + it.extras.map(function (e) {
-          return '<span style="background:#333;border:1px solid #555;border-radius:4px;padding:3px 8px;font-size:13px;color:#eee">' + escapeHtml(e) + '</span>';
+          // Los extras de una patata "de fábrica" con extras (Carbonara,
+          // Ranchera...) o de una promo con queso/gratinado llegan como
+          // objetos {name, price} (ver extItems/promoItems en
+          // carrito-checkout.js), no como texto — los de Al Gusto/Bomba
+          // sí son texto ya formado. Sin distinguir los dos, cocina veía
+          // el texto literal "[object Object]" en vez del extra real —
+          // ni sabían qué llevaba de más la patata.
+          var texto = (e && typeof e === 'object') ? (e.name || '') : e;
+          return '<span style="background:#333;border:1px solid #555;border-radius:4px;padding:3px 8px;font-size:13px;color:#eee">' + escapeHtml(texto) + '</span>';
         }).join('') + '</div></div>';
       }
       return '<div class="kitchen-item-row">' + it.qty + 'x ' + escapeHtml(it.name || '') + '</div>';
@@ -9698,8 +9706,21 @@ function openPedidoModal(o) {
   var hasItems = o.items && o.items.length;
   var itemsHtml = hasItems
     ? o.items.filter(function(it) { return it.name && !it.isFee; }).map(function(it) {
+        // Los extras de una patata "de fábrica" con extras (Carbonara,
+        // Ranchera...) o de una promo con queso/gratinado llegan como
+        // objetos {name, price} (ver extItems/promoItems en
+        // carrito-checkout.js), no como texto — los de Al Gusto/Bomba
+        // (custItems) sí son texto ya formado. Sin distinguir los dos,
+        // un objeto pasado directo a escapeHtml() salía como el texto
+        // literal "[object Object]" en vez del extra de verdad.
         var extras = it.extras && it.extras.length
-          ? '<span style="color:#8A6A4E;font-size:11px;display:block">' + it.extras.map(function(e){return escapeHtml(e);}).join(' · ') + '</span>'
+          ? '<span style="color:#8A6A4E;font-size:11px;display:block">' + it.extras.map(function(e){
+              if (e && typeof e === 'object') {
+                var precioTxt = (e.price != null && e.price !== 0) ? ' (' + (e.price > 0 ? '+' : '') + e.price.toFixed(2).replace('.', ',') + '€)' : '';
+                return escapeHtml((e.name || '') + precioTxt);
+              }
+              return escapeHtml(e);
+            }).join(' · ') + '</span>'
           : '';
         return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px dashed #F5E6C8;font-size:13px">'
           + '<div style="flex:1;color:#2A1506">' + escapeHtml((it.qty || 1) + '\u00D7 ' + it.name) + extras + '</div>'

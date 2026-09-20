@@ -602,7 +602,15 @@ async function refreshKitchenGrid() {
     }).map(function (it) {
       if (it.extras && it.extras.length > 0) {
         return '<div style="border-left:3px solid #3D1F0D;padding-left:8px;margin:5px 0">' + '<div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:4px">' + it.qty + 'x ' + escapeHtml(it.name || '') + '</div>' + '<div style="display:flex;flex-wrap:wrap">' + it.extras.map(function (e) {
-          return '<span style="background:#333;border:1px solid #555;border-radius:4px;padding:3px 8px;font-size:13px;color:#eee">' + escapeHtml(e) + '</span>';
+          // Los extras de una patata "de fábrica" con extras (Carbonara,
+          // Ranchera...) o de una promo con queso/gratinado llegan como
+          // objetos {name, price} (ver extItems/promoItems en
+          // carrito-checkout.js), no como texto — los de Al Gusto/Bomba
+          // sí son texto ya formado. Sin distinguir los dos, cocina veía
+          // el texto literal "[object Object]" en vez del extra real —
+          // ni sabían qué llevaba de más la patata.
+          var texto = (e && typeof e === 'object') ? (e.name || '') : e;
+          return '<span style="background:#333;border:1px solid #555;border-radius:4px;padding:3px 8px;font-size:13px;color:#eee">' + escapeHtml(texto) + '</span>';
         }).join('') + '</div></div>';
       }
       return '<div class="kitchen-item-row">' + it.qty + 'x ' + escapeHtml(it.name || '') + '</div>';

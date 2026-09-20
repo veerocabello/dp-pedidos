@@ -673,8 +673,21 @@ function openPedidoModal(o) {
   var hasItems = o.items && o.items.length;
   var itemsHtml = hasItems
     ? o.items.filter(function(it) { return it.name && !it.isFee; }).map(function(it) {
+        // Los extras de una patata "de fábrica" con extras (Carbonara,
+        // Ranchera...) o de una promo con queso/gratinado llegan como
+        // objetos {name, price} (ver extItems/promoItems en
+        // carrito-checkout.js), no como texto — los de Al Gusto/Bomba
+        // (custItems) sí son texto ya formado. Sin distinguir los dos,
+        // un objeto pasado directo a escapeHtml() salía como el texto
+        // literal "[object Object]" en vez del extra de verdad.
         var extras = it.extras && it.extras.length
-          ? '<span style="color:#8A6A4E;font-size:11px;display:block">' + it.extras.map(function(e){return escapeHtml(e);}).join(' · ') + '</span>'
+          ? '<span style="color:#8A6A4E;font-size:11px;display:block">' + it.extras.map(function(e){
+              if (e && typeof e === 'object') {
+                var precioTxt = (e.price != null && e.price !== 0) ? ' (' + (e.price > 0 ? '+' : '') + e.price.toFixed(2).replace('.', ',') + '€)' : '';
+                return escapeHtml((e.name || '') + precioTxt);
+              }
+              return escapeHtml(e);
+            }).join(' · ') + '</span>'
           : '';
         return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px dashed #F5E6C8;font-size:13px">'
           + '<div style="flex:1;color:#2A1506">' + escapeHtml((it.qty || 1) + '\u00D7 ' + it.name) + extras + '</div>'
