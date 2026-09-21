@@ -860,7 +860,7 @@ function updateCustTotalPrice() {
   const cfg = CUSTOMIZER_CONFIG[custType];
   if (!cfg) return;
   let price = cfg.price;
-  if (custExtraQueso) price += 1.00;
+  if (custExtraQueso) price += 1.20;
   if (custExtraGratinado) price += 0.50;
   document.getElementById('cust-price').textContent = price.toFixed(2).replace('.', ',') + ' €';
 }

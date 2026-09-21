@@ -1092,7 +1092,7 @@ function renderCart() {
       console.error('renderCart: producto custom no encontrado menuId=' + c.menuId);
       return '';
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
     // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
@@ -1121,7 +1121,7 @@ function renderCart() {
     (c.quitados || []).forEach(ing => {
       extras.push('🚫 Sin ' + ing);
     });
-    if (c.queso) extras.push('+ Extra Queso +1,00€');
+    if (c.queso) extras.push('+ Extra Queso +1,20€');
     _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(function (r) {
       const etiqueta = r.precio === 0 ? 'gratis · cambio' : r.precio.toFixed(2).replace('.', ',') + '€' + (r.precio === 0.20 ? ' · cambio' : '');
       extras.push('+ Extra ' + r.nombre + ' +' + etiqueta);
@@ -1145,7 +1145,7 @@ function renderCart() {
     const subtotal = price * c.qty;
     total += subtotal;
     const extras = [];
-    if (c.extraQueso) extras.push('+ Extra Queso +1,00€');
+    if (c.extraQueso) extras.push('+ Extra Queso +1,20€');
     if (c.extraGratinado) extras.push('+ Gratinado +0,50€');
     return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">🔥 ' + escapeHtml(p.nombre) + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removePromoItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');

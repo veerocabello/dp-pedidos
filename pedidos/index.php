@@ -86,7 +86,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1790031719895">
+<link rel="stylesheet" href="css/style.min.css?v=1790031953420">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -1053,7 +1053,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px;display:flex;flex-direction:column">
       <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Extras opcionales</div>
       <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-queso-label" onclick="toggleCustExtra('queso')">
-        <div><div style="font-weight:700;font-size:14px;color:var(--text)">&#x1F9C0; Queso mozzarella</div><div style="font-size:12px;color:var(--muted)">+1,00 &#x20AC;</div></div>
+        <div><div style="font-weight:700;font-size:14px;color:var(--text)">&#x1F9C0; Queso mozzarella</div><div style="font-size:12px;color:var(--muted)">+1,20 &#x20AC;</div></div>
         <div id="cust-extra-check-queso" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></div>
       </label>
       <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-gratinado-label" onclick="toggleCustExtra('gratinado')">
@@ -1157,8 +1157,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789674000000" defer></script>
-<script src="js/app.js?v=1790031719895" defer></script>
-<script src="js/auth.js?v=1790031719895" defer></script>
+<script src="js/app.js?v=1790031953420" defer></script>
+<script src="js/auth.js?v=1790031953420" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar

@@ -223,7 +223,7 @@ function openExtrasModal(itemId) {
     optionsHtml += "</div>";
   }
   if (!onlySoloGratinado) {
-    optionsHtml += "\n      <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('queso')\">\n        <div>\n          <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F9C0; A\xF1adir queso mozzarella</div>\n          <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+1,00 €</div>\n        </div>\n        <div id=\"extra-check-queso\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n      </label>";
+    optionsHtml += "\n      <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('queso')\">\n        <div>\n          <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F9C0; A\xF1adir queso mozzarella</div>\n          <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+1,20 €</div>\n        </div>\n        <div id=\"extra-check-queso\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n      </label>";
   }
   optionsHtml += "\n    <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('gratinado')\">\n      <div>\n        <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F525; Gratinar".concat(onlySoloGratinado ? '' : ' (con queso)', "</div>\n        <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+0,50 €").concat(onlySoloGratinado ? '' : ' · incluye gratinado del queso', "</div>\n      </div>\n      <div id=\"extra-check-gratinado\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n    </label>");
 
@@ -377,7 +377,7 @@ function updateExtrasTotal() {
   const item = MENU.find(m => m.id == _extrasCurrentId);
   if (!item) return;
   let total = item.price;
-  if (_extrasQueso) total += 1.00;
+  if (_extrasQueso) total += 1.20;
   if (_extrasGratinado) total += 0.50;
   const quitadosList = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k);
   const ingredientesList = Object.entries(_extrasIngredientes).filter(([, v]) => v).map(([k]) => k);
@@ -513,7 +513,7 @@ function duplicarExtrasItem(key) {
 function getExtrasItemPrice(c) {
   const _itemMenu = typeof MENU !== 'undefined' ? MENU.find(m => m.id == c.menuId) : null;
   const _base = _itemMenu ? _itemMenu.price : c.basePrice;
-  let p = _base + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
+  let p = _base + (c.queso ? 1.20 : 0) + (c.gratinado ? 0.50 : 0);
   _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(({ precio }) => { p += precio; });
   (c.salsasExtra || []).forEach(nombre => { p += precioSalsaExtra(nombre); });
   return p;
@@ -1474,7 +1474,7 @@ const promosCart = {};
 function getPromoItemPrice(c) {
   const p = promosLoad().find(function (x) { return x.id === c.promoId; });
   if (!p) return 0;
-  return parseFloat(p.precio) + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+  return parseFloat(p.precio) + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
 }
 function removePromoItem(key) {
   delete promosCart[key];
@@ -1536,7 +1536,7 @@ function promoAbrirModal(p) {
   if (p.opcionQueso || p.opcionGratinado) {
     extrasHtml += '<div style="border-top:1px solid #F5E6C8;margin-top:14px;padding-top:14px">';
     extrasHtml += '<div style="font-size:12px;font-weight:700;color:#3D1F0D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Extras opcionales</div>';
-    if (p.opcionQueso) extrasHtml += makeCheck(qId, '🧀', 'Añadir queso mozzarella', '+1,00 €');
+    if (p.opcionQueso) extrasHtml += makeCheck(qId, '🧀', 'Añadir queso mozzarella', '+1,20 €');
     if (p.opcionGratinado) extrasHtml += makeCheck(gId, '🔥', 'Gratinar (con queso)', '+0,50 € · incluye gratinado del queso');
     extrasHtml += '</div>';
   }
@@ -1592,7 +1592,7 @@ function _promoRecalcularPrecioModal(precioBase) {
   if (!btn) return;
   var quesoEl = document.getElementById('pcheck-queso');
   var gratinadoEl = document.getElementById('pcheck-gratinado');
-  var total = precioBase + (quesoEl && quesoEl.dataset.on === '1' ? 1.00 : 0) + (gratinadoEl && gratinadoEl.dataset.on === '1' ? 0.50 : 0);
+  var total = precioBase + (quesoEl && quesoEl.dataset.on === '1' ? 1.20 : 0) + (gratinadoEl && gratinadoEl.dataset.on === '1' ? 0.50 : 0);
   btn.textContent = 'Añadir al carrito · ' + total.toFixed(2).replace('.', ',') + ' €';
 }
 
@@ -6046,7 +6046,7 @@ function renderCart() {
       console.error('renderCart: producto custom no encontrado menuId=' + c.menuId);
       return '';
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
     // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
@@ -6075,7 +6075,7 @@ function renderCart() {
     (c.quitados || []).forEach(ing => {
       extras.push('🚫 Sin ' + ing);
     });
-    if (c.queso) extras.push('+ Extra Queso +1,00€');
+    if (c.queso) extras.push('+ Extra Queso +1,20€');
     _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(function (r) {
       const etiqueta = r.precio === 0 ? 'gratis · cambio' : r.precio.toFixed(2).replace('.', ',') + '€' + (r.precio === 0.20 ? ' · cambio' : '');
       extras.push('+ Extra ' + r.nombre + ' +' + etiqueta);
@@ -6099,7 +6099,7 @@ function renderCart() {
     const subtotal = price * c.qty;
     total += subtotal;
     const extras = [];
-    if (c.extraQueso) extras.push('+ Extra Queso +1,00€');
+    if (c.extraQueso) extras.push('+ Extra Queso +1,20€');
     if (c.extraGratinado) extras.push('+ Gratinado +0,50€');
     return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">🔥 ' + escapeHtml(p.nombre) + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="removePromoItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
@@ -7226,7 +7226,7 @@ function getFidelizacionDescuento(phoneClean) {
   const preciosPatatasCustom = Object.values(custCart).map(c => {
     const it = MENU.find(m => m.id == c.menuId);
     if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    return it.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
   });
   const preciosPatatasExtras = Object.values(extrasCart).map(c => {
     const it = MENU.find(m => m.id == c.menuId);
@@ -7567,7 +7567,7 @@ async function _submitOrderInner() {
       console.error('submitOrder: producto custom no encontrado menuId=' + c.menuId);
       return s;
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + unitPrice * c.qty;
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
@@ -7660,7 +7660,7 @@ async function _submitOrderInner() {
       console.error('submitOrder: producto custom no encontrado menuId=' + c.menuId);
       return null;
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
     // Queso Mozzarella siempre al final (puede venir de ingredientes o como extra)
     const ingsWithoutQueso = c.ingredients.filter(i => i !== 'Queso Mozzarella' && i !== '4 Quesos');
     const quesosFromIng = c.ingredients.filter(i => i === 'Queso Mozzarella' || i === '4 Quesos');
@@ -7670,7 +7670,7 @@ async function _submitOrderInner() {
     const extras = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
     // Añadir quesos al final
     quesosFromIng.forEach(q => extras.push('Extra ' + q));
-    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');
+    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1,20€');
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.extraGratinado) extras.push('Gratinado +0,50€');
     return {
@@ -7743,7 +7743,7 @@ async function _submitOrderInner() {
     _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(({ nombre, precio }) => {
       extras.push({ name: 'Extra ' + nombre, price: precio });
     });
-    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.20 });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
@@ -7774,7 +7774,7 @@ async function _submitOrderInner() {
     const p = promosLoad().find(x => x.id === c.promoId);
     if (!p) return null;
     const extras = [];
-    if (c.extraQueso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.extraQueso) extras.push({ name: 'Extra Queso', price: 1.20 });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
       name: p.nombre,
@@ -9237,7 +9237,7 @@ function updateCustTotalPrice() {
   const cfg = CUSTOMIZER_CONFIG[custType];
   if (!cfg) return;
   let price = cfg.price;
-  if (custExtraQueso) price += 1.00;
+  if (custExtraQueso) price += 1.20;
   if (custExtraGratinado) price += 0.50;
   document.getElementById('cust-price').textContent = price.toFixed(2).replace('.', ',') + ' €';
 }

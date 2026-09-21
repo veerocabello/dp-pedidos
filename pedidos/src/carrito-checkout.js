@@ -861,7 +861,7 @@ function getFidelizacionDescuento(phoneClean) {
   const preciosPatatasCustom = Object.values(custCart).map(c => {
     const it = MENU.find(m => m.id == c.menuId);
     if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-    return it.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    return it.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
   });
   const preciosPatatasExtras = Object.values(extrasCart).map(c => {
     const it = MENU.find(m => m.id == c.menuId);
@@ -1202,7 +1202,7 @@ async function _submitOrderInner() {
       console.error('submitOrder: producto custom no encontrado menuId=' + c.menuId);
       return s;
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
     return s + unitPrice * c.qty;
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
@@ -1295,7 +1295,7 @@ async function _submitOrderInner() {
       console.error('submitOrder: producto custom no encontrado menuId=' + c.menuId);
       return null;
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
     // Queso Mozzarella siempre al final (puede venir de ingredientes o como extra)
     const ingsWithoutQueso = c.ingredients.filter(i => i !== 'Queso Mozzarella' && i !== '4 Quesos');
     const quesosFromIng = c.ingredients.filter(i => i === 'Queso Mozzarella' || i === '4 Quesos');
@@ -1305,7 +1305,7 @@ async function _submitOrderInner() {
     const extras = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
     // Añadir quesos al final
     quesosFromIng.forEach(q => extras.push('Extra ' + q));
-    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');
+    if (c.extraQueso) extras.push('Extra Queso Mozzarella +1,20€');
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.extraGratinado) extras.push('Gratinado +0,50€');
     return {
@@ -1378,7 +1378,7 @@ async function _submitOrderInner() {
     _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(({ nombre, precio }) => {
       extras.push({ name: 'Extra ' + nombre, price: precio });
     });
-    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.20 });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
@@ -1409,7 +1409,7 @@ async function _submitOrderInner() {
     const p = promosLoad().find(x => x.id === c.promoId);
     if (!p) return null;
     const extras = [];
-    if (c.extraQueso) extras.push({ name: 'Extra Queso', price: 1.00 });
+    if (c.extraQueso) extras.push({ name: 'Extra Queso', price: 1.20 });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {
       name: p.nombre,

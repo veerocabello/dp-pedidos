@@ -886,7 +886,7 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items, $no
 // llega en esta forma {name,price} y por tanto nunca pasa por aquí).
 function _precioRealExtra($nombre) {
     $n = trim((string)$nombre);
-    if ($n === 'Extra Queso') return 1.00;
+    if ($n === 'Extra Queso') return 1.20;
     if ($n === 'Gratinado') return 0.50;
     if (strpos($n, 'Extra salsa ') === 0) {
         $salsa = substr($n, strlen('Extra salsa '));
@@ -1102,7 +1102,7 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
         // cierra el precio.
         if (isset($mi['id']) && in_array($mi['id'], [15, 16], true)) {
             $precioBase = round((float)$mi['price'], 2);
-            $precioReal = round($precioBase + (!empty($it['extraQueso']) ? 1.00 : 0) + (!empty($it['extraGratinado']) ? 0.50 : 0), 2);
+            $precioReal = round($precioBase + (!empty($it['extraQueso']) ? 1.20 : 0) + (!empty($it['extraGratinado']) ? 0.50 : 0), 2);
             $precioEnviado = $subtotal / $qty;
             if (abs($precioEnviado - $precioReal) > 0.02) {
                 $avisos[] = sprintf('%s (personalizada): enviado %.2f€, corregido a %.2f€', $nombre, $precioEnviado, $precioReal);
