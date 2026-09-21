@@ -1108,7 +1108,17 @@ if ($action === 'guardarStockData') {
 if ($action === 'guardarStockHistorialEntrada') {
     $deviceId = isset($data['deviceId']) ? (string)$data['deviceId'] : '';
     $token = isset($data['token']) ? (string)$data['token'] : '';
-    $ts = isset($data['ts']) && is_numeric($data['ts']) ? (float)$data['ts'] : null;
+    // OJO: ts NO es un timestamp numérico — es la fecha ya formateada como
+    // texto que manda el cliente (saveToStockHistorial en
+    // src/stock-empleados.js, vía Date.toLocaleString('es-ES', ...), p.ej.
+    // "21/09/2026, 16:17"), la misma que se guarda y se muestra tal cual en
+    // "Última lista — <ts>". Antes esto exigía is_numeric($data['ts']) y
+    // por tanto SIEMPRE fallaba la validación con esa fecha en texto —
+    // ningún guardado de stock por dispositivo de confianza llegaba nunca a
+    // Firebase (solo se quedaba en el localStorage de ese móvil/tablet), y
+    // encima el fallo hacía que el cliente borrara las credenciales del
+    // dispositivo de confianza en cada intento.
+    $ts = isset($data['ts']) && is_string($data['ts']) && $data['ts'] !== '' ? substr($data['ts'], 0, 100) : null;
     $lines = isset($data['lines']) && is_array($data['lines']) ? $data['lines'] : null;
     if ($deviceId === '' || $token === '' || $ts === null || $lines === null || strlen($deviceId) > 100 || strlen($token) > 200 || !preg_match('/^[a-zA-Z0-9_-]+$/', $deviceId)) {
         dpf_bimba_fallo($fp, $log, $now);

@@ -784,6 +784,10 @@ function exportStockPDF() {
 }
 function closeStockResultModal() {
   document.getElementById('stock-result-modal').style.display = 'none';
+  // OJO: no tocar document.body.style.overflow aquí — sigue habiendo debajo
+  // el overlay de toda la página de stock (#stock-overlay), que es quien
+  // controla ese bloqueo (openStockOverlay/closeStockOverlay). Restaurarlo
+  // aquí lo reactivaría de golpe con #stock-overlay todavía abierto detrás.
   _stockSelections = {};
   _stockUnits = {};
   _stockChecks = {};
