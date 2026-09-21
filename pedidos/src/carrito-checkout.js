@@ -1358,12 +1358,19 @@ async function _submitOrderInner() {
     // ingredientes, y el queso siempre el último de los extras con
     // precio (antes de gratinado) — igual que ya hacían Al Gusto/Bomba
     // más arriba (custItems) y Comandas.
+    // Ingredientes quitados — siempre gratis, van primero para que cocina
+    // los lea antes que los añadidos ("Sin X" antes que "Extra Y").
+    (c.quitados || []).forEach(ing => {
+      extras.push({ name: 'Sin ' + ing, price: 0 });
+    });
     (c.salsasExtra || []).forEach(salsa => {
       extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
     });
-    (c.ingredientesExtra || []).forEach(ing => {
-      const precioIng = EXTRAS_ING_PRECIO1.includes(ing) ? 1.00 : EXTRAS_ING_PRECIO07.includes(ing) ? 1.00 : 0;
-      extras.push({ name: 'Extra ' + ing, price: precioIng });
+    // Precio de los ingredientes extra con la regla de "cambio" (2 gratis
+    // si además se ha quitado algo, quesito 0,20€) — ver
+    // _precioIngredientesExtraConCambios en nucleo-compartido.js.
+    _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(({ nombre, precio }) => {
+      extras.push({ name: 'Extra ' + nombre, price: precio });
     });
     if (c.queso) extras.push({ name: 'Extra Queso', price: 1.00 });
     // El gratinado siempre va el último, sea cual sea el resto de extras.

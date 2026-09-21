@@ -1118,9 +1118,13 @@ function renderCart() {
       : c.base === 'mantequilla' ? (_extItem.name + ' (Mantequilla)')
       : _extItem.name;
     const extras = [];
+    (c.quitados || []).forEach(ing => {
+      extras.push('🚫 Sin ' + ing);
+    });
     if (c.queso) extras.push('+ Extra Queso +1,00€');
-    (c.ingredientesExtra || []).forEach(ing => {
-      extras.push('+ Extra ' + ing + ' +1,00€');
+    _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(function (r) {
+      const etiqueta = r.precio === 0 ? 'gratis · cambio' : r.precio.toFixed(2).replace('.', ',') + '€' + (r.precio === 0.20 ? ' · cambio' : '');
+      extras.push('+ Extra ' + r.nombre + ' +' + etiqueta);
     });
     (c.salsasExtra || []).forEach(salsa => {
       const _precioSalsa = (typeof precioSalsaExtra === 'function') ? precioSalsaExtra(salsa) : 1.00;

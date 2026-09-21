@@ -903,24 +903,96 @@ function _precioRealExtra($nombre) {
     }
     return null;
 }
+// ── ¿Es un nombre de ingrediente extra reconocido? Mismo catálogo que
+// EXTRAS_ING_PRECIO1/07 en src/nucleo-compartido.js — se usa para decidir
+// qué entradas "Extra <x>" entran en el recálculo en grupo de más abajo
+// (_precioIngredientesExtraConCambios), no para variar el precio entre las
+// dos listas (todas cuestan 1,00€ ahora).
+function _esIngredienteExtraValido($ing) {
+    $precio1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
+    $precio07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+    return in_array($ing, $precio1, true) || in_array($ing, $precio07, true);
+}
+// ── Precio real de los ingredientes "Extra <x>" de un mismo producto,
+// aplicando la regla de "cambio" (quitar ingredientes, función nueva del
+// modal de extras): quitar nunca cuesta, y si además se añade un
+// ingrediente extra de la lista de arriba a la vez (sustitución), los 2
+// primeros cambios de la línea son gratis — salvo que el añadido sea
+// queso, que cuesta 0,20€ en vez de gratis. El resto va al precio normal
+// (1,00€). El orden que decide qué añadido ocupa cada cupo de cambio
+// gratis es alfabético, igual que en
+// src/nucleo-compartido.js:_precioIngredientesExtraConCambios — si se
+// cambia una regla hay que actualizar la otra, o dejan de coincidir y todo
+// pedido con cambios se "corrige" mal.
+function _precioIngredientesExtraConCambios($removedCount, $ingredientesAñadidos) {
+    $added = array_values(array_unique($ingredientesAñadidos));
+    // El queso va primero en el orden — así ocupa un hueco de cambio antes
+    // que otro ingrediente cualquiera, en vez de quedar fuera por
+    // casualidad alfabética cuando hay más añadidos que huecos gratis.
+    // Mismo criterio que en src/nucleo-compartido.js.
+    usort($added, function ($a, $b) {
+        $aq = mb_stripos($a, 'queso') !== false;
+        $bq = mb_stripos($b, 'queso') !== false;
+        if ($aq !== $bq) return $aq ? -1 : 1;
+        return strcmp($a, $b);
+    });
+    $freeSwapCount = min($removedCount, count($added), 2);
+    $out = [];
+    foreach ($added as $idx => $ing) {
+        $esQueso = mb_stripos($ing, 'queso') !== false;
+        $out[$ing] = ($idx < $freeSwapCount) ? ($esQueso ? 0.20 : 0.00) : 1.00;
+    }
+    return $out;
+}
 // ── Corrige (no solo avisa) el precio de los "extras" de pago — antes solo
 // se acotaba cada precio a [0,999] sin comprobar que fuera el real, así que
 // un pedido podía llevar "Extra Queso"/"Extra Bacon"/etc. marcados en el
 // ticket de cocina pagando lo que el cliente quisiera por ellos (hallazgo
 // de la auditoría de seguridad pre-apertura — el hueco de precio más caro
 // de los encontrados, porque pasaba en cualquier pedido con extras).
+//
+// Los ingredientes quitados ("Sin <x>") siempre valen 0 — quitar nunca
+// cuesta, sea cual sea el nombre. Los "Extra <ingrediente>" reconocidos no
+// se corrigen uno a uno: dependen del conjunto completo de quitados/
+// añadidos de la MISMA línea (regla de "cambio", ver
+// _precioIngredientesExtraConCambios arriba), así que se recalculan todos
+// juntos antes de comparar cada uno con lo declarado.
 function corregirPreciosExtras($items) {
     $avisos = [];
     $deltaTotal = 0;
     $corregidos = array_map(function ($it) use (&$avisos, &$deltaTotal) {
         if (!is_array($it['extras'] ?? null)) return $it;
         $qty = isset($it['qty']) && $it['qty'] > 0 ? (float)$it['qty'] : 1;
-        $it['extras'] = array_map(function ($e) use ($it, $qty, &$avisos, &$deltaTotal) {
+
+        $removedCount = 0;
+        $ingredientesExtra = [];
+        foreach ($it['extras'] as $e) {
+            if (!is_array($e) || !isset($e['name'])) continue;
+            $n = (string)$e['name'];
+            if (strpos($n, 'Sin ') === 0) {
+                $removedCount++;
+            } elseif (strpos($n, 'Extra ') === 0 && strpos($n, 'Extra salsa ') !== 0 && $n !== 'Extra Queso') {
+                $ing = substr($n, strlen('Extra '));
+                if (_esIngredienteExtraValido($ing)) $ingredientesExtra[] = $ing;
+            }
+        }
+        $preciosConCambios = _precioIngredientesExtraConCambios($removedCount, $ingredientesExtra);
+
+        $it['extras'] = array_map(function ($e) use ($it, $qty, $preciosConCambios, &$avisos, &$deltaTotal) {
             if (!is_array($e) || !isset($e['name'])) return $e;
-            $precioReal = _precioRealExtra($e['name']);
+            $n = (string)$e['name'];
             $precioDeclarado = isset($e['price']) ? (float)$e['price'] : 0;
+
+            if (strpos($n, 'Sin ') === 0) {
+                $precioReal = 0.00;
+            } else {
+                $esIngExtra = strpos($n, 'Extra ') === 0 && strpos($n, 'Extra salsa ') !== 0 && $n !== 'Extra Queso';
+                $ing = $esIngExtra ? substr($n, strlen('Extra ')) : null;
+                $precioReal = ($esIngExtra && isset($preciosConCambios[$ing])) ? $preciosConCambios[$ing] : _precioRealExtra($n);
+            }
+
             if ($precioReal !== null && abs($precioDeclarado - $precioReal) > 0.01) {
-                $avisos[] = sprintf('%s (%s): enviado %.2f€, corregido a %.2f€', $it['name'] ?? '?', $e['name'], $precioDeclarado, $precioReal);
+                $avisos[] = sprintf('%s (%s): enviado %.2f€, corregido a %.2f€', $it['name'] ?? '?', $n, $precioDeclarado, $precioReal);
                 $deltaTotal += ($precioReal - $precioDeclarado) * $qty;
                 $e['price'] = $precioReal;
             }

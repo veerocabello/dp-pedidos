@@ -131,6 +131,58 @@ const EXTRAS_SALSA_PRECIO = 1.00;
 // Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
 let _extrasSalsas = {}; // { nombre: true/false }
+let _extrasQuitados = {}; // { nombre: true/false }
+
+// ── Ingredientes que se pueden quitar, por patata — Carbonara y Boloñesa
+// llevan la salsa ya mezclada (no se puede quitar nada), Patata Simple no
+// tiene ingredientes de verdad, Cheddar-Bacon/Boniato Bacon tienen su
+// propio modal, y Al Gusto/Bomba ya se construyen desde cero. En la 4
+// Quesos solo se puede quitar el Roquefort (los otros 3 quesos son el
+// producto en sí). Nombres iguales a los de EXTRAS_ING_PRECIO1/07/SALSAS
+// cuando el ingrediente también se puede volver a añadir, para que la
+// regla de "cambio" (ver _precioIngredientesExtraConCambios) reconozca la
+// sustitución.
+const QUITABLES_POR_PRODUCTO = {
+  2: ['Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Champiñón', 'Tomate Natural'],
+  3: ['Carne Picada', 'Remolacha', 'Zanahoria', 'Maíz', 'Aceitunas'],
+  6: ['Jamón York', 'Aceitunas', 'Maíz', 'Piña', 'Queso Mozzarella'],
+  7: ['Carne Kebab', 'Maíz', 'Aceitunas', 'Cebolla'],
+  8: ['Roquefort'],
+  9: ['Jamón York', 'Atún', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Champiñón'],
+  10: ['Jamón York', 'Bacon', 'Carne Kebab', 'Carne Picada'],
+  11: ['Jamón York', 'Huevo', 'Pollo', 'Queso Mozzarella'],
+  12: ['Pollo', 'Bacon', 'Queso Mozzarella'],
+  13: ['Atún', 'Gambas', 'Tronquitos de Mar', 'Maíz', 'Aceitunas', 'Zanahoria'],
+  14: ['Cebolla', 'Carne Pulled Pork', 'Queso Mozzarella'],
+};
+function quitablesDeProducto(id) { return QUITABLES_POR_PRODUCTO[id] || []; }
+
+// ── Precio de los ingredientes "Extra <x>" añadidos, aplicando la regla de
+// "cambio": quitar nunca cuesta, pero si además se añade un ingrediente
+// extra a la vez (sustitución), los 2 primeros cambios de la línea son
+// gratis — salvo que el ingrediente añadido sea queso, que en ese caso
+// cuesta 0,20€ en vez de ser gratis. A partir del 3er cambio, o si se
+// añade sin haber quitado nada, va al precio normal (1,00€). El orden que
+// decide qué añadido ocupa cada cupo de cambio gratis es alfabético — fijo
+// e igual en el servidor (guardar-pedido.php:_precioIngredientesExtraConCambios),
+// para que nunca desincronicen.
+function _precioIngredientesExtraConCambios(quitadosList, ingredientesExtraList) {
+  const removedCount = (quitadosList || []).length;
+  // El queso va primero en el orden — así ocupa un hueco de cambio antes
+  // que otro ingrediente cualquiera, en vez de quedar fuera por casualidad
+  // alfabética cuando hay más añadidos que huecos gratis.
+  const added = (ingredientesExtraList || []).slice().sort((a, b) => {
+    const aq = /queso/i.test(a), bq = /queso/i.test(b);
+    if (aq !== bq) return aq ? -1 : 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  const freeSwapCount = Math.min(removedCount, added.length, 2);
+  return added.map((ing, idx) => {
+    const esQueso = /queso/i.test(ing);
+    const precio = idx < freeSwapCount ? (esQueso ? 0.20 : 0) : 1.00;
+    return { nombre: ing, precio };
+  });
+}
 function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
@@ -140,6 +192,7 @@ function openExtrasModal(itemId) {
   _extrasGratinado = false;
   _extrasIngredientes = {};
   _extrasSalsas = {};
+  _extrasQuitados = {};
   _extrasBase = 'aceite';
   const item = MENU.find(m => m.id == itemId);
   if (!item) return;
@@ -154,6 +207,20 @@ function openExtrasModal(itemId) {
   // personalizador de Al Gusto/Bomba más abajo en esta misma página.
   if (itemId === 1) {
     optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px;margin-bottom:6px\">BASE</div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">\n        <button type=\"button\" class=\"chip selected\" id=\"extra-base-aceite\" onclick=\"setExtrasBase('aceite')\">🫒 Aceite de oliva</button>\n        <button type=\"button\" class=\"chip\" id=\"extra-base-mantequilla\" onclick=\"setExtrasBase('mantequilla')\">🧈 Mantequilla</button>\n      </div>";
+  }
+  // Quitar ingredientes — solo en las patatas que lo permiten (ver
+  // QUITABLES_POR_PRODUCTO). Quitar nunca cuesta; si además se añade un
+  // ingrediente extra de la lista de abajo, entra en juego la regla de
+  // "cambio" de _precioIngredientesExtraConCambios (2 gratis, quesito
+  // 0,20€) — ver updateExtrasTotal() y getExtrasItemPrice().
+  const quitablesList = QUITABLES_POR_PRODUCTO[itemId] || [];
+  if (quitablesList.length) {
+    optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#c0392b;letter-spacing:.5px;margin-bottom:6px\">🚫 QUITAR INGREDIENTES <span style=\"font-weight:500;text-transform:none;letter-spacing:0;color:#8A6A4E\">(gratis)</span></div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">";
+    quitablesList.forEach(ing => {
+      const qid = 'extra-quitar-' + ing.replace(/[^a-z0-9]/gi, '_');
+      optionsHtml += "<button type=\"button\" class=\"chip\" id=\"".concat(qid, "\" onclick=\"toggleQuitarIng('").concat(ing.replace(/'/g, "\'"), "')\">").concat(ing, "</button>");
+    });
+    optionsHtml += "</div>";
   }
   if (!onlySoloGratinado) {
     optionsHtml += "\n      <label style=\"display:flex;align-items:center;justify-content:space-between;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:12px 14px;cursor:pointer\" onclick=\"toggleExtra('queso')\">\n        <div>\n          <div style=\"font-weight:700;font-size:15px;color:#2A1506\">&#x1F9C0; A\xF1adir queso mozzarella</div>\n          <div style=\"font-size:12px;color:#8A6A4E;margin-top:2px\">+1,00 €</div>\n        </div>\n        <div id=\"extra-check-queso\" style=\"width:24px;height:24px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s\"></div>\n      </label>";
@@ -184,11 +251,45 @@ function openExtrasModal(itemId) {
   });
   optionsHtml += "</div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
+  _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
   document.getElementById('extras-modal').style.display = 'block';
   document.body.style.overflow = 'hidden';
 }
+// Sin queso no hay nada que gratinar. Solo aplica a las patatas que ya lo
+// llevan incluido (EXTRAS_SOLO_GRATINADO) — en esas, el queso se puede
+// quitar de QUITABLES_POR_PRODUCTO; si se vuelve a añadir por la lista de
+// ingredientes extra (Queso Mozzarella), vuelve a haber queso.
+function _hayQuesoDisponible() {
+  if (!EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) return true;
+  const quesoQuitado = !!_extrasQuitados['Queso Mozzarella'];
+  const quesoReanadido = !!_extrasIngredientes['Queso Mozzarella'];
+  return !quesoQuitado || quesoReanadido;
+}
+function _actualizarDisponibilidadGratinado() {
+  const disponible = _hayQuesoDisponible();
+  if (!disponible && _extrasGratinado) {
+    _extrasGratinado = false;
+    updateExtraCheckUI('gratinado', false);
+  }
+  const check = document.getElementById('extra-check-gratinado');
+  const lbl = check ? check.closest('label') : null;
+  if (lbl) {
+    lbl.style.opacity = disponible ? '' : '.55';
+    lbl.style.cursor = disponible ? 'pointer' : 'not-allowed';
+    lbl.style.pointerEvents = disponible ? '' : 'none';
+  }
+}
+function toggleQuitarIng(ing) {
+  _extrasQuitados[ing] = !_extrasQuitados[ing];
+  const qid = 'extra-quitar-' + ing.replace(/[^a-z0-9]/gi, '_');
+  const el = document.getElementById(qid);
+  if (el) el.classList.toggle('selected', !!_extrasQuitados[ing]);
+  _actualizarDisponibilidadGratinado();
+  updateExtrasTotal();
+}
 function toggleExtra(type) {
+  if (type === 'gratinado' && !_hayQuesoDisponible()) return;
   if (type === 'queso') {
     _extrasQueso = !_extrasQueso;
     // Si quita queso, quitar también gratinado si solo gratinado no aplica
@@ -230,6 +331,7 @@ function toggleExtraIng(ing) {
     lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
     lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
   }
+  _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
 }
 function toggleExtraSalsa(salsa) {
@@ -277,13 +379,9 @@ function updateExtrasTotal() {
   let total = item.price;
   if (_extrasQueso) total += 1.00;
   if (_extrasGratinado) total += 0.50;
-  Object.entries(_extrasIngredientes).forEach(_ref11 => {
-    let _ref12 = _slicedToArray(_ref11, 2),
-      ing = _ref12[0],
-      active = _ref12[1];
-    if (!active) return;
-    if (EXTRAS_ING_PRECIO1.includes(ing)) total += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) total += 1.00;
-  });
+  const quitadosList = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k);
+  const ingredientesList = Object.entries(_extrasIngredientes).filter(([, v]) => v).map(([k]) => k);
+  _precioIngredientesExtraConCambios(quitadosList, ingredientesList).forEach(({ precio }) => { total += precio; });
   Object.entries(_extrasSalsas).forEach(([nombre, active]) => { if (active) total += precioSalsaExtra(nombre); });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
 }
@@ -319,8 +417,9 @@ function confirmExtras() {
       k = _ref20s[0];
     return k;
   }).sort().join('|');
+  const quitadoKeys = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k).sort().join('|');
   const baseKey = (itemId === 1 && _extrasBase === 'mantequilla') ? 'Bmantequilla' : '';
-  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') + baseKey || 'BASE';
+  const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') + (quitadoKeys ? 'X' + quitadoKeys : '') + baseKey || 'BASE';
   const cartKey = 'ext:' + itemId + ':' + fingerprint;
   if (!extrasCart[cartKey]) {
     extrasCart[cartKey] = {
@@ -347,6 +446,7 @@ function confirmExtras() {
           k = _ref20b[0];
         return k;
       }),
+      quitados: Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k),
       key: cartKey,
       basePrice: item.price
     };
@@ -390,9 +490,14 @@ function duplicarExtrasItem(key) {
   }
   openExtrasModal(item.menuId);
   if (item.base === 'mantequilla') setExtrasBase('mantequilla');
+  // Quitados e ingredientesExtra van antes que el gratinado: si se quitó el
+  // queso incluido pero se volvió a añadir por la lista de ingredientes
+  // extra, toggleExtra('gratinado') necesita verlo ya así para no bloquear
+  // la casilla al reabrir (ver _hayQuesoDisponible).
+  (item.quitados || []).forEach(function (ing) { toggleQuitarIng(ing); });
+  (item.ingredientesExtra || []).forEach(function (ing) { toggleExtraIng(ing); });
   if (item.queso) toggleExtra('queso');
   if (item.gratinado) toggleExtra('gratinado');
-  (item.ingredientesExtra || []).forEach(function (ing) { toggleExtraIng(ing); });
   (item.salsasExtra || []).forEach(function (salsa) { toggleExtraSalsa(salsa); });
 }
 // Antes usaba siempre c.basePrice, fijado UNA sola vez al añadir el
@@ -409,9 +514,7 @@ function getExtrasItemPrice(c) {
   const _itemMenu = typeof MENU !== 'undefined' ? MENU.find(m => m.id == c.menuId) : null;
   const _base = _itemMenu ? _itemMenu.price : c.basePrice;
   let p = _base + (c.queso ? 1.00 : 0) + (c.gratinado ? 0.50 : 0);
-  (c.ingredientesExtra || []).forEach(ing => {
-    if (EXTRAS_ING_PRECIO1.includes(ing)) p += 1.00;else if (EXTRAS_ING_PRECIO07.includes(ing)) p += 1.00;
-  });
+  _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(({ precio }) => { p += precio; });
   (c.salsasExtra || []).forEach(nombre => { p += precioSalsaExtra(nombre); });
   return p;
 }
