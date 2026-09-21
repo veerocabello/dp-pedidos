@@ -477,12 +477,23 @@ function confirmExtras() {
   renderCart();
 }
 function removeExtrasItem(key) {
+  const snapshot = extrasCart[key] ? Object.assign({}, extrasCart[key]) : null;
   if (extrasCart[key]) {
     extrasCart[key].qty--;
     if (extrasCart[key].qty <= 0) delete extrasCart[key];
   }
   renderMenu();
   renderCart();
+  // Aviso con "Deshacer" — antes se quitaba al instante sin poder
+  // arrepentirse, y una patata con varios extras elegidos a mano se
+  // perdía entera con un toque sin querer.
+  if (snapshot && typeof showUndoToast === 'function') {
+    showUndoToast('Eliminado', function () {
+      extrasCart[key] = snapshot;
+      renderMenu();
+      renderCart();
+    });
+  }
 }
 // Igual que duplicarCustItem() (antifraude.js) pero para una patata normal
 // con extras de pago (Philadelphia, Carbonara, Carnívora...) — antes solo
@@ -1679,7 +1690,11 @@ function promoAddToCart(p, opts) {
   }
   promosCart[key].qty++;
   renderCart();
-  showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
+  // showToast('cart-toast', ...) nunca llegaba a salir — ese elemento no
+  // existe en el HTML (showToast() se limitaba a no hacer nada si no lo
+  // encuentra), así que este aviso llevaba tiempo sin mostrarse nunca.
+  // showCopyToast() sí crea su propio toast por JS si hace falta.
+  if (typeof showCopyToast === 'function') showCopyToast('🔥 ' + p.nombre + ' añadida');
 }
 
 // ── CONFIG (lectura) ──

@@ -477,12 +477,23 @@ function confirmExtras() {
   renderCart();
 }
 function removeExtrasItem(key) {
+  const snapshot = extrasCart[key] ? Object.assign({}, extrasCart[key]) : null;
   if (extrasCart[key]) {
     extrasCart[key].qty--;
     if (extrasCart[key].qty <= 0) delete extrasCart[key];
   }
   renderMenu();
   renderCart();
+  // Aviso con "Deshacer" — antes se quitaba al instante sin poder
+  // arrepentirse, y una patata con varios extras elegidos a mano se
+  // perdía entera con un toque sin querer.
+  if (snapshot && typeof showUndoToast === 'function') {
+    showUndoToast('Eliminado', function () {
+      extrasCart[key] = snapshot;
+      renderMenu();
+      renderCart();
+    });
+  }
 }
 // Igual que duplicarCustItem() (antifraude.js) pero para una patata normal
 // con extras de pago (Philadelphia, Carbonara, Carnívora...) — antes solo
@@ -1679,7 +1690,11 @@ function promoAddToCart(p, opts) {
   }
   promosCart[key].qty++;
   renderCart();
-  showToast('cart-toast', '🔥 ' + p.nombre + ' añadida');
+  // showToast('cart-toast', ...) nunca llegaba a salir — ese elemento no
+  // existe en el HTML (showToast() se limitaba a no hacer nada si no lo
+  // encuentra), así que este aviso llevaba tiempo sin mostrarse nunca.
+  // showCopyToast() sí crea su propio toast por JS si hace falta.
+  if (typeof showCopyToast === 'function') showCopyToast('🔥 ' + p.nombre + ' añadida');
 }
 
 // ── CONFIG (lectura) ──
@@ -5465,6 +5480,30 @@ function showCopyToast(msg) {
     t.style.opacity = "0";
   }, 1800);
 }
+// Toast con botón de "Deshacer" — mismo patrón que showCopyToast(), pero
+// con una acción y más tiempo visible (5s en vez de 1,8s) para dar tiempo
+// real a reaccionar. Se usa al borrar una línea del carrito con extras o
+// personalizada (antes se borraba al instante sin confirmar ni poder
+// arrepentirse — la única acción "destructiva" de todo el flujo de pedido
+// sin ningún tipo de protección).
+function showUndoToast(msg, alDeshacer) {
+  var t = document.getElementById('undo-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'undo-toast';
+    t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#3D1F0D;color:#FFF8EE;padding:12px 14px 12px 20px;border-radius:14px;font-size:14px;font-weight:600;font-family:DM Sans,sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.25);display:flex;align-items:center;gap:16px;white-space:nowrap;opacity:0;transition:opacity .2s;max-width:92vw';
+    document.body.appendChild(t);
+  }
+  clearTimeout(t._timer);
+  t.innerHTML = '<span>' + msg + '</span><button type="button" id="undo-toast-btn" style="background:none;border:none;color:#F4C430;font-weight:800;font-size:13.5px;cursor:pointer;padding:0;font-family:DM Sans,sans-serif">Deshacer</button>';
+  document.getElementById('undo-toast-btn').onclick = function () {
+    clearTimeout(t._timer);
+    t.style.opacity = '0';
+    if (typeof alDeshacer === 'function') alDeshacer();
+  };
+  t.style.opacity = '1';
+  t._timer = setTimeout(function () { t.style.opacity = '0'; }, 5000);
+}
 function copiarTexto(text, mensajeExito) {
   function onOk() { showCopyToast(mensajeExito || "✅ Copiado"); }
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -6055,10 +6094,18 @@ function _restaurarCarritoDeStorage() {
     const data = JSON.parse(raw);
     if (!data || typeof data !== 'object') { _borrarCarritoDeStorage(); return; }
     if (!data.ts || (Date.now() - data.ts) > CART_STORAGE_MAX_EDAD_MS) { _borrarCarritoDeStorage(); return; }
-    if (data.cart && typeof data.cart === 'object') Object.assign(cart, data.cart);
-    if (data.custCart && typeof data.custCart === 'object') Object.assign(custCart, data.custCart);
-    if (data.extrasCart && typeof data.extrasCart === 'object') Object.assign(extrasCart, data.extrasCart);
-    if (data.promosCart && typeof data.promosCart === 'object') Object.assign(promosCart, data.promosCart);
+    let huboAlgo = false;
+    if (data.cart && typeof data.cart === 'object' && Object.keys(data.cart).length) { Object.assign(cart, data.cart); huboAlgo = true; }
+    if (data.custCart && typeof data.custCart === 'object' && Object.keys(data.custCart).length) { Object.assign(custCart, data.custCart); huboAlgo = true; }
+    if (data.extrasCart && typeof data.extrasCart === 'object' && Object.keys(data.extrasCart).length) { Object.assign(extrasCart, data.extrasCart); huboAlgo = true; }
+    if (data.promosCart && typeof data.promosCart === 'object' && Object.keys(data.promosCart).length) { Object.assign(promosCart, data.promosCart); huboAlgo = true; }
+    // Avisar de que el carrito se ha recuperado solo — sin esto, un carrito
+    // que reaparece de la nada tras recargar podía resultar raro ("¿esto lo
+    // había puesto yo?"). setTimeout corto: deja que renderCart() termine
+    // de pintar la página antes de mostrar el aviso encima.
+    if (huboAlgo && typeof showCopyToast === 'function') {
+      setTimeout(function () { showCopyToast('↩️ Hemos recuperado tu pedido anterior'); }, 300);
+    }
   } catch (e) { _borrarCarritoDeStorage(); }
 }
 
@@ -9413,9 +9460,22 @@ function updateCustProgress() {
   }
 }
 function removeCustItem(key) {
+  const snapshot = custCart[key] ? Object.assign({}, custCart[key]) : null;
   delete custCart[key];
   renderMenu();
   renderCart();
+  // Aviso con "Deshacer" — antes se borraba al instante sin poder
+  // arrepentirse, y una Al Gusto/Bomba con varios ingredientes elegidos a
+  // mano se perdía entera con un toque sin querer.
+  if (snapshot && typeof showUndoToast === 'function') {
+    showUndoToast('Eliminado', function () {
+      if (!custCart[key]) {
+        custCart[key] = snapshot;
+        renderMenu();
+        renderCart();
+      }
+    });
+  }
 }
 // Abre el personalizador YA relleno con las salsas/ingredientes/extras de
 // una línea que ya está en el carrito — para pedir una segunda patata

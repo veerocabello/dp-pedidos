@@ -965,9 +965,22 @@ function updateCustProgress() {
   }
 }
 function removeCustItem(key) {
+  const snapshot = custCart[key] ? Object.assign({}, custCart[key]) : null;
   delete custCart[key];
   renderMenu();
   renderCart();
+  // Aviso con "Deshacer" — antes se borraba al instante sin poder
+  // arrepentirse, y una Al Gusto/Bomba con varios ingredientes elegidos a
+  // mano se perdía entera con un toque sin querer.
+  if (snapshot && typeof showUndoToast === 'function') {
+    showUndoToast('Eliminado', function () {
+      if (!custCart[key]) {
+        custCart[key] = snapshot;
+        renderMenu();
+        renderCart();
+      }
+    });
+  }
 }
 // Abre el personalizador YA relleno con las salsas/ingredientes/extras de
 // una línea que ya está en el carrito — para pedir una segunda patata
