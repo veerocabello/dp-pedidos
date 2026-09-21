@@ -74,7 +74,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1789988235145">
+<link rel="stylesheet" href="css/style.min.css?v=1789996675019">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -514,7 +514,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
         </div>
         <div class="form-group">
           <label>Notas del pedido</label>
-          <textarea id="customer-notes" placeholder="" maxlength="300" oninput="_actualizarContadorNotas('customer-notes','notes-char-count')"></textarea>
+          <textarea id="customer-notes" placeholder="Alergias, quitar algún ingrediente..." maxlength="300" oninput="_actualizarContadorNotas('customer-notes','notes-char-count')"></textarea>
           <div id="notes-char-count" style="text-align:right;font-size:11px;color:var(--muted);margin-top:2px">300 caracteres restantes</div>
         </div>
 
@@ -1145,8 +1145,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789674000000" defer></script>
-<script src="js/app.js?v=1789988235145" defer></script>
-<script src="js/auth.js?v=1789988235145" defer></script>
+<script src="js/app.js?v=1789996675019" defer></script>
+<script src="js/auth.js?v=1789996675019" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar

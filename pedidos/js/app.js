@@ -77,7 +77,7 @@ Ven a recogerlo y paga en caja`,window.open("https://wa.me/?text="+encodeURIComp
       </div>
       <div class="form-group">
         <label>Notas del pedido</label>
-        <textarea id="drawer-customer-notes" placeholder="" maxlength="300" oninput="document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')">`).concat(escapeHtml(G),`</textarea>
+        <textarea id="drawer-customer-notes" placeholder="Alergias, quitar alg\xFAn ingrediente..." maxlength="300" oninput="document.getElementById('customer-notes').value=this.value;_actualizarContadorNotas('drawer-customer-notes','drawer-notes-char-count')">`).concat(escapeHtml(G),`</textarea>
         <div id="drawer-notes-char-count" style="text-align:right;font-size:11px;color:#8A6A4E;margin-top:2px">300 caracteres restantes</div>
       </div>
       `).concat(Q,`
