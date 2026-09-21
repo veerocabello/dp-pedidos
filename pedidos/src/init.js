@@ -12,6 +12,22 @@ initTabs();
 // ya se hace justo antes de confirmar un pedido normal.
 _restaurarCarritoDeStorage();
 if (typeof _limpiarItemsCarritoInvalidos === 'function') _limpiarItemsCarritoInvalidos();
+// Rellenar nombre/teléfono con los del último pedido de este mismo
+// dispositivo (dpf_customer_phone ya se guardaba desde hace tiempo para
+// la tarjeta de sellos, pero nunca se usaba para rellenar el formulario
+// en sí — un cliente que repite tenía que volver a escribir los dos cada
+// vez). Solo si el campo está vacío, nunca pisa algo que el cliente ya
+// haya escrito.
+(function _prefillDatosClienteGuardados() {
+  try {
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    const savedName = localStorage.getItem('dpf_customer_name');
+    const savedPhone = localStorage.getItem('dpf_customer_phone');
+    if (nameEl && !nameEl.value && savedName) nameEl.value = savedName;
+    if (phoneEl && !phoneEl.value && savedPhone) phoneEl.value = savedPhone;
+  } catch (e) {}
+})();
 renderMenu();
 renderPromos();
 renderCart();

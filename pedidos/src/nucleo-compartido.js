@@ -132,6 +132,12 @@ const EXTRAS_SALSA_PRECIO = 1.00;
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
 let _extrasSalsas = {}; // { nombre: true/false }
 let _extrasQuitados = {}; // { nombre: true/false }
+// Cuando el modal se abre para EDITAR una línea ya existente del carrito
+// (duplicarExtrasItem) en vez de para añadir una desde cero, aquí se
+// guarda la clave de esa línea — confirmExtras() la usa para SUSTITUIRLA
+// en vez de dejarla tal cual y sumar una línea nueva al lado. Ver
+// confirmExtras()/openExtrasModal()/closeExtrasModal()/duplicarExtrasItem().
+let _extrasEditandoKey = null;
 
 // ── Ingredientes que se pueden quitar, por patata — Carbonara y Boloñesa
 // llevan la salsa ya mezclada (no se puede quitar nada), Patata Simple no
@@ -187,6 +193,9 @@ function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
   if (em && em.parentElement !== document.body) document.body.appendChild(em);
+  // Se abre "desde cero" (no para editar) salvo que duplicarExtrasItem()
+  // lo marque justo después de esta llamada.
+  _extrasEditandoKey = null;
   _extrasCurrentId = itemId;
   _extrasQueso = false;
   _extrasGratinado = false;
@@ -389,6 +398,7 @@ function closeExtrasModal() {
   document.getElementById('extras-modal').style.display = 'none';
   document.body.style.overflow = '';
   _extrasCurrentId = null;
+  _extrasEditandoKey = null;
 }
 function confirmExtras() {
   if (isShopBlocked()) {
@@ -452,6 +462,16 @@ function confirmExtras() {
     };
   }
   extrasCart[cartKey].qty++;
+  // Si se abrió para EDITAR una línea ya existente (duplicarExtrasItem) y
+  // el resultado es distinto de la línea original, se resta 1 de la
+  // original en vez de dejarla tal cual — así "editar" sustituye la línea
+  // en vez de sumar una nueva al lado sin tocar la vieja. Si no ha
+  // cambiado nada (misma huella), cartKey === _extrasEditandoKey y no hay
+  // nada que restar: es sencillamente "pedir una más igual".
+  if (_extrasEditandoKey && _extrasEditandoKey !== cartKey && extrasCart[_extrasEditandoKey]) {
+    extrasCart[_extrasEditandoKey].qty--;
+    if (extrasCart[_extrasEditandoKey].qty <= 0) delete extrasCart[_extrasEditandoKey];
+  }
   closeExtrasModal();
   renderMenu();
   renderCart();
@@ -489,6 +509,7 @@ function duplicarExtrasItem(key) {
     return;
   }
   openExtrasModal(item.menuId);
+  _extrasEditandoKey = key;
   if (item.base === 'mantequilla') setExtrasBase('mantequilla');
   // Quitados e ingredientesExtra van antes que el gratinado: si se quitó el
   // queso incluido pero se volvió a añadir por la lista de ingredientes

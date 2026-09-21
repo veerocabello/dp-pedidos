@@ -767,7 +767,15 @@ let custSelSauces = [];
 let custSelIngredients = [];
 let custExtraQueso = false;
 let custExtraGratinado = false;
+// Cuando el modal se abre para EDITAR una línea ya existente del carrito
+// (duplicarCustItem) en vez de para añadir una desde cero, aquí se guarda
+// la clave de esa línea — confirmCustomizer() la usa para SUSTITUIRLA en
+// vez de dejarla tal cual y sumar una línea nueva al lado.
+let _custEditandoKey = null;
 function openCustomizer(itemId) {
+  // Se abre "desde cero" (no para editar) salvo que duplicarCustItem() lo
+  // marque justo después de esta llamada.
+  _custEditandoKey = null;
   const cm = document.getElementById('customizer-modal');
   if (cm && cm.parentElement !== document.body) document.body.appendChild(cm);
   custType = itemId === 15 ? 'algusto' : 'bomba';
@@ -794,6 +802,7 @@ function openCustomizer(itemId) {
   document.body.style.overflow = 'hidden';
 }
 function closeCustomizer() {
+  _custEditandoKey = null;
   document.getElementById('customizer-modal').classList.remove('open');
   document.body.style.overflow = '';
   // Restaurar posición de scroll — Safari no soporta behavior:'instant', usar scrollTo directamente
@@ -971,6 +980,7 @@ function duplicarCustItem(key) {
   const item = custCart[key];
   if (!item) return;
   openCustomizer(item.menuId);
+  _custEditandoKey = key;
   custSelSauces = [...item.sauces];
   custSelIngredients = [...item.ingredients];
   custExtraQueso = !!item.extraQueso;
@@ -1032,6 +1042,16 @@ function confirmCustomizer() {
     };
   }
   custCart[cartKey].qty++;
+  // Si se abrió para EDITAR una línea ya existente (duplicarCustItem) y el
+  // resultado es distinto de la línea original, se resta 1 de la original
+  // en vez de dejarla tal cual — así "editar" sustituye la línea en vez de
+  // sumar una nueva al lado sin tocar la vieja. Si no ha cambiado nada
+  // (misma huella), cartKey === _custEditandoKey y no hay nada que restar:
+  // es sencillamente "pedir una más igual".
+  if (_custEditandoKey && _custEditandoKey !== cartKey && custCart[_custEditandoKey]) {
+    custCart[_custEditandoKey].qty--;
+    if (custCart[_custEditandoKey].qty <= 0) delete custCart[_custEditandoKey];
+  }
   closeCustomizer();
   renderMenu();
   renderCart();

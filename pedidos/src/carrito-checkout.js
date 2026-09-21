@@ -1566,6 +1566,7 @@ async function _submitOrderInner() {
   window._pendingOrderData = {
     orderNum,
     slotTime: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || null),
+    name,
     phone,
     phoneClean,
     ticketData: ticketData,
@@ -1657,8 +1658,11 @@ async function _submitOrderInner() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
+  const { orderNum, slotTime, name, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
+  // Igual que el teléfono: se recuerda el nombre para que un cliente que
+  // repite pedido no tenga que volver a escribirlo cada vez.
+  try { if (name) localStorage.setItem('dpf_customer_name', name); } catch {}
   window._pendingOrderData = null;
   // El turno se confirma más abajo en el servidor (confirmarReservaSlot,
   // dentro del guardado del ticket) — ya no hace falta la marca de "turno

@@ -132,6 +132,12 @@ const EXTRAS_SALSA_PRECIO = 1.00;
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
 let _extrasSalsas = {}; // { nombre: true/false }
 let _extrasQuitados = {}; // { nombre: true/false }
+// Cuando el modal se abre para EDITAR una línea ya existente del carrito
+// (duplicarExtrasItem) en vez de para añadir una desde cero, aquí se
+// guarda la clave de esa línea — confirmExtras() la usa para SUSTITUIRLA
+// en vez de dejarla tal cual y sumar una línea nueva al lado. Ver
+// confirmExtras()/openExtrasModal()/closeExtrasModal()/duplicarExtrasItem().
+let _extrasEditandoKey = null;
 
 // ── Ingredientes que se pueden quitar, por patata — Carbonara y Boloñesa
 // llevan la salsa ya mezclada (no se puede quitar nada), Patata Simple no
@@ -187,6 +193,9 @@ function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
   if (em && em.parentElement !== document.body) document.body.appendChild(em);
+  // Se abre "desde cero" (no para editar) salvo que duplicarExtrasItem()
+  // lo marque justo después de esta llamada.
+  _extrasEditandoKey = null;
   _extrasCurrentId = itemId;
   _extrasQueso = false;
   _extrasGratinado = false;
@@ -389,6 +398,7 @@ function closeExtrasModal() {
   document.getElementById('extras-modal').style.display = 'none';
   document.body.style.overflow = '';
   _extrasCurrentId = null;
+  _extrasEditandoKey = null;
 }
 function confirmExtras() {
   if (isShopBlocked()) {
@@ -452,6 +462,16 @@ function confirmExtras() {
     };
   }
   extrasCart[cartKey].qty++;
+  // Si se abrió para EDITAR una línea ya existente (duplicarExtrasItem) y
+  // el resultado es distinto de la línea original, se resta 1 de la
+  // original en vez de dejarla tal cual — así "editar" sustituye la línea
+  // en vez de sumar una nueva al lado sin tocar la vieja. Si no ha
+  // cambiado nada (misma huella), cartKey === _extrasEditandoKey y no hay
+  // nada que restar: es sencillamente "pedir una más igual".
+  if (_extrasEditandoKey && _extrasEditandoKey !== cartKey && extrasCart[_extrasEditandoKey]) {
+    extrasCart[_extrasEditandoKey].qty--;
+    if (extrasCart[_extrasEditandoKey].qty <= 0) delete extrasCart[_extrasEditandoKey];
+  }
   closeExtrasModal();
   renderMenu();
   renderCart();
@@ -489,6 +509,7 @@ function duplicarExtrasItem(key) {
     return;
   }
   openExtrasModal(item.menuId);
+  _extrasEditandoKey = key;
   if (item.base === 'mantequilla') setExtrasBase('mantequilla');
   // Quitados e ingredientesExtra van antes que el gratinado: si se quitó el
   // queso incluido pero se volvió a añadir por la lista de ingredientes
@@ -6098,7 +6119,7 @@ function renderCart() {
     // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
     // el prefijo "Extra salsa " — no es un extra de pago.
     const details = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
-    return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Duplicar para pedir otra con distintas salsas/ingredientes\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
+    return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Editar salsas/ingredientes (si tienes más de una, la separa en otra línea)\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
     const price = getExtrasItemPrice(c);
@@ -6133,7 +6154,7 @@ function renderCart() {
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
     if (c.gratinado) extras.push('+ Gratinado +0,50€');
-    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="duplicarExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Duplicar para pedir otra con distintos extras" style="color:#8A6A4E">&#128203;</button>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
+    return '<div class="cart-line" style="flex-wrap:wrap">' + '<span class="cart-line-name" style="width:100%">' + itemName + (extras.length ? '<span style="font-size:11px;color:#8A6A4E;font-weight:400;display:block">' + extras.join(' · ') + '</span>' : '') + '</span>' + '<span class="cart-line-qty">x' + c.qty + '</span>' + '<span class="cart-line-price">' + subtotal.toFixed(2) + ' €</span>' + '<button class="cart-remove" onclick="duplicarExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Editar extras (si tienes más de una, la separa en otra línea)" style="color:#8A6A4E">&#128203;</button>' + '<button class="cart-remove" onclick="removeExtrasItem(\'' + c.key.replace(/'/g, "\\'") + '\')" title="Quitar">&#128465;</button>' + '</div>';
   }).join('');
   const promoLinesHtml = promoLines.map(c => {
     const p = promosLoad().find(x => x.id === c.promoId);
@@ -7977,6 +7998,7 @@ async function _submitOrderInner() {
   window._pendingOrderData = {
     orderNum,
     slotTime: needsSlot ? selectedSlot : (_horaTiendaAsignadaSubmit || null),
+    name,
     phone,
     phoneClean,
     ticketData: ticketData,
@@ -8068,8 +8090,11 @@ async function _submitOrderInner() {
 // ── Finalizar pedido tras verificación SMS ──────────────────
 async function _finalizarPedido() {
   if (!window._pendingOrderData) return;
-  const { orderNum, slotTime, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
+  const { orderNum, slotTime, name, phone, phoneClean, ticketData: _ticketDataParaFidelizacion, discountCode, smsToken, localCode } = window._pendingOrderData;
   try { if (phoneClean) localStorage.setItem('dpf_customer_phone', phoneClean); } catch {}
+  // Igual que el teléfono: se recuerda el nombre para que un cliente que
+  // repite pedido no tenga que volver a escribirlo cada vez.
+  try { if (name) localStorage.setItem('dpf_customer_name', name); } catch {}
   window._pendingOrderData = null;
   // El turno se confirma más abajo en el servidor (confirmarReservaSlot,
   // dentro del guardado del ticket) — ya no hace falta la marca de "turno
@@ -9190,7 +9215,15 @@ let custSelSauces = [];
 let custSelIngredients = [];
 let custExtraQueso = false;
 let custExtraGratinado = false;
+// Cuando el modal se abre para EDITAR una línea ya existente del carrito
+// (duplicarCustItem) en vez de para añadir una desde cero, aquí se guarda
+// la clave de esa línea — confirmCustomizer() la usa para SUSTITUIRLA en
+// vez de dejarla tal cual y sumar una línea nueva al lado.
+let _custEditandoKey = null;
 function openCustomizer(itemId) {
+  // Se abre "desde cero" (no para editar) salvo que duplicarCustItem() lo
+  // marque justo después de esta llamada.
+  _custEditandoKey = null;
   const cm = document.getElementById('customizer-modal');
   if (cm && cm.parentElement !== document.body) document.body.appendChild(cm);
   custType = itemId === 15 ? 'algusto' : 'bomba';
@@ -9217,6 +9250,7 @@ function openCustomizer(itemId) {
   document.body.style.overflow = 'hidden';
 }
 function closeCustomizer() {
+  _custEditandoKey = null;
   document.getElementById('customizer-modal').classList.remove('open');
   document.body.style.overflow = '';
   // Restaurar posición de scroll — Safari no soporta behavior:'instant', usar scrollTo directamente
@@ -9394,6 +9428,7 @@ function duplicarCustItem(key) {
   const item = custCart[key];
   if (!item) return;
   openCustomizer(item.menuId);
+  _custEditandoKey = key;
   custSelSauces = [...item.sauces];
   custSelIngredients = [...item.ingredients];
   custExtraQueso = !!item.extraQueso;
@@ -9455,6 +9490,16 @@ function confirmCustomizer() {
     };
   }
   custCart[cartKey].qty++;
+  // Si se abrió para EDITAR una línea ya existente (duplicarCustItem) y el
+  // resultado es distinto de la línea original, se resta 1 de la original
+  // en vez de dejarla tal cual — así "editar" sustituye la línea en vez de
+  // sumar una nueva al lado sin tocar la vieja. Si no ha cambiado nada
+  // (misma huella), cartKey === _custEditandoKey y no hay nada que restar:
+  // es sencillamente "pedir una más igual".
+  if (_custEditandoKey && _custEditandoKey !== cartKey && custCart[_custEditandoKey]) {
+    custCart[_custEditandoKey].qty--;
+    if (custCart[_custEditandoKey].qty <= 0) delete custCart[_custEditandoKey];
+  }
   closeCustomizer();
   renderMenu();
   renderCart();
@@ -9722,6 +9767,22 @@ initTabs();
 // ya se hace justo antes de confirmar un pedido normal.
 _restaurarCarritoDeStorage();
 if (typeof _limpiarItemsCarritoInvalidos === 'function') _limpiarItemsCarritoInvalidos();
+// Rellenar nombre/teléfono con los del último pedido de este mismo
+// dispositivo (dpf_customer_phone ya se guardaba desde hace tiempo para
+// la tarjeta de sellos, pero nunca se usaba para rellenar el formulario
+// en sí — un cliente que repite tenía que volver a escribir los dos cada
+// vez). Solo si el campo está vacío, nunca pisa algo que el cliente ya
+// haya escrito.
+(function _prefillDatosClienteGuardados() {
+  try {
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    const savedName = localStorage.getItem('dpf_customer_name');
+    const savedPhone = localStorage.getItem('dpf_customer_phone');
+    if (nameEl && !nameEl.value && savedName) nameEl.value = savedName;
+    if (phoneEl && !phoneEl.value && savedPhone) phoneEl.value = savedPhone;
+  } catch (e) {}
+})();
 renderMenu();
 renderPromos();
 renderCart();
