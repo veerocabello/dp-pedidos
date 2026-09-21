@@ -5996,7 +5996,53 @@ function renderUpsellDulce() {
     + '</div>';
 }
 
+// ── Persistir el carrito en localStorage ──────────────────────────────
+// Antes el carrito (cart/custCart/extrasCart/promosCart) solo vivía en
+// memoria: si la pestaña se recargaba por accidente (o el móvil la
+// recargaba solo, algo habitual dentro del navegador de Instagram), el
+// cliente perdía todo lo que llevaba pedido sin ningún aviso y tenía que
+// volver a empezar desde cero. Se guarda en cada renderCart() (que ya se
+// llama después de CUALQUIER cambio en los cuatro carritos, en más de 50
+// sitios distintos del código — enganchar aquí cubre todos sin tener que
+// tocar cada uno) y se restaura una sola vez al cargar la página, ver
+// _restaurarCarritoDeStorage() más abajo. Con caducidad corta (unas horas)
+// para que no reaparezca al día siguiente con precios/carta ya distintos
+// — CART_STORAGE_MAX_EDAD_MS más abajo.
+const CART_STORAGE_KEY = 'dpf_cart_actual';
+const CART_STORAGE_MAX_EDAD_MS = 6 * 60 * 60 * 1000; // 6h
+function _guardarCarritoEnStorage() {
+  try {
+    const vacio = Object.keys(cart).length === 0 && Object.keys(custCart).length === 0 && Object.keys(extrasCart).length === 0 && Object.keys(promosCart).length === 0;
+    if (vacio) {
+      localStorage.removeItem(CART_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ ts: Date.now(), cart, custCart, extrasCart, promosCart }));
+  } catch (e) {}
+}
+function _borrarCarritoDeStorage() {
+  try { localStorage.removeItem(CART_STORAGE_KEY); } catch (e) {}
+}
+// Se llama UNA vez al arrancar la página (init.js), antes del primer
+// renderCart() — de ahí que mute los objetos existentes (Object.assign)
+// en vez de reasignarlos: 'cart' es 'let' pero custCart/extrasCart/
+// promosCart son 'const', declarados en otros ficheros del mismo bundle.
+function _restaurarCarritoDeStorage() {
+  try {
+    const raw = localStorage.getItem(CART_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') { _borrarCarritoDeStorage(); return; }
+    if (!data.ts || (Date.now() - data.ts) > CART_STORAGE_MAX_EDAD_MS) { _borrarCarritoDeStorage(); return; }
+    if (data.cart && typeof data.cart === 'object') Object.assign(cart, data.cart);
+    if (data.custCart && typeof data.custCart === 'object') Object.assign(custCart, data.custCart);
+    if (data.extrasCart && typeof data.extrasCart === 'object') Object.assign(extrasCart, data.extrasCart);
+    if (data.promosCart && typeof data.promosCart === 'object') Object.assign(promosCart, data.promosCart);
+  } catch (e) { _borrarCarritoDeStorage(); }
+}
+
 function renderCart() {
+  _guardarCarritoEnStorage();
   const lines = Object.entries(cart);
   const custLines = Object.values(custCart).filter(c => c.qty > 0);
   const countEl = document.getElementById("cart-count");
@@ -8621,6 +8667,7 @@ function resetOrder() {
   Object.keys(custCart).forEach(k => delete custCart[k]);
   Object.keys(extrasCart).forEach(k => delete extrasCart[k]);
   Object.keys(promosCart).forEach(k => delete promosCart[k]);
+  if (typeof _borrarCarritoDeStorage === 'function') _borrarCarritoDeStorage();
   selectedSlot = null;
   document.getElementById("customer-name").value = "";
   document.getElementById("customer-phone").value = "";
@@ -9668,6 +9715,13 @@ async function resenaEnviarSolicitud() {
 // parte de admin-config.js que también se quedó ahí.
 initCatBlocks();
 initTabs();
+// Restaurar el carrito guardado (si lo hay y no ha caducado) ANTES del
+// primer renderMenu()/renderCart(), para que la primera pintura ya salga
+// completa — y quitar de él cualquier cosa que haya dejado de estar
+// disponible mientras tanto (agotado, oculto, promo caducada), igual que
+// ya se hace justo antes de confirmar un pedido normal.
+_restaurarCarritoDeStorage();
+if (typeof _limpiarItemsCarritoInvalidos === 'function') _limpiarItemsCarritoInvalidos();
 renderMenu();
 renderPromos();
 renderCart();

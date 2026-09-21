@@ -5,6 +5,13 @@
 // parte de admin-config.js que también se quedó ahí.
 initCatBlocks();
 initTabs();
+// Restaurar el carrito guardado (si lo hay y no ha caducado) ANTES del
+// primer renderMenu()/renderCart(), para que la primera pintura ya salga
+// completa — y quitar de él cualquier cosa que haya dejado de estar
+// disponible mientras tanto (agotado, oculto, promo caducada), igual que
+// ya se hace justo antes de confirmar un pedido normal.
+_restaurarCarritoDeStorage();
+if (typeof _limpiarItemsCarritoInvalidos === 'function') _limpiarItemsCarritoInvalidos();
 renderMenu();
 renderPromos();
 renderCart();

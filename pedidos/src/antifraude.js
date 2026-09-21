@@ -244,6 +244,7 @@ function resetOrder() {
   Object.keys(custCart).forEach(k => delete custCart[k]);
   Object.keys(extrasCart).forEach(k => delete extrasCart[k]);
   Object.keys(promosCart).forEach(k => delete promosCart[k]);
+  if (typeof _borrarCarritoDeStorage === 'function') _borrarCarritoDeStorage();
   selectedSlot = null;
   document.getElementById("customer-name").value = "";
   document.getElementById("customer-phone").value = "";
