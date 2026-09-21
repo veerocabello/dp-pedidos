@@ -1323,7 +1323,13 @@ async function _submitOrderInner() {
       // ingredientes/salsas de los permitidos pagando el mismo precio fijo.
       menuId: c.menuId,
       saucesCount: c.sauces.length,
-      ingredientsCount: c.ingredients.length
+      ingredientsCount: c.ingredients.length,
+      // Para que el servidor pueda comprobar el precio real (base + queso
+      // +1€ + gratinado +0,50€) sin tener que adivinarlo parseando el
+      // texto de "extras" — ver corregirPreciosCatalogo() en
+      // guardar-pedido.php.
+      extraQueso: !!c.extraQueso,
+      extraGratinado: !!c.extraGratinado
     };
   }).filter(Boolean);
   // Cada patata con extras (queso/gratinado/ingredientes) se desglosa en

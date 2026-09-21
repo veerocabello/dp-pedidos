@@ -1086,21 +1086,32 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
         if ((!empty($mi['soldout']) || !empty($mi['hidden'])) && $qty > 0) {
             $agotados[] = $nombre;
         }
-        // Patata Al Gusto (id 15) / Bomba (id 16): el comentario de esta
-        // función siempre dijo que estas dos NO se tocan aquí porque su
-        // precio depende de queso/gratinado extra (una lógica que no
-        // conviene duplicar en PHP) — pero el código de más abajo no tenía
-        // ninguna excepción real para ellas: al llevar un nombre de
-        // catálogo real ("Patata Al Gusto"), SÍ se colaban en la
-        // corrección de precio de más abajo, que compara contra
-        // $mi['price'] (el precio BASE, sin queso/gratinado) y "corregía"
-        // el subtotal recibido (que sí incluye esos extras) de vuelta al
-        // precio base — descontando en silencio el extra que cocina sí
-        // sirve, en el 100% de estos pedidos con queso o gratinado extra.
-        // Se restaura aquí la excepción que el comentario ya decía que
-        // existía: comprobarTotalSospechoso() más abajo sigue de red para
-        // un total global disparatado.
-        if (isset($mi['id']) && in_array($mi['id'], [15, 16], true)) return $it;
+        // Patata Al Gusto (id 15) / Bomba (id 16): precio base + queso
+        // extra (+1,00€) y/o gratinado (+0,50€) opcionales — el propio
+        // cliente manda esos dos flags (extraQueso/extraGratinado) junto
+        // con el nombre (ver custItems en carrito-checkout.js), así no
+        // hace falta adivinarlos parseando el texto de "extras". Antes
+        // esta rama simplemente se saltaba el precio entero (comentario
+        // histórico: "no conviene duplicar en PHP"), que era el único
+        // hueco de precio no cerrado de todo el flujo — alguien con
+        // conocimientos técnicos podía forjar el subtotal de una patata
+        // personalizada y pagar de menos. Los límites de ingredientes/
+        // salsas (Al Gusto: 1 salsa + 6 ingredientes · Bomba: 9 entre
+        // ambos) YA se comprobaban aparte, ver
+        // dpf_limitesPersonalizadorExcedidos() más abajo — esto solo
+        // cierra el precio.
+        if (isset($mi['id']) && in_array($mi['id'], [15, 16], true)) {
+            $precioBase = round((float)$mi['price'], 2);
+            $precioReal = round($precioBase + (!empty($it['extraQueso']) ? 1.00 : 0) + (!empty($it['extraGratinado']) ? 0.50 : 0), 2);
+            $precioEnviado = $subtotal / $qty;
+            if (abs($precioEnviado - $precioReal) > 0.02) {
+                $avisos[] = sprintf('%s (personalizada): enviado %.2f€, corregido a %.2f€', $nombre, $precioEnviado, $precioReal);
+                $subtotalCorregido = round($precioReal * $qty, 2);
+                $deltaTotal += ($subtotalCorregido - $subtotal);
+                $it['subtotal'] = $subtotalCorregido;
+            }
+            return $it;
+        }
         $precioReal = round((float)$mi['price'], 2);
         if ($ofertaProductoVigente && isset($mi['id']) && in_array($mi['id'], $oferta['productoIds'])) {
             $pctSeguro = max(0, min(100, (float)$oferta['pct']));
