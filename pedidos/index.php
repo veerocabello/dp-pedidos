@@ -22,7 +22,19 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="https://js-de.sentry-cdn.com/65861694625070a6ae9c01293f5017e8.min.js" crossorigin="anonymous" defer></script>
 <script defer>
   Sentry.onLoad(function () {
-    Sentry.init({ environment: 'cliente' });
+    Sentry.init({
+      environment: 'cliente',
+      // Ruido conocido, no fallos de esta web: el navegador interno de
+      // Instagram/Facebook en iOS tiene un bug de WebKit donde IndexedDB
+      // falla con "UnknownError: An internal error was encountered in the
+      // Indexed Database server" — le pasa a cualquier web (Firebase lo usa
+      // internamente para persistencia de sesión), no algo que se pueda
+      // arreglar desde aquí, y llenaba Sentry de errores idénticos de
+      // visitas desde el enlace de la bio de Instagram.
+      ignoreErrors: [
+        /Indexed Database server/i,
+      ],
+    });
   });
 </script>
 <meta name="apple-mobile-web-app-capable" content="yes">
