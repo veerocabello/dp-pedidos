@@ -211,9 +211,9 @@ function renderAdminProducts() {
       const visible = item.hidden ? 'off' : 'on';
       const soldout = item.soldout ? true : false;
       let tartaSep = '';
+      const isClasica = item.desc && item.desc.toLowerCase().indexOf('clásica') !== -1;
+      const isEspecial = item.desc && item.desc.toLowerCase().indexOf('especial') !== -1;
       if (cat === 'Tartas') {
-        const isClasica = item.desc && item.desc.toLowerCase().indexOf('clásica') !== -1;
-        const isEspecial = item.desc && item.desc.toLowerCase().indexOf('especial') !== -1;
         if (isClasica && lastTartaSub !== 'clasica') {
           lastTartaSub = 'clasica';
           tartaSep = '<div class="tarta-subsep tarta-subsep-clasica">CLÁSICAS</div>';
@@ -222,7 +222,18 @@ function renderAdminProducts() {
           tartaSep = '<div class="tarta-subsep tarta-subsep-especial">ESPECIALES</div>';
         }
       }
-      html += tartaSep + "\n      <div class=\"admin-product-row\" id=\"arow-".concat(item.id, "\"\n        ondragover=\"dragOver(event)\" ondrop=\"dragDrop(event,").concat(item.id, ")\" ondragleave=\"dragLeave(event)\">\n        <span class=\"drag-handle\" draggable=\"true\" title=\"Arrastrar para reordenar\"\n          ondragstart=\"dragStart(event,").concat(item.id, ")\">⠿</span>\n        <div class=\"aprod-info\">\n          <div class=\"aprod-name\" style=\"").concat(soldout ? 'text-decoration:line-through;color:#8A6A4E' : '', "\">").concat(formatNombreConBadgeNuevo(item.name), dietaryTagsHtml(item), "</div>\n          <div class=\"aprod-desc\">").concat(item.desc, "</div>\n          ").concat(soldout ? '<span class="soldout-badge">AGOTADO</span><label style="font-size:10.5px;font-weight:700;color:#8A6A4E;cursor:pointer;margin-left:8px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ' + (item.soldoutPermanente ? 'checked' : '') + ' onchange="toggleSoldoutPermanente(' + item.id + ')" style="margin:0">🔒 Permanente (si no, vuelve solo mañana)</label>' : '', "\n        \n        </div>\n        <span class=\"aprod-price\">").concat(item.price.toFixed(2), " €</span>\n        <div class=\"btn-row\">\n        <button class=\"admin-edit-btn\" onclick=\"toggleEditPanel(").concat(item.id, ")\">✏️ Editar</button>\n        <button class=\"aprod-toggle-text ").concat(soldout ? 'off' : 'on', "\" id=\"sold-").concat(item.id, "\" onclick=\"toggleSoldout(").concat(item.id, ")\" style=\"padding:5px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;background:").concat(soldout ? '#c0392b' : '#5ECC76', ";color:#fff\">").concat(soldout ? 'Agotado' : 'Disponible', "</button>\n        <button class=\"aprod-toggle-text ").concat(visible, "\" id=\"tog-").concat(item.id, "\" onclick=\"toggleProduct(").concat(item.id, ")\" style=\"padding:5px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;background:").concat(visible === 'on' ? '#5ECC76' : '#aaa', ";color:#fff\">").concat(visible === 'on' ? 'Visible' : 'Oculto', "</button>\n        </div>\n      </div>\n      <div id=\"edit-").concat(item.id, "\" style=\"display:none;flex-direction:column;background:rgba(244,196,48,0.08);border:1.5px solid #3D1F0D;border-radius:8px;padding:12px;margin:-4px 0 8px\">\n        <input type=\"text\" value=\"").concat(item.name.replace(/"/g, '&quot;'), "\" id=\"edit-name-").concat(item.id, "\" placeholder=\"Nombre\"\n          style=\"padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box\">\n        <input type=\"text\" value=\"").concat(item.desc.replace(/"/g, '&quot;'), "\" id=\"edit-desc-").concat(item.id, "\" placeholder=\"Descripci\xF3n\"\n          style=\"padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box\">\n        <input type=\"number\" value=\"").concat(item.price.toFixed(2), "\" id=\"edit-price-").concat(item.id, "\" step=\"0.10\" min=\"0\" placeholder=\"Precio (€)\"\n          style=\"padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box\">\n        ").concat(_tagCheckboxesHtml(item), "\n        <div style=\"display:flex\">\n          <button class=\"admin-save-btn\" onclick=\"saveProductEdit(").concat(item.id, ")\" style=\"flex:1\">✅ Guardar</button>\n          <button class=\"admin-save-btn\" onclick=\"confirmDeleteProduct(").concat(item.id, ",'").concat(item.name.replace(/'/g, "\\'"), "')\" style=\"background:#c0392b;flex:1\">🗑️ Eliminar</button>\n        </div>\n      </div>");
+      // Tartas: desc no es texto libre — un selector que solo deja elegir
+      // Clásica/Especial, para que la carta y este mismo panel nunca
+      // vuelvan a discrepar sobre en qué sección sale una tarta (ver
+      // newCatSelectChange/addProduct para el mismo criterio al crearla).
+      const descFieldHtml = cat === 'Tartas'
+        ? '<select id="edit-desc-' + item.id + '" style="padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box">'
+          + '<option value="">-- Elige clásica o especial --</option>'
+          + '<option value="Clásica · elaboración propia"' + (isClasica ? ' selected' : '') + '>Clásica · 3,40€</option>'
+          + '<option value="Especial · elaboración propia"' + (isEspecial ? ' selected' : '') + '>Especial · 3,90€</option>'
+          + '</select>'
+        : '<input type="text" value="' + item.desc.replace(/"/g, '&quot;') + '" id="edit-desc-' + item.id + '" placeholder="Descripción" style="padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box">';
+      html += tartaSep + "\n      <div class=\"admin-product-row\" id=\"arow-".concat(item.id, "\"\n        ondragover=\"dragOver(event)\" ondrop=\"dragDrop(event,").concat(item.id, ")\" ondragleave=\"dragLeave(event)\">\n        <span class=\"drag-handle\" draggable=\"true\" title=\"Arrastrar para reordenar\"\n          ondragstart=\"dragStart(event,").concat(item.id, ")\">⠿</span>\n        <div class=\"aprod-info\">\n          <div class=\"aprod-name\" style=\"").concat(soldout ? 'text-decoration:line-through;color:#8A6A4E' : '', "\">").concat(formatNombreConBadgeNuevo(item.name), dietaryTagsHtml(item), "</div>\n          <div class=\"aprod-desc\">").concat(item.desc, "</div>\n          ").concat(soldout ? '<span class="soldout-badge">AGOTADO</span><label style="font-size:10.5px;font-weight:700;color:#8A6A4E;cursor:pointer;margin-left:8px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" ' + (item.soldoutPermanente ? 'checked' : '') + ' onchange="toggleSoldoutPermanente(' + item.id + ')" style="margin:0">🔒 Permanente (si no, vuelve solo mañana)</label>' : '', "\n        \n        </div>\n        <span class=\"aprod-price\">").concat(item.price.toFixed(2), " €</span>\n        <div class=\"btn-row\">\n        <button class=\"admin-edit-btn\" onclick=\"toggleEditPanel(").concat(item.id, ")\">✏️ Editar</button>\n        <button class=\"aprod-toggle-text ").concat(soldout ? 'off' : 'on', "\" id=\"sold-").concat(item.id, "\" onclick=\"toggleSoldout(").concat(item.id, ")\" style=\"padding:5px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;background:").concat(soldout ? '#c0392b' : '#5ECC76', ";color:#fff\">").concat(soldout ? 'Agotado' : 'Disponible', "</button>\n        <button class=\"aprod-toggle-text ").concat(visible, "\" id=\"tog-").concat(item.id, "\" onclick=\"toggleProduct(").concat(item.id, ")\" style=\"padding:5px 12px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;background:").concat(visible === 'on' ? '#5ECC76' : '#aaa', ";color:#fff\">").concat(visible === 'on' ? 'Visible' : 'Oculto', "</button>\n        </div>\n      </div>\n      <div id=\"edit-").concat(item.id, "\" style=\"display:none;flex-direction:column;background:rgba(244,196,48,0.08);border:1.5px solid #3D1F0D;border-radius:8px;padding:12px;margin:-4px 0 8px\">\n        <input type=\"text\" value=\"").concat(item.name.replace(/"/g, '&quot;'), "\" id=\"edit-name-").concat(item.id, "\" placeholder=\"Nombre\"\n          style=\"padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box\">\n        ").concat(descFieldHtml, "\n        <input type=\"number\" value=\"").concat(item.price.toFixed(2), "\" id=\"edit-price-").concat(item.id, "\" step=\"0.10\" min=\"0\" placeholder=\"Precio (€)\"\n          style=\"padding:8px 10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#2A1506;width:100%;box-sizing:border-box\">\n        ").concat(_tagCheckboxesHtml(item), "\n        <div style=\"display:flex\">\n          <button class=\"admin-save-btn\" onclick=\"saveProductEdit(").concat(item.id, ")\" style=\"flex:1\">✅ Guardar</button>\n          <button class=\"admin-save-btn\" onclick=\"confirmDeleteProduct(").concat(item.id, ",'").concat(item.name.replace(/'/g, "\\'"), "')\" style=\"background:#c0392b;flex:1\">🗑️ Eliminar</button>\n        </div>\n      </div>");
     });
   });
   document.getElementById('admin-product-list').innerHTML = html;
@@ -304,7 +315,13 @@ function saveProductEdit(id) {
     }
     item.name = nuevoNombre;
   }
-  if (descEl) item.desc = descEl.value.trim();
+  if (descEl) {
+    if (item.cat === 'Tartas' && !descEl.value) {
+      alert('Elige si la tarta es Clásica o Especial');
+      return;
+    }
+    item.desc = descEl.value.trim();
+  }
   if (priceEl) {
     // parseFloat(val) || item.price solo protegía contra NaN/0 (0 es
     // falsy) — un precio negativo como -5 es truthy en JS y se colaba tal
@@ -560,24 +577,50 @@ async function _menuAgregarItemTransaccion(build, cat) {
 }
 function newCatSelectChange(sel) {
   const input = document.getElementById('new-cat-nombre');
-  if (!input) return;
-  if (sel.value === '__nueva__') {
-    input.style.display = 'block';
-    setTimeout(() => input.focus(), 100);
-  } else {
-    input.style.display = 'none';
-    input.value = '';
+  if (input) {
+    if (sel.value === '__nueva__') {
+      input.style.display = 'block';
+      setTimeout(() => input.focus(), 100);
+    } else {
+      input.style.display = 'none';
+      input.value = '';
+    }
+  }
+  // Tartas no lleva descripción libre: la carta y el propio panel de admin
+  // deciden si una tarta sale en "Clásicas" o "Especiales" mirando si su
+  // descripción contiene la palabra "clásica"/"especial" (ver renderMenu()
+  // en nucleo-compartido.js y renderAdminProducts() aquí mismo) — una
+  // tarta añadida sin ese texto exacto no entra en ninguna de las dos
+  // secciones de forma fiable (podía verse en un sitio distinto según la
+  // pantalla, como pasó con "Tarta de Queso ChocoBom"). El selector fuerza
+  // a elegir siempre uno de los dos y rellena la descripción él solo.
+  const descGroup = document.getElementById('new-desc-group');
+  const tipoGroup = document.getElementById('new-tarta-tipo-group');
+  if (descGroup && tipoGroup) {
+    const esTartas = sel.value === 'Tartas';
+    descGroup.style.display = esTartas ? 'none' : 'block';
+    tipoGroup.style.display = esTartas ? 'block' : 'none';
   }
 }
 async function addProduct() {
   const name = document.getElementById('new-name').value.trim();
-  const desc = document.getElementById('new-desc').value.trim();
+  let desc = document.getElementById('new-desc').value.trim();
   const price = parseFloat(document.getElementById('new-price').value);
   let cat = document.getElementById('new-cat').value;
   if (cat === '__nueva__') {
     const inputNueva = document.getElementById('new-cat-nombre');
     cat = inputNueva ? inputNueva.value.trim() : '';
     if (!cat) { alert('Escribe el nombre de la nueva categoría'); return; }
+  }
+  // Tartas: la descripción la decide el selector de Clásica/Especial (ver
+  // newCatSelectChange), no el campo de texto libre — sin esto, la carta
+  // no sabría en qué sección ponerla (ver comentario en
+  // newCatSelectChange).
+  if (cat === 'Tartas') {
+    const tipoSel = document.getElementById('new-tarta-tipo');
+    const tipo = tipoSel ? tipoSel.value : '';
+    if (!tipo) { alert('Elige si la tarta es Clásica o Especial'); return; }
+    desc = tipo === 'clasica' ? 'Clásica · elaboración propia' : 'Especial · elaboración propia';
   }
   if (!name || !cat || isNaN(price) || price < 0) {
     alert('Rellena nombre, categoría y precio (0 o mayor)');
@@ -603,6 +646,9 @@ async function addProduct() {
   document.getElementById('new-cat').value = '';
   const nci = document.getElementById('new-cat-nombre');
   if (nci) { nci.value = ''; nci.style.display = 'none'; }
+  const tipoSelReset = document.getElementById('new-tarta-tipo');
+  if (tipoSelReset) tipoSelReset.value = '';
+  newCatSelectChange(document.getElementById('new-cat'));
   showToast('prod-toast');
   logActivity("➕ Producto nuevo: \"".concat(name, "\" — ").concat(price.toFixed(2), " €"));
 }

@@ -182,8 +182,18 @@
           <h4><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--gold);color:var(--brown);font-size:14px;font-weight:900;margin-right:6px">+</span>Añadir producto nuevo</h4>
           <label class="admin-field-label">Nombre del producto</label>
           <input type="text" id="new-name" placeholder="Ej: Patata César" style="width:100%;margin-bottom:10px">
-          <label class="admin-field-label">Descripción</label>
-          <input type="text" id="new-desc" placeholder="Ej: Pollo, bacon, salsa césar" style="width:100%;margin-bottom:10px">
+          <div id="new-desc-group">
+            <label class="admin-field-label">Descripción</label>
+            <input type="text" id="new-desc" placeholder="Ej: Pollo, bacon, salsa césar" style="width:100%;margin-bottom:10px">
+          </div>
+          <div id="new-tarta-tipo-group" style="display:none">
+            <label class="admin-field-label">Tipo de tarta</label>
+            <select id="new-tarta-tipo" style="width:100%;margin-bottom:10px">
+              <option value="">-- Elige clásica o especial --</option>
+              <option value="clasica">Clásica · 3,40€</option>
+              <option value="especial">Especial · 3,90€</option>
+            </select>
+          </div>
           <div class="admin-form-grid" style="grid-template-columns:1fr 1fr">
             <div>
               <label class="admin-field-label">Precio</label>
