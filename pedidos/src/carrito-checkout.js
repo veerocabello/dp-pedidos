@@ -1299,7 +1299,10 @@ async function _submitOrderInner() {
     // Queso Mozzarella siempre al final (puede venir de ingredientes o como extra)
     const ingsWithoutQueso = c.ingredients.filter(i => i !== 'Queso Mozzarella' && i !== '4 Quesos');
     const quesosFromIng = c.ingredients.filter(i => i === 'Queso Mozzarella' || i === '4 Quesos');
-    const extras = [...c.sauces.map(s => 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
+    // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
+    // el prefijo "Extra salsa " — no es un extra de pago, es aviso para
+    // cocina de que el cliente no quiere ninguna.
+    const extras = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ...ingsWithoutQueso.map(i => 'Extra ' + i)];
     // Añadir quesos al final
     quesosFromIng.forEach(q => extras.push('Extra ' + q));
     if (c.extraQueso) extras.push('Extra Queso Mozzarella +1€');

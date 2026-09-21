@@ -751,7 +751,15 @@ const CUSTOMIZER_CONFIG = {
     subtitle: 'Hasta 9 ingredientes y/o salsas a elegir'
   }
 };
-const CUST_SAUCES = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa Rosa', 'Salsa de Yogur', 'Tomate Frito', 'Queso Philadelphia', 'Roquefort'];
+const CUST_SAUCES = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa Rosa', 'Salsa de Yogur', 'Tomate Frito', 'Queso Philadelphia', 'Roquefort', 'Aceite'];
+// "Sin salsa" es una salsa más de cara al cupo (maxSauces/maxTotal) y a la
+// validación de "elige al menos 1 salsa o ingrediente" — así un cliente que
+// no quiere ninguna salsa puede decirlo explícito en vez de tener que
+// rellenar el hueco con una salsa/ingrediente que no quiere solo para poder
+// confirmar. Se guarda como texto plano (CUST_SIN_SALSA), sin el emoji —
+// el 🚫 es solo para la chapa del selector; en el ticket/carrito se ve
+// "Sin salsa" a secas, igual que el resto de extras de esta web.
+const CUST_SIN_SALSA = 'Sin salsa';
 const CUST_INGREDIENTS = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos', 'Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
 let custType = null;
 let custSelSauces = [];
@@ -862,7 +870,12 @@ function renderCustChips() {
   if (!cfg) return;
   const saucesEl = document.getElementById('cust-sauces');
   const ingsEl = document.getElementById('cust-ingredients');
-  saucesEl.innerHTML = CUST_SAUCES.map(s => {
+  // "Sin salsa" siempre se puede pulsar (nunca "disabled") — elegirla
+  // sustituye cualquier salsa ya puesta (ver toggleCustSauce), así que no
+  // tiene sentido bloquearla por haber llegado ya al máximo de salsas.
+  const sinSalsaSel = custSelSauces.includes(CUST_SIN_SALSA);
+  const sinSalsaChip = "<button class=\"chip ".concat(sinSalsaSel ? 'selected' : '', "\"\n      onclick=\"toggleCustSauce(this,'").concat(CUST_SIN_SALSA, "')\">🚫 Sin salsa</button>");
+  saucesEl.innerHTML = sinSalsaChip + CUST_SAUCES.map(s => {
     const sel = custSelSauces.includes(s);
     // Salsas: bloqueadas por maxSauces (algusto) o por maxTotal combinado (bomba)
     let disabled = !sel && (cfg.maxSauces !== null && custSelSauces.length >= cfg.maxSauces || cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal);
@@ -878,7 +891,19 @@ function renderCustChips() {
 function toggleCustSauce(el, name) {
   if (el.classList.contains('disabled')) return;
   const idx = custSelSauces.indexOf(name);
-  if (idx >= 0) custSelSauces.splice(idx, 1);else custSelSauces.push(name);
+  if (idx >= 0) {
+    custSelSauces.splice(idx, 1);
+  } else if (name === CUST_SIN_SALSA) {
+    // "Sin salsa" no se combina con ninguna otra — elegirla sustituye
+    // cualquier salsa que ya estuviera puesta.
+    custSelSauces = [CUST_SIN_SALSA];
+  } else {
+    // Elegir una salsa real quita "Sin salsa" si estaba puesta — no tiene
+    // sentido llevar las dos a la vez.
+    const sinIdx = custSelSauces.indexOf(CUST_SIN_SALSA);
+    if (sinIdx >= 0) custSelSauces.splice(sinIdx, 1);
+    custSelSauces.push(name);
+  }
   renderCustChips();
   updateCustProgress();
 }

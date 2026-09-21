@@ -1095,7 +1095,9 @@ function renderCart() {
     const unitPrice = item.price + (c.extraQueso ? 1.00 : 0) + (c.extraGratinado ? 0.50 : 0);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
-    const details = [...c.sauces.map(s => 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
+    // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
+    // el prefijo "Extra salsa " — no es un extra de pago.
+    const details = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Duplicar para pedir otra con distintas salsas/ingredientes\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
