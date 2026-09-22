@@ -610,6 +610,33 @@
     box-shadow: 3px 3px 0 rgba(196,113,26,0.13);
     transition: border-color .15s, box-shadow .15s, transform .15s;
   }
+  /* Cinta "Nuevo" en la esquina de un producto — solo si su nombre lleva
+     el emoji 🆕 (mismo marcador que ya usaba formatNombreConBadgeNuevo
+     para la etiqueta pequeña junto al nombre, que sigue existiendo para
+     el panel de admin y las estadísticas; aquí, en la carta que ve el
+     cliente, la sustituye esta cinta). overflow:hidden solo en las
+     tarjetas con cinta — .item-card en general no lo lleva porque
+     .tag-top-ventas (más abajo) se sale por ARRIBA a propósito. */
+  .item-card-nuevo { overflow: hidden; }
+  .badge-ribbon-nuevo {
+    position: absolute;
+    top: 9px;
+    right: -30px;
+    width: 118px;
+    text-align: center;
+    transform: rotate(40deg);
+    background: #c0392b;
+    color: var(--white);
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    pointer-events: none;
+    z-index: 1;
+  }
   .tag-top-ventas {
     position: absolute;
     top: -9px;

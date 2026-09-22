@@ -1440,6 +1440,14 @@ function renderMenu() {
     // toque de añadir sin desplegable ni selector previo.
     const medioItem = !soldout ? _medioPaniniDe(item) : null;
     const tagsHtml = dietaryTagsHtml(item);
+    // Cinta "Nuevo" en la esquina de la tarjeta — sustituye aquí, en la
+    // carta que ve el cliente, a la etiqueta pequeña junto al nombre que
+    // sigue poniendo formatNombreConBadgeNuevo() en el panel de admin y
+    // en las estadísticas (finanzas.js), donde sí tiene sentido por ser
+    // filas más compactas.
+    const esNuevo = item.name.indexOf('🆕') !== -1;
+    const nombreSinBadge = escapeHtml(esNuevo ? item.name.replace('🆕', '').trim() : item.name);
+    const ribbonNuevoHtml = esNuevo ? '<div class="badge-ribbon-nuevo">Nuevo</div>' : '';
     if (medioItem) {
       const qtyEntero = qty;
       const qtyMedio = cart[medioItem.id] || 0;
@@ -1457,25 +1465,27 @@ function renderMenu() {
       const panRowsHtml = _panRow(item.id, 'Entero', item.price, qtyEntero)
         + _panRow(medioItem.id, 'Medio', medioItem.price, qtyMedio);
       return sep
-        + '<div class="item-card ' + (qtyConMedio > 0 ? 'in-cart' : '') + '"'
+        + '<div class="item-card ' + (esNuevo ? 'item-card-nuevo ' : '') + (qtyConMedio > 0 ? 'in-cart' : '') + '"'
         + ' id="card-' + item.id + '"'
         + ' data-name="' + escapeAttr(item.name) + '"'
         + ' data-desc="' + escapeAttr(item.desc||'') + '">'
+        + ribbonNuevoHtml
         + '<div class="item-info">'
-        + '<div class="item-name">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
+        + '<div class="item-name">' + nombreSinBadge + tagsHtml + '</div>'
         + '<div class="item-desc">' + item.desc + '</div>'
         + '</div>'
         + '<div class="pan-size-rows">' + panRowsHtml + '</div>'
         + '</div>';
     }
     return sep
-      + '<div class="item-card ' + (qtyConMedio > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
+      + '<div class="item-card ' + (esNuevo ? 'item-card-nuevo ' : '') + (qtyConMedio > 0 ? 'in-cart' : '') + ' ' + (soldout ? 'soldout-card' : '') + '"'
       + ' id="card-' + item.id + '"'
       + ' data-name="' + escapeAttr(item.name) + '"'
       + ' data-desc="' + escapeAttr(item.desc||'') + '"'
       + ' style="' + (soldout ? 'opacity:.6' : '') + '">'
+      + ribbonNuevoHtml
       + '<div class="item-info">'
-      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + formatNombreConBadgeNuevo(item.name) + tagsHtml + '</div>'
+      + '<div class="item-name" style="' + (soldout ? 'text-decoration:line-through' : '') + '">' + nombreSinBadge + tagsHtml + '</div>'
       + '<div class="item-desc">' + (soldout ? '❌ Agotado hoy' : item.desc) + '</div>'
       + '</div>'
       + '<div class="item-price">' + priceHtml + '</div>'
