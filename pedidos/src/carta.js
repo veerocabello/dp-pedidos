@@ -1228,8 +1228,14 @@ function renderCart() {
     (c.quitados || []).forEach(ing => {
       extras.push('🚫 Sin ' + ing);
     });
-    if (c.queso) extras.push('+ Extra Queso +1,20€');
-    _agruparPreciosConCambios(c.quitados, c.ingredientesExtra).forEach(function (r) {
+    // El queso del toggle "Añadir queso mozzarella" es el mismo ingrediente
+    // que "Queso Mozzarella" de INGREDIENTES EXTRA (nunca los dos a la vez,
+    // ver _actualizarDisponibilidadQuesoToggle) — se suma a la misma lista
+    // para que también aplique la regla de "cambio" en vez de cobrarse
+    // siempre al precio completo (1,20€) solo por venir de ese botón
+    // (hallazgo en producción: "me sale a 7,60€ cuando es un cambio").
+    const ingredientesExtraConQueso = c.queso ? [...(c.ingredientesExtra || []), 'Queso Mozzarella'] : (c.ingredientesExtra || []);
+    _agruparPreciosConCambios(c.quitados, ingredientesExtraConQueso).forEach(function (r) {
       const veces = r.qty >= 2 ? ' ×' + r.qty : '';
       const etiqueta = r.precioTotal === 0 ? 'gratis · cambio' : r.precioTotal.toFixed(2).replace('.', ',') + '€';
       extras.push('+ Extra ' + r.nombre + veces + ' +' + etiqueta);

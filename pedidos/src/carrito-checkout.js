@@ -1406,10 +1406,16 @@ async function _submitOrderInner() {
     // por nombre (_agruparPreciosConCambios) para que "doble jamón" salga
     // como una sola línea "Extra Jamón York ×2" en vez de dos líneas
     // idénticas seguidas.
-    _agruparPreciosConCambios(c.quitados, c.ingredientesExtra).forEach(({ nombre, qty, precioTotal }) => {
+    // El queso del toggle "Añadir queso mozzarella" es el mismo ingrediente
+    // que "Queso Mozzarella" de INGREDIENTES EXTRA (nunca los dos a la vez,
+    // ver _actualizarDisponibilidadQuesoToggle) — se suma a la misma lista
+    // para que también aplique la regla de "cambio" en vez de cobrarse
+    // siempre al precio completo (1,20€) solo por venir de ese botón
+    // (hallazgo en producción: "me sale a 7,60€ cuando es un cambio").
+    const ingredientesExtraConQueso = c.queso ? [...(c.ingredientesExtra || []), 'Queso Mozzarella'] : (c.ingredientesExtra || []);
+    _agruparPreciosConCambios(c.quitados, ingredientesExtraConQueso).forEach(({ nombre, qty, precioTotal }) => {
       extras.push({ name: 'Extra ' + nombre + (qty >= 2 ? ' ×' + qty : ''), price: precioTotal });
     });
-    if (c.queso) extras.push({ name: 'Extra Queso', price: 1.20 });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });
     return {

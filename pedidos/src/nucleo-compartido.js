@@ -309,11 +309,12 @@ function openExtrasModal(itemId) {
 // Sin queso no hay nada que gratinar. Solo aplica a las patatas que ya lo
 // llevan incluido (EXTRAS_SOLO_GRATINADO) — en esas, el queso se puede
 // quitar de QUITABLES_POR_PRODUCTO; si se vuelve a añadir por la lista de
-// ingredientes extra (Queso Mozzarella), vuelve a haber queso.
+// ingredientes extra (Queso Mozzarella o 4 Quesos, se puede gratinar con
+// cualquiera de los dos), vuelve a haber queso.
 function _hayQuesoDisponible() {
   if (!EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) return true;
   const quesoQuitado = !!_extrasQuitados['Queso Mozzarella'];
-  const quesoReanadido = !!_extrasIngredientes['Queso Mozzarella'];
+  const quesoReanadido = !!_extrasIngredientes['Queso Mozzarella'] || !!_extrasIngredientes['4 Quesos'];
   return !quesoQuitado || quesoReanadido;
 }
 function _actualizarDisponibilidadGratinado() {
@@ -353,6 +354,14 @@ function _actualizarDisponibilidadQuesoToggle() {
   const lbl = check ? check.closest('label') : null;
   if (lbl) lbl.style.display = quesoPorIngrediente ? 'none' : 'flex';
 }
+// ¿Hay ya alguna fuente de queso en el pedido? El toggle "Añadir queso
+// mozzarella" y "Queso Mozzarella"/"4 Quesos" de INGREDIENTES EXTRA sirven
+// igual para gratinar — antes solo se miraba el toggle, así que marcar "4
+// Quesos" y activar Gratinar forzaba TAMBIÉN el toggle (cobrando un
+// mozzarella de más que nadie pidió).
+function _hayQuesoEnPedido() {
+  return _extrasQueso || !!_extrasIngredientes['Queso Mozzarella'] || !!_extrasIngredientes['4 Quesos'];
+}
 function toggleExtra(type) {
   if (type === 'gratinado' && !_hayQuesoDisponible()) return;
   if (type === 'queso' && !_extrasQueso && _extrasIngredientes['Queso Mozzarella']) return;
@@ -366,8 +375,11 @@ function toggleExtra(type) {
     }
   } else {
     _extrasGratinado = !_extrasGratinado;
-    // Si activa gratinado y no es solo-gratinado, activar queso también automáticamente
-    if (_extrasGratinado && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId) && !_extrasQueso) {
+    // Si activa gratinado y no es solo-gratinado, activar el toggle de
+    // queso automáticamente — pero SOLO si no hay ya ninguna fuente de
+    // queso (ver _hayQuesoEnPedido): si ya hay "4 Quesos" o "Queso
+    // Mozzarella" marcados en INGREDIENTES EXTRA, ya hay con qué gratinar.
+    if (_extrasGratinado && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId) && !_hayQuesoEnPedido()) {
       _extrasQueso = true;
       updateExtraCheckUI('queso', true);
     }
@@ -523,10 +535,17 @@ function updateExtrasTotal() {
   const item = MENU.find(m => m.id == _extrasCurrentId);
   if (!item) return;
   let total = item.price;
-  if (_extrasQueso) total += 1.20;
   if (_extrasGratinado) total += 0.50;
   const quitadosList = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k);
+  // El queso del toggle "Añadir queso mozzarella" es el MISMO ingrediente
+  // que "Queso Mozzarella" de INGREDIENTES EXTRA (nunca los dos marcados a
+  // la vez, ver _actualizarDisponibilidadQuesoToggle) — se suma a la misma
+  // lista para que también aplique la regla de "cambio" (si se ha quitado
+  // algo, cuesta 0,20€ en vez de 1,20€) en vez de cobrarse siempre al
+  // precio completo por venir de un botón distinto (hallazgo en
+  // producción: "me sale a 7,60€ cuando es un cambio").
   const ingredientesList = _flattenIngredientesExtra(_extrasIngredientes);
+  if (_extrasQueso) ingredientesList.push('Queso Mozzarella');
   _precioIngredientesExtraConCambios(quitadosList, ingredientesList).forEach(({ precio }) => { total += precio; });
   Object.entries(_extrasSalsas).forEach(([nombre, qty]) => { total += (qty || 0) * precioSalsaExtra(nombre); });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
@@ -683,8 +702,12 @@ function duplicarExtrasItem(key) {
 function getExtrasItemPrice(c) {
   const _itemMenu = typeof MENU !== 'undefined' ? MENU.find(m => m.id == c.menuId) : null;
   const _base = _itemMenu ? _itemMenu.price : c.basePrice;
-  let p = _base + (c.queso ? 1.20 : 0) + (c.gratinado ? 0.50 : 0);
-  _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(({ precio }) => { p += precio; });
+  let p = _base + (c.gratinado ? 0.50 : 0);
+  // c.queso es el mismo queso que "Queso Mozzarella" en c.ingredientesExtra
+  // (nunca los dos a la vez) — se suma a la misma lista para que la regla
+  // de "cambio" también le aplique en vez de cobrarlo siempre a 1,20€.
+  const ingredientesExtraConQueso = c.queso ? [...(c.ingredientesExtra || []), 'Queso Mozzarella'] : (c.ingredientesExtra || []);
+  _precioIngredientesExtraConCambios(c.quitados, ingredientesExtraConQueso).forEach(({ precio }) => { p += precio; });
   (c.salsasExtra || []).forEach(nombre => { p += precioSalsaExtra(nombre); });
   return p;
 }
