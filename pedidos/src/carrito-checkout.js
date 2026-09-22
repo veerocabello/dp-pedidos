@@ -1394,6 +1394,7 @@ async function _submitOrderInner() {
     // por defecto (aceite), para no ensuciar el ticket de la inmensa mayoría
     // de pedidos que sí llevan aceite.
     if (c.base === 'mantequilla') extras.push({ name: '🧈 Mantequilla (en vez de aceite)', price: 0 });
+    if (c.base === 'ninguna') extras.push({ name: '🚫 Sin aceite ni mantequilla', price: 0 });
     // Orden fijo en el ticket: la salsa siempre primero, luego los
     // ingredientes, y el queso siempre el último de los extras con
     // precio (antes de gratinado) — igual que ya hacían Al Gusto/Bomba

@@ -1227,6 +1227,7 @@ function renderCart() {
     const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')')
       : c.boniatoSalsa ? (_extItem.name + ' (' + c.boniatoSalsa + ')')
       : c.base === 'mantequilla' ? (_extItem.name + ' (Mantequilla)')
+      : c.base === 'ninguna' ? (_extItem.name + ' (sin nada)')
       : _extItem.name;
     const extras = [];
     (c.quitados || []).forEach(ing => {

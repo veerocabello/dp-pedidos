@@ -283,8 +283,10 @@ function openExtrasModal(itemId) {
   // elegir de verdad al hacer el pedido (Comandas sí lo tenía como
   // selector). Mismo patrón visual .chip-grid que ya usa el
   // personalizador de Al Gusto/Bomba más abajo en esta misma página.
+  // Tocar la ya marcada la quita del todo (patata sin nada) — ver
+  // setExtrasBase().
   if (itemId === 1) {
-    optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px;margin-bottom:6px\">BASE</div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">\n        <button type=\"button\" class=\"chip selected\" id=\"extra-base-aceite\" onclick=\"setExtrasBase('aceite')\">🫒 Aceite de oliva</button>\n        <button type=\"button\" class=\"chip\" id=\"extra-base-mantequilla\" onclick=\"setExtrasBase('mantequilla')\">🧈 Mantequilla</button>\n      </div>";
+    optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px;margin-bottom:2px\">BASE</div>\n      <div style=\"font-size:11px;color:#8A6A4E;margin-bottom:6px\">Toca la marcada para quitarla (patata sin nada)</div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">\n        <button type=\"button\" class=\"chip selected\" id=\"extra-base-aceite\" onclick=\"setExtrasBase('aceite')\">🫒 Aceite de oliva</button>\n        <button type=\"button\" class=\"chip\" id=\"extra-base-mantequilla\" onclick=\"setExtrasBase('mantequilla')\">🧈 Mantequilla</button>\n      </div>";
   }
   // Quitar ingredientes — solo en las patatas que lo permiten (ver
   // QUITABLES_POR_PRODUCTO). Quitar nunca cuesta; si además se añade un
@@ -397,12 +399,25 @@ function toggleExtra(type) {
   updateExtraCheckUI(type, type === 'queso' ? _extrasQueso : _extrasGratinado);
   updateExtrasTotal();
 }
+// Tocar la base ya seleccionada la quita del todo (patata sin aceite ni
+// mantequilla) — antes era obligatorio elegir una de las dos.
 function setExtrasBase(which) {
-  _extrasBase = which;
+  _extrasBase = (_extrasBase === which) ? 'ninguna' : which;
+  _renderExtrasBaseChips();
+}
+function _renderExtrasBaseChips() {
   const elAceite = document.getElementById('extra-base-aceite');
   const elMantequilla = document.getElementById('extra-base-mantequilla');
-  if (elAceite) elAceite.classList.toggle('selected', which === 'aceite');
-  if (elMantequilla) elMantequilla.classList.toggle('selected', which === 'mantequilla');
+  if (elAceite) elAceite.classList.toggle('selected', _extrasBase === 'aceite');
+  if (elMantequilla) elMantequilla.classList.toggle('selected', _extrasBase === 'mantequilla');
+}
+// Para restaurar la base de una línea ya guardada (duplicarExtrasItem) —
+// a diferencia de setExtrasBase(), que es el manejador del click y por
+// tanto "toggle" (tocar la ya seleccionada la quita), esta SIEMPRE fija
+// el valor exacto que traía la línea, sin importar cuál esté activa ahora.
+function _restaurarExtrasBase(base) {
+  _extrasBase = base || 'aceite';
+  _renderExtrasBaseChips();
 }
 // Un ingrediente extra admite hasta esta cantidad de unidades (doble/triple
 // jamón, doble queso...) — cada unidad se cobra por separado (ver
@@ -553,7 +568,7 @@ function confirmExtras() {
     return k;
   }).sort().join('|');
   const quitadoKeys = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k).sort().join('|');
-  const baseKey = (itemId === 1 && _extrasBase === 'mantequilla') ? 'Bmantequilla' : '';
+  const baseKey = itemId === 1 && _extrasBase !== 'aceite' ? 'B' + _extrasBase : '';
   const fingerprint = (_extrasQueso ? 'Q' : '') + (_extrasGratinado ? 'G' : '') + (ingKeys ? 'I' + ingKeys : '') + (salsaKeys ? 'S' + salsaKeys : '') + (quitadoKeys ? 'X' + quitadoKeys : '') + baseKey || 'BASE';
   const cartKey = 'ext:' + itemId + ':' + fingerprint;
   if (!extrasCart[cartKey]) {
@@ -638,7 +653,7 @@ function duplicarExtrasItem(key) {
   }
   openExtrasModal(item.menuId);
   _extrasEditandoKey = key;
-  if (item.base === 'mantequilla') setExtrasBase('mantequilla');
+  if (item.menuId === 1) _restaurarExtrasBase(item.base);
   // Quitados e ingredientesExtra van antes que el gratinado: si se quitó el
   // queso incluido pero se volvió a añadir por la lista de ingredientes
   // extra, toggleExtra('gratinado') necesita verlo ya así para no bloquear
@@ -6352,6 +6367,7 @@ function renderCart() {
     const itemName = c.cheddarCarne ? (_extItem.name + ' (' + c.cheddarCarne + ')')
       : c.boniatoSalsa ? (_extItem.name + ' (' + c.boniatoSalsa + ')')
       : c.base === 'mantequilla' ? (_extItem.name + ' (Mantequilla)')
+      : c.base === 'ninguna' ? (_extItem.name + ' (sin nada)')
       : _extItem.name;
     const extras = [];
     (c.quitados || []).forEach(ing => {
@@ -8042,6 +8058,7 @@ async function _submitOrderInner() {
     // por defecto (aceite), para no ensuciar el ticket de la inmensa mayoría
     // de pedidos que sí llevan aceite.
     if (c.base === 'mantequilla') extras.push({ name: '🧈 Mantequilla (en vez de aceite)', price: 0 });
+    if (c.base === 'ninguna') extras.push({ name: '🚫 Sin aceite ni mantequilla', price: 0 });
     // Orden fijo en el ticket: la salsa siempre primero, luego los
     // ingredientes, y el queso siempre el último de los extras con
     // precio (antes de gratinado) — igual que ya hacían Al Gusto/Bomba
@@ -9539,26 +9556,38 @@ function _actualizarDisponibilidadQuesoToggleCust() {
   if (label) label.style.display = tiene ? 'none' : 'flex';
 }
 function toggleCustExtra(type) {
-  if (type === 'queso' && !custExtraQueso && custTieneQuesoIngrediente()) return;
   if (type === 'queso') {
-    custExtraQueso = !custExtraQueso;
-    // Si quita el queso extra y no es solo gratinado, quitar también
-    // gratinado — salvo que siga teniendo queso puesto como ingrediente,
-    // que entonces el gratinado sigue teniendo sentido.
-    if (!custExtraQueso && custExtraGratinado && !custTieneQuesoIngrediente()) {
-      custExtraGratinado = false;
-      updateCustExtraUI('gratinado', false);
+    // El botón "Queso mozzarella" es un atajo para marcarlo como
+    // INGREDIENTE — así se beneficia del mismo cupo gratis que el resto
+    // (o se cobra como extra solo si ya no quedan huecos libres) en vez
+    // de cobrar siempre 1,20€ fijos aunque sobren huecos sin usar
+    // ("si aún no han llegado a los ingredientes no tiene sentido que se
+    // cobre"). Solo AÑADE — una vez puesto, el botón se oculta (ver
+    // _actualizarDisponibilidadQuesoToggleCust) y se gestiona desde el
+    // propio chip de ingredientes, incluido quitarlo.
+    if (!custTieneQuesoIngrediente()) {
+      custSelIngredients.push('Queso Mozzarella');
+      // Por si esta línea se abrió para editar una ya guardada de antes
+      // de este cambio, con el extra de pago marcado a la vez — se limpia
+      // para que no se cobren los dos.
+      custExtraQueso = false;
     }
-  } else {
-    custExtraGratinado = !custExtraGratinado;
-    // Si activa gratinado y no lleva queso de ninguna forma (ni extra ni
-    // como ingrediente ya elegido), activar el queso extra también.
-    if (custExtraGratinado && !custExtraQueso && !custTieneQuesoIngrediente()) {
-      custExtraQueso = true;
-      updateCustExtraUI('queso', true);
-    }
+    renderCustChips();
+    updateCustProgress();
+    updateCustTotalPrice();
+    return;
   }
-  updateCustExtraUI(type, type === 'queso' ? custExtraQueso : custExtraGratinado);
+  custExtraGratinado = !custExtraGratinado;
+  // Si activa gratinado y no lleva queso de ninguna forma, añade Queso
+  // Mozzarella como ingrediente (mismo criterio que el botón de arriba)
+  // para que el gratinado tenga con qué gratinar, respetando el cupo
+  // gratis en vez de cobrar siempre el extra de pago.
+  if (custExtraGratinado && !custTieneQuesoIngrediente()) {
+    custSelIngredients.push('Queso Mozzarella');
+  }
+  updateCustExtraUI('gratinado', custExtraGratinado);
+  renderCustChips();
+  updateCustProgress();
   updateCustTotalPrice();
 }
 function updateCustExtraUI(type, active) {

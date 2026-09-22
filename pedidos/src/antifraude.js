@@ -838,26 +838,38 @@ function _actualizarDisponibilidadQuesoToggleCust() {
   if (label) label.style.display = tiene ? 'none' : 'flex';
 }
 function toggleCustExtra(type) {
-  if (type === 'queso' && !custExtraQueso && custTieneQuesoIngrediente()) return;
   if (type === 'queso') {
-    custExtraQueso = !custExtraQueso;
-    // Si quita el queso extra y no es solo gratinado, quitar también
-    // gratinado — salvo que siga teniendo queso puesto como ingrediente,
-    // que entonces el gratinado sigue teniendo sentido.
-    if (!custExtraQueso && custExtraGratinado && !custTieneQuesoIngrediente()) {
-      custExtraGratinado = false;
-      updateCustExtraUI('gratinado', false);
+    // El botón "Queso mozzarella" es un atajo para marcarlo como
+    // INGREDIENTE — así se beneficia del mismo cupo gratis que el resto
+    // (o se cobra como extra solo si ya no quedan huecos libres) en vez
+    // de cobrar siempre 1,20€ fijos aunque sobren huecos sin usar
+    // ("si aún no han llegado a los ingredientes no tiene sentido que se
+    // cobre"). Solo AÑADE — una vez puesto, el botón se oculta (ver
+    // _actualizarDisponibilidadQuesoToggleCust) y se gestiona desde el
+    // propio chip de ingredientes, incluido quitarlo.
+    if (!custTieneQuesoIngrediente()) {
+      custSelIngredients.push('Queso Mozzarella');
+      // Por si esta línea se abrió para editar una ya guardada de antes
+      // de este cambio, con el extra de pago marcado a la vez — se limpia
+      // para que no se cobren los dos.
+      custExtraQueso = false;
     }
-  } else {
-    custExtraGratinado = !custExtraGratinado;
-    // Si activa gratinado y no lleva queso de ninguna forma (ni extra ni
-    // como ingrediente ya elegido), activar el queso extra también.
-    if (custExtraGratinado && !custExtraQueso && !custTieneQuesoIngrediente()) {
-      custExtraQueso = true;
-      updateCustExtraUI('queso', true);
-    }
+    renderCustChips();
+    updateCustProgress();
+    updateCustTotalPrice();
+    return;
   }
-  updateCustExtraUI(type, type === 'queso' ? custExtraQueso : custExtraGratinado);
+  custExtraGratinado = !custExtraGratinado;
+  // Si activa gratinado y no lleva queso de ninguna forma, añade Queso
+  // Mozzarella como ingrediente (mismo criterio que el botón de arriba)
+  // para que el gratinado tenga con qué gratinar, respetando el cupo
+  // gratis en vez de cobrar siempre el extra de pago.
+  if (custExtraGratinado && !custTieneQuesoIngrediente()) {
+    custSelIngredients.push('Queso Mozzarella');
+  }
+  updateCustExtraUI('gratinado', custExtraGratinado);
+  renderCustChips();
+  updateCustProgress();
   updateCustTotalPrice();
 }
 function updateCustExtraUI(type, active) {
