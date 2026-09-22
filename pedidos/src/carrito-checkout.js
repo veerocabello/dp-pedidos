@@ -1394,27 +1394,23 @@ async function _submitOrderInner() {
     (c.quitados || []).forEach(ing => {
       extras.push({ name: 'Sin ' + ing, price: 0 });
     });
-    // Agrupado por nombre (_agruparSalsasExtra) para que "doble alioli"
-    // salga como una sola línea "Extra salsa Alioli ×2" en vez de dos
-    // líneas idénticas seguidas — mismo criterio que los ingredientes.
-    _agruparSalsasExtra(c.salsasExtra).forEach(({ nombre, qty, precioTotal }) => {
-      extras.push({ name: 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : ''), price: precioTotal });
-    });
-    // Precio de los ingredientes extra con la regla de "cambio" (2 gratis
-    // si además se ha quitado algo, quesito 0,20€) — ver
-    // _precioIngredientesExtraConCambios en nucleo-compartido.js. Agrupado
-    // por nombre (_agruparPreciosConCambios) para que "doble jamón" salga
-    // como una sola línea "Extra Jamón York ×2" en vez de dos líneas
-    // idénticas seguidas.
+    // Precio de los ingredientes Y salsas extra con la regla de "cambio"
+    // (2 gratis si además se ha quitado algo, especial 0,20€) — ver
+    // _precioExtrasConCambios en nucleo-compartido.js: los precios están
+    // unificados, así que quitar un ingrediente y añadir una salsa en su
+    // lugar cuenta como cambio igual que quitar y añadir otro ingrediente.
     // El queso del toggle "Añadir queso mozzarella" es el mismo ingrediente
     // que "Queso Mozzarella" de INGREDIENTES EXTRA (nunca los dos a la vez,
     // ver _actualizarDisponibilidadQuesoToggle) — se suma a la misma lista
     // para que también aplique la regla de "cambio" en vez de cobrarse
-    // siempre al precio completo (1,20€) solo por venir de ese botón
-    // (hallazgo en producción: "me sale a 7,60€ cuando es un cambio").
+    // siempre al precio completo (1,20€) solo por venir de ese botón.
+    // Agrupado por nombre (_agruparExtrasConCambios) para que "doble
+    // jamón"/"doble alioli" salga como una sola línea "×2" en vez de dos
+    // líneas idénticas seguidas.
     const ingredientesExtraConQueso = c.queso ? [...(c.ingredientesExtra || []), 'Queso Mozzarella'] : (c.ingredientesExtra || []);
-    _agruparPreciosConCambios(c.quitados, ingredientesExtraConQueso).forEach(({ nombre, qty, precioTotal }) => {
-      extras.push({ name: 'Extra ' + nombre + (qty >= 2 ? ' ×' + qty : ''), price: precioTotal });
+    _agruparExtrasConCambios(c.quitados, ingredientesExtraConQueso, c.salsasExtra).forEach(({ nombre, tipo, qty, precioTotal }) => {
+      const prefijo = tipo === 'salsa' ? 'Extra salsa ' : 'Extra ';
+      extras.push({ name: prefijo + nombre + (qty >= 2 ? ' ×' + qty : ''), price: precioTotal });
     });
     // El gratinado siempre va el último, sea cual sea el resto de extras.
     if (c.gratinado) extras.push({ name: 'Gratinado', price: 0.50 });

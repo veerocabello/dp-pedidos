@@ -878,79 +878,75 @@ function revertirVentasProductos($databaseURL, $accessToken, $fecha, $items, $no
 }
 
 // ── Precio real de un "extra" de pago de un producto normal de la carta
-// (Extra Queso, Extra <ingrediente>, Extra salsa <salsa>, Gratinado) — la
-// misma tabla de precios que EXTRAS_ING_PRECIO1/07 y EXTRAS_SALSA_PRECIO en
-// src/nucleo-compartido.js. Si esos cambian alguna vez, hay que actualizar
-// también esta lista. Devuelve null si el nombre no se reconoce (p.ej. un
-// extra de texto plano de un producto personalizado Al Gusto/Bomba, que no
-// llega en esta forma {name,price} y por tanto nunca pasa por aquí).
+// que NO participa en la regla de "cambio" (Extra Queso, Gratinado) — las
+// líneas "Extra <ingrediente>"/"Extra salsa <salsa>" se resuelven aparte,
+// en corregirPreciosExtras() más abajo, porque dependen del conjunto
+// completo de quitados/añadidos de la línea. Devuelve null si el nombre no
+// se reconoce (p.ej. un extra de texto plano de un producto personalizado
+// Al Gusto/Bomba, que no llega en esta forma {name,price} y por tanto
+// nunca pasa por aquí).
 function _precioRealExtra($nombre) {
     $n = trim((string)$nombre);
     if ($n === 'Extra Queso') return 1.20;
     if ($n === 'Gratinado') return 0.50;
-    if (strpos($n, 'Extra salsa ') === 0) {
-        // "<salsa> ×N" (agrupado, ver _agruparSalsasExtra en
-        // src/nucleo-compartido.js) — mismo formato/tope que los
-        // ingredientes extra (_parseCantidadIngExtra, hasta ×3 unidades).
-        list($salsa, $qtySal) = _parseCantidadIngExtra(substr($n, strlen('Extra salsa ')));
-        $qtySal = max(1, min($qtySal, 3)); // MAX_UNIDADES_ING_EXTRA en src/nucleo-compartido.js
-        $precioUnidad = (stripos($salsa, 'philadelphia') !== false) ? 1.20 : 1.00;
-        return round($qtySal * $precioUnidad, 2);
-    }
-    if (strpos($n, 'Extra ') === 0) {
-        $ing = substr($n, strlen('Extra '));
-        // Todos los ingredientes extra cuestan lo mismo (1€) salvo los de
-        // queso (Queso Mozzarella, 4 Quesos), que cuestan 1,20€ — mismo
-        // criterio que precioIngredienteExtra() en src/nucleo-compartido.js.
-        if (_esIngredienteExtraValido($ing)) return (mb_stripos($ing, 'queso') !== false) ? 1.20 : 1.00;
-    }
     return null;
 }
 // ── ¿Es un nombre de ingrediente extra reconocido? Mismo catálogo que
 // EXTRAS_ING_PRECIO1/07 en src/nucleo-compartido.js — se usa para decidir
 // qué entradas "Extra <x>" entran en el recálculo en grupo de más abajo
-// (_precioIngredientesExtraConCambios); el precio en sí depende de si es
-// ingrediente de queso o no (ver _precioIngredientesExtraConCambios).
+// (_precioExtrasConCambios); el precio en sí depende de si es ingrediente
+// de queso o no (ver _precioExtrasConCambios).
 function _esIngredienteExtraValido($ing) {
     $precio1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
     $precio07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
     return in_array($ing, $precio1, true) || in_array($ing, $precio07, true);
 }
-// ── Precio real de los ingredientes "Extra <x>" de un mismo producto,
-// aplicando la regla de "cambio" (quitar ingredientes, función nueva del
-// modal de extras): quitar nunca cuesta, y si además se añade un
-// ingrediente extra de la lista de arriba a la vez (sustitución), los 2
-// primeros cambios de la línea son gratis — salvo que el añadido sea
-// queso, que cuesta 0,20€ en vez de gratis. El resto va al precio normal
-// (1,00€, o 1,20€ si es un ingrediente de queso). El orden que decide qué
-// añadido ocupa cada cupo de cambio gratis es alfabético, igual que en
-// src/nucleo-compartido.js:_precioIngredientesExtraConCambios — si se
-// cambia una regla hay que actualizar la otra, o dejan de coincidir y todo
-// pedido con cambios se "corrige" mal.
+// Precio "normal" (sin cambio) de un extra, sea ingrediente o salsa —
+// mismo criterio que _precioUnitarioExtra en src/nucleo-compartido.js.
+function _precioUnitarioExtraPHP($item) {
+    return $item['tipo'] === 'salsa'
+        ? ((mb_stripos($item['nombre'], 'philadelphia') !== false) ? 1.20 : 1.00)
+        : ((mb_stripos($item['nombre'], 'queso') !== false) ? 1.20 : 1.00);
+}
+// ── Precio real de los "Extra <x>"/"Extra salsa <x>" de un mismo
+// producto, aplicando la regla de "cambio" (quitar ingredientes, función
+// del modal de extras): quitar un ingrediente nunca cuesta, y si además se
+// añade algo a la vez — un ingrediente O una salsa, los precios están
+// unificados — los 2 primeros cambios de la línea son gratis, salvo que lo
+// añadido sea "especial" (queso en ingredientes, Philadelphia en salsas),
+// que cuesta 0,20€ en vez de gratis. El resto va al precio normal. El
+// orden que decide qué añadido ocupa cada cupo de cambio gratis es:
+// especiales primero, luego alfabético — igual que en
+// src/nucleo-compartido.js:_precioExtrasConCambios — si se cambia una
+// regla hay que actualizar la otra, o dejan de coincidir y todo pedido con
+// cambios se "corrige" mal.
 // Devuelve una LISTA (no un array asociado por nombre) porque un mismo
-// ingrediente puede repetirse — doble/triple jamón, ver
+// ingrediente/salsa puede repetirse — doble/triple, ver
 // MAX_UNIDADES_ING_EXTRA en src/nucleo-compartido.js — y cada unidad se
 // precia por separado según en qué posición caiga tras ordenar.
-function _precioIngredientesExtraConCambios($removedCount, $ingredientesAñadidos) {
-    $added = array_values($ingredientesAñadidos);
-    // El queso va primero en el orden — así ocupa un hueco de cambio antes
-    // que otro ingrediente cualquiera, en vez de quedar fuera por
+function _precioExtrasConCambios($removedCount, $ingredientesAñadidos, $salsasAñadidas) {
+    $added = [];
+    foreach (array_values($ingredientesAñadidos) as $n) { $added[] = ['nombre' => $n, 'tipo' => 'ingrediente']; }
+    foreach (array_values($salsasAñadidas ?? []) as $n) { $added[] = ['nombre' => $n, 'tipo' => 'salsa']; }
+    // Los "especiales" (1,20€) van primero en el orden — así ocupan un
+    // hueco de cambio antes que uno normal, en vez de quedar fuera por
     // casualidad alfabética cuando hay más añadidos que huecos gratis.
     // Mismo criterio que en src/nucleo-compartido.js. usort() con nombres
     // repetidos es estable en PHP 8+ (los empates conservan su orden
     // relativo de entrada), igual que Array.prototype.sort en el cliente.
     usort($added, function ($a, $b) {
-        $aq = mb_stripos($a, 'queso') !== false;
-        $bq = mb_stripos($b, 'queso') !== false;
-        if ($aq !== $bq) return $aq ? -1 : 1;
-        return strcmp($a, $b);
+        $ap = _precioUnitarioExtraPHP($a);
+        $bp = _precioUnitarioExtraPHP($b);
+        if ($ap !== $bp) return $bp <=> $ap;
+        return strcmp($a['nombre'], $b['nombre']);
     });
     $freeSwapCount = min($removedCount, count($added), 2);
     $out = [];
-    foreach ($added as $idx => $ing) {
-        $esQueso = mb_stripos($ing, 'queso') !== false;
-        $precio = ($idx < $freeSwapCount) ? ($esQueso ? 0.20 : 0.00) : ($esQueso ? 1.20 : 1.00);
-        $out[] = ['nombre' => $ing, 'precio' => $precio];
+    foreach ($added as $idx => $item) {
+        $precioNormal = _precioUnitarioExtraPHP($item);
+        $esEspecial = $precioNormal > 1.00;
+        $precio = ($idx < $freeSwapCount) ? ($esEspecial ? 0.20 : 0.00) : $precioNormal;
+        $out[] = ['nombre' => $item['nombre'], 'tipo' => $item['tipo'], 'precio' => $precio];
     }
     return $out;
 }
@@ -972,11 +968,13 @@ function _parseCantidadIngExtra($ing) {
 // de los encontrados, porque pasaba en cualquier pedido con extras).
 //
 // Los ingredientes quitados ("Sin <x>") siempre valen 0 — quitar nunca
-// cuesta, sea cual sea el nombre. Los "Extra <ingrediente>" reconocidos no
-// se corrigen uno a uno: dependen del conjunto completo de quitados/
-// añadidos de la MISMA línea (regla de "cambio", ver
-// _precioIngredientesExtraConCambios arriba), así que se recalculan todos
-// juntos antes de comparar cada uno con lo declarado.
+// cuesta, sea cual sea el nombre. Los "Extra <ingrediente>"/"Extra salsa
+// <salsa>" reconocidos no se corrigen uno a uno: dependen del conjunto
+// completo de quitados/añadidos de la MISMA línea (regla de "cambio", ver
+// _precioExtrasConCambios arriba — los precios están unificados, así que
+// un cambio puede ser "quito un ingrediente, añado una salsa" igual que
+// "quito uno, añado otro ingrediente"), así que se recalculan todos juntos
+// antes de comparar cada uno con lo declarado.
 function corregirPreciosExtras($items) {
     $avisos = [];
     $deltaTotal = 0;
@@ -986,48 +984,62 @@ function corregirPreciosExtras($items) {
 
         $removedCount = 0;
         $ingredientesExtra = [];
+        $salsasExtra = [];
         foreach ($it['extras'] as $e) {
             if (!is_array($e) || !isset($e['name'])) continue;
             $n = (string)$e['name'];
             if (strpos($n, 'Sin ') === 0) {
                 $removedCount++;
-            } elseif (strpos($n, 'Extra ') === 0 && strpos($n, 'Extra salsa ') !== 0 && $n !== 'Extra Queso') {
+            } elseif (strpos($n, 'Extra salsa ') === 0) {
+                list($sal, $qtySal) = _parseCantidadIngExtra(substr($n, strlen('Extra salsa ')));
+                for ($i = 0; $i < $qtySal; $i++) $salsasExtra[] = $sal;
+            } elseif (strpos($n, 'Extra ') === 0 && $n !== 'Extra Queso') {
                 list($ing, $qtyIng) = _parseCantidadIngExtra(substr($n, strlen('Extra ')));
                 if (_esIngredienteExtraValido($ing)) {
                     for ($i = 0; $i < $qtyIng; $i++) $ingredientesExtra[] = $ing;
                 }
             }
         }
-        $preciosConCambios = _precioIngredientesExtraConCambios($removedCount, $ingredientesExtra);
-        // Bolsa de precios ya calculados, agrupados por nombre — una línea
-        // "Extra X ×N" consume N precios de la bolsa de X (el orden dentro
-        // de un mismo nombre no importa para el total: solo importa cuántas
-        // unidades de X le tocan a cada línea que lo declara).
-        $bolsaPorNombre = [];
-        foreach ($preciosConCambios as $r) { $bolsaPorNombre[$r['nombre']][] = $r['precio']; }
+        $preciosConCambios = _precioExtrasConCambios($removedCount, $ingredientesExtra, $salsasExtra);
+        // Bolsa de precios ya calculados, agrupados por tipo+nombre — una
+        // línea "Extra X ×N"/"Extra salsa X ×N" consume N precios de la
+        // bolsa de X (el orden dentro de una misma clave no importa para
+        // el total: solo importa cuántas unidades de X le tocan a cada
+        // línea que lo declara).
+        $bolsaPorClave = [];
+        foreach ($preciosConCambios as $r) { $bolsaPorClave[$r['tipo'] . ':' . $r['nombre']][] = $r['precio']; }
 
-        $it['extras'] = array_map(function ($e) use ($it, $qty, &$bolsaPorNombre, &$avisos, &$deltaTotal) {
+        $it['extras'] = array_map(function ($e) use ($it, $qty, &$bolsaPorClave, &$avisos, &$deltaTotal) {
             if (!is_array($e) || !isset($e['name'])) return $e;
             $n = (string)$e['name'];
             $precioDeclarado = isset($e['price']) ? (float)$e['price'] : 0;
 
             if (strpos($n, 'Sin ') === 0) {
                 $precioReal = 0.00;
-            } else {
-                $esIngExtra = strpos($n, 'Extra ') === 0 && strpos($n, 'Extra salsa ') !== 0 && $n !== 'Extra Queso';
-                if ($esIngExtra) {
-                    list($ing, $qtyIng) = _parseCantidadIngExtra(substr($n, strlen('Extra ')));
-                    if (_esIngredienteExtraValido($ing) && !empty($bolsaPorNombre[$ing])) {
-                        $precioReal = 0.0;
-                        for ($i = 0; $i < $qtyIng && !empty($bolsaPorNombre[$ing]); $i++) {
-                            $precioReal += array_shift($bolsaPorNombre[$ing]);
-                        }
-                    } else {
-                        $precioReal = null;
+            } elseif (strpos($n, 'Extra salsa ') === 0) {
+                list($sal, $qtySal) = _parseCantidadIngExtra(substr($n, strlen('Extra salsa ')));
+                $clave = 'salsa:' . $sal;
+                if (!empty($bolsaPorClave[$clave])) {
+                    $precioReal = 0.0;
+                    for ($i = 0; $i < $qtySal && !empty($bolsaPorClave[$clave]); $i++) {
+                        $precioReal += array_shift($bolsaPorClave[$clave]);
                     }
                 } else {
-                    $precioReal = _precioRealExtra($n);
+                    $precioReal = null;
                 }
+            } elseif (strpos($n, 'Extra ') === 0 && $n !== 'Extra Queso') {
+                list($ing, $qtyIng) = _parseCantidadIngExtra(substr($n, strlen('Extra ')));
+                $clave = 'ingrediente:' . $ing;
+                if (_esIngredienteExtraValido($ing) && !empty($bolsaPorClave[$clave])) {
+                    $precioReal = 0.0;
+                    for ($i = 0; $i < $qtyIng && !empty($bolsaPorClave[$clave]); $i++) {
+                        $precioReal += array_shift($bolsaPorClave[$clave]);
+                    }
+                } else {
+                    $precioReal = null;
+                }
+            } else {
+                $precioReal = _precioRealExtra($n);
             }
 
             if ($precioReal !== null && abs($precioDeclarado - $precioReal) > 0.01) {

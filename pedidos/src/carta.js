@@ -1235,14 +1235,15 @@ function renderCart() {
     // siempre al precio completo (1,20€) solo por venir de ese botón
     // (hallazgo en producción: "me sale a 7,60€ cuando es un cambio").
     const ingredientesExtraConQueso = c.queso ? [...(c.ingredientesExtra || []), 'Queso Mozzarella'] : (c.ingredientesExtra || []);
-    _agruparPreciosConCambios(c.quitados, ingredientesExtraConQueso).forEach(function (r) {
+    // Ingredientes Y salsas comparten la regla de "cambio" (ver
+    // _agruparExtrasConCambios en nucleo-compartido.js): quitar un
+    // ingrediente y añadir una salsa en su lugar cuenta como cambio
+    // igual que quitar y añadir otro ingrediente (precios unificados).
+    _agruparExtrasConCambios(c.quitados, ingredientesExtraConQueso, c.salsasExtra).forEach(function (r) {
       const veces = r.qty >= 2 ? ' ×' + r.qty : '';
       const etiqueta = r.precioTotal === 0 ? 'gratis · cambio' : r.precioTotal.toFixed(2).replace('.', ',') + '€';
-      extras.push('+ Extra ' + r.nombre + veces + ' +' + etiqueta);
-    });
-    _agruparSalsasExtra(c.salsasExtra).forEach(function (r) {
-      const veces = r.qty >= 2 ? ' ×' + r.qty : '';
-      extras.push('+ Extra salsa ' + r.nombre + veces + ' +' + r.precioTotal.toFixed(2).replace('.', ',') + '€');
+      const prefijo = r.tipo === 'salsa' ? 'Extra salsa ' : 'Extra ';
+      extras.push('+ ' + prefijo + r.nombre + veces + ' +' + etiqueta);
     });
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
