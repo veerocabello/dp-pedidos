@@ -391,6 +391,12 @@ function toggleExtra(type) {
     }
   }
   updateExtraCheckUI(type, type === 'queso' ? _extrasQueso : _extrasGratinado);
+  // Refresca si "Gratinar" está disponible (opacidad/cursor/clicable) —
+  // marcar o quitar el toggle de queso puede cambiarlo (antes solo se
+  // refrescaba al tocar QUITAR INGREDIENTES/INGREDIENTES EXTRA, así que
+  // activar el toggle de queso dejaba la fila de Gratinar bloqueada
+  // visualmente aunque ya hubiera queso de sobra para gratinar).
+  _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
 }
 // Tocar la base ya seleccionada la quita del todo (patata sin aceite ni
