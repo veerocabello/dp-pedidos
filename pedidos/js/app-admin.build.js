@@ -3813,7 +3813,21 @@ function renderAdminProducts() {
       : '';
     html += "<p style=\"display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:Anton,sans-serif;font-size:19px;font-weight:400;color:#FFF8EE;background:#3D1F0D;text-transform:uppercase;letter-spacing:0.06em;margin:16px 0 8px;padding:8px 14px;border-radius:8px\"><span>".concat(catEmoji ? catEmoji + ' ' : '', cat, "</span>").concat(catBulkBtn, "</p>");
     let lastTartaSub = null;
-    MENU.filter(i => i.cat === cat).forEach(item => {
+    // Tartas: se muestran clásicas primero y especiales después,
+    // independientemente del orden real en MENU — igual que ya hace
+    // renderMenu() en nucleo-compartido.js (la carta que ve el cliente).
+    // Sin este reordenado, una tarta nueva que entra en MENU después de un
+    // bloque de especiales (ver _menuAgregarItemTransaccion) partía el
+    // agrupado en dos, con "CLÁSICAS"/"ESPECIALES" repetido dos veces.
+    const itemsCat = MENU.filter(i => i.cat === cat);
+    const itemsOrdenados = cat === 'Tartas'
+      ? [
+          ...itemsCat.filter(i => i.desc && i.desc.toLowerCase().indexOf('clásica') !== -1),
+          ...itemsCat.filter(i => !i.desc || (i.desc.toLowerCase().indexOf('clásica') === -1 && i.desc.toLowerCase().indexOf('especial') === -1)),
+          ...itemsCat.filter(i => i.desc && i.desc.toLowerCase().indexOf('especial') !== -1),
+        ]
+      : itemsCat;
+    itemsOrdenados.forEach(item => {
       const visible = item.hidden ? 'off' : 'on';
       const soldout = item.soldout ? true : false;
       let tartaSep = '';
@@ -4148,8 +4162,18 @@ async function addSection() {
 // disponible, cae al cálculo local de toda la vida (mismo comportamiento
 // que antes). Devuelve el item ya insertado en MENU, o null si falló el
 // guardado (con el aviso ya mostrado).
-async function _menuAgregarItemTransaccion(build, cat) {
+// findInsertIdx(arr), opcional: dado el array de items, devuelve el índice
+// DESPUÉS del cual insertar (-1 = al final del todo). Por defecto es el
+// último item de la misma categoría — Tartas pasa uno propio (ver
+// addProduct) para insertar dentro del bloque clásicas/especiales que le
+// toque, en vez de siempre al final de toda la categoría.
+async function _menuAgregarItemTransaccion(build, cat, findInsertIdx) {
   let nuevoItem = null;
+  const _findInsertIdx = findInsertIdx || function (arr) {
+    let lastIdx = -1;
+    for (let i = 0; i < arr.length; i++) { if (arr[i].cat === cat) lastIdx = i; }
+    return lastIdx;
+  };
   if (window.fb_transactJsonString) {
     try {
       const finalData = await window.fb_transactJsonString('config/menu', function (remoto) {
@@ -4159,8 +4183,7 @@ async function _menuAgregarItemTransaccion(build, cat) {
         const nuevoId = Math.max(0, ...idsRemotos, ...idsLocales) + 1;
         nuevoItem = build(nuevoId);
         const arr = remotoItems.slice();
-        let lastIdx = -1;
-        for (let i = 0; i < arr.length; i++) { if (arr[i].cat === cat) lastIdx = i; }
+        const lastIdx = _findInsertIdx(arr);
         if (lastIdx === -1) arr.push(nuevoItem); else arr.splice(lastIdx + 1, 0, nuevoItem);
         return { items: arr, ts: Date.now() };
       });
@@ -4174,8 +4197,7 @@ async function _menuAgregarItemTransaccion(build, cat) {
     const newId = Math.max(0, ...MENU.map(function (i) { return i.id; })) + 1;
     nuevoItem = build(newId);
   }
-  let lastIdx = -1;
-  for (let i = 0; i < MENU.length; i++) { if (MENU[i].cat === cat) lastIdx = i; }
+  const lastIdx = _findInsertIdx(MENU);
   if (lastIdx === -1) MENU.push(nuevoItem); else MENU.splice(lastIdx + 1, 0, nuevoItem);
   localStorage.setItem(MENU_KEY, JSON.stringify(MENU));
   localStorage.setItem(MENU_KEY + '_ts', Date.now());
@@ -4239,9 +4261,30 @@ async function addProduct() {
     alert('Ya existe un producto con ese nombre — usa uno distinto (aunque sea con un matiz) para que el servidor pueda identificarlo bien al validar el precio.');
     return;
   }
+  // Tartas: insertar dentro del bloque de su mismo tipo (clásica/especial),
+  // no siempre al final de toda la categoría — si no, una clásica añadida
+  // después de que ya hubiera especiales caía detrás de ellas, partiendo
+  // en dos el agrupado "CLÁSICAS"/"ESPECIALES" (renderAdminProducts aquí y
+  // renderMenu en nucleo-compartido.js).
+  let findInsertIdx;
+  if (cat === 'Tartas') {
+    const esClasicaNueva = desc.toLowerCase().indexOf('clásica') !== -1;
+    findInsertIdx = function (arr) {
+      let lastMismoTipo = -1;
+      let lastTarta = -1;
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i].cat !== 'Tartas') continue;
+        lastTarta = i;
+        const d = (arr[i].desc || '').toLowerCase();
+        const esMismoTipo = esClasicaNueva ? d.indexOf('clásica') !== -1 : d.indexOf('especial') !== -1;
+        if (esMismoTipo) lastMismoTipo = i;
+      }
+      return lastMismoTipo !== -1 ? lastMismoTipo : lastTarta;
+    };
+  }
   const nuevoItem = await _menuAgregarItemTransaccion(function (id) {
     return { id, cat, name, desc, price };
-  }, cat);
+  }, cat, findInsertIdx);
   if (!nuevoItem) return; // fallo de guardado, ya avisado dentro
   initTabs();
   renderMenu();
