@@ -86,7 +86,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1790074515294">
+<link rel="stylesheet" href="css/style.min.css?v=1790076594019">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -1050,6 +1050,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     </div>
     <div class="customizer-section-label">Ingredientes <span class="customizer-badge" id="cust-ing-badge">0/6</span></div>
     <div class="chip-grid" id="cust-ingredients"></div>
+    <div id="cust-ing-extra-aviso" style="display:none;margin-top:8px;background:#FFF3CD;border:1px solid #E9D9BE;border-radius:10px;padding:10px 12px;font-size:12px;color:#5a3e1b;line-height:1.45"></div>
     <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px;display:flex;flex-direction:column">
       <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Extras opcionales</div>
       <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-queso-label" onclick="toggleCustExtra('queso')">
@@ -1157,8 +1158,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789674000000" defer></script>
-<script src="js/app.js?v=1790074515294" defer></script>
-<script src="js/auth.js?v=1790074515294" defer></script>
+<script src="js/app.js?v=1790076594019" defer></script>
+<script src="js/auth.js?v=1790076594019" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar

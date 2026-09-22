@@ -1170,12 +1170,36 @@ function renderCart() {
       console.error('renderCart: producto custom no encontrado menuId=' + c.menuId);
       return '';
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0);
+    // Ingredientes por encima del cupo incluido en el precio se cobran como
+    // un extra normal — ver precioExtraIngredientesCust/_libreIngredientesCust
+    // en nucleo-compartido.js. El cupo se reparte en el orden en que se
+    // fueron marcando, que es el orden en que ya viene c.ingredients.
+    const libreCarta = _libreIngredientesCust(c.menuId, c.sauces.length);
+    const ingLibresCarta = c.ingredients.slice(0, libreCarta);
+    const ingExtraCarta = c.ingredients.slice(libreCarta);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
+    // Agrupa por nombre ("Jamón York ×2") en orden de primera aparición —
+    // conPrecio añade el precio solo a la parte que cae en la zona extra.
+    const _aggIngCarta = (lista, conPrecio) => {
+      const cuenta = {};
+      const orden = [];
+      lista.forEach(n => {
+        if (!cuenta[n]) orden.push(n);
+        cuenta[n] = (cuenta[n] || 0) + 1;
+      });
+      return orden.map(n => {
+        const qty = cuenta[n];
+        const veces = qty >= 2 ? ' ×' + qty : '';
+        if (!conPrecio) return 'Extra ' + n + veces;
+        const precio = qty * precioIngredienteExtra(n);
+        return 'Extra ' + n + veces + ' +' + precio.toFixed(2).replace('.', ',') + '€';
+      });
+    };
     // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
     // el prefijo "Extra salsa " — no es un extra de pago.
-    const details = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ...c.ingredients.map(i => 'Extra ' + i)].join(', ');
+    const details = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ..._aggIngCarta(ingLibresCarta, false), ..._aggIngCarta(ingExtraCarta, true)].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Editar salsas/ingredientes (si tienes más de una, la separa en otra línea)\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {
@@ -1200,9 +1224,10 @@ function renderCart() {
       extras.push('🚫 Sin ' + ing);
     });
     if (c.queso) extras.push('+ Extra Queso +1,20€');
-    _precioIngredientesExtraConCambios(c.quitados, c.ingredientesExtra).forEach(function (r) {
-      const etiqueta = r.precio === 0 ? 'gratis · cambio' : r.precio.toFixed(2).replace('.', ',') + '€' + (r.precio === 0.20 ? ' · cambio' : '');
-      extras.push('+ Extra ' + r.nombre + ' +' + etiqueta);
+    _agruparPreciosConCambios(c.quitados, c.ingredientesExtra).forEach(function (r) {
+      const veces = r.qty >= 2 ? ' ×' + r.qty : '';
+      const etiqueta = r.precioTotal === 0 ? 'gratis · cambio' : r.precioTotal.toFixed(2).replace('.', ',') + '€';
+      extras.push('+ Extra ' + r.nombre + veces + ' +' + etiqueta);
     });
     (c.salsasExtra || []).forEach(salsa => {
       const _precioSalsa = (typeof precioSalsaExtra === 'function') ? precioSalsaExtra(salsa) : 1.00;

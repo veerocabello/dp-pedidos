@@ -922,12 +922,18 @@ function _esIngredienteExtraValido($ing) {
 // src/nucleo-compartido.js:_precioIngredientesExtraConCambios — si se
 // cambia una regla hay que actualizar la otra, o dejan de coincidir y todo
 // pedido con cambios se "corrige" mal.
+// Devuelve una LISTA (no un array asociado por nombre) porque un mismo
+// ingrediente puede repetirse — doble/triple jamón, ver
+// MAX_UNIDADES_ING_EXTRA en src/nucleo-compartido.js — y cada unidad se
+// precia por separado según en qué posición caiga tras ordenar.
 function _precioIngredientesExtraConCambios($removedCount, $ingredientesAñadidos) {
-    $added = array_values(array_unique($ingredientesAñadidos));
+    $added = array_values($ingredientesAñadidos);
     // El queso va primero en el orden — así ocupa un hueco de cambio antes
     // que otro ingrediente cualquiera, en vez de quedar fuera por
     // casualidad alfabética cuando hay más añadidos que huecos gratis.
-    // Mismo criterio que en src/nucleo-compartido.js.
+    // Mismo criterio que en src/nucleo-compartido.js. usort() con nombres
+    // repetidos es estable en PHP 8+ (los empates conservan su orden
+    // relativo de entrada), igual que Array.prototype.sort en el cliente.
     usort($added, function ($a, $b) {
         $aq = mb_stripos($a, 'queso') !== false;
         $bq = mb_stripos($b, 'queso') !== false;
@@ -938,9 +944,20 @@ function _precioIngredientesExtraConCambios($removedCount, $ingredientesAñadido
     $out = [];
     foreach ($added as $idx => $ing) {
         $esQueso = mb_stripos($ing, 'queso') !== false;
-        $out[$ing] = ($idx < $freeSwapCount) ? ($esQueso ? 0.20 : 0.00) : ($esQueso ? 1.20 : 1.00);
+        $precio = ($idx < $freeSwapCount) ? ($esQueso ? 0.20 : 0.00) : ($esQueso ? 1.20 : 1.00);
+        $out[] = ['nombre' => $ing, 'precio' => $precio];
     }
     return $out;
+}
+// "<nombre> ×N" (el × es el signo de multiplicación, no una x normal) —
+// mismo formato que arma el carrito (src/carrito-checkout.js/carta.js)
+// para mostrar "Extra Jamón York ×2" como una sola línea. Sin sufijo,
+// N = 1.
+function _parseCantidadIngExtra($ing) {
+    if (preg_match('/^(.*) ×(\d+)$/u', $ing, $m)) {
+        return [$m[1], max(1, (int)$m[2])];
+    }
+    return [$ing, 1];
 }
 // ── Corrige (no solo avisa) el precio de los "extras" de pago — antes solo
 // se acotaba cada precio a [0,999] sin comprobar que fuera el real, así que
@@ -970,13 +987,21 @@ function corregirPreciosExtras($items) {
             if (strpos($n, 'Sin ') === 0) {
                 $removedCount++;
             } elseif (strpos($n, 'Extra ') === 0 && strpos($n, 'Extra salsa ') !== 0 && $n !== 'Extra Queso') {
-                $ing = substr($n, strlen('Extra '));
-                if (_esIngredienteExtraValido($ing)) $ingredientesExtra[] = $ing;
+                list($ing, $qtyIng) = _parseCantidadIngExtra(substr($n, strlen('Extra ')));
+                if (_esIngredienteExtraValido($ing)) {
+                    for ($i = 0; $i < $qtyIng; $i++) $ingredientesExtra[] = $ing;
+                }
             }
         }
         $preciosConCambios = _precioIngredientesExtraConCambios($removedCount, $ingredientesExtra);
+        // Bolsa de precios ya calculados, agrupados por nombre — una línea
+        // "Extra X ×N" consume N precios de la bolsa de X (el orden dentro
+        // de un mismo nombre no importa para el total: solo importa cuántas
+        // unidades de X le tocan a cada línea que lo declara).
+        $bolsaPorNombre = [];
+        foreach ($preciosConCambios as $r) { $bolsaPorNombre[$r['nombre']][] = $r['precio']; }
 
-        $it['extras'] = array_map(function ($e) use ($it, $qty, $preciosConCambios, &$avisos, &$deltaTotal) {
+        $it['extras'] = array_map(function ($e) use ($it, $qty, &$bolsaPorNombre, &$avisos, &$deltaTotal) {
             if (!is_array($e) || !isset($e['name'])) return $e;
             $n = (string)$e['name'];
             $precioDeclarado = isset($e['price']) ? (float)$e['price'] : 0;
@@ -985,8 +1010,19 @@ function corregirPreciosExtras($items) {
                 $precioReal = 0.00;
             } else {
                 $esIngExtra = strpos($n, 'Extra ') === 0 && strpos($n, 'Extra salsa ') !== 0 && $n !== 'Extra Queso';
-                $ing = $esIngExtra ? substr($n, strlen('Extra ')) : null;
-                $precioReal = ($esIngExtra && isset($preciosConCambios[$ing])) ? $preciosConCambios[$ing] : _precioRealExtra($n);
+                if ($esIngExtra) {
+                    list($ing, $qtyIng) = _parseCantidadIngExtra(substr($n, strlen('Extra ')));
+                    if (_esIngredienteExtraValido($ing) && !empty($bolsaPorNombre[$ing])) {
+                        $precioReal = 0.0;
+                        for ($i = 0; $i < $qtyIng && !empty($bolsaPorNombre[$ing]); $i++) {
+                            $precioReal += array_shift($bolsaPorNombre[$ing]);
+                        }
+                    } else {
+                        $precioReal = null;
+                    }
+                } else {
+                    $precioReal = _precioRealExtra($n);
+                }
             }
 
             if ($precioReal !== null && abs($precioDeclarado - $precioReal) > 0.01) {
@@ -1085,7 +1121,7 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
             $agotados[] = $nombre;
         }
         // Patata Al Gusto (id 15) / Bomba (id 16): precio base + queso
-        // extra (+1,00€) y/o gratinado (+0,50€) opcionales — el propio
+        // extra (+1,20€) y/o gratinado (+0,50€) opcionales — el propio
         // cliente manda esos dos flags (extraQueso/extraGratinado) junto
         // con el nombre (ver custItems en carrito-checkout.js), así no
         // hace falta adivinarlos parseando el texto de "extras". Antes
@@ -1093,14 +1129,16 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
         // histórico: "no conviene duplicar en PHP"), que era el único
         // hueco de precio no cerrado de todo el flujo — alguien con
         // conocimientos técnicos podía forjar el subtotal de una patata
-        // personalizada y pagar de menos. Los límites de ingredientes/
-        // salsas (Al Gusto: 1 salsa + 6 ingredientes · Bomba: 9 entre
-        // ambos) YA se comprobaban aparte, ver
-        // dpf_limitesPersonalizadorExcedidos() más abajo — esto solo
-        // cierra el precio.
+        // personalizada y pagar de menos. Las salsas siguen con tope duro
+        // (Al Gusto: 1 · Bomba: 9), ver dpf_limitesPersonalizadorExcedidos()
+        // más abajo; los INGREDIENTES por encima del cupo incluido ya no
+        // están limitados — se cobran aquí mismo como un extra normal (ver
+        // dpf_precioExtraIngredientesCust).
         if (isset($mi['id']) && in_array($mi['id'], [15, 16], true)) {
             $precioBase = round((float)$mi['price'], 2);
-            $precioReal = round($precioBase + (!empty($it['extraQueso']) ? 1.20 : 0) + (!empty($it['extraGratinado']) ? 0.50 : 0), 2);
+            $sauceCount = isset($it['saucesCount']) && is_numeric($it['saucesCount']) ? (int)$it['saucesCount'] : 0;
+            $extraIngPrecio = dpf_precioExtraIngredientesCust($it['ingredients'] ?? [], $mi['id'], $sauceCount);
+            $precioReal = round($precioBase + (!empty($it['extraQueso']) ? 1.20 : 0) + (!empty($it['extraGratinado']) ? 0.50 : 0) + $extraIngPrecio, 2);
             $precioEnviado = $subtotal / $qty;
             if (abs($precioEnviado - $precioReal) > 0.02) {
                 $avisos[] = sprintf('%s (personalizada): enviado %.2f€, corregido a %.2f€', $nombre, $precioEnviado, $precioReal);
@@ -1187,36 +1225,56 @@ function corregirPreciosPromos($databaseURL, $accessToken, $items) {
 
 // ── Límites del personalizador de Patata Al Gusto (id 15) / Bomba (id 16)
 // — antes SOLO se comprobaban en el navegador (updateCustProgress,
-// antifraude.js: Al Gusto hasta 1 salsa + 6 ingredientes, Bomba hasta 9
-// entre salsas e ingredientes juntos). El precio de estos dos productos es
-// fijo pase lo que pase (corregirPreciosCatalogo los exceptúa a propósito,
-// ver el comentario ahí — no vale la pena duplicar en PHP el cálculo de
-// queso/gratinado), así que esto NO es un hueco de precio: es que,
-// saltándose la web, alguien podía forjar un pedido con más ingredientes o
-// salsas de los permitidos pagando el mismo precio fijo. saucesCount/
-// ingredientsCount los manda el navegador (ver custItems en
-// carrito-checkout.js) — no hay nada sensato que "corregir" en un pedido
-// así (no hay forma de saber a mano qué ingredientes de más quitar), así
-// que se rechaza el pedido entero, igual que un producto agotado.
+// antifraude.js), así que saltándose la web se podía forjar un pedido con
+// más salsas/ingredientes de los permitidos. saucesCount lo manda el
+// navegador (ver custItems en carrito-checkout.js), igual que la lista
+// completa de ingredientes (usada más abajo para el precio, no aquí).
+// Las SALSAS no tienen ningún mecanismo de "extra" de pago, así que se
+// quedan con tope duro — Al Gusto 1, Bomba 9 (su cupo entero, ya que no
+// tiene un maxSauces propio separado del de ingredientes). Los
+// INGREDIENTES por encima de su cupo ya NO están limitados aquí: se
+// permiten y se cobran como un extra normal en corregirPreciosCatalogo()
+// (ver dpf_precioExtraIngredientesCust más abajo) — antes (antes de que
+// existiera esa validación de precio) esto rechazaba el pedido entero
+// porque no había forma de cobrar el exceso; ahora sí la hay.
 function dpf_limitesPersonalizadorExcedidos($items) {
-    $limites = [
-        15 => ['maxSauces' => 1, 'maxIngredients' => 6, 'maxTotal' => null],
-        16 => ['maxSauces' => null, 'maxIngredients' => null, 'maxTotal' => 9],
-    ];
+    $limites = [15 => 1, 16 => 9];
     $excedidos = [];
     foreach ($items as $it) {
         if (!isset($it['menuId']) || !isset($limites[$it['menuId']])) continue;
-        $lim = $limites[$it['menuId']];
         $sauces = isset($it['saucesCount']) && is_numeric($it['saucesCount']) ? (int)$it['saucesCount'] : 0;
-        $ings = isset($it['ingredientsCount']) && is_numeric($it['ingredientsCount']) ? (int)$it['ingredientsCount'] : 0;
         $nombre = $it['name'] ?? ('producto ' . $it['menuId']);
-        if ($lim['maxTotal'] !== null) {
-            if (($sauces + $ings) > $lim['maxTotal']) $excedidos[] = $nombre;
-        } else {
-            if ($sauces > $lim['maxSauces'] || $ings > $lim['maxIngredients']) $excedidos[] = $nombre;
-        }
+        if ($sauces > $limites[$it['menuId']]) $excedidos[] = $nombre;
     }
     return array_values(array_unique($excedidos));
+}
+// ── Al Gusto/Bomba: cupo de ingredientes incluido en el precio fijo — ver
+// _libreIngredientesCust/precioExtraIngredientesCust en
+// src/nucleo-compartido.js, misma regla aquí para poder validar el precio
+// real. El cupo se reparte en el ORDEN en que el cliente los fue marcando
+// (mismo array `ingredients` que manda, en ese orden — ver custItems en
+// carrito-checkout.js): los primeros N son gratis, el resto es extra.
+function dpf_libreIngredientesCust($menuId, $sauceCount) {
+    if ($menuId == 15) return 6; // Al Gusto
+    if ($menuId == 16) return max(0, 9 - $sauceCount); // Bomba, cupo compartido con las salsas
+    return PHP_INT_MAX;
+}
+function dpf_precioExtraIngredientesCust($ingredients, $menuId, $sauceCount) {
+    $libre = dpf_libreIngredientesCust($menuId, $sauceCount);
+    $lista = is_array($ingredients) ? array_values($ingredients) : [];
+    if (count($lista) <= $libre) return 0.0;
+    $total = 0.0;
+    foreach (array_slice($lista, $libre) as $ing) {
+        $ing = (string)$ing;
+        // Un nombre no reconocido (catálogo de CUST_INGREDIENTS/
+        // EXTRAS_ING_PRECIO1/07 en src/nucleo-compartido.js) no suma nada —
+        // no es un hueco de precio: el pedido nunca puede pagar MENOS de lo
+        // real así, como mucho el aviso de corrección sale más bajo de lo
+        // que debería si alguien manda basura a mano.
+        if (!_esIngredienteExtraValido($ing)) continue;
+        $total += (mb_stripos($ing, 'queso') !== false) ? 1.20 : 1.00;
+    }
+    return round($total, 2);
 }
 
 // ── Comprobación de horario / vacaciones / pausa manual (SÍ bloquea el
@@ -2702,8 +2760,8 @@ try {
     }
     $limitesExcedidos = dpf_limitesPersonalizadorExcedidos($items);
     if (!empty($limitesExcedidos)) {
-        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — más ingredientes/salsas de los permitidos: ' . implode(', ', $limitesExcedidos));
-        echo json_encode(['success' => false, 'error' => 'Uno de tus productos personalizados (' . implode(', ', $limitesExcedidos) . ') tiene más ingredientes o salsas de los permitidos. Recarga la página e inténtalo de nuevo.']);
+        fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — más salsas de las permitidas: ' . implode(', ', $limitesExcedidos));
+        echo json_encode(['success' => false, 'error' => 'Uno de tus productos personalizados (' . implode(', ', $limitesExcedidos) . ') tiene más salsas de las permitidas. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
     $avisoTotal = comprobarTotalSospechoso($databaseURL, $accessToken, $items, $total, $discountCode, $esEstudianteJubilado, $oferta, $phoneClean);
