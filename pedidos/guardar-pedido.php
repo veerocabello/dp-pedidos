@@ -894,20 +894,18 @@ function _precioRealExtra($nombre) {
     }
     if (strpos($n, 'Extra ') === 0) {
         $ing = substr($n, strlen('Extra '));
-        $precio1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
-        $precio07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-        // Todos los ingredientes extra cuestan lo mismo ahora (1€) — se
-        // mantienen las dos listas solo para reconocer el nombre como
-        // ingrediente extra válido, no para variar el precio entre ellas.
-        if (in_array($ing, $precio1, true) || in_array($ing, $precio07, true)) return 1.00;
+        // Todos los ingredientes extra cuestan lo mismo (1€) salvo los de
+        // queso (Queso Mozzarella, 4 Quesos), que cuestan 1,20€ — mismo
+        // criterio que precioIngredienteExtra() en src/nucleo-compartido.js.
+        if (_esIngredienteExtraValido($ing)) return (mb_stripos($ing, 'queso') !== false) ? 1.20 : 1.00;
     }
     return null;
 }
 // ── ¿Es un nombre de ingrediente extra reconocido? Mismo catálogo que
 // EXTRAS_ING_PRECIO1/07 en src/nucleo-compartido.js — se usa para decidir
 // qué entradas "Extra <x>" entran en el recálculo en grupo de más abajo
-// (_precioIngredientesExtraConCambios), no para variar el precio entre las
-// dos listas (todas cuestan 1,00€ ahora).
+// (_precioIngredientesExtraConCambios); el precio en sí depende de si es
+// ingrediente de queso o no (ver _precioIngredientesExtraConCambios).
 function _esIngredienteExtraValido($ing) {
     $precio1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
     $precio07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
@@ -919,8 +917,8 @@ function _esIngredienteExtraValido($ing) {
 // ingrediente extra de la lista de arriba a la vez (sustitución), los 2
 // primeros cambios de la línea son gratis — salvo que el añadido sea
 // queso, que cuesta 0,20€ en vez de gratis. El resto va al precio normal
-// (1,00€). El orden que decide qué añadido ocupa cada cupo de cambio
-// gratis es alfabético, igual que en
+// (1,00€, o 1,20€ si es un ingrediente de queso). El orden que decide qué
+// añadido ocupa cada cupo de cambio gratis es alfabético, igual que en
 // src/nucleo-compartido.js:_precioIngredientesExtraConCambios — si se
 // cambia una regla hay que actualizar la otra, o dejan de coincidir y todo
 // pedido con cambios se "corrige" mal.
@@ -940,7 +938,7 @@ function _precioIngredientesExtraConCambios($removedCount, $ingredientesAñadido
     $out = [];
     foreach ($added as $idx => $ing) {
         $esQueso = mb_stripos($ing, 'queso') !== false;
-        $out[$ing] = ($idx < $freeSwapCount) ? ($esQueso ? 0.20 : 0.00) : 1.00;
+        $out[$ing] = ($idx < $freeSwapCount) ? ($esQueso ? 0.20 : 0.00) : ($esQueso ? 1.20 : 1.00);
     }
     return $out;
 }

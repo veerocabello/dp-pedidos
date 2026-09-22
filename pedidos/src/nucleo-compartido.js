@@ -130,6 +130,9 @@ const EXTRAS_SALSAS = ['Alioli', 'BBQ', 'Brava', 'Ketchup', 'Mantequilla', 'Mayo
 const EXTRAS_SALSA_PRECIO = 1.00;
 // Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
+// Excepción: los ingredientes de queso (Queso Mozzarella, 4 Quesos) cuestan
+// más que el resto de ingredientes extra — mismo criterio que precioSalsaExtra.
+function precioIngredienteExtra(nombre) { return /queso/i.test(nombre || '') ? 1.20 : 1.00; }
 let _extrasSalsas = {}; // { nombre: true/false }
 let _extrasQuitados = {}; // { nombre: true/false }
 // Cuando el modal se abre para EDITAR una línea ya existente del carrito
@@ -185,7 +188,7 @@ function _precioIngredientesExtraConCambios(quitadosList, ingredientesExtraList)
   const freeSwapCount = Math.min(removedCount, added.length, 2);
   return added.map((ing, idx) => {
     const esQueso = /queso/i.test(ing);
-    const precio = idx < freeSwapCount ? (esQueso ? 0.20 : 0) : 1.00;
+    const precio = idx < freeSwapCount ? (esQueso ? 0.20 : 0) : (esQueso ? 1.20 : 1.00);
     return { nombre: ing, precio };
   });
 }
@@ -224,7 +227,7 @@ function openExtrasModal(itemId) {
   // 0,20€) — ver updateExtrasTotal() y getExtrasItemPrice().
   const quitablesList = QUITABLES_POR_PRODUCTO[itemId] || [];
   if (quitablesList.length) {
-    optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#c0392b;letter-spacing:.5px;margin-bottom:6px\">🚫 QUITAR INGREDIENTES <span style=\"font-weight:500;text-transform:none;letter-spacing:0;color:#8A6A4E\">(gratis)</span></div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">";
+    optionsHtml += "\n      <div style=\"font-size:12px;font-weight:700;color:#c0392b;letter-spacing:.5px;margin-bottom:6px\">🚫 QUITAR INGREDIENTES</div>\n      <div class=\"chip-grid\" style=\"margin-bottom:14px\">";
     quitablesList.forEach(ing => {
       const qid = 'extra-quitar-' + ing.replace(/[^a-z0-9]/gi, '_');
       optionsHtml += "<button type=\"button\" class=\"chip\" id=\"".concat(qid, "\" onclick=\"toggleQuitarIng('").concat(ing.replace(/'/g, "\'"), "')\">").concat(ing, "</button>");
@@ -241,14 +244,14 @@ function openExtrasModal(itemId) {
   optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
   EXTRAS_ING_PRECIO1.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 €</div></div>\n    </label>");
+    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(precioIngredienteExtra(ing).toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   // Ingredientes extra +1,00€
   optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
   EXTRAS_ING_PRECIO07.forEach(ing => {
     const eid = 'extra-ing-' + ing.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+1,00 €</div></div>\n    </label>");
+    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraIng('").concat(ing.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(ing, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(precioIngredienteExtra(ing).toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
   });
   optionsHtml += "</div>";
   // Salsas extra +1,00€ (Philadelphia +1,20€, ver precioSalsaExtra)
