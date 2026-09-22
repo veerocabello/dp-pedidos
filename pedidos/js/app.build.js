@@ -126,7 +126,7 @@ let _extrasBase = 'aceite'; // 'aceite' | 'mantequilla' — solo aplica a Patata
 
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort'];
+const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort', 'Mantequilla'];
 const EXTRAS_SALSA_PRECIO = 1.00;
 // Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
@@ -9256,7 +9256,7 @@ const CUST_SAUCES = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli'
 // el 🚫 es solo para la chapa del selector; en el ticket/carrito se ve
 // "Sin salsa" a secas, igual que el resto de extras de esta web.
 const CUST_SIN_SALSA = 'Sin salsa';
-const CUST_INGREDIENTS = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos', 'Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+const CUST_INGREDIENTS = ['4 Quesos', 'Aceitunas', 'Atún', 'Bacon', 'Carne Kebab', 'Carne Picada', 'Cebolla', 'Champiñón', 'Gambas', 'Huevo', 'Jamón York', 'Maíz', 'Piña', 'Pollo', 'Queso Mozzarella', 'Remolacha', 'Tomate Natural', 'Tronquitos de Mar', 'Zanahoria'];
 let custType = null;
 let custSelSauces = [];
 let custSelIngredients = [];

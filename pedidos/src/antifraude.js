@@ -761,7 +761,7 @@ const CUST_SAUCES = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli'
 // el 🚫 es solo para la chapa del selector; en el ticket/carrito se ve
 // "Sin salsa" a secas, igual que el resto de extras de esta web.
 const CUST_SIN_SALSA = 'Sin salsa';
-const CUST_INGREDIENTS = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos', 'Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
+const CUST_INGREDIENTS = ['4 Quesos', 'Aceitunas', 'Atún', 'Bacon', 'Carne Kebab', 'Carne Picada', 'Cebolla', 'Champiñón', 'Gambas', 'Huevo', 'Jamón York', 'Maíz', 'Piña', 'Pollo', 'Queso Mozzarella', 'Remolacha', 'Tomate Natural', 'Tronquitos de Mar', 'Zanahoria'];
 let custType = null;
 let custSelSauces = [];
 let custSelIngredients = [];
