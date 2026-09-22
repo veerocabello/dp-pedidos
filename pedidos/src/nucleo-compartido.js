@@ -159,6 +159,27 @@ function precioExtraIngredientesCust(ingredients, menuId, sauceCount) {
   if (lista.length <= libre) return 0;
   return lista.slice(libre).reduce((s, ing) => s + precioIngredienteExtra(ing), 0);
 }
+// Igual que arriba pero para las SALSAS — Al Gusto tiene su propio cupo de
+// salsas (maxSauces), Bomba las cuenta contra su cupo compartido entero
+// (maxTotal) como techo propio, independiente de cuántos ingredientes haya
+// (los ingredientes ya restan su propio hueco según cuántas salsas hay,
+// ver _libreIngredientesCust — las salsas tienen prioridad sobre ese cupo
+// compartido, así que su propio techo no depende de los ingredientes).
+function _libreSalsasCust(menuId) {
+  const cfg = (typeof CUSTOMIZER_CONFIG !== 'undefined')
+    ? CUSTOMIZER_CONFIG[menuId === 15 ? 'algusto' : 'bomba']
+    : null;
+  if (!cfg) return Infinity;
+  if (cfg.maxSauces !== null) return cfg.maxSauces;
+  if (cfg.maxTotal !== null) return cfg.maxTotal;
+  return Infinity;
+}
+function precioExtraSalsasCust(sauces, menuId) {
+  const libre = _libreSalsasCust(menuId);
+  const lista = sauces || [];
+  if (lista.length <= libre) return 0;
+  return lista.slice(libre).reduce((s, sal) => s + precioSalsaExtra(sal), 0);
+}
 let _extrasSalsas = {}; // { nombre: true/false }
 let _extrasQuitados = {}; // { nombre: true/false }
 // Cuando el modal se abre para EDITAR una línea ya existente del carrito

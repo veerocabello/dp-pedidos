@@ -1177,7 +1177,10 @@ function renderCart() {
     const libreCarta = _libreIngredientesCust(c.menuId, c.sauces.length);
     const ingLibresCarta = c.ingredients.slice(0, libreCarta);
     const ingExtraCarta = c.ingredients.slice(libreCarta);
-    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length);
+    const libreSalCarta = _libreSalsasCust(c.menuId);
+    const sauceLibresCarta = c.sauces.slice(0, libreSalCarta);
+    const sauceExtraCarta = c.sauces.slice(libreSalCarta);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length) + precioExtraSalsasCust(c.sauces, c.menuId);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
     // Agrupa por nombre ("Jamón York ×2") en orden de primera aparición —
@@ -1198,8 +1201,14 @@ function renderCart() {
       });
     };
     // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
-    // el prefijo "Extra salsa " — no es un extra de pago.
-    const details = [...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s), ..._aggIngCarta(ingLibresCarta, false), ..._aggIngCarta(ingExtraCarta, true)].join(', ');
+    // el prefijo "Extra salsa " — no es un extra de pago (siempre cae en la
+    // parte "libre": es la única salsa de la lista cuando está puesta).
+    const details = [
+      ...sauceLibresCarta.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
+      ...sauceExtraCarta.map(s => 'Extra salsa ' + s + ' +' + precioSalsaExtra(s).toFixed(2).replace('.', ',') + '€'),
+      ..._aggIngCarta(ingLibresCarta, false),
+      ..._aggIngCarta(ingExtraCarta, true)
+    ].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Editar salsas/ingredientes (si tienes más de una, la separa en otra línea)\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
   }).join('');
   const extLinesHtml = extLines.map(c => {

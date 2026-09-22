@@ -861,7 +861,7 @@ function getFidelizacionDescuento(phoneClean) {
   const preciosPatatasCustom = Object.values(custCart).map(c => {
     const it = MENU.find(m => m.id == c.menuId);
     if (!it || it.cat !== 'Patatas' || !(c.qty > 0)) return 0;
-    return it.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length);
+    return it.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length) + precioExtraSalsasCust(c.sauces, c.menuId);
   });
   const preciosPatatasExtras = Object.values(extrasCart).map(c => {
     const it = MENU.find(m => m.id == c.menuId);
@@ -1202,7 +1202,7 @@ async function _submitOrderInner() {
       console.error('submitOrder: producto custom no encontrado menuId=' + c.menuId);
       return s;
     }
-    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length) + precioExtraSalsasCust(c.sauces, c.menuId);
     return s + unitPrice * c.qty;
   }, 0);
   const extTotal = Object.values(extrasCart).filter(c => c.qty > 0).reduce((s, c) => s + getExtrasItemPrice(c) * c.qty, 0);
@@ -1295,15 +1295,20 @@ async function _submitOrderInner() {
       console.error('submitOrder: producto custom no encontrado menuId=' + c.menuId);
       return null;
     }
-    // Ingredientes por encima del cupo incluido en el precio se cobran como
-    // un extra normal (ver precioExtraIngredientesCust/_libreIngredientesCust
-    // en nucleo-compartido.js) — el cupo se reparte en el orden en que se
-    // fueron marcando, que es el orden en que ya viene c.ingredients.
+    // Ingredientes/salsas por encima del cupo incluido en el precio se
+    // cobran como un extra normal (ver precioExtraIngredientesCust/
+    // precioExtraSalsasCust en nucleo-compartido.js) — el cupo se reparte
+    // en el orden en que se fueron marcando, que es el orden en que ya
+    // vienen c.ingredients/c.sauces.
     const libre = _libreIngredientesCust(c.menuId, c.sauces.length);
     const ingLibres = c.ingredients.slice(0, libre);
     const ingExtra = c.ingredients.slice(libre);
     const extraIngPrecio = precioExtraIngredientesCust(c.ingredients, c.menuId, c.sauces.length);
-    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + extraIngPrecio;
+    const libreSal = _libreSalsasCust(c.menuId);
+    const sauceLibres = c.sauces.slice(0, libreSal);
+    const sauceExtra = c.sauces.slice(libreSal);
+    const extraSalPrecio = precioExtraSalsasCust(c.sauces, c.menuId);
+    const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + extraIngPrecio + extraSalPrecio;
     // Agrupa una lista de ingredientes por nombre ("Jamón York ×2") en el
     // orden de primera aparición, con queso siempre al final del grupo
     // (puede venir de ingredientes o como extra) — conPrecio añade el
@@ -1328,9 +1333,11 @@ async function _submitOrderInner() {
     };
     // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
     // el prefijo "Extra salsa " — no es un extra de pago, es aviso para
-    // cocina de que el cliente no quiere ninguna.
+    // cocina de que el cliente no quiere ninguna (siempre cae en la parte
+    // "libre": es la única salsa de la lista cuando está puesta).
     const extras = [
-      ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
+      ...sauceLibres.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
+      ...sauceExtra.map(s => 'Extra salsa ' + s + ' +' + precioSalsaExtra(s).toFixed(2).replace('.', ',') + '€'),
       ..._agruparIngNombres(ingLibres, false),
       ..._agruparIngNombres(ingExtra, true)
     ];
@@ -1342,19 +1349,18 @@ async function _submitOrderInner() {
       qty: c.qty,
       subtotal: unitPrice * c.qty,
       extras,
-      // menuId/saucesCount: para que el servidor pueda comprobar el tope
-      // duro de salsas (Al Gusto: 1 · Bomba: 9) sin tener que parsear las
-      // etiquetas de texto de "extras" — ver dpf_limitesPersonalizadorExcedidos()
-      // en guardar-pedido.php. ingredients: la lista completa, en el mismo
-      // orden en que se marcaron, para que el servidor pueda recalcular qué
-      // parte cae en el cupo incluido y qué parte es extra de pago (ver
-      // dpf_precioExtraIngredientesCust ahí mismo).
+      // menuId/sauces/ingredients: listas completas, en el mismo orden en
+      // que se marcaron, para que el servidor pueda recalcular qué parte
+      // cae en el cupo incluido y qué parte es extra de pago (ver
+      // dpf_precioExtraIngredientesCust/dpf_precioExtraSalsasCust en
+      // guardar-pedido.php) sin tener que parsear las etiquetas de texto
+      // de "extras".
       menuId: c.menuId,
-      saucesCount: c.sauces.length,
+      sauces: [...c.sauces],
       ingredients: [...c.ingredients],
       // Para que el servidor pueda comprobar el precio real (base + queso
-      // +1,20€ + gratinado +0,50€ + extra por ingredientes de más) sin
-      // tener que adivinarlo parseando el texto de "extras" — ver
+      // +1,20€ + gratinado +0,50€ + extra por ingredientes/salsas de más)
+      // sin tener que adivinarlo parseando el texto de "extras" — ver
       // corregirPreciosCatalogo() en guardar-pedido.php.
       extraQueso: !!c.extraQueso,
       extraGratinado: !!c.extraGratinado

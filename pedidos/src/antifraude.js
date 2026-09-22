@@ -822,7 +822,23 @@ function custSelTotal() {
 function custTieneQuesoIngrediente() {
   return custSelIngredients.includes('Queso Mozzarella') || custSelIngredients.includes('4 Quesos');
 }
+// "🧀 Queso mozzarella" (extra de pago) y "Queso Mozzarella"/"4 Quesos" de
+// INGREDIENTES son el mismo queso — igual que en el modal de extras
+// normal (ver _actualizarDisponibilidadQuesoToggle en nucleo-compartido.js).
+// Si ya está puesto como ingrediente (dentro o fuera del cupo, da igual),
+// el botón de pago se oculta del todo en vez de dejar marcar los dos —
+// nunca debe poder cobrarse el queso dos veces ni por accidente.
+function _actualizarDisponibilidadQuesoToggleCust() {
+  const tiene = custTieneQuesoIngrediente();
+  if (tiene && custExtraQueso) {
+    custExtraQueso = false;
+    updateCustExtraUI('queso', false);
+  }
+  const label = document.getElementById('cust-queso-label');
+  if (label) label.style.display = tiene ? 'none' : 'flex';
+}
 function toggleCustExtra(type) {
+  if (type === 'queso' && !custExtraQueso && custTieneQuesoIngrediente()) return;
   if (type === 'queso') {
     custExtraQueso = !custExtraQueso;
     // Si quita el queso extra y no es solo gratinado, quitar también
@@ -873,6 +889,7 @@ function updateCustTotalPrice() {
   if (custExtraQueso) price += 1.20;
   if (custExtraGratinado) price += 0.50;
   price += precioExtraIngredientesCust(custSelIngredients, custType === 'algusto' ? 15 : 16, custSelSauces.length);
+  price += precioExtraSalsasCust(custSelSauces, custType === 'algusto' ? 15 : 16);
   document.getElementById('cust-price').textContent = price.toFixed(2).replace('.', ',') + ' €';
 }
 function renderCustChips() {
@@ -886,11 +903,17 @@ function renderCustChips() {
   // tiene sentido bloquearla por haber llegado ya al máximo de salsas.
   const sinSalsaSel = custSelSauces.includes(CUST_SIN_SALSA);
   const sinSalsaChip = "<button class=\"chip ".concat(sinSalsaSel ? 'selected' : '', "\"\n      onclick=\"toggleCustSauce(this,'").concat(CUST_SIN_SALSA, "')\">🚫 Sin salsa</button>");
+  // Salsas: ya NO se bloquean al llegar al cupo — se puede seguir marcando,
+  // pero lo que pase del cupo se cobra como un extra normal (ver
+  // precioExtraSalsasCust en nucleo-compartido.js), igual que los
+  // ingredientes. El cupo se reparte en el orden en que se fueron marcando.
+  const libreSal = _libreSalsasCust(custType === 'algusto' ? 15 : 16);
   saucesEl.innerHTML = sinSalsaChip + CUST_SAUCES.map(s => {
-    const sel = custSelSauces.includes(s);
-    // Salsas: bloqueadas por maxSauces (algusto) o por maxTotal combinado (bomba)
-    let disabled = !sel && (cfg.maxSauces !== null && custSelSauces.length >= cfg.maxSauces || cfg.maxTotal !== null && custSelTotal() >= cfg.maxTotal);
-    return "<button class=\"chip ".concat(sel ? 'selected' : '', " ").concat(disabled ? 'disabled' : '', "\"\n      onclick=\"toggleCustSauce(this,'").concat(s.replace(/'/g, "&#39;"), "')\">").concat(s, "</button>");
+    const idx = custSelSauces.indexOf(s);
+    const sel = idx >= 0;
+    const esExtra = sel && idx >= libreSal;
+    const cls = 'chip' + (sel ? ' selected' : '') + (esExtra ? ' extra' : '');
+    return "<button class=\"".concat(cls, "\"\n      onclick=\"toggleCustSauce(this,'").concat(s.replace(/'/g, "&#39;"), "')\">").concat(s).concat(esExtra ? ' · extra' : '', "</button>");
   }).join('');
   // Ingredientes: ya NO se bloquean al llegar al cupo — se puede seguir
   // marcando, pero lo que pase del cupo se cobra como un extra normal (ver
@@ -912,21 +935,26 @@ function renderCustChips() {
     const cls = 'chip' + (sel ? ' selected' : '') + (esExtra ? ' extra' : '');
     return "<button class=\"".concat(cls, "\"\n      onclick=\"_custIngTap('").concat(i.replace(/'/g, "&#39;"), "')\">").concat(i).concat(badge).concat(etiquetaExtra, "</button>");
   }).join('');
-  _actualizarAvisoExtraCust(extraPorNombre);
+  _actualizarDisponibilidadQuesoToggleCust();
+  _actualizarAvisoExtraCust();
 }
 // Aviso dorado (no rojo — no es un error, es un extra que se paga a
-// mayores) cuando algún ingrediente ha pasado del cupo incluido en el
-// precio de Al Gusto/Bomba.
-function _actualizarAvisoExtraCust(extraPorNombre) {
+// mayores) cuando algún ingrediente y/o salsa ha pasado del cupo incluido
+// en el precio de Al Gusto/Bomba.
+function _actualizarAvisoExtraCust() {
   const el = document.getElementById('cust-ing-extra-aviso');
   if (!el) return;
-  const totalExtra = precioExtraIngredientesCust(custSelIngredients, custType === 'algusto' ? 15 : 16, custSelSauces.length);
+  const menuId = custType === 'algusto' ? 15 : 16;
+  const extraIng = precioExtraIngredientesCust(custSelIngredients, menuId, custSelSauces.length);
+  const extraSal = precioExtraSalsasCust(custSelSauces, menuId);
+  const totalExtra = extraIng + extraSal;
   if (totalExtra <= 0) {
     el.style.display = 'none';
     return;
   }
+  const que = extraIng > 0 && extraSal > 0 ? 'ingredientes y salsas' : (extraSal > 0 ? 'salsas' : 'ingredientes');
   el.style.display = 'block';
-  el.innerHTML = '🧾 Ya usaste los ingredientes incluidos en el precio — lo que marques ahora (en <span style="font-weight:800">dorado</span>) se cobra aparte, como un extra normal: +' + totalExtra.toFixed(2).replace('.', ',') + ' €';
+  el.innerHTML = '🧾 Ya usaste los ' + que + ' incluidos en el precio — lo que marques ahora (en <span style="font-weight:800">dorado</span>) se cobra aparte, como un extra normal: +' + totalExtra.toFixed(2).replace('.', ',') + ' €';
 }
 function _custIngTap(name) {
   const qty = custSelIngredients.filter(n => n === name).length;
@@ -987,8 +1015,11 @@ function updateCustProgress() {
   // como extra, ver renderCustChips/_actualizarAvisoExtraCust) — las
   // barras y contadores se acotan a 100% del cupo, y aparte se indica
   // cuántos van ya "de extra".
-  const libreIng = _libreIngredientesCust(custType === 'algusto' ? 15 : 16, ns);
+  const menuIdProg = custType === 'algusto' ? 15 : 16;
+  const libreIng = _libreIngredientesCust(menuIdProg, ns);
+  const libreSal = _libreSalsasCust(menuIdProg);
   const niExtra = Math.max(0, ni - libreIng);
+  const nsExtra = Math.max(0, ns - libreSal);
   const extraTxt = niExtra > 0 ? ' (+' + niExtra + ' extra)' : '';
   if (cfg.maxTotal !== null) {
     // Bomba: una barra de progreso total combinada, ocultar barra de salsas separada
@@ -1005,12 +1036,14 @@ function updateCustProgress() {
     // Al Gusto: dos barras independientes
     if (sauceProg) sauceProg.style.display = 'flex';
     const niCupo = Math.min(ni, cfg.maxIngredients);
-    const pctS = Math.min(100, Math.round(ns / cfg.maxSauces * 100));
+    const nsCupo = Math.min(ns, cfg.maxSauces);
+    const extraSalTxt = nsExtra > 0 ? ' (+' + nsExtra + ' extra)' : '';
+    const pctS = Math.min(100, Math.round(nsCupo / cfg.maxSauces * 100));
     const pctI = Math.min(100, Math.round(niCupo / cfg.maxIngredients * 100));
-    document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + ns + '/' + cfg.maxSauces;
+    document.getElementById('cust-sauce-label').textContent = 'Salsas: ' + nsCupo + '/' + cfg.maxSauces + extraSalTxt;
     document.getElementById('cust-sauce-bar').style.setProperty('--pct', pctS / 100);
     document.getElementById('cust-sauce-bar').className = 'progress-bar-fill' + (pctS >= 100 ? ' full' : '');
-    document.getElementById('cust-sauce-badge').textContent = ns + '/' + cfg.maxSauces;
+    document.getElementById('cust-sauce-badge').textContent = nsCupo + '/' + cfg.maxSauces;
     document.getElementById('cust-ing-label').textContent = 'Ingredientes: ' + niCupo + '/' + cfg.maxIngredients + extraTxt;
     document.getElementById('cust-ing-bar').style.setProperty('--pct', pctI / 100);
     document.getElementById('cust-ing-bar').className = 'progress-bar-fill' + (pctI >= 100 ? ' full' : '');
@@ -1077,25 +1110,10 @@ function confirmCustomizer() {
     return;
   }
 
-  // Las salsas siguen con tope duro (los chips ya vienen deshabilitados al
-  // llegar al máximo, esto es solo defensa en profundidad). Los
-  // INGREDIENTES ya no tienen tope duro — pasar del cupo incluido en el
-  // precio se permite y se cobra como extra (ver precioExtraIngredientesCust
-  // en nucleo-compartido.js, calculado más abajo al guardar la línea).
-  if (cfg.maxSauces !== null && custSelSauces.length > cfg.maxSauces) {
-    errEl.textContent = 'Máximo ' + cfg.maxSauces + ' salsa';
-    errEl.style.display = 'block';
-    return;
-  }
-  // Bomba no tiene maxSauces propio (cupo compartido con ingredientes),
-  // pero las salsas en sí no tienen mecanismo de "extra" — se quedan con
-  // tope duro en el total del cupo, aunque los ingredientes ya puedan
-  // pasarlo.
-  if (cfg.maxTotal !== null && custSelSauces.length > cfg.maxTotal) {
-    errEl.textContent = 'Máximo ' + cfg.maxTotal + ' salsas';
-    errEl.style.display = 'block';
-    return;
-  }
+  // Ni las salsas ni los ingredientes tienen ya tope duro — pasar del cupo
+  // incluido en el precio se permite y se cobra como extra (ver
+  // precioExtraIngredientesCust/precioExtraSalsasCust en
+  // nucleo-compartido.js, calculado más abajo al guardar la línea).
   const itemId = custType === 'algusto' ? 15 : 16;
   // Huella independiente del orden en que se fueron marcando (agrupa por
   // nombre+cantidad) — así "pedir lo mismo otra vez" siempre junta con la
