@@ -135,15 +135,15 @@ function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 
 function precioIngredienteExtra(nombre) { return /queso/i.test(nombre || '') ? 1.20 : 1.00; }
 // ── Al Gusto/Bomba: "INGREDIENTES EXTRA"/"SALSAS EXTRA" — sección de pago
 // aparte, separada del cupo incluido en el precio fijo (que tiene tope
-// duro, ver CUSTOMIZER_CONFIG/renderCustChips en antifraude.js). ingExtra
-// es { nombre: cantidad, 0-3 } (mismo catálogo/precio que EXTRAS_ING_PRECIO1/07);
-// salsaExtra es { nombre: true/false } (mismo catálogo/precio que EXTRAS_SALSAS).
+// duro, ver CUSTOMIZER_CONFIG/renderCustChips en antifraude.js). ingExtra y
+// salsaExtra son { nombre: cantidad, 0-MAX_UNIDADES_ING_EXTRA } (mismo
+// catálogo/precio que EXTRAS_ING_PRECIO1/07/EXTRAS_SALSAS).
 function custExtraPrecioTotal(ingExtra, salsaExtra) {
-  let total = _flattenIngredientesExtra(ingExtra || {}).reduce((s, n) => s + precioIngredienteExtra(n), 0);
-  Object.entries(salsaExtra || {}).forEach(([nombre, active]) => { if (active) total += precioSalsaExtra(nombre); });
+  const total = _flattenIngredientesExtra(ingExtra || {}).reduce((s, n) => s + precioIngredienteExtra(n), 0)
+    + _flattenIngredientesExtra(salsaExtra || {}).reduce((s, n) => s + precioSalsaExtra(n), 0);
   return total;
 }
-let _extrasSalsas = {}; // { nombre: true/false }
+let _extrasSalsas = {}; // { nombre: cantidad, 0-MAX_UNIDADES_ING_EXTRA }
 let _extrasQuitados = {}; // { nombre: true/false }
 // Cuando el modal se abre para EDITAR una línea ya existente del carrito
 // (duplicarExtrasItem) en vez de para añadir una desde cero, aquí se
@@ -221,6 +221,21 @@ function _agruparPreciosConCambios(quitadosList, ingredientesExtraList) {
   });
   return orden.map(n => porNombre[n]);
 }
+// Igual que _agruparPreciosConCambios pero para SALSAS extra — a diferencia
+// de los ingredientes, las salsas no tienen regla de "cambio" (siempre al
+// mismo precio, sin descuento por quitar), así que agrupar es más simple:
+// una lista con repetidos (ver _flattenIngredientesExtra) → una fila por
+// nombre con su cantidad y precio total, para mostrar "Extra salsa Alioli
+// ×2 +2,00€" en vez de una línea repetida por cada unidad.
+function _agruparSalsasExtra(lista) {
+  const cuenta = {};
+  const orden = [];
+  (lista || []).forEach(n => {
+    if (!cuenta[n]) orden.push(n);
+    cuenta[n] = (cuenta[n] || 0) + 1;
+  });
+  return orden.map(n => ({ nombre: n, qty: cuenta[n], precioTotal: cuenta[n] * precioSalsaExtra(n) }));
+}
 function openExtrasModal(itemId) {
   // Asegurar que el modal está en el body directamente
   const em = document.getElementById('extras-modal');
@@ -277,16 +292,14 @@ function openExtrasModal(itemId) {
   optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">INGREDIENTES EXTRA</div>";
   optionsHtml += "<div id=\"extra-ing-grid-1\" style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\"></div>";
   optionsHtml += "<div id=\"extra-ing-grid-07\" style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\"></div>";
-  // Salsas extra +1,00€ (Philadelphia +1,20€, ver precioSalsaExtra)
+  // Salsas extra +1,00€ (Philadelphia +1,20€, ver precioSalsaExtra) — hasta
+  // ×MAX_UNIDADES_ING_EXTRA unidades cada una, mismo contador que los
+  // ingredientes (ver _extraSalsaRowHtml/_renderExtraSalsaGrid).
   optionsHtml += "<div style=\"margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:#3D1F0D;letter-spacing:.5px\">SALSAS EXTRA</div>";
-  optionsHtml += "<div style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\">";
-  EXTRAS_SALSAS.forEach(salsa => {
-    const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-    optionsHtml += "<label id=\"lbl-".concat(eid, "\" style=\"display:flex;align-items:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:9px;padding:9px 10px;cursor:pointer\" onclick=\"toggleExtraSalsa('").concat(salsa.replace(/'/g, "\'"), "')\" >\n      <div id=\"").concat(eid, "\" style=\"width:20px;height:20px;border-radius:50%;border:2px solid #F5E6C8;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s\"></div>\n      <div><div style=\"font-size:13px;font-weight:600;color:#2A1506\">").concat(salsa, "</div><div style=\"font-size:11px;color:#8A6A4E\">+").concat(precioSalsaExtra(salsa).toFixed(2).replace('.', ','), " €</div></div>\n    </label>");
-  });
-  optionsHtml += "</div>";
+  optionsHtml += "<div id=\"extra-salsa-grid\" style=\"display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px\"></div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
   _renderExtraIngGrids();
+  _renderExtraSalsaGrid();
   _actualizarDisponibilidadQuesoToggle();
   _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
@@ -445,21 +458,43 @@ function _extraIngSetQty(ing, next) {
   _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
 }
-function toggleExtraSalsa(salsa) {
-  _extrasSalsas[salsa] = !_extrasSalsas[salsa];
+// Misma fila con contador ×1-×3 que los ingredientes extra (_extraIngRowHtml)
+// — antes las salsas eran una simple casilla sin poder pedir doble/triple
+// de la misma salsa.
+function _extraSalsaRowHtml(salsa) {
   const eid = 'extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-  const el = document.getElementById(eid);
-  const lbl = document.getElementById('lbl-' + eid);
-  const active = _extrasSalsas[salsa];
-  if (el) {
-    el.style.background = active ? '#3D1F0D' : '#fff';
-    el.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    el.innerHTML = active ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-  }
-  if (lbl) {
-    lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
-    lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
-  }
+  const qty = _extrasSalsas[salsa] || 0;
+  const on = qty > 0;
+  const precioUnidad = precioSalsaExtra(salsa);
+  const salsaAttr = salsa.replace(/'/g, "\\'");
+  const badge = qty >= 2 ? ' <span style="background:#F4C430;color:#3D1F0D;font-size:10px;font-weight:900;padding:1px 6px;border-radius:99px;margin-left:4px">×' + qty + '</span>' : '';
+  const checkHtml = on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
+  const stepperHtml = on ? (
+    '<div style="flex-shrink:0;display:flex;align-items:center;gap:2px;background:#fff;border:1.5px solid #3D1F0D;border-radius:99px;padding:2px">' +
+      '<button type="button" onclick="event.stopPropagation();_extraSalsaSetQty(\'' + salsaAttr + '\',' + (qty - 1) + ')" aria-label="Quitar una unidad de ' + salsa + '" style="width:22px;height:22px;border-radius:50%;border:none;background:#3D1F0D;color:#FFF8EE;font-size:14px;font-weight:800;cursor:pointer;line-height:1">−</button>' +
+      '<span style="min-width:16px;text-align:center;font-weight:800;font-size:12.5px;color:#3D1F0D">' + qty + '</span>' +
+      '<button type="button" ' + (qty >= MAX_UNIDADES_ING_EXTRA ? 'disabled' : '') + ' onclick="event.stopPropagation();_extraSalsaSetQty(\'' + salsaAttr + '\',' + (qty + 1) + ')" aria-label="Añadir otra unidad de ' + salsa + '" style="width:22px;height:22px;border-radius:50%;border:none;background:' + (qty >= MAX_UNIDADES_ING_EXTRA ? '#C9B79A' : '#3D1F0D') + ';color:#FFF8EE;font-size:14px;font-weight:800;cursor:' + (qty >= MAX_UNIDADES_ING_EXTRA ? 'not-allowed' : 'pointer') + ';line-height:1">+</button>' +
+    '</div>'
+  ) : '';
+  return '<label id="lbl-' + eid + '" style="display:flex;align-items:center;gap:8px;background:' + (on ? 'rgba(244,196,48,0.08)' : '#fff') + ';border:1.5px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';border-radius:9px;padding:9px 10px">' +
+    '<div onclick="_extraSalsaTapRow(\'' + salsaAttr + '\')" style="flex-grow:1;min-width:0;display:flex;align-items:center;gap:10px;cursor:pointer">' +
+      '<div id="' + eid + '" style="width:20px;height:20px;border-radius:50%;border:2px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';background:' + (on ? '#3D1F0D' : '#fff') + ';flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s">' + checkHtml + '</div>' +
+      '<div><div style="font-size:13px;font-weight:600;color:#2A1506">' + salsa + badge + '</div><div style="font-size:11px;color:#8A6A4E">+' + precioUnidad.toFixed(2).replace('.', ',') + ' €' + (qty >= 2 ? ' × ' + qty : '') + '</div></div>' +
+    '</div>' +
+    stepperHtml +
+  '</label>';
+}
+function _renderExtraSalsaGrid() {
+  const g = document.getElementById('extra-salsa-grid');
+  if (g) g.innerHTML = EXTRAS_SALSAS.map(_extraSalsaRowHtml).join('');
+}
+function _extraSalsaTapRow(salsa) {
+  if (!_extrasSalsas[salsa]) _extraSalsaSetQty(salsa, 1);
+}
+function _extraSalsaSetQty(salsa, next) {
+  const clamped = Math.max(0, Math.min(MAX_UNIDADES_ING_EXTRA, next));
+  _extrasSalsas[salsa] = clamped;
+  _renderExtraSalsaGrid();
   updateExtrasTotal();
 }
 function updateExtraCheckUI(type, active) {
@@ -493,7 +528,7 @@ function updateExtrasTotal() {
   const quitadosList = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k);
   const ingredientesList = _flattenIngredientesExtra(_extrasIngredientes);
   _precioIngredientesExtraConCambios(quitadosList, ingredientesList).forEach(({ precio }) => { total += precio; });
-  Object.entries(_extrasSalsas).forEach(([nombre, active]) => { if (active) total += precioSalsaExtra(nombre); });
+  Object.entries(_extrasSalsas).forEach(([nombre, qty]) => { total += (qty || 0) * precioSalsaExtra(nombre); });
   document.getElementById('extras-total-price').textContent = total.toFixed(2).replace('.', ',') + ' €';
 }
 function closeExtrasModal() {
@@ -524,11 +559,12 @@ function confirmExtras() {
   const salsaKeys = Object.entries(_extrasSalsas).filter(_ref17s => {
     let _ref18s = _slicedToArray(_ref17s, 2),
       v = _ref18s[1];
-    return v;
+    return v > 0;
   }).map(_ref19s => {
-    let _ref20s = _slicedToArray(_ref19s, 1),
-      k = _ref20s[0];
-    return k;
+    let _ref20s = _slicedToArray(_ref19s, 2),
+      k = _ref20s[0],
+      v = _ref20s[1];
+    return k + 'x' + v;
   }).sort().join('|');
   const quitadoKeys = Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k).sort().join('|');
   const baseKey = itemId === 1 && _extrasBase !== 'aceite' ? 'B' + _extrasBase : '';
@@ -542,15 +578,7 @@ function confirmExtras() {
       gratinado: _extrasGratinado,
       base: itemId === 1 ? _extrasBase : undefined,
       ingredientesExtra: _flattenIngredientesExtra(_extrasIngredientes),
-      salsasExtra: Object.entries(_extrasSalsas).filter(_ref17b => {
-        let _ref18b = _slicedToArray(_ref17b, 2),
-          v = _ref18b[1];
-        return v;
-      }).map(_ref19b => {
-        let _ref20b = _slicedToArray(_ref19b, 1),
-          k = _ref20b[0];
-        return k;
-      }),
+      salsasExtra: _flattenIngredientesExtra(_extrasSalsas),
       quitados: Object.entries(_extrasQuitados).filter(([, v]) => v).map(([k]) => k),
       key: cartKey,
       basePrice: item.price
@@ -596,7 +624,7 @@ function removeExtrasItem(key) {
 // segunda parecida pero no idéntica obligaba a rehacer todo el
 // personalizador desde cero. No toca la línea original: se reabre el
 // modal con las mismas casillas ya activadas (reutilizando toggleExtra/
-// toggleExtraIng/toggleExtraSalsa, que ya se encargan de la UI y del
+// _extraIngSetQty/_extraSalsaSetQty, que ya se encargan de la UI y del
 // precio) — si el cliente confirma sin cambiar nada, se suma 1 a esa misma
 // línea, igual que pedir dos iguales.
 function duplicarExtrasItem(key) {
@@ -633,7 +661,14 @@ function duplicarExtrasItem(key) {
   })();
   if (item.queso) toggleExtra('queso');
   if (item.gratinado) toggleExtra('gratinado');
-  (item.salsasExtra || []).forEach(function (salsa) { toggleExtraSalsa(salsa); });
+  // salsasExtra es una lista plana con el nombre repetido una vez por
+  // unidad (mismo formato que ingredientesExtra) — se cuenta cuántas veces
+  // aparece cada una y se restaura la cantidad de una vez.
+  (function () {
+    const _cuentasSal = {};
+    (item.salsasExtra || []).forEach(function (salsa) { _cuentasSal[salsa] = (_cuentasSal[salsa] || 0) + 1; });
+    Object.keys(_cuentasSal).forEach(function (salsa) { _extraSalsaSetQty(salsa, _cuentasSal[salsa]); });
+  })();
 }
 // Antes usaba siempre c.basePrice, fijado UNA sola vez al añadir el
 // producto al carrito (confirmExtras()/confirmCheddar()) — a diferencia de
@@ -6278,7 +6313,7 @@ function renderCart() {
     // "INGREDIENTES EXTRA"/"SALSAS EXTRA" de pago aparte — ver
     // custExtraPrecioTotal en nucleo-compartido.js.
     const extraIngListCarta = _flattenIngredientesExtra(c.ingExtra || {});
-    const extraSalsaListCarta = Object.keys(c.salsaExtra || {}).filter(s => c.salsaExtra[s]);
+    const extraSalsaListCarta = _flattenIngredientesExtra(c.salsaExtra || {});
     const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + custExtraPrecioTotal(c.ingExtra, c.salsaExtra);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
@@ -6304,7 +6339,7 @@ function renderCart() {
     const details = [
       ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
       ..._aggIngCarta(c.ingredients, false),
-      ...extraSalsaListCarta.map(s => 'Extra salsa ' + s + ' +' + precioSalsaExtra(s).toFixed(2).replace('.', ',') + '€'),
+      ..._agruparSalsasExtra(extraSalsaListCarta).map(({ nombre, qty, precioTotal }) => 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : '') + ' +' + precioTotal.toFixed(2).replace('.', ',') + '€'),
       ..._aggIngCarta(extraIngListCarta, true)
     ].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Editar salsas/ingredientes (si tienes más de una, la separa en otra línea)\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
@@ -6337,9 +6372,9 @@ function renderCart() {
       const etiqueta = r.precioTotal === 0 ? 'gratis · cambio' : r.precioTotal.toFixed(2).replace('.', ',') + '€';
       extras.push('+ Extra ' + r.nombre + veces + ' +' + etiqueta);
     });
-    (c.salsasExtra || []).forEach(salsa => {
-      const _precioSalsa = (typeof precioSalsaExtra === 'function') ? precioSalsaExtra(salsa) : 1.00;
-      extras.push('+ Extra salsa ' + salsa + ' +' + _precioSalsa.toFixed(2).replace('.', ',') + '€');
+    _agruparSalsasExtra(c.salsasExtra).forEach(function (r) {
+      const veces = r.qty >= 2 ? ' ×' + r.qty : '';
+      extras.push('+ Extra salsa ' + r.nombre + veces + ' +' + r.precioTotal.toFixed(2).replace('.', ',') + '€');
     });
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.
@@ -7923,7 +7958,7 @@ async function _submitOrderInner() {
     // precio que el modal de extras normal (ver custExtraPrecioTotal en
     // nucleo-compartido.js).
     const extraIngList = _flattenIngredientesExtra(c.ingExtra || {});
-    const extraSalsaList = Object.keys(c.salsaExtra || {}).filter(s => c.salsaExtra[s]);
+    const extraSalsaList = _flattenIngredientesExtra(c.salsaExtra || {});
     const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + custExtraPrecioTotal(c.ingExtra, c.salsaExtra);
     // Agrupa una lista de ingredientes por nombre ("Jamón York ×2") en el
     // orden de primera aparición, con queso siempre al final del grupo
@@ -7953,7 +7988,7 @@ async function _submitOrderInner() {
     const extras = [
       ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
       ..._agruparIngNombres(c.ingredients, false),
-      ...extraSalsaList.map(s => 'Extra salsa ' + s + ' +' + precioSalsaExtra(s).toFixed(2).replace('.', ',') + '€'),
+      ..._agruparSalsasExtra(extraSalsaList).map(({ nombre, qty, precioTotal }) => 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : '') + ' +' + precioTotal.toFixed(2).replace('.', ',') + '€'),
       ..._agruparIngNombres(extraIngList, true)
     ];
     if (c.extraQueso) extras.push('Extra Queso Mozzarella +1,20€');
@@ -8016,8 +8051,11 @@ async function _submitOrderInner() {
     (c.quitados || []).forEach(ing => {
       extras.push({ name: 'Sin ' + ing, price: 0 });
     });
-    (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
+    // Agrupado por nombre (_agruparSalsasExtra) para que "doble alioli"
+    // salga como una sola línea "Extra salsa Alioli ×2" en vez de dos
+    // líneas idénticas seguidas — mismo criterio que los ingredientes.
+    _agruparSalsasExtra(c.salsasExtra).forEach(({ nombre, qty, precioTotal }) => {
+      extras.push({ name: 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : ''), price: precioTotal });
     });
     // Precio de los ingredientes extra con la regla de "cambio" (2 gratis
     // si además se ha quitado algo, quesito 0,20€) — ver
@@ -9435,8 +9473,7 @@ let custSelIngredients = [];
 // precios que el modal de extras normal (EXTRAS_ING_PRECIO1/07,
 // EXTRAS_SALSAS), independiente del cupo incluido de arriba (que tiene
 // tope duro: 1 salsa + 6 ingredientes en Al Gusto, 9 entre ambos en
-// Bomba). custIngExtra: { nombre: cantidad, 0-3 } — custSalsaExtra:
-// { nombre: true/false }.
+// Bomba). custIngExtra/custSalsaExtra: { nombre: cantidad, 0-3 }.
 let custIngExtra = {};
 let custSalsaExtra = {};
 // Se mantiene solo por compatibilidad al reabrir para editar una línea
@@ -9544,7 +9581,7 @@ function updateCustTotalPrice() {
   // Ingredientes/salsas EXTRA de pago (sección aparte, fuera del cupo
   // incluido) — mismo precio que EXTRAS_ING_PRECIO1/07/EXTRAS_SALSAS.
   price += _flattenIngredientesExtra(custIngExtra).reduce((s, n) => s + precioIngredienteExtra(n), 0);
-  Object.entries(custSalsaExtra).forEach(([nombre, active]) => { if (active) price += precioSalsaExtra(nombre); });
+  price += _flattenIngredientesExtra(custSalsaExtra).reduce((s, n) => s + precioSalsaExtra(n), 0);
   document.getElementById('cust-price').textContent = price.toFixed(2).replace('.', ',') + ' €';
 }
 // "INGREDIENTES EXTRA"/"SALSAS EXTRA" — mismo cajón, catálogo y precios que
@@ -9600,21 +9637,41 @@ function _custExtraIngSetQty(ing, next) {
   renderCustChips();
   updateCustTotalPrice();
 }
+// Mismo contador ×1-×3 que _custExtraIngRowHtml — antes las salsas extra
+// aquí eran una simple casilla sin poder pedir doble/triple de la misma.
 function _custExtraSalsaRowHtml(salsa) {
   const eid = 'cust-extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-  const on = !!custSalsaExtra[salsa];
+  const qty = custSalsaExtra[salsa] || 0;
+  const on = qty > 0;
+  const precioUnidad = precioSalsaExtra(salsa);
+  const salsaAttr = salsa.replace(/'/g, "\\'");
+  const badge = qty >= 2 ? ' <span style="background:#F4C430;color:#3D1F0D;font-size:10px;font-weight:900;padding:1px 6px;border-radius:99px;margin-left:4px">×' + qty + '</span>' : '';
   const checkHtml = on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-  return '<label id="lbl-' + eid + '" onclick="_custExtraSalsaTap(\'' + salsa.replace(/'/g, "\\'") + '\')" style="display:flex;align-items:center;gap:10px;background:' + (on ? 'rgba(244,196,48,0.08)' : '#fff') + ';border:1.5px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';border-radius:9px;padding:9px 10px;cursor:pointer">' +
-    '<div id="' + eid + '" style="width:20px;height:20px;border-radius:50%;border:2px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';background:' + (on ? '#3D1F0D' : '#fff') + ';flex-shrink:0;display:flex;align-items:center;justify-content:center">' + checkHtml + '</div>' +
-    '<div><div style="font-size:13px;font-weight:600;color:#2A1506">' + salsa + '</div><div style="font-size:11px;color:#8A6A4E">+' + precioSalsaExtra(salsa).toFixed(2).replace('.', ',') + ' €</div></div>' +
+  const stepperHtml = on ? (
+    '<div style="flex-shrink:0;display:flex;align-items:center;gap:2px;background:#fff;border:1.5px solid #3D1F0D;border-radius:99px;padding:2px">' +
+      '<button type="button" onclick="event.stopPropagation();_custExtraSalsaSetQty(\'' + salsaAttr + '\',' + (qty - 1) + ')" aria-label="Quitar una unidad de ' + salsa + '" style="width:22px;height:22px;border-radius:50%;border:none;background:#3D1F0D;color:#FFF8EE;font-size:14px;font-weight:800;cursor:pointer;line-height:1">−</button>' +
+      '<span style="min-width:16px;text-align:center;font-weight:800;font-size:12.5px;color:#3D1F0D">' + qty + '</span>' +
+      '<button type="button" ' + (qty >= MAX_UNIDADES_ING_EXTRA ? 'disabled' : '') + ' onclick="event.stopPropagation();_custExtraSalsaSetQty(\'' + salsaAttr + '\',' + (qty + 1) + ')" aria-label="Añadir otra unidad de ' + salsa + '" style="width:22px;height:22px;border-radius:50%;border:none;background:' + (qty >= MAX_UNIDADES_ING_EXTRA ? '#C9B79A' : '#3D1F0D') + ';color:#FFF8EE;font-size:14px;font-weight:800;cursor:' + (qty >= MAX_UNIDADES_ING_EXTRA ? 'not-allowed' : 'pointer') + ';line-height:1">+</button>' +
+    '</div>'
+  ) : '';
+  return '<label id="lbl-' + eid + '" style="display:flex;align-items:center;gap:8px;background:' + (on ? 'rgba(244,196,48,0.08)' : '#fff') + ';border:1.5px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';border-radius:9px;padding:9px 10px">' +
+    '<div onclick="_custExtraSalsaTapRow(\'' + salsaAttr + '\')" style="flex-grow:1;min-width:0;display:flex;align-items:center;gap:10px;cursor:pointer">' +
+      '<div id="' + eid + '" style="width:20px;height:20px;border-radius:50%;border:2px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';background:' + (on ? '#3D1F0D' : '#fff') + ';flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s">' + checkHtml + '</div>' +
+      '<div><div style="font-size:13px;font-weight:600;color:#2A1506">' + salsa + badge + '</div><div style="font-size:11px;color:#8A6A4E">+' + precioUnidad.toFixed(2).replace('.', ',') + ' €' + (qty >= 2 ? ' × ' + qty : '') + '</div></div>' +
+    '</div>' +
+    stepperHtml +
   '</label>';
 }
 function _renderCustExtraSalsaGrid() {
   const g = document.getElementById('cust-extra-salsa-grid');
   if (g) g.innerHTML = EXTRAS_SALSAS.map(_custExtraSalsaRowHtml).join('');
 }
-function _custExtraSalsaTap(salsa) {
-  custSalsaExtra[salsa] = !custSalsaExtra[salsa];
+function _custExtraSalsaTapRow(salsa) {
+  if (!custSalsaExtra[salsa]) _custExtraSalsaSetQty(salsa, 1);
+}
+function _custExtraSalsaSetQty(salsa, next) {
+  const clamped = Math.max(0, Math.min(MAX_UNIDADES_ING_EXTRA, next));
+  custSalsaExtra[salsa] = clamped;
   _renderCustExtraSalsaGrid();
   updateCustTotalPrice();
 }
@@ -9826,7 +9883,7 @@ function confirmCustomizer() {
   const ingExtraFingerprint = Object.entries(custIngExtra)
     .filter(([, v]) => v > 0).map(([k, v]) => k + 'x' + v).sort().join('|');
   const salsaExtraFingerprint = Object.entries(custSalsaExtra)
-    .filter(([, v]) => v).map(([k]) => k).sort().join('|');
+    .filter(([, v]) => v > 0).map(([k, v]) => k + 'x' + v).sort().join('|');
   const fingerprint = [...custSelSauces].sort().join(',') + '|' + ingKeysFingerprint + '|' + (custExtraGratinado ? 'G' : '') + '|' + ingExtraFingerprint + '|' + salsaExtraFingerprint;
   const cartKey = itemId + '::' + fingerprint;
   if (!custCart[cartKey]) {

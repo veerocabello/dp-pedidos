@@ -1175,7 +1175,7 @@ function renderCart() {
     // "INGREDIENTES EXTRA"/"SALSAS EXTRA" de pago aparte — ver
     // custExtraPrecioTotal en nucleo-compartido.js.
     const extraIngListCarta = _flattenIngredientesExtra(c.ingExtra || {});
-    const extraSalsaListCarta = Object.keys(c.salsaExtra || {}).filter(s => c.salsaExtra[s]);
+    const extraSalsaListCarta = _flattenIngredientesExtra(c.salsaExtra || {});
     const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + custExtraPrecioTotal(c.ingExtra, c.salsaExtra);
     const subtotal = unitPrice * c.qty;
     total += subtotal;
@@ -1201,7 +1201,7 @@ function renderCart() {
     const details = [
       ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
       ..._aggIngCarta(c.ingredients, false),
-      ...extraSalsaListCarta.map(s => 'Extra salsa ' + s + ' +' + precioSalsaExtra(s).toFixed(2).replace('.', ',') + '€'),
+      ..._agruparSalsasExtra(extraSalsaListCarta).map(({ nombre, qty, precioTotal }) => 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : '') + ' +' + precioTotal.toFixed(2).replace('.', ',') + '€'),
       ..._aggIngCarta(extraIngListCarta, true)
     ].join(', ');
     return "\n    <div class=\"cart-line\" style=\"flex-wrap:wrap\">\n      <span class=\"cart-line-name\" style=\"width:100%\">".concat(item.name, "\n        <span style=\"font-size:11px;color:#8A6A4E;font-weight:400;display:block\">").concat(details, "</span>\n      </span>\n      <span class=\"cart-line-qty\">x").concat(c.qty, "</span>\n      <span class=\"cart-line-price\">").concat(subtotal.toFixed(2), " \u20AC</span>\n      <button class=\"cart-remove\" onclick=\"duplicarCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Editar salsas/ingredientes (si tienes más de una, la separa en otra línea)\" style=\"color:#8A6A4E\">&#128203;</button>\n      <button class=\"cart-remove\" onclick=\"removeCustItem('").concat(c.key.replace(/'/g, "\\'"), "')\" title=\"Quitar\">&#128465;</button>\n    </div>");
@@ -1234,9 +1234,9 @@ function renderCart() {
       const etiqueta = r.precioTotal === 0 ? 'gratis · cambio' : r.precioTotal.toFixed(2).replace('.', ',') + '€';
       extras.push('+ Extra ' + r.nombre + veces + ' +' + etiqueta);
     });
-    (c.salsasExtra || []).forEach(salsa => {
-      const _precioSalsa = (typeof precioSalsaExtra === 'function') ? precioSalsaExtra(salsa) : 1.00;
-      extras.push('+ Extra salsa ' + salsa + ' +' + _precioSalsa.toFixed(2).replace('.', ',') + '€');
+    _agruparSalsasExtra(c.salsasExtra).forEach(function (r) {
+      const veces = r.qty >= 2 ? ' ×' + r.qty : '';
+      extras.push('+ Extra salsa ' + r.nombre + veces + ' +' + r.precioTotal.toFixed(2).replace('.', ',') + '€');
     });
     // El gratinado siempre va el último de la lista, sea cual sea el
     // resto de extras que tenga el pedido.

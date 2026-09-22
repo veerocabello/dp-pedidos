@@ -1301,7 +1301,7 @@ async function _submitOrderInner() {
     // precio que el modal de extras normal (ver custExtraPrecioTotal en
     // nucleo-compartido.js).
     const extraIngList = _flattenIngredientesExtra(c.ingExtra || {});
-    const extraSalsaList = Object.keys(c.salsaExtra || {}).filter(s => c.salsaExtra[s]);
+    const extraSalsaList = _flattenIngredientesExtra(c.salsaExtra || {});
     const unitPrice = item.price + (c.extraQueso ? 1.20 : 0) + (c.extraGratinado ? 0.50 : 0) + custExtraPrecioTotal(c.ingExtra, c.salsaExtra);
     // Agrupa una lista de ingredientes por nombre ("Jamón York ×2") en el
     // orden de primera aparición, con queso siempre al final del grupo
@@ -1331,7 +1331,7 @@ async function _submitOrderInner() {
     const extras = [
       ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
       ..._agruparIngNombres(c.ingredients, false),
-      ...extraSalsaList.map(s => 'Extra salsa ' + s + ' +' + precioSalsaExtra(s).toFixed(2).replace('.', ',') + '€'),
+      ..._agruparSalsasExtra(extraSalsaList).map(({ nombre, qty, precioTotal }) => 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : '') + ' +' + precioTotal.toFixed(2).replace('.', ',') + '€'),
       ..._agruparIngNombres(extraIngList, true)
     ];
     if (c.extraQueso) extras.push('Extra Queso Mozzarella +1,20€');
@@ -1394,8 +1394,11 @@ async function _submitOrderInner() {
     (c.quitados || []).forEach(ing => {
       extras.push({ name: 'Sin ' + ing, price: 0 });
     });
-    (c.salsasExtra || []).forEach(salsa => {
-      extras.push({ name: 'Extra salsa ' + salsa, price: precioSalsaExtra(salsa) });
+    // Agrupado por nombre (_agruparSalsasExtra) para que "doble alioli"
+    // salga como una sola línea "Extra salsa Alioli ×2" en vez de dos
+    // líneas idénticas seguidas — mismo criterio que los ingredientes.
+    _agruparSalsasExtra(c.salsasExtra).forEach(({ nombre, qty, precioTotal }) => {
+      extras.push({ name: 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : ''), price: precioTotal });
     });
     // Precio de los ingredientes extra con la regla de "cambio" (2 gratis
     // si además se ha quitado algo, quesito 0,20€) — ver

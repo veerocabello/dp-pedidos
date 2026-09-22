@@ -889,8 +889,13 @@ function _precioRealExtra($nombre) {
     if ($n === 'Extra Queso') return 1.20;
     if ($n === 'Gratinado') return 0.50;
     if (strpos($n, 'Extra salsa ') === 0) {
-        $salsa = substr($n, strlen('Extra salsa '));
-        return (stripos($salsa, 'philadelphia') !== false) ? 1.20 : 1.00;
+        // "<salsa> ×N" (agrupado, ver _agruparSalsasExtra en
+        // src/nucleo-compartido.js) — mismo formato/tope que los
+        // ingredientes extra (_parseCantidadIngExtra, hasta ×3 unidades).
+        list($salsa, $qtySal) = _parseCantidadIngExtra(substr($n, strlen('Extra salsa ')));
+        $qtySal = max(1, min($qtySal, 3)); // MAX_UNIDADES_ING_EXTRA en src/nucleo-compartido.js
+        $precioUnidad = (stripos($salsa, 'philadelphia') !== false) ? 1.20 : 1.00;
+        return round($qtySal * $precioUnidad, 2);
     }
     if (strpos($n, 'Extra ') === 0) {
         $ing = substr($n, strlen('Extra '));
@@ -1237,8 +1242,8 @@ function corregirPreciosPromos($databaseURL, $accessToken, $items) {
 // ── Al Gusto/Bomba: precio real de la sección "INGREDIENTES EXTRA"/"SALSAS
 // EXTRA" de pago — sección aparte del cupo incluido (que tiene tope duro,
 // comprobado en corregirPreciosCatalogo más arriba). Llegan como objeto
-// {nombre: cantidad 0-3}/{nombre: true/false} en vez de array {name,price}
-// (ver custExtraPrecioTotal en src/nucleo-compartido.js, misma regla aquí).
+// {nombre: cantidad, 0-3} en vez de array {name,price} (ver
+// custExtraPrecioTotal en src/nucleo-compartido.js, misma regla aquí).
 function dpf_precioIngExtraCust($ingExtra) {
     if (!is_array($ingExtra)) return 0.0;
     $total = 0.0;
@@ -1257,9 +1262,11 @@ function dpf_precioIngExtraCust($ingExtra) {
 function dpf_precioSalsaExtraCust($salsaExtra) {
     if (!is_array($salsaExtra)) return 0.0;
     $total = 0.0;
-    foreach ($salsaExtra as $salsa => $active) {
-        if (!$active) continue;
-        $total += (mb_stripos((string)$salsa, 'philadelphia') !== false) ? 1.20 : 1.00;
+    foreach ($salsaExtra as $salsa => $qty) {
+        $qty = (int)$qty;
+        if ($qty <= 0) continue;
+        $qty = min($qty, 3); // MAX_UNIDADES_ING_EXTRA en src/nucleo-compartido.js
+        $total += $qty * ((mb_stripos((string)$salsa, 'philadelphia') !== false) ? 1.20 : 1.00);
     }
     return round($total, 2);
 }

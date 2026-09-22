@@ -769,8 +769,7 @@ let custSelIngredients = [];
 // precios que el modal de extras normal (EXTRAS_ING_PRECIO1/07,
 // EXTRAS_SALSAS), independiente del cupo incluido de arriba (que tiene
 // tope duro: 1 salsa + 6 ingredientes en Al Gusto, 9 entre ambos en
-// Bomba). custIngExtra: { nombre: cantidad, 0-3 } — custSalsaExtra:
-// { nombre: true/false }.
+// Bomba). custIngExtra/custSalsaExtra: { nombre: cantidad, 0-3 }.
 let custIngExtra = {};
 let custSalsaExtra = {};
 // Se mantiene solo por compatibilidad al reabrir para editar una línea
@@ -878,7 +877,7 @@ function updateCustTotalPrice() {
   // Ingredientes/salsas EXTRA de pago (sección aparte, fuera del cupo
   // incluido) — mismo precio que EXTRAS_ING_PRECIO1/07/EXTRAS_SALSAS.
   price += _flattenIngredientesExtra(custIngExtra).reduce((s, n) => s + precioIngredienteExtra(n), 0);
-  Object.entries(custSalsaExtra).forEach(([nombre, active]) => { if (active) price += precioSalsaExtra(nombre); });
+  price += _flattenIngredientesExtra(custSalsaExtra).reduce((s, n) => s + precioSalsaExtra(n), 0);
   document.getElementById('cust-price').textContent = price.toFixed(2).replace('.', ',') + ' €';
 }
 // "INGREDIENTES EXTRA"/"SALSAS EXTRA" — mismo cajón, catálogo y precios que
@@ -934,21 +933,41 @@ function _custExtraIngSetQty(ing, next) {
   renderCustChips();
   updateCustTotalPrice();
 }
+// Mismo contador ×1-×3 que _custExtraIngRowHtml — antes las salsas extra
+// aquí eran una simple casilla sin poder pedir doble/triple de la misma.
 function _custExtraSalsaRowHtml(salsa) {
   const eid = 'cust-extra-salsa-' + salsa.replace(/[^a-z0-9]/gi, '_');
-  const on = !!custSalsaExtra[salsa];
+  const qty = custSalsaExtra[salsa] || 0;
+  const on = qty > 0;
+  const precioUnidad = precioSalsaExtra(salsa);
+  const salsaAttr = salsa.replace(/'/g, "\\'");
+  const badge = qty >= 2 ? ' <span style="background:#F4C430;color:#3D1F0D;font-size:10px;font-weight:900;padding:1px 6px;border-radius:99px;margin-left:4px">×' + qty + '</span>' : '';
   const checkHtml = on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-  return '<label id="lbl-' + eid + '" onclick="_custExtraSalsaTap(\'' + salsa.replace(/'/g, "\\'") + '\')" style="display:flex;align-items:center;gap:10px;background:' + (on ? 'rgba(244,196,48,0.08)' : '#fff') + ';border:1.5px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';border-radius:9px;padding:9px 10px;cursor:pointer">' +
-    '<div id="' + eid + '" style="width:20px;height:20px;border-radius:50%;border:2px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';background:' + (on ? '#3D1F0D' : '#fff') + ';flex-shrink:0;display:flex;align-items:center;justify-content:center">' + checkHtml + '</div>' +
-    '<div><div style="font-size:13px;font-weight:600;color:#2A1506">' + salsa + '</div><div style="font-size:11px;color:#8A6A4E">+' + precioSalsaExtra(salsa).toFixed(2).replace('.', ',') + ' €</div></div>' +
+  const stepperHtml = on ? (
+    '<div style="flex-shrink:0;display:flex;align-items:center;gap:2px;background:#fff;border:1.5px solid #3D1F0D;border-radius:99px;padding:2px">' +
+      '<button type="button" onclick="event.stopPropagation();_custExtraSalsaSetQty(\'' + salsaAttr + '\',' + (qty - 1) + ')" aria-label="Quitar una unidad de ' + salsa + '" style="width:22px;height:22px;border-radius:50%;border:none;background:#3D1F0D;color:#FFF8EE;font-size:14px;font-weight:800;cursor:pointer;line-height:1">−</button>' +
+      '<span style="min-width:16px;text-align:center;font-weight:800;font-size:12.5px;color:#3D1F0D">' + qty + '</span>' +
+      '<button type="button" ' + (qty >= MAX_UNIDADES_ING_EXTRA ? 'disabled' : '') + ' onclick="event.stopPropagation();_custExtraSalsaSetQty(\'' + salsaAttr + '\',' + (qty + 1) + ')" aria-label="Añadir otra unidad de ' + salsa + '" style="width:22px;height:22px;border-radius:50%;border:none;background:' + (qty >= MAX_UNIDADES_ING_EXTRA ? '#C9B79A' : '#3D1F0D') + ';color:#FFF8EE;font-size:14px;font-weight:800;cursor:' + (qty >= MAX_UNIDADES_ING_EXTRA ? 'not-allowed' : 'pointer') + ';line-height:1">+</button>' +
+    '</div>'
+  ) : '';
+  return '<label id="lbl-' + eid + '" style="display:flex;align-items:center;gap:8px;background:' + (on ? 'rgba(244,196,48,0.08)' : '#fff') + ';border:1.5px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';border-radius:9px;padding:9px 10px">' +
+    '<div onclick="_custExtraSalsaTapRow(\'' + salsaAttr + '\')" style="flex-grow:1;min-width:0;display:flex;align-items:center;gap:10px;cursor:pointer">' +
+      '<div id="' + eid + '" style="width:20px;height:20px;border-radius:50%;border:2px solid ' + (on ? '#3D1F0D' : '#F5E6C8') + ';background:' + (on ? '#3D1F0D' : '#fff') + ';flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s">' + checkHtml + '</div>' +
+      '<div><div style="font-size:13px;font-weight:600;color:#2A1506">' + salsa + badge + '</div><div style="font-size:11px;color:#8A6A4E">+' + precioUnidad.toFixed(2).replace('.', ',') + ' €' + (qty >= 2 ? ' × ' + qty : '') + '</div></div>' +
+    '</div>' +
+    stepperHtml +
   '</label>';
 }
 function _renderCustExtraSalsaGrid() {
   const g = document.getElementById('cust-extra-salsa-grid');
   if (g) g.innerHTML = EXTRAS_SALSAS.map(_custExtraSalsaRowHtml).join('');
 }
-function _custExtraSalsaTap(salsa) {
-  custSalsaExtra[salsa] = !custSalsaExtra[salsa];
+function _custExtraSalsaTapRow(salsa) {
+  if (!custSalsaExtra[salsa]) _custExtraSalsaSetQty(salsa, 1);
+}
+function _custExtraSalsaSetQty(salsa, next) {
+  const clamped = Math.max(0, Math.min(MAX_UNIDADES_ING_EXTRA, next));
+  custSalsaExtra[salsa] = clamped;
   _renderCustExtraSalsaGrid();
   updateCustTotalPrice();
 }
@@ -1160,7 +1179,7 @@ function confirmCustomizer() {
   const ingExtraFingerprint = Object.entries(custIngExtra)
     .filter(([, v]) => v > 0).map(([k, v]) => k + 'x' + v).sort().join('|');
   const salsaExtraFingerprint = Object.entries(custSalsaExtra)
-    .filter(([, v]) => v).map(([k]) => k).sort().join('|');
+    .filter(([, v]) => v > 0).map(([k, v]) => k + 'x' + v).sort().join('|');
   const fingerprint = [...custSelSauces].sort().join(',') + '|' + ingKeysFingerprint + '|' + (custExtraGratinado ? 'G' : '') + '|' + ingExtraFingerprint + '|' + salsaExtraFingerprint;
   const cartKey = itemId + '::' + fingerprint;
   if (!custCart[cartKey]) {
