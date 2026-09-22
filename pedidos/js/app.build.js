@@ -263,6 +263,7 @@ function openExtrasModal(itemId) {
   });
   optionsHtml += "</div>";
   document.getElementById('extras-options').innerHTML = optionsHtml;
+  _actualizarDisponibilidadQuesoToggle();
   _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
   document.getElementById('extras-modal').style.display = 'block';
@@ -300,8 +301,24 @@ function toggleQuitarIng(ing) {
   _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
 }
+// "Añadir queso mozzarella" (toggle) y "Queso Mozzarella" de INGREDIENTES
+// EXTRA (casilla) son el mismo queso — antes se podían marcar los dos a la
+// vez y se cobraba dos veces (+1,20€ +1,20€) por el mismo mozzarella. Si ya
+// está marcado por la lista de ingredientes, el toggle de arriba se oculta
+// (solo queda "Gratinar" suelto) en vez de dejar marcar los dos.
+function _actualizarDisponibilidadQuesoToggle() {
+  const quesoPorIngrediente = !!_extrasIngredientes['Queso Mozzarella'];
+  if (quesoPorIngrediente && _extrasQueso) {
+    _extrasQueso = false;
+    updateExtraCheckUI('queso', false);
+  }
+  const check = document.getElementById('extra-check-queso');
+  const lbl = check ? check.closest('label') : null;
+  if (lbl) lbl.style.display = quesoPorIngrediente ? 'none' : 'flex';
+}
 function toggleExtra(type) {
   if (type === 'gratinado' && !_hayQuesoDisponible()) return;
+  if (type === 'queso' && !_extrasQueso && _extrasIngredientes['Queso Mozzarella']) return;
   if (type === 'queso') {
     _extrasQueso = !_extrasQueso;
     // Si quita queso, quitar también gratinado si solo gratinado no aplica
@@ -343,6 +360,7 @@ function toggleExtraIng(ing) {
     lbl.style.borderColor = active ? '#3D1F0D' : '#F5E6C8';
     lbl.style.background = active ? 'rgba(244,196,48,0.08)' : '#fff';
   }
+  _actualizarDisponibilidadQuesoToggle();
   _actualizarDisponibilidadGratinado();
   updateExtrasTotal();
 }
