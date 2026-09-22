@@ -9595,22 +9595,25 @@ function _actualizarAvisoExtraCust(extraPorNombre) {
 }
 function _custIngTap(name) {
   const qty = custSelIngredients.filter(n => n === name).length;
+  const esQuesoIng = name === 'Queso Mozzarella' || name === '4 Quesos';
+  let seQuito = false;
   if (qty >= MAX_UNIDADES_ING_EXTRA) {
     // Al tope — un toque más lo quita del todo.
     custSelIngredients = custSelIngredients.filter(n => n !== name);
+    seQuito = true;
   } else {
     custSelIngredients.push(name);
-    // Si se añade queso (Queso Mozzarella/4 Quesos) y el gratinado estaba
-    // activo apoyándose solo en el queso extra de pago, no hace falta
-    // tocar nada — pero si se QUITA (ver abajo) sí puede hacer falta.
   }
   // Si se quita "Queso Mozzarella"/"4 Quesos" del todo y el gratinado
-  // estaba activo apoyándose solo en ese ingrediente (sin el queso extra de
-  // pago), se activa el queso extra para que el gratinado siga teniendo
-  // con qué gratinar — en vez de quedarse "gratinando" sin queso alguno.
-  if ((name === 'Queso Mozzarella' || name === '4 Quesos') && custExtraGratinado && !custExtraQueso && !custTieneQuesoIngrediente()) {
-    custExtraQueso = true;
-    updateCustExtraUI('queso', true);
+  // dependía solo de ese ingrediente (sin el queso extra de pago), se
+  // desactiva el gratinado — NO se activa el queso extra de pago en su
+  // lugar, aunque "arreglaría" el gratinado: eso cobraba +1,20€ que el
+  // cliente nunca pidió, solo por tocar un chip de ingredientes (hallazgo
+  // en producción — "me lo cobra como extra" sin haber marcado esa
+  // casilla a propósito).
+  if (esQuesoIng && seQuito && custExtraGratinado && !custExtraQueso && !custTieneQuesoIngrediente()) {
+    custExtraGratinado = false;
+    updateCustExtraUI('gratinado', false);
   }
   renderCustChips();
   updateCustProgress();
