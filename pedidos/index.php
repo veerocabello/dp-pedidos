@@ -86,7 +86,7 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
      normalmente la que Google mide como "LCP" (tiempo hasta que se ve el
      contenido principal). -->
 <link rel="preload" as="image" href="img/hero-bg.webp" fetchpriority="high">
-<link rel="stylesheet" href="css/style.min.css?v=1790084117820">
+<link rel="stylesheet" href="css/style.min.css?v=1790088097092">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥔</text></svg>">
 
   <script type="application/ld+json">
@@ -1050,13 +1050,13 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
     </div>
     <div class="customizer-section-label">Ingredientes <span class="customizer-badge" id="cust-ing-badge">0/6</span></div>
     <div class="chip-grid" id="cust-ingredients"></div>
-    <div id="cust-ing-extra-aviso" style="display:none;margin-top:8px;background:#FFF3CD;border:1px solid #E9D9BE;border-radius:10px;padding:10px 12px;font-size:12px;color:#5a3e1b;line-height:1.45"></div>
+    <div style="margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:var(--brown);letter-spacing:.5px">INGREDIENTES EXTRA</div>
+    <div id="cust-extra-ing-grid-1" style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px"></div>
+    <div id="cust-extra-ing-grid-07" style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px"></div>
+    <div style="margin-top:14px;margin-bottom:6px;font-size:12px;font-weight:700;color:var(--brown);letter-spacing:.5px">SALSAS EXTRA</div>
+    <div id="cust-extra-salsa-grid" style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:4px"></div>
     <div style="border-top:1px solid var(--warm);margin-top:14px;padding-top:14px;display:flex;flex-direction:column">
       <div style="font-size:12px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Extras opcionales</div>
-      <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-queso-label" onclick="toggleCustExtra('queso')">
-        <div><div style="font-weight:700;font-size:14px;color:var(--text)">&#x1F9C0; Queso mozzarella</div><div style="font-size:12px;color:var(--muted)">+1,20 &#x20AC;</div></div>
-        <div id="cust-extra-check-queso" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></div>
-      </label>
       <label style="display:flex;align-items:center;justify-content:space-between;background:var(--white);border:1.5px solid var(--warm);border-radius:10px;padding:10px 14px;cursor:pointer" id="cust-gratinado-label" onclick="toggleCustExtra('gratinado')">
         <div><div style="font-weight:700;font-size:14px;color:var(--text)">&#x1F525; Gratinado</div><div style="font-size:12px;color:var(--muted)">+0,50 &#x20AC;</div></div>
         <div id="cust-extra-check-gratinado" style="width:22px;height:22px;border-radius:50%;border:2px solid var(--warm);background:var(--white);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s"></div>
@@ -1158,8 +1158,8 @@ $dpf_menu_jsonld = dpf_menu_jsonld($dpf_menu);
 <script src="js/libs.js" defer></script>
 <script src="js/firebase-auth-compat.js" defer></script>
 <script src="js/config.js?v=1789674000000" defer></script>
-<script src="js/app.js?v=1790084117820" defer></script>
-<script src="js/auth.js?v=1790084117820" defer></script>
+<script src="js/app.js?v=1790088097092" defer></script>
+<script src="js/auth.js?v=1790088097092" defer></script>
 <script>
   // Carga diferida del panel de admin: HTML (admin-shell.html) + JavaScript
   // (js/app-admin.js, ~370KB) son dos piezas separadas que hay que esperar

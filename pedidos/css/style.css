@@ -2001,10 +2001,6 @@
   .chip:hover { border-color: var(--amber); background: var(--amber-light); }
   .chip.selected { background: #3D1F0D; border-color: #3D1F0D; color: var(--gold); font-weight: 700; }
   .chip.disabled { opacity: .4; cursor: not-allowed; }
-  /* Ingrediente por encima del cupo incluido en el precio (Al Gusto/Bomba)
-     — dorado, no rojo: es un extra que se paga a mayores, no un error ni
-     algo que haya que quitar (el rojo se reserva para avisos de verdad). */
-  .chip.selected.extra { background: #F4C430; border-color: #8A5A00; color: #5a3e1b; }
   .customizer-footer {
     display: flex; align-items: center; justify-content: space-between;
     margin-top: 20px; gap: 10px; flex-wrap: wrap;

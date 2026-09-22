@@ -133,52 +133,15 @@ function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 
 // Excepción: los ingredientes de queso (Queso Mozzarella, 4 Quesos) cuestan
 // más que el resto de ingredientes extra — mismo criterio que precioSalsaExtra.
 function precioIngredienteExtra(nombre) { return /queso/i.test(nombre || '') ? 1.20 : 1.00; }
-// ── Al Gusto/Bomba: cupo de ingredientes incluido en el precio fijo —
-// antes, llegar al cupo simplemente bloqueaba seguir marcando (confirmCustomizer
-// en antifraude.js). Ahora se puede seguir marcando, pero lo que pase del
-// cupo se cobra como un extra normal (mismo precio que precioIngredienteExtra).
-// El cupo se reparte en el ORDEN en que se fueron marcando (el array
-// `ingredients`/`custSelIngredients` ya viene en ese orden): los primeros
-// N son gratis, el resto es extra — así "lo último que pides" es lo que se
-// cobra, no un ingrediente al azar (mismo criterio que el mockup aprobado).
-// Al Gusto tiene un cupo de ingredientes propio (maxIngredients); Bomba
-// comparte un cupo único con las salsas (maxTotal), así que su cupo libre
-// de ingredientes se reduce según cuántas salsas ya se hayan elegido.
-function _libreIngredientesCust(menuId, sauceCount) {
-  const cfg = (typeof CUSTOMIZER_CONFIG !== 'undefined')
-    ? CUSTOMIZER_CONFIG[menuId === 15 ? 'algusto' : 'bomba']
-    : null;
-  if (!cfg) return Infinity;
-  return cfg.maxIngredients !== null
-    ? cfg.maxIngredients
-    : (cfg.maxTotal !== null ? Math.max(0, cfg.maxTotal - (sauceCount || 0)) : Infinity);
-}
-function precioExtraIngredientesCust(ingredients, menuId, sauceCount) {
-  const libre = _libreIngredientesCust(menuId, sauceCount);
-  const lista = ingredients || [];
-  if (lista.length <= libre) return 0;
-  return lista.slice(libre).reduce((s, ing) => s + precioIngredienteExtra(ing), 0);
-}
-// Igual que arriba pero para las SALSAS — Al Gusto tiene su propio cupo de
-// salsas (maxSauces), Bomba las cuenta contra su cupo compartido entero
-// (maxTotal) como techo propio, independiente de cuántos ingredientes haya
-// (los ingredientes ya restan su propio hueco según cuántas salsas hay,
-// ver _libreIngredientesCust — las salsas tienen prioridad sobre ese cupo
-// compartido, así que su propio techo no depende de los ingredientes).
-function _libreSalsasCust(menuId) {
-  const cfg = (typeof CUSTOMIZER_CONFIG !== 'undefined')
-    ? CUSTOMIZER_CONFIG[menuId === 15 ? 'algusto' : 'bomba']
-    : null;
-  if (!cfg) return Infinity;
-  if (cfg.maxSauces !== null) return cfg.maxSauces;
-  if (cfg.maxTotal !== null) return cfg.maxTotal;
-  return Infinity;
-}
-function precioExtraSalsasCust(sauces, menuId) {
-  const libre = _libreSalsasCust(menuId);
-  const lista = sauces || [];
-  if (lista.length <= libre) return 0;
-  return lista.slice(libre).reduce((s, sal) => s + precioSalsaExtra(sal), 0);
+// ── Al Gusto/Bomba: "INGREDIENTES EXTRA"/"SALSAS EXTRA" — sección de pago
+// aparte, separada del cupo incluido en el precio fijo (que tiene tope
+// duro, ver CUSTOMIZER_CONFIG/renderCustChips en antifraude.js). ingExtra
+// es { nombre: cantidad, 0-3 } (mismo catálogo/precio que EXTRAS_ING_PRECIO1/07);
+// salsaExtra es { nombre: true/false } (mismo catálogo/precio que EXTRAS_SALSAS).
+function custExtraPrecioTotal(ingExtra, salsaExtra) {
+  let total = _flattenIngredientesExtra(ingExtra || {}).reduce((s, n) => s + precioIngredienteExtra(n), 0);
+  Object.entries(salsaExtra || {}).forEach(([nombre, active]) => { if (active) total += precioSalsaExtra(nombre); });
+  return total;
 }
 let _extrasSalsas = {}; // { nombre: true/false }
 let _extrasQuitados = {}; // { nombre: true/false }

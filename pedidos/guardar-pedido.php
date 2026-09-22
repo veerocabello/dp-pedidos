@@ -1092,8 +1092,9 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
 
     $avisos = [];
     $agotados = [];
+    $limitesExcedidos = [];
     $deltaTotal = 0;
-    $corregidos = array_map(function ($it) use ($menuPorNombre, $ofertaProductoVigente, $oferta, &$avisos, &$deltaTotal, &$agotados) {
+    $corregidos = array_map(function ($it) use ($menuPorNombre, $ofertaProductoVigente, $oferta, &$avisos, &$deltaTotal, &$agotados, &$limitesExcedidos) {
         $nombre = $it['name'] ?? null;
         if (!$nombre || !isset($menuPorNombre[$nombre])) return $it; // custom/extra, no catalogado aquí
         $qty = isset($it['qty']) ? (float)$it['qty'] : null;
@@ -1121,23 +1122,33 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
             $agotados[] = $nombre;
         }
         // Patata Al Gusto (id 15) / Bomba (id 16): precio base + queso
-        // extra (+1,20€) y/o gratinado (+0,50€) opcionales — el propio
-        // cliente manda esos dos flags (extraQueso/extraGratinado) junto
-        // con el nombre (ver custItems en carrito-checkout.js), así no
-        // hace falta adivinarlos parseando el texto de "extras". Antes
-        // esta rama simplemente se saltaba el precio entero (comentario
-        // histórico: "no conviene duplicar en PHP"), que era el único
-        // hueco de precio no cerrado de todo el flujo — alguien con
-        // conocimientos técnicos podía forjar el subtotal de una patata
-        // personalizada y pagar de menos. Ni las salsas ni los
-        // ingredientes tienen ya tope duro — lo que pasa del cupo incluido
-        // se cobra aquí mismo como un extra normal (ver
-        // dpf_precioExtraIngredientesCust/dpf_precioExtraSalsasCust).
+        // extra (+1,20€, solo por compatibilidad con líneas guardadas antes
+        // de quitar ese botón de la web) y/o gratinado (+0,50€) opcionales,
+        // más lo marcado en "INGREDIENTES EXTRA"/"SALSAS EXTRA" (ingExtra/
+        // salsaExtra, ver dpf_precioIngExtraCust/dpf_precioSalsaExtraCust) —
+        // el propio cliente manda esos datos junto con el nombre (ver
+        // custItems en carrito-checkout.js), así no hace falta adivinarlos
+        // parseando el texto de "extras". El cupo incluido (sauces/
+        // ingredients) SÍ tiene tope duro — antifraude.js ya lo impide desde
+        // los chips, esto es la comprobación de verdad para quien se salte
+        // la web: si llega de más, no hay "precio corregido" que valga
+        // (igual que un producto agotado), se rechaza el pedido entero más
+        // abajo en vez de solo avisar.
         if (isset($mi['id']) && in_array($mi['id'], [15, 16], true)) {
-            $precioBase = round((float)$mi['price'], 2);
             $sauces = is_array($it['sauces'] ?? null) ? $it['sauces'] : [];
-            $extraIngPrecio = dpf_precioExtraIngredientesCust($it['ingredients'] ?? [], $mi['id'], count($sauces));
-            $extraSalPrecio = dpf_precioExtraSalsasCust($sauces, $mi['id']);
+            $ingredients = is_array($it['ingredients'] ?? null) ? $it['ingredients'] : [];
+            $maxSauces = $mi['id'] == 15 ? 1 : null;
+            $maxIngredients = $mi['id'] == 15 ? 6 : null;
+            $maxTotal = $mi['id'] == 16 ? 9 : null;
+            if (($maxSauces !== null && count($sauces) > $maxSauces)
+                || ($maxIngredients !== null && count($ingredients) > $maxIngredients)
+                || ($maxTotal !== null && (count($sauces) + count($ingredients)) > $maxTotal)) {
+                $limitesExcedidos[] = $nombre;
+                return $it;
+            }
+            $precioBase = round((float)$mi['price'], 2);
+            $extraIngPrecio = dpf_precioIngExtraCust($it['ingExtra'] ?? null);
+            $extraSalPrecio = dpf_precioSalsaExtraCust($it['salsaExtra'] ?? null);
             $precioReal = round($precioBase + (!empty($it['extraQueso']) ? 1.20 : 0) + (!empty($it['extraGratinado']) ? 0.50 : 0) + $extraIngPrecio + $extraSalPrecio, 2);
             $precioEnviado = $subtotal / $qty;
             if (abs($precioEnviado - $precioReal) > 0.02) {
@@ -1162,7 +1173,7 @@ function corregirPreciosCatalogo($databaseURL, $accessToken, $items, $oferta) {
         }
         return $it;
     }, $items);
-    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'agotados' => array_values(array_unique($agotados))];
+    return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'agotados' => array_values(array_unique($agotados)), 'limitesExcedidos' => array_values(array_unique($limitesExcedidos))];
 }
 
 // ── Corrige (no solo avisa) el precio de las promociones (config/promos,
@@ -1223,61 +1234,32 @@ function corregirPreciosPromos($databaseURL, $accessToken, $items) {
     return ['items' => $corregidos, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2), 'noDisponibles' => array_values(array_unique($noDisponibles))];
 }
 
-// ── Al Gusto/Bomba: ni las salsas ni los ingredientes tienen ya tope duro
-// — antes SOLO se comprobaban en el navegador (updateCustProgress,
-// antifraude.js) y, saltándose la web, se podía forjar un pedido con más
-// salsas/ingredientes de los permitidos pagando el mismo precio fijo (el
-// pedido se rechazaba entero si se detectaba, porque no había forma de
-// cobrar el exceso). Ahora sí la hay: lo que pasa del cupo incluido se
-// cobra aquí mismo como un extra normal (ver
-// dpf_precioExtraSalsasCust/dpf_precioExtraIngredientesCust, usadas en
-// corregirPreciosCatalogo más arriba) en vez de rechazar el pedido.
-// ── Al Gusto/Bomba: cupo de ingredientes incluido en el precio fijo — ver
-// _libreIngredientesCust/precioExtraIngredientesCust en
-// src/nucleo-compartido.js, misma regla aquí para poder validar el precio
-// real. El cupo se reparte en el ORDEN en que el cliente los fue marcando
-// (mismo array `ingredients` que manda, en ese orden — ver custItems en
-// carrito-checkout.js): los primeros N son gratis, el resto es extra.
-function dpf_libreIngredientesCust($menuId, $sauceCount) {
-    if ($menuId == 15) return 6; // Al Gusto
-    if ($menuId == 16) return max(0, 9 - $sauceCount); // Bomba, cupo compartido con las salsas
-    return PHP_INT_MAX;
-}
-function dpf_precioExtraIngredientesCust($ingredients, $menuId, $sauceCount) {
-    $libre = dpf_libreIngredientesCust($menuId, $sauceCount);
-    $lista = is_array($ingredients) ? array_values($ingredients) : [];
-    if (count($lista) <= $libre) return 0.0;
+// ── Al Gusto/Bomba: precio real de la sección "INGREDIENTES EXTRA"/"SALSAS
+// EXTRA" de pago — sección aparte del cupo incluido (que tiene tope duro,
+// comprobado en corregirPreciosCatalogo más arriba). Llegan como objeto
+// {nombre: cantidad 0-3}/{nombre: true/false} en vez de array {name,price}
+// (ver custExtraPrecioTotal en src/nucleo-compartido.js, misma regla aquí).
+function dpf_precioIngExtraCust($ingExtra) {
+    if (!is_array($ingExtra)) return 0.0;
     $total = 0.0;
-    foreach (array_slice($lista, $libre) as $ing) {
-        $ing = (string)$ing;
-        // Un nombre no reconocido (catálogo de CUST_INGREDIENTS/
-        // EXTRAS_ING_PRECIO1/07 en src/nucleo-compartido.js) no suma nada —
-        // no es un hueco de precio: el pedido nunca puede pagar MENOS de lo
-        // real así, como mucho el aviso de corrección sale más bajo de lo
-        // que debería si alguien manda basura a mano.
-        if (!_esIngredienteExtraValido($ing)) continue;
-        $total += (mb_stripos($ing, 'queso') !== false) ? 1.20 : 1.00;
+    foreach ($ingExtra as $ing => $qty) {
+        $qty = (int)$qty;
+        // Un nombre no reconocido, o cantidad <=0, no suma nada — no es un
+        // hueco de precio: el pedido nunca puede pagar MENOS de lo real
+        // así, como mucho el aviso de corrección sale más bajo de lo que
+        // debería si alguien manda basura a mano.
+        if ($qty <= 0 || !_esIngredienteExtraValido((string)$ing)) continue;
+        $qty = min($qty, 3); // MAX_UNIDADES_ING_EXTRA en src/nucleo-compartido.js
+        $total += $qty * ((mb_stripos((string)$ing, 'queso') !== false) ? 1.20 : 1.00);
     }
     return round($total, 2);
 }
-// ── Al Gusto/Bomba: cupo de SALSAS incluido en el precio fijo — ver
-// _libreSalsasCust/precioExtraSalsasCust en src/nucleo-compartido.js,
-// misma regla aquí. A diferencia de los ingredientes (cuyo cupo libre en
-// Bomba se reduce según cuántas salsas hay), el techo de las salsas es
-// fijo — las salsas tienen prioridad sobre el cupo compartido de Bomba,
-// así que su propio techo no depende de los ingredientes.
-function dpf_libreSalsasCust($menuId) {
-    if ($menuId == 15) return 1; // Al Gusto
-    if ($menuId == 16) return 9; // Bomba
-    return PHP_INT_MAX;
-}
-function dpf_precioExtraSalsasCust($sauces, $menuId) {
-    $libre = dpf_libreSalsasCust($menuId);
-    $lista = is_array($sauces) ? array_values($sauces) : [];
-    if (count($lista) <= $libre) return 0.0;
+function dpf_precioSalsaExtraCust($salsaExtra) {
+    if (!is_array($salsaExtra)) return 0.0;
     $total = 0.0;
-    foreach (array_slice($lista, $libre) as $sal) {
-        $total += (mb_stripos((string)$sal, 'philadelphia') !== false) ? 1.20 : 1.00;
+    foreach ($salsaExtra as $salsa => $active) {
+        if (!$active) continue;
+        $total += (mb_stripos((string)$salsa, 'philadelphia') !== false) ? 1.20 : 1.00;
     }
     return round($total, 2);
 }
@@ -2749,6 +2731,16 @@ try {
     if (!empty($corrPrecios['agotados'])) {
         fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — producto agotado: ' . implode(', ', $corrPrecios['agotados']));
         echo json_encode(['success' => false, 'error' => 'Uno de los productos de tu pedido (' . implode(', ', $corrPrecios['agotados']) . ') se ha agotado. Recarga la página e inténtalo de nuevo.']);
+        exit;
+    }
+    // Al Gusto/Bomba con más salsas/ingredientes incluidos de los que
+    // permite el tope duro (1 salsa + 6 ingredientes en Al Gusto, 9 entre
+    // ambos en Bomba) — antifraude.js ya lo impide desde los chips, esto es
+    // para quien se salte la web. No hay "precio corregido" que valga (no
+    // se puede vender lo que no se pidió), se rechaza el pedido entero.
+    if (!empty($corrPrecios['limitesExcedidos'])) {
+        fbAgregarActivityLog($databaseURL, $accessToken, '⚠️ Pedido de ' . $name . ' (' . $phoneClean . ') rechazado al confirmar — tope de ingredientes/salsas superado: ' . implode(', ', $corrPrecios['limitesExcedidos']));
+        echo json_encode(['success' => false, 'error' => 'Uno de tus productos personalizados (' . implode(', ', $corrPrecios['limitesExcedidos']) . ') supera el máximo de ingredientes/salsas permitido. Recarga la página e inténtalo de nuevo.']);
         exit;
     }
     $corrPromos = corregirPreciosPromos($databaseURL, $accessToken, $items);
