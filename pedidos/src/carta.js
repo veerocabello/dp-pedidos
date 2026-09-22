@@ -1180,7 +1180,10 @@ function renderCart() {
     const subtotal = unitPrice * c.qty;
     total += subtotal;
     // Agrupa por nombre ("Jamón York ×2") en orden de primera aparición —
-    // conPrecio añade el precio solo a la parte de pago (ingExtra/salsaExtra).
+    // conPrecio añade el precio y el prefijo "Extra " solo a la parte de
+    // pago (ingExtra/salsaExtra, fuera del cupo incluido). Los del cupo
+    // incluido van sin "Extra" — no es un extra de pago, es la composición
+    // normal de la patata (mismo criterio que custItems en carrito-checkout.js).
     const _aggIngCarta = (lista, conPrecio) => {
       const cuenta = {};
       const orden = [];
@@ -1191,15 +1194,15 @@ function renderCart() {
       return orden.map(n => {
         const qty = cuenta[n];
         const veces = qty >= 2 ? ' ×' + qty : '';
-        if (!conPrecio) return 'Extra ' + n + veces;
+        if (!conPrecio) return n + veces;
         const precio = qty * precioIngredienteExtra(n);
         return 'Extra ' + n + veces + ' +' + precio.toFixed(2).replace('.', ',') + '€';
       });
     };
-    // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual, sin
-    // el prefijo "Extra salsa " — no es un extra de pago.
+    // "Sin salsa" (CUST_SIN_SALSA, antifraude.js) se muestra tal cual. Las
+    // salsas del cupo incluido llevan el prefijo "Salsa " pero sin "Extra".
     const details = [
-      ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Extra salsa ' + s),
+      ...c.sauces.map(s => s === CUST_SIN_SALSA ? s : 'Salsa ' + s),
       ..._aggIngCarta(c.ingredients, false),
       ..._agruparSalsasExtra(extraSalsaListCarta).map(({ nombre, qty, precioTotal }) => 'Extra salsa ' + nombre + (qty >= 2 ? ' ×' + qty : '') + ' +' + precioTotal.toFixed(2).replace('.', ',') + '€'),
       ..._aggIngCarta(extraIngListCarta, true)
