@@ -126,7 +126,7 @@ let _extrasBase = 'aceite'; // 'aceite' | 'mantequilla' — solo aplica a Patata
 
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort', 'Mantequilla'];
+const EXTRAS_SALSAS = ['Alioli', 'BBQ', 'Brava', 'Ketchup', 'Mantequilla', 'Mayonesa', 'Queso Philadelphia', 'Ranchera', 'Roquefort', 'Salsa de yogur', 'Salsa rosa', 'Tomate frito'];
 const EXTRAS_SALSA_PRECIO = 1.00;
 // Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }

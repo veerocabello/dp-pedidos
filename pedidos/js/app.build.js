@@ -126,7 +126,7 @@ let _extrasBase = 'aceite'; // 'aceite' | 'mantequilla' — solo aplica a Patata
 
 const EXTRAS_ING_PRECIO1 = ['Jamón York', 'Carne Picada', 'Pollo', 'Carne Kebab', 'Atún', 'Gambas', 'Tronquitos de Mar', 'Huevo', 'Bacon', 'Queso Mozzarella', '4 Quesos'];
 const EXTRAS_ING_PRECIO07 = ['Tomate Natural', 'Maíz', 'Aceitunas', 'Zanahoria', 'Remolacha', 'Piña', 'Cebolla', 'Champiñón'];
-const EXTRAS_SALSAS = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa rosa', 'Salsa de yogur', 'Tomate frito', 'Queso Philadelphia', 'Roquefort', 'Mantequilla'];
+const EXTRAS_SALSAS = ['Alioli', 'BBQ', 'Brava', 'Ketchup', 'Mantequilla', 'Mayonesa', 'Queso Philadelphia', 'Ranchera', 'Roquefort', 'Salsa de yogur', 'Salsa rosa', 'Tomate frito'];
 const EXTRAS_SALSA_PRECIO = 1.00;
 // Excepción: la salsa Philadelphia cuesta más que el resto de salsas extra.
 function precioSalsaExtra(nombre) { return /philadelphia/i.test(nombre || '') ? 1.20 : EXTRAS_SALSA_PRECIO; }
@@ -9247,7 +9247,7 @@ const CUSTOMIZER_CONFIG = {
     subtitle: 'Hasta 9 ingredientes y/o salsas a elegir'
   }
 };
-const CUST_SAUCES = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa Rosa', 'Salsa de Yogur', 'Tomate Frito', 'Queso Philadelphia', 'Roquefort', 'Aceite'];
+const CUST_SAUCES = ['Aceite', 'Alioli', 'BBQ', 'Brava', 'Ketchup', 'Mantequilla', 'Mayonesa', 'Queso Philadelphia', 'Ranchera', 'Roquefort', 'Salsa de Yogur', 'Salsa Rosa', 'Tomate Frito'];
 // "Sin salsa" es una salsa más de cara al cupo (maxSauces/maxTotal) y a la
 // validación de "elige al menos 1 salsa o ingrediente" — así un cliente que
 // no quiere ninguna salsa puede decirlo explícito en vez de tener que

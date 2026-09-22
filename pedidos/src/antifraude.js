@@ -752,7 +752,7 @@ const CUSTOMIZER_CONFIG = {
     subtitle: 'Hasta 9 ingredientes y/o salsas a elegir'
   }
 };
-const CUST_SAUCES = ['Ranchera', 'Brava', 'BBQ', 'Ketchup', 'Mayonesa', 'Alioli', 'Salsa Rosa', 'Salsa de Yogur', 'Tomate Frito', 'Queso Philadelphia', 'Roquefort', 'Aceite'];
+const CUST_SAUCES = ['Aceite', 'Alioli', 'BBQ', 'Brava', 'Ketchup', 'Mantequilla', 'Mayonesa', 'Queso Philadelphia', 'Ranchera', 'Roquefort', 'Salsa de Yogur', 'Salsa Rosa', 'Tomate Frito'];
 // "Sin salsa" es una salsa más de cara al cupo (maxSauces/maxTotal) y a la
 // validación de "elige al menos 1 salsa o ingrediente" — así un cliente que
 // no quiere ninguna salsa puede decirlo explícito en vez de tener que
