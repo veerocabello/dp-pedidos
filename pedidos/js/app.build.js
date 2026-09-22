@@ -306,13 +306,17 @@ function openExtrasModal(itemId) {
   document.getElementById('extras-modal').style.display = 'block';
   document.body.style.overflow = 'hidden';
 }
-// Sin queso no hay nada que gratinar. Solo aplica a las patatas que ya lo
-// llevan incluido (EXTRAS_SOLO_GRATINADO) — en esas, el queso se puede
-// quitar de QUITABLES_POR_PRODUCTO; si se vuelve a añadir por la lista de
-// ingredientes extra (Queso Mozzarella o 4 Quesos, se puede gratinar con
-// cualquiera de los dos), vuelve a haber queso.
+// Sin queso no hay nada que gratinar.
+// - Patatas que ya llevan queso incluido en la receta (EXTRAS_SOLO_GRATINADO):
+//   hay queso salvo que se haya quitado explícitamente de QUITABLES_POR_PRODUCTO
+//   (y no se haya vuelto a añadir por INGREDIENTES EXTRA).
+// - El resto: no llevan queso de forma incluida, así que hace falta
+//   haberlo añadido a propósito (toggle "Añadir queso mozzarella" o Queso
+//   Mozzarella/4 Quesos en INGREDIENTES EXTRA) — antes esto no se
+//   comprobaba aquí, así que quitar el único queso añadido dejaba
+//   "Gratinar" marcado sin nada que gratinar.
 function _hayQuesoDisponible() {
-  if (!EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) return true;
+  if (!EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) return _hayQuesoEnPedido();
   const quesoQuitado = !!_extrasQuitados['Queso Mozzarella'];
   const quesoReanadido = !!_extrasIngredientes['Queso Mozzarella'] || !!_extrasIngredientes['4 Quesos'];
   return !quesoQuitado || quesoReanadido;
@@ -367,9 +371,11 @@ function toggleExtra(type) {
   if (type === 'queso' && !_extrasQueso && _extrasIngredientes['Queso Mozzarella']) return;
   if (type === 'queso') {
     _extrasQueso = !_extrasQueso;
-    // Si quita queso, quitar también gratinado si solo gratinado no aplica
-    if (!_extrasQueso && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId)) {
-      // Keep gratinado independent — user can still want it without queso? No: gratinado requiere queso
+    // Si quita el toggle y no queda ninguna otra fuente de queso (Queso
+    // Mozzarella/4 Quesos en INGREDIENTES EXTRA), quitar también gratinado
+    // si no es solo-gratinado — si todavía hay queso puesto por otro lado,
+    // gratinar sigue teniendo sentido.
+    if (!_extrasQueso && !EXTRAS_SOLO_GRATINADO.has(_extrasCurrentId) && !_hayQuesoEnPedido()) {
       _extrasGratinado = false;
       updateExtraCheckUI('gratinado', false);
     }
