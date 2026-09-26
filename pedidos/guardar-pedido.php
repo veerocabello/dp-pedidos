@@ -1659,11 +1659,16 @@ function corregirFeesEsperados($databaseURL, $accessToken, $items, $esPedidoLoca
     return ['items' => $items, 'avisos' => $avisos, 'deltaTotal' => round($deltaTotal, 2)];
 }
 
-// ── Aviso (no bloquea) de un posible pedido duplicado: mismo teléfono e
-// importe total guardados hace menos de 90 segundos — típico de un cliente
-// que reintenta tras ver un error de red aunque el pedido original sí
-// llegara a guardarse, o de un doble toque en "Confirmar". No se bloquea
-// porque un cliente puede legítimamente hacer dos pedidos iguales seguidos.
+// ── Detecta un posible pedido duplicado: mismo teléfono e importe total
+// guardados hace menos de 90 segundos — típico de un cliente que reintenta
+// tras ver un error de red aunque el pedido original sí llegara a
+// guardarse, o de un doble toque en "Confirmar". SÍ bloquea el pedido (ver
+// el punto donde se llama, más abajo) — antes solo se avisaba en el
+// registro de actividad para que alguien lo revisara a mano, pero el
+// pedido duplicado ya se había colado igualmente. Un cliente que de
+// verdad quiera pedir dos veces lo mismo puede hacerlo llamando a la
+// tienda (mensaje que se le muestra al rechazarlo), así que bloquear no le
+// cierra esa puerta, solo evita el "sin querer" (doble toque, etc.).
 function detectarPosibleDuplicado($databaseURL, $accessToken, $fecha, $phone, $total) {
     $leido = fbGetConEtag($databaseURL, 'tickets/' . $fecha, $accessToken);
     $tickets = is_array($leido['data']) ? $leido['data'] : [];
@@ -2787,9 +2792,17 @@ try {
         if ($total < 0) $total = 0;
         fbAgregarActivityLog($databaseURL, $accessToken, '🚨 Gasto de gestión/bolsa corregido en pedido ' . $orderNum . ' — ' . implode(' · ', $corrFees['avisos']) . ' (total ajustado a ' . number_format($total, 2) . '€)');
     }
+    // Bloquea (no solo avisa) el pedido duplicado — ver detectarPosibleDuplicado
+    // arriba. El aviso al cliente le da una salida real (llamar a la
+    // tienda) para el caso legítimo de querer pedir dos veces lo mismo,
+    // así que bloquear aquí no le cierra ninguna puerta, solo evita que el
+    // "sin querer" (doble toque en Confirmar, reintento tras un error de
+    // red que en realidad sí llegó a guardarse) se cuele como dos pedidos.
     $posibleDup = detectarPosibleDuplicado($databaseURL, $accessToken, $todayKey, $phone, $total);
     if ($posibleDup) {
-        fbAgregarActivityLog($databaseURL, $accessToken, '🔁 Posible pedido duplicado: mismo teléfono e importe en ' . $posibleDup . ' y ' . $orderNum . ' con menos de 90s de diferencia — comprueba si es el mismo pedido enviado dos veces');
+        fbAgregarActivityLog($databaseURL, $accessToken, '🔁 Pedido duplicado bloqueado: mismo teléfono e importe que ' . $posibleDup . ', con menos de 90s de diferencia');
+        echo json_encode(['success' => false, 'error' => 'Parece que ya has hecho este mismo pedido hace un momento. Si de verdad quieres pedir dos veces lo mismo, llámanos al 604 82 31 80 y te lo confirmamos por teléfono.']);
+        exit;
     }
 
     // ── VERIFICACIÓN SMS: SÍ bloquea el pedido (ver validarSmsToken arriba) ──
