@@ -57,9 +57,14 @@ auth.onAuthStateChanged(function (user) {
   const btn = document.getElementById('login-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
   if (user) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     loginScreen.style.display = 'none';
     appScreen.style.display = 'block';
     cargarDatosIniciales();
+    mostrarSeccionHome();
+    // en iOS el teclado tarda en cerrarse y puede desplazar la página después de este punto
+    setTimeout(mostrarSeccionHome, 300);
+    setTimeout(mostrarSeccionHome, 700);
   } else {
     loginScreen.style.display = 'flex';
     appScreen.style.display = 'none';
@@ -67,20 +72,39 @@ auth.onAuthStateChanged(function (user) {
 });
 
 // ── NAVEGACIÓN: PANTALLA DE INICIO ──
+let _homeFija = false;
 function mostrarSeccionHome() {
   document.getElementById('seccion-home').style.display = 'block';
   document.getElementById('seccion-administracion').style.display = 'none';
   document.getElementById('seccion-marketing').style.display = 'none';
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+  window.scrollTo(0, 0);
+  _homeFija = true;
 }
+window.addEventListener('resize', function () {
+  if (_homeFija) window.scrollTo(0, 0);
+});
+window.addEventListener('scroll', function () {
+  if (_homeFija && window.scrollY !== 0) window.scrollTo(0, 0);
+});
 function mostrarSeccionAdmin() {
+  _homeFija = false;
   document.getElementById('seccion-home').style.display = 'none';
   document.getElementById('seccion-administracion').style.display = 'block';
   document.getElementById('seccion-marketing').style.display = 'none';
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+  window.scrollTo(0, 0);
 }
 function mostrarSeccionMarketing() {
+  _homeFija = false;
   document.getElementById('seccion-home').style.display = 'none';
   document.getElementById('seccion-administracion').style.display = 'none';
   document.getElementById('seccion-marketing').style.display = 'block';
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+  window.scrollTo(0, 0);
 }
 
 // ── DATOS: MENU ──
@@ -103,6 +127,7 @@ async function cargarDatosIniciales() {
   await _gastosCargarCategorias();
   await _cargarIngredientesYRecetas();
   await _cargarNombresDeStock();
+  bimbaCargarMkResumenHome();
   loadingEl.style.display = 'none';
   contentEl.style.display = 'block';
 }
@@ -118,11 +143,23 @@ window.fb_loadEmpleados = async function () {
   if (!sn.exists()) return null;
   try { return JSON.parse(sn.val()); } catch (e) { return null; }
 };
+// Sin esto, "Equipo vs facturación" siempre calculaba 0 horas trabajadas:
+// _empHorasEnPeriodo() lee los fichajes de localStorage, pero aquí nadie
+// los rellenaba nunca (en la web de pedidos lo hace un listener aparte que
+// no existe en esta web) — con este helper y las llamadas de más abajo, se
+// traen de verdad desde Firebase (config/fichajes, el mismo nodo que ya usa
+// la web de pedidos para guardar los fichajes de los empleados).
+window.fb_loadFichajes = async function () {
+  const sn = await firebase.database().ref('config/fichajes').once('value');
+  if (!sn.exists()) return null;
+  try { return JSON.parse(sn.val()); } catch (e) { return null; }
+};
 
 // ── HELPERS ──
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
+    .replace(/ /g, ' ')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -403,6 +440,12 @@ async function bimbaRenderEquipoFacturacion() {
     }
   } catch (e) { /* si falla, seguimos con lo que hubiera en localStorage */ }
   try {
+    if (window.fb_loadFichajes) {
+      const fichajesArr = await window.fb_loadFichajes();
+      if (fichajesArr) localStorage.setItem('dpf_fichajes', JSON.stringify(fichajesArr));
+    }
+  } catch (e) { /* si falla, las horas trabajadas saldrán a 0 para este refresco */ }
+  try {
     const sn = await firebase.database().ref('config/empleadosPago').once('value');
     _equipoPagoConfig = sn.exists() ? sn.val() : {};
   } catch (e) { /* deja la config que ya hubiera en memoria */ }
@@ -582,6 +625,12 @@ async function bimbaEquipoPeriodoChange() {
   const empleados = JSON.parse(localStorage.getItem('dpf_empleados') || '[]');
   _bimbaPintarRangoTexto();
   try {
+    if (window.fb_loadFichajes) {
+      const fichajesArr = await window.fb_loadFichajes();
+      if (fichajesArr) localStorage.setItem('dpf_fichajes', JSON.stringify(fichajesArr));
+    }
+  } catch (e) { /* si falla, las horas trabajadas saldrán a 0 para este refresco */ }
+  try {
     const { inicio, fin } = _equipoRangoPeriodo();
     const totalGastos = await _gastosObtenerTotal(inicio, fin);
     const gastosEl = document.getElementById('equipo-gastos');
@@ -631,9 +680,88 @@ async function _estrellasObtenerVentas(inicio, fin) {
       });
     }
   } catch (e) {
-    console.warn('[estrellas] error leyendo ventas', e);
+    console.warn('[estrellas] error leyendo ventas web', e);
+  }
+  // Ventas de la app de comandas (tienda física), importadas a mano con
+  // importarVentasComandas() más abajo — mismo nodo por fecha que
+  // ventasProductos, pero separado para no mezclar el origen de cada dato.
+  try {
+    const snapTienda = await firebase.database().ref('ventasProductosTienda').orderByKey().startAt(inicio).endAt(fin).once('value');
+    if (snapTienda.exists()) {
+      snapTienda.forEach(diaSnap => {
+        const dia = diaSnap.val() || {};
+        Object.keys(dia).forEach(pid => {
+          totales[pid] = (totales[pid] || 0) + dia[pid];
+        });
+      });
+    }
+  } catch (e) {
+    console.warn('[estrellas] error leyendo ventas tienda', e);
   }
   return totales;
+}
+
+// ── IMPORTAR VENTAS DE LA APP DE COMANDAS (tienda física, sin conexión) ──
+// Lee el archivo que genera el botón "📥 Descargar copia" de la app de
+// comandas para un día — usa el MISMO catálogo de productos (mismos IDs)
+// que esta web, así que se pueden sumar directamente sin traducir nombres.
+// Por cada día importado:
+//  1) Se guarda un ingreso en el mismo "Registro de gastos" que ya lee
+//     Equipo vs facturación (_ingresosObtenerTotal) — así la facturación
+//     de ese apartado ya cuenta las ventas de tienda sin teclearlas a mano.
+//  2) Se suman las unidades por producto en ventasProductosTienda/<fecha>,
+//     que _estrellasObtenerVentas ya lee además de las de la web.
+// El ingreso se guarda con un id fijo (no autogenerado) basado en la
+// fecha, así que volver a importar el mismo día lo reemplaza en vez de
+// duplicarlo — reimportar por error (o para corregir) es seguro.
+async function importarVentasComandas(fileInput) {
+  const msgEl = document.getElementById('comandas-import-msg');
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  if (msgEl) { msgEl.style.color = '#5a3e1b'; msgEl.textContent = 'Leyendo archivo…'; }
+  try {
+    const texto = await file.text();
+    const data = JSON.parse(texto);
+    const fecha = data.fecha;
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      throw new Error('El archivo no tiene una fecha válida — ¿es un "Descargar copia" de la app de comandas?');
+    }
+    const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
+    // Solo pedidos cobrados — uno marcado "pendiente" no es venta todavía.
+    const cobrados = pedidos.filter(p => p.paid !== false);
+    const totalDia = cobrados.reduce((s, p) => s + (Number(p.total) || 0), 0);
+
+    await firebase.database().ref('gastos/' + fecha + '/comandas_' + fecha).set({
+      tipo: 'ingreso',
+      categoria: 'Ventas en tienda (comandas)',
+      importe: Math.round(totalDia * 100) / 100,
+      nota: cobrados.length + ' pedido(s) importados de la app de comandas',
+      ts: Date.now(),
+    });
+
+    const porProducto = {};
+    cobrados.forEach(p => {
+      (p.items || []).forEach(it => {
+        const item = MENU.find(m => m.name === it.name);
+        if (!item) return; // línea de descuento u otra que no es un producto del menú
+        porProducto[item.id] = (porProducto[item.id] || 0) + (Number(it.qty) || 0);
+      });
+    });
+    await firebase.database().ref('ventasProductosTienda/' + fecha).set(porProducto);
+
+    if (msgEl) {
+      msgEl.style.color = '#27855a';
+      msgEl.textContent = '✅ Importado ' + fecha + ' — ' + totalDia.toFixed(2) + ' € en ' + cobrados.length + ' pedido(s)';
+    }
+    fileInput.value = '';
+    const equipoOverlay = document.getElementById('equipo-overlay');
+    if (equipoOverlay && equipoOverlay.classList.contains('open') && typeof bimbaRenderEquipoFacturacion === 'function') {
+      bimbaRenderEquipoFacturacion();
+    }
+  } catch (e) {
+    if (msgEl) { msgEl.style.color = '#c0392b'; msgEl.textContent = '❌ ' + (e.message || 'No se pudo leer el archivo'); }
+    console.error('[comandas-import]', e);
+  }
 }
 async function bimbaRenderEstrellas() {
   const el = document.getElementById('estrellas-contenido');
@@ -1669,14 +1797,41 @@ function bimbaRenderSimulador() {
 // ════════════════════════════════════════════════════
 const MK_ESTADOS = ['Idea', 'Guion', 'Grabado', 'Editado', 'Publicado'];
 const MK_ESTADO_COLOR = { Idea: '#8A6A4E', Guion: '#B5862C', Grabado: '#0C5C8A', Editado: '#6B3FA0', Publicado: '#27855a' };
-const MK_PRIORIDAD_COLOR = { Alta: '#c0392b', Media: '#B5862C', Baja: '#27855a' };
 let _mkCalendarioCache = [];
 let _mkIdeasCache = [];
 let _mkPromosCache = [];
 
+function _mkRangoSemanaActual() {
+  const hoy = new Date();
+  const diaSemana = (hoy.getDay() + 6) % 7; // lunes = 0
+  const lunes = new Date(hoy);
+  lunes.setDate(hoy.getDate() - diaSemana);
+  const domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  return { inicio: lunes.toISOString().slice(0, 10), fin: domingo.toISOString().slice(0, 10) };
+}
+async function bimbaCargarMkResumenHome() {
+  const badge = document.getElementById('mk-home-badge');
+  if (!badge) return;
+  try {
+    const sn = await firebase.database().ref('marketing/calendario').once('value');
+    const lista = [];
+    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    _mkCalendarioCache = lista;
+  } catch (e) { return; }
+  const { inicio, fin } = _mkRangoSemanaActual();
+  const pendientes = _mkCalendarioCache.filter(function (p) { return p.fecha >= inicio && p.fecha <= fin && p.estado !== 'Publicado'; });
+  if (pendientes.length > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = pendientes.length + ' esta semana';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 function bimbaToggleMkForm(tipo) {
-  const form = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-form');
-  const chevron = document.getElementById('mk-' + (tipo === 'idea' ? 'idea' : tipo === 'promo' ? 'promo' : 'calendario') + '-chevron');
+  const form = document.getElementById('mk-' + tipo + '-form');
+  const chevron = document.getElementById('mk-' + tipo + '-chevron');
   if (!form) return;
   const estaAbierto = form.style.display !== 'none';
   form.style.display = estaAbierto ? 'none' : 'block';
@@ -1697,18 +1852,25 @@ function closeMkCalendarioOverlay() {
 }
 let _mkMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let _mkMesFiltroDia = null;
-const MK_RED_COLOR = { Instagram: '#C13584', TikTok: '#000000', Facebook: '#1877F2' };
+const MK_RED_COLOR = { Instagram: '#C13584', 'Instagram (Historias)': '#833AB4', TikTok: '#000000', Facebook: '#1877F2' };
 const MK_MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 async function bimbaRenderMkCalendario() {
   const el = document.getElementById('mk-calendario-lista');
   el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
   try {
-    const sn = await firebase.database().ref('marketing/calendario').once('value');
+    const [snCal, snPromo] = await Promise.all([
+      firebase.database().ref('marketing/calendario').once('value'),
+      firebase.database().ref('marketing/promos').once('value')
+    ]);
     const lista = [];
-    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    if (snCal.exists()) snCal.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
     lista.sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); });
     _mkCalendarioCache = lista;
+
+    const promos = [];
+    if (snPromo.exists()) snPromo.forEach(function (s) { promos.push(Object.assign({ id: s.key }, s.val())); });
+    _mkPromosCache = promos;
   } catch (e) {
     el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
     return;
@@ -1716,14 +1878,39 @@ async function bimbaRenderMkCalendario() {
   bimbaPintarMkCalendarioLista();
   if (document.getElementById('mk-calendario-vista-mes').style.display !== 'none') bimbaRenderMkMes();
 }
+function bimbaPintarMkResumenEstados() {
+  const el = document.getElementById('mk-cal-resumen-estados');
+  if (!el) return;
+  const counts = {};
+  MK_ESTADOS.forEach(function (e) { counts[e] = 0; });
+  _mkCalendarioCache.forEach(function (p) { const e = p.estado || 'Idea'; counts[e] = (counts[e] || 0) + 1; });
+  el.innerHTML = MK_ESTADOS.map(function (e) {
+    const color = MK_ESTADO_COLOR[e];
+    return '<span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px;background:' + color + '1A;color:' + color + '">' + e + ' ' + counts[e] + '</span>';
+  }).join('');
+}
 function bimbaPintarMkCalendarioLista() {
   const el = document.getElementById('mk-calendario-lista');
-  const lista = _mkMesFiltroDia ? _mkCalendarioCache.filter(function (p) { return p.fecha === _mkMesFiltroDia; }) : _mkCalendarioCache;
-  if (!lista.length) {
+  bimbaPintarMkResumenEstados();
+  const posts = (_mkMesFiltroDia ? _mkCalendarioCache.filter(function (p) { return p.fecha === _mkMesFiltroDia; }) : _mkCalendarioCache)
+    .map(function (p) { return { tipo: 'post', fecha: p.fecha, data: p }; });
+  const promos = (_mkMesFiltroDia ? (_mkPromosCache || []).filter(function (pr) { return pr.fechaInicio === _mkMesFiltroDia; }) : (_mkPromosCache || []))
+    .map(function (pr) { return { tipo: 'promo', fecha: pr.fechaInicio, data: pr }; });
+  const combinado = posts.concat(promos).sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); });
+
+  if (!combinado.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">' + (_mkMesFiltroDia ? 'Sin publicaciones ese día' : 'Sin publicaciones planeadas todavía') + '</div>';
     return;
   }
-  el.innerHTML = lista.map(function (p) {
+  el.innerHTML = combinado.map(function (item) {
+    if (item.tipo === 'promo') {
+      const pr = item.data;
+      return '<div style="background:#FFFDF5;border:1.5px solid #F4C430;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
+        + '<div style="font-size:12.5px;font-weight:800;color:#854F0B;margin-bottom:2px">🎉 Empieza: ' + escapeHtml(pr.nombre || '') + '</div>'
+        + '<div style="font-size:11px;color:#8A6A4E">' + (pr.fechaInicio ? _fechaCorta(pr.fechaInicio) : '') + (pr.oferta ? ' · ' + escapeHtml(pr.oferta) : '') + '</div>'
+        + '</div>';
+    }
+    const p = item.data;
     const color = MK_ESTADO_COLOR[p.estado] || '#8A6A4E';
     return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
@@ -1731,8 +1918,8 @@ function bimbaPintarMkCalendarioLista() {
       + '<button onclick="bimbaEliminarMkCalendario(\'' + p.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
       + '</div>'
       + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + (p.fecha ? _fechaCorta(p.fecha) : 'sin fecha') + ' · ' + escapeHtml(p.red || '') + ' · ' + escapeHtml(p.tipo || '') + '</div>'
-      + (p.texto ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-wrap">' + escapeHtml(p.texto) + '</div>' : '')
-      + '<select onchange="bimbaCambiarEstadoMkCalendario(\'' + p.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:4px 22px 4px 8px;border-radius:99px;cursor:pointer;border:1.5px solid ' + color + ';background:' + color + '1A;color:' + color + ';font-family:\'DM Sans\',sans-serif">'
+      + (p.texto ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-line">' + escapeHtml(p.texto) + '</div>' : '')
+      + '<select onchange="bimbaCambiarEstadoMkCalendario(\'' + p.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:5px 22px 5px 10px;border-radius:99px;cursor:pointer;border:none;background:' + color + ';color:#fff;font-family:\'DM Sans\',sans-serif">'
       + MK_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (p.estado || 'Idea') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
       + '</select>'
       + '</div>';
@@ -1776,6 +1963,12 @@ function bimbaRenderMkMes() {
     (porDia[p.fecha] = porDia[p.fecha] || []).push(p);
   });
 
+  const promosPorDia = {};
+  (_mkPromosCache || []).forEach(function (pr) {
+    if (!pr.fechaInicio) return;
+    promosPorDia[pr.fechaInicio] = true;
+  });
+
   const primerDiaSemana = (new Date(anio, mes, 1).getDay() + 6) % 7; // lunes = 0
   const diasEnMes = new Date(anio, mes + 1, 0).getDate();
   const hoyStr = new Date().toISOString().slice(0, 10);
@@ -1785,13 +1978,17 @@ function bimbaRenderMkMes() {
   for (let dia = 1; dia <= diasEnMes; dia++) {
     const fechaStr = anio + '-' + String(mes + 1).padStart(2, '0') + '-' + String(dia).padStart(2, '0');
     const posts = porDia[fechaStr] || [];
+    const empiezaPromo = !!promosPorDia[fechaStr];
     const esHoy = fechaStr === hoyStr;
     const esSeleccionado = fechaStr === _mkMesFiltroDia;
     const dots = posts.slice(0, 3).map(function (p) {
       return '<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:' + (MK_RED_COLOR[p.red] || '#8A6A4E') + ';margin:0 1px"></span>';
     }).join('');
     const extra = posts.length > 3 ? '<div style="font-size:8px;color:#8A6A4E;font-weight:700">+' + (posts.length - 3) + '</div>' : '';
-    html += '<div onclick="bimbaMkMesFiltrarDia(\'' + fechaStr + '\')" style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:' + (esSeleccionado ? '#FBEFD6' : '#fff') + ';border:1.5px solid ' + (esSeleccionado ? '#F4C430' : '#F5E6C8') + '">'
+    const fondoCelda = esSeleccionado ? '#FBEFD6' : (empiezaPromo ? '#FFFDF5' : '#fff');
+    const bordeCelda = esSeleccionado ? '#F4C430' : (empiezaPromo ? '#F4C430' : '#F5E6C8');
+    html += '<div onclick="bimbaMkMesFiltrarDia(\'' + fechaStr + '\')" style="position:relative;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;background:' + fondoCelda + ';border:1.5px solid ' + bordeCelda + '">'
+      + (empiezaPromo ? '<span style="position:absolute;top:1px;right:2px;font-size:7px;line-height:1">🎉</span>' : '')
       + '<div style="font-size:11px;font-weight:' + (esHoy ? '800' : '600') + ';color:' + (esHoy ? '#C2711A' : '#3D1F0D') + '">' + dia + '</div>'
       + (posts.length ? '<div style="margin-top:2px">' + dots + '</div>' + extra : '')
       + '</div>';
@@ -1846,6 +2043,12 @@ async function bimbaGuardarMkCalendario(temaPrellenado) {
 }
 
 // ── Banco de ideas ──
+let _mkIdeaStarNueva = false;
+function bimbaToggleMkIdeaStarNueva() {
+  _mkIdeaStarNueva = !_mkIdeaStarNueva;
+  const el = document.getElementById('mk-idea-star-nueva');
+  if (el) el.textContent = _mkIdeaStarNueva ? '★' : '☆';
+}
 function openMkIdeasOverlay() {
   document.getElementById('mk-ideas-overlay').classList.add('open');
   bimbaRenderMkIdeas();
@@ -1856,35 +2059,181 @@ function closeMkIdeasOverlay() {
 async function bimbaRenderMkIdeas() {
   const el = document.getElementById('mk-ideas-lista');
   el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
+  await _mkCargarIdeaCategorias();
+  bimbaPoblarMkIdeaCategorias();
   try {
     const sn = await firebase.database().ref('marketing/ideas').once('value');
     const lista = [];
     if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
-    const orden = { Alta: 0, Media: 1, Baja: 2 };
-    lista.sort(function (a, b) { return (orden[a.prioridad] || 1) - (orden[b.prioridad] || 1); });
+    lista.sort(function (a, b) {
+      if (!!a.destacada !== !!b.destacada) return a.destacada ? -1 : 1;
+      return (b.ts || 0) - (a.ts || 0);
+    });
     _mkIdeasCache = lista;
   } catch (e) {
     el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
     return;
   }
+  bimbaPintarMkIdeasLista();
+}
+const MK_IDEA_CATEGORIAS_DEFAULT = ['Producto', 'Detrás de cámaras', 'Promoción', 'Testimonio', 'Tendencia', 'Colaboración'];
+const MK_IDEA_CATEGORIA_COLOR = { 'Producto': '#0C5C8A', 'Detrás de cámaras': '#6B3FA0', 'Promoción': '#B5862C', 'Testimonio': '#27855a', 'Tendencia': '#C13584', 'Colaboración': '#c0392b' };
+let _mkIdeaCategorias = MK_IDEA_CATEGORIAS_DEFAULT.slice();
+let _mkIdeaEditandoId = null;
+async function _mkCargarIdeaCategorias() {
+  try {
+    const sn = await firebase.database().ref('config/ideasCategorias').once('value');
+    if (sn.exists() && Array.isArray(sn.val()) && sn.val().length) _mkIdeaCategorias = sn.val();
+  } catch (e) { /* nos quedamos con las categorías por defecto */ }
+}
+function bimbaPoblarMkIdeaCategorias() {
+  const sel = document.getElementById('mk-idea-categoria');
+  if (!sel) return;
+  const valorActual = sel.value;
+  sel.innerHTML = _mkIdeaCategorias.map(function (c) { return '<option value="' + escapeAttr(c) + '">' + escapeHtml(c) + '</option>'; }).join('') + '<option value="__nueva__">➕ Nueva categoría...</option>';
+  if (_mkIdeaCategorias.includes(valorActual)) sel.value = valorActual;
+  bimbaPintarMkCategoriasManager();
+}
+function bimbaMkIdeaAgregarCategoria() {
+  const nombre = prompt('Nombre de la nueva categoría:');
+  if (!nombre || !nombre.trim()) return;
+  const limpio = nombre.trim();
+  if (!_mkIdeaCategorias.includes(limpio)) {
+    _mkIdeaCategorias.push(limpio);
+    firebase.database().ref('config/ideasCategorias').set(_mkIdeaCategorias).catch(function () {});
+  }
+  bimbaPoblarMkIdeaCategorias();
+  const sel = document.getElementById('mk-idea-categoria');
+  if (sel) sel.value = limpio;
+}
+function bimbaMkIdeaCategoriaChange() {
+  const sel = document.getElementById('mk-idea-categoria');
+  if (sel.value !== '__nueva__') return;
+  bimbaMkIdeaAgregarCategoria();
+  if (sel.value === '__nueva__') sel.value = _mkIdeaCategorias[0] || '';
+}
+function bimbaToggleMkCategoriasManager() {
+  const el = document.getElementById('mk-idea-categorias-manager');
+  if (!el) return;
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function bimbaPintarMkCategoriasManager() {
+  const el = document.getElementById('mk-idea-categorias-manager-lista');
+  if (!el) return;
+  el.innerHTML = _mkIdeaCategorias.map(function (c) {
+    const color = MK_IDEA_CATEGORIA_COLOR[c] || '#3D1F0D';
+    return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 6px 4px 10px;border-radius:99px;background:' + color + '1A;color:' + color + '">' + escapeHtml(c) + '<span onclick="bimbaMkIdeaBorrarCategoria(\'' + escapeAttr(c) + '\')" style="cursor:pointer;font-weight:800;padding:0 3px">✕</span></span>';
+  }).join('') + '<span onclick="bimbaMkIdeaAgregarCategoria()" style="display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;border:1.5px dashed #C2711A;color:#C2711A;cursor:pointer">➕ Añadir</span>';
+}
+function bimbaMkIdeaBorrarCategoria(cat) {
+  if (_mkIdeaCategorias.length <= 1) { alert('Necesitas al menos una categoría.'); return; }
+  if (!confirm('¿Borrar la categoría "' + cat + '"? Las ideas que ya la tenían la conservan, pero no podrás elegirla para ideas nuevas.')) return;
+  _mkIdeaCategorias = _mkIdeaCategorias.filter(function (c) { return c !== cat; });
+  firebase.database().ref('config/ideasCategorias').set(_mkIdeaCategorias).catch(function () {});
+  bimbaPoblarMkIdeaCategorias();
+}
+function bimbaMkIdeaFormatear(textareaId, tipo) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const val = ta.value;
+  const marker = tipo === 'bold' ? '**' : (tipo === 'italic' ? '~' : '__');
+  const placeholder = tipo === 'bold' ? 'negrita' : (tipo === 'italic' ? 'cursiva' : 'subrayado');
+  const seleccion = val.slice(start, end) || placeholder;
+  ta.value = val.slice(0, start) + marker + seleccion + marker + val.slice(end);
+  ta.focus();
+  const nuevaPos = start + marker.length + seleccion.length + marker.length;
+  ta.setSelectionRange(nuevaPos, nuevaPos);
+}
+function _mkFormatearTexto(texto) {
+  let html = escapeHtml(texto || '');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  html = html.replace(/__([^_]+)__/g, '<u>$1</u>');
+  html = html.replace(/~([^~]+)~/g, '<i>$1</i>');
+  return html;
+}
+function bimbaMkIdeaCardHtml(i) {
+  if (i.id === _mkIdeaEditandoId) {
+    return '<div style="background:#fff;border:1.5px solid #C8860A;border-radius:12px;padding:14px;margin-bottom:10px">'
+      + '<div style="display:flex;gap:6px;margin-bottom:6px">'
+      + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'bold\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">B</button>'
+      + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'italic\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;font-style:italic;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">I</button>'
+      + '<button type="button" onclick="bimbaMkIdeaFormatear(\'mk-idea-edit-texto-' + i.id + '\',\'underline\')" style="width:30px;height:30px;border:1.5px solid #F5E6C8;border-radius:6px;background:#fff;font-weight:800;font-size:13px;text-decoration:underline;cursor:pointer;color:#3D1F0D;font-family:\'DM Sans\',sans-serif">U</button>'
+      + '</div>'
+      + '<textarea id="mk-idea-edit-texto-' + i.id + '" rows="3" style="width:100%;padding:8px 10px;margin-bottom:8px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D;resize:vertical">' + escapeHtml(i.idea || '') + '</textarea>'
+      + '<select id="mk-idea-edit-categoria-' + i.id + '" style="width:100%;padding:8px 10px;margin-bottom:10px;border:1.5px solid #F5E6C8;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fafafa;color:#3D1F0D">'
+      + _mkIdeaCategorias.map(function (c) { return '<option' + (c === i.categoria ? ' selected' : '') + '>' + c + '</option>'; }).join('')
+      + '</select>'
+      + '<div style="display:flex;gap:8px">'
+      + '<button onclick="bimbaMkIdeaGuardarEdicion(\'' + i.id + '\')" style="flex:1;background:#3D1F0D;color:#fff;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Guardar</button>'
+      + '<button onclick="bimbaMkIdeaCancelarEdicion()" style="flex:1;background:#fff;color:#8A6A4E;border:1.5px solid #F5E6C8;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancelar</button>'
+      + '</div>'
+      + '</div>';
+  }
+  return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:12px;padding:14px;margin-bottom:10px">'
+    + '<div style="position:relative;padding-left:28px">'
+    + '<span onclick="bimbaToggleMkIdeaDestacada(\'' + i.id + '\')" style="position:absolute;left:0;top:1px;font-size:18px;line-height:1.45;cursor:pointer;color:#F4C430">' + (i.destacada ? '★' : '☆') + '</span>'
+    + '<div style="font-size:14px;font-weight:500;color:#3D1F0D;line-height:1.45;white-space:pre-line">' + _mkFormatearTexto(i.idea) + '</div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    + '<button onclick="bimbaMkIdeaEditar(\'' + i.id + '\')" style="width:36px;height:32px;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;font-size:15px;cursor:pointer">✏️</button>'
+    + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="width:36px;height:32px;background:#fff;border:1.5px solid #F5E6C8;border-radius:8px;font-size:15px;cursor:pointer">🗑️</button>'
+    + '</div>'
+    + '</div>';
+}
+function bimbaPintarMkIdeasLista() {
+  const el = document.getElementById('mk-ideas-lista');
   if (!_mkIdeasCache.length) {
     el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin ideas guardadas todavía</div>';
     return;
   }
-  el.innerHTML = _mkIdeasCache.map(function (i) {
-    const colorP = MK_PRIORIDAD_COLOR[i.prioridad] || '#8A6A4E';
-    return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
-      + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D">' + escapeHtml(i.idea || '') + '</div>'
-      + '<button onclick="bimbaEliminarMkIdea(\'' + i.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-      + '<span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:#F5E6C8;color:#8A6A4E">' + escapeHtml(i.categoria || '') + '</span>'
-      + '<span style="font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:99px;background:' + colorP + '1A;color:' + colorP + '">' + escapeHtml(i.prioridad || '') + '</span>'
-      + '<span onclick="bimbaMkIdeaAlCalendario(\'' + i.id + '\')" style="font-size:10.5px;font-weight:700;color:#C2711A;cursor:pointer;text-decoration:underline;margin-left:auto">→ Calendario</span>'
-      + '</div>'
-      + '</div>';
-  }).join('');
+  const porCat = {};
+  _mkIdeasCache.forEach(function (i) { (porCat[i.categoria] = porCat[i.categoria] || []).push(i); });
+  let html = '';
+  _mkIdeaCategorias.forEach(function (cat) {
+    const lista = porCat[cat];
+    if (!lista || !lista.length) return;
+    const color = MK_IDEA_CATEGORIA_COLOR[cat] || '#3D1F0D';
+    html += '<div style="font-family:\'Oswald\',sans-serif;font-size:11px;font-weight:700;color:#fff;background:' + color + ';text-transform:uppercase;letter-spacing:0.05em;padding:6px 12px;border-radius:8px;margin:14px 0 8px">' + escapeHtml(cat) + '</div>';
+    html += lista.map(bimbaMkIdeaCardHtml).join('');
+    delete porCat[cat];
+  });
+  Object.keys(porCat).forEach(function (cat) {
+    html += _mkIdeaCatHeaderHtml(cat);
+    html += porCat[cat].map(bimbaMkIdeaCardHtml).join('');
+  });
+  el.innerHTML = html;
+}
+function _mkIdeaCatHeaderHtml(cat) {
+  return '<div style="font-family:\'Oswald\',sans-serif;font-size:11px;font-weight:700;color:#fff;background:#3D1F0D;text-transform:uppercase;letter-spacing:0.05em;padding:6px 12px;border-radius:8px;margin:14px 0 8px">' + escapeHtml(cat || 'Sin categoría') + '</div>';
+}
+function bimbaMkIdeaEditar(id) {
+  _mkIdeaEditandoId = id;
+  bimbaPintarMkIdeasLista();
+}
+function bimbaMkIdeaCancelarEdicion() {
+  _mkIdeaEditandoId = null;
+  bimbaPintarMkIdeasLista();
+}
+async function bimbaMkIdeaGuardarEdicion(id) {
+  const item = _mkIdeasCache.find(function (i) { return i.id === id; });
+  if (!item) return;
+  const nuevoTexto = document.getElementById('mk-idea-edit-texto-' + id).value.trim();
+  const nuevaCategoria = document.getElementById('mk-idea-edit-categoria-' + id).value;
+  if (!nuevoTexto) return;
+  item.idea = nuevoTexto;
+  item.categoria = nuevaCategoria;
+  _mkIdeaEditandoId = null;
+  bimbaPintarMkIdeasLista();
+  try { await firebase.database().ref('marketing/ideas/' + id).update({ idea: nuevoTexto, categoria: nuevaCategoria }); } catch (e) {}
+}
+async function bimbaToggleMkIdeaDestacada(id) {
+  const item = _mkIdeasCache.find(function (i) { return i.id === id; });
+  if (!item) return;
+  item.destacada = !item.destacada;
+  bimbaPintarMkIdeasLista();
+  try { await firebase.database().ref('marketing/ideas/' + id + '/destacada').set(item.destacada); } catch (e) {}
 }
 async function bimbaEliminarMkIdea(id) {
   if (!confirm('¿Borrar esta idea?')) return;
@@ -1897,32 +2246,22 @@ async function bimbaGuardarMkIdea() {
   const msgEl = document.getElementById('mk-idea-msg');
   const idea = document.getElementById('mk-idea-texto').value.trim();
   const categoria = document.getElementById('mk-idea-categoria').value;
-  const prioridad = document.getElementById('mk-idea-prioridad').value;
   if (!idea) { msgEl.textContent = 'Escribe la idea'; msgEl.style.color = '#c0392b'; return; }
+  if (!categoria || categoria === '__nueva__') { msgEl.textContent = 'Elige una categoría'; msgEl.style.color = '#c0392b'; return; }
   try {
-    await firebase.database().ref('marketing/ideas').push({ idea: idea, categoria: categoria, prioridad: prioridad, ts: Date.now() });
+    await firebase.database().ref('marketing/ideas').push({ idea: idea, categoria: categoria, destacada: _mkIdeaStarNueva, ts: Date.now() });
     msgEl.style.color = '#27855a';
     msgEl.textContent = '✅ Guardado';
     document.getElementById('mk-idea-texto').value = '';
+    _mkIdeaStarNueva = false;
+    const starEl = document.getElementById('mk-idea-star-nueva');
+    if (starEl) starEl.textContent = '☆';
     bimbaRenderMkIdeas();
   } catch (e) {
     msgEl.style.color = '#c0392b';
     msgEl.textContent = 'Error al guardar';
   }
 }
-function bimbaMkIdeaAlCalendario(id) {
-  const idea = _mkIdeasCache.find(function (i) { return i.id === id; });
-  if (!idea) return;
-  closeMkIdeasOverlay();
-  openMkCalendarioOverlay();
-  setTimeout(function () {
-    const form = document.getElementById('mk-calendario-form');
-    if (form.style.display === 'none') bimbaToggleMkForm('calendario');
-    document.getElementById('mk-cal-tema').value = idea.idea;
-    document.getElementById('mk-cal-fecha').value = new Date().toISOString().slice(0, 10);
-  }, 50);
-}
-
 // ── Promociones y campañas ──
 function openMkPromosOverlay() {
   document.getElementById('mk-promos-overlay').classList.add('open');
@@ -1990,4 +2329,250 @@ async function bimbaGuardarMkPromo() {
     msgEl.style.color = '#c0392b';
     msgEl.textContent = 'Error al guardar';
   }
+}
+
+// ── Colaboraciones ──
+const MK_COLAB_ESTADOS = ['Contactado', 'Negociando', 'Confirmado', 'Publicado', 'Descartado'];
+const MK_COLAB_ESTADO_COLOR = { Contactado: '#8A6A4E', Negociando: '#B5862C', Confirmado: '#0C5C8A', Publicado: '#27855a', Descartado: '#c0392b' };
+let _mkColabsCache = [];
+function openMkColabsOverlay() {
+  document.getElementById('mk-colabs-overlay').classList.add('open');
+  bimbaRenderMkColabs();
+}
+function closeMkColabsOverlay() {
+  document.getElementById('mk-colabs-overlay').classList.remove('open');
+}
+async function bimbaRenderMkColabs() {
+  const el = document.getElementById('mk-colabs-lista');
+  el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
+  try {
+    const sn = await firebase.database().ref('marketing/colaboraciones').once('value');
+    const lista = [];
+    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    lista.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    _mkColabsCache = lista;
+  } catch (e) {
+    el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
+    return;
+  }
+  bimbaPintarMkColabsLista();
+}
+function bimbaPintarMkColabsLista() {
+  const el = document.getElementById('mk-colabs-lista');
+  if (!_mkColabsCache.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin colaboraciones guardadas todavía</div>';
+    return;
+  }
+  el.innerHTML = _mkColabsCache.map(function (c) {
+    const color = MK_COLAB_ESTADO_COLOR[c.estado] || '#8A6A4E';
+    return '<div style="background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      + '<div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#3D1F0D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(c.nombre || '') + '</div>'
+      + '<button onclick="bimbaEliminarMkColab(\'' + c.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+      + '</div>'
+      + '<div style="font-size:11px;color:#8A6A4E;margin-bottom:6px">' + escapeHtml(c.red || '') + (c.contacto ? ' · ' + escapeHtml(c.contacto) : '') + '</div>'
+      + (c.notas ? '<div style="font-size:12px;color:#3D1F0D;margin-bottom:6px;white-space:pre-line">' + escapeHtml(c.notas) + '</div>' : '')
+      + '<select onchange="bimbaCambiarEstadoMkColab(\'' + c.id + '\', this.value)" style="font-size:11px;font-weight:800;padding:5px 22px 5px 10px;border-radius:99px;cursor:pointer;border:none;background:' + color + ';color:#fff;font-family:\'DM Sans\',sans-serif">'
+      + MK_COLAB_ESTADOS.map(function (e) { return '<option value="' + e + '"' + (e === (c.estado || 'Contactado') ? ' selected' : '') + '>' + e + '</option>'; }).join('')
+      + '</select>'
+      + '</div>';
+  }).join('');
+}
+async function bimbaCambiarEstadoMkColab(id, nuevoEstado) {
+  const item = _mkColabsCache.find(function (c) { return c.id === id; });
+  if (!item) return;
+  item.estado = nuevoEstado;
+  bimbaPintarMkColabsLista();
+  try { await firebase.database().ref('marketing/colaboraciones/' + id + '/estado').set(nuevoEstado); } catch (e) {}
+}
+async function bimbaEliminarMkColab(id) {
+  if (!confirm('¿Borrar esta colaboración?')) return;
+  try {
+    await firebase.database().ref('marketing/colaboraciones/' + id).remove();
+    bimbaRenderMkColabs();
+  } catch (e) {}
+}
+async function bimbaGuardarMkColab() {
+  const msgEl = document.getElementById('mk-colab-msg');
+  const nombre = document.getElementById('mk-colab-nombre').value.trim();
+  const red = document.getElementById('mk-colab-red').value;
+  const contacto = document.getElementById('mk-colab-contacto').value.trim();
+  const notas = document.getElementById('mk-colab-notas').value.trim();
+  if (!nombre) { msgEl.textContent = 'Pon un nombre'; msgEl.style.color = '#c0392b'; return; }
+  try {
+    await firebase.database().ref('marketing/colaboraciones').push({ nombre: nombre, red: red, contacto: contacto, notas: notas, estado: 'Contactado', ts: Date.now() });
+    msgEl.style.color = '#27855a';
+    msgEl.textContent = '✅ Guardado';
+    document.getElementById('mk-colab-nombre').value = '';
+    document.getElementById('mk-colab-contacto').value = '';
+    document.getElementById('mk-colab-notas').value = '';
+    bimbaRenderMkColabs();
+  } catch (e) {
+    msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'Error al guardar';
+  }
+}
+
+// ── Banco de fotos pendientes ──
+let _mkFotosCache = [];
+function openMkFotosOverlay() {
+  document.getElementById('mk-fotos-overlay').classList.add('open');
+  bimbaRenderMkFotos();
+}
+function closeMkFotosOverlay() {
+  document.getElementById('mk-fotos-overlay').classList.remove('open');
+}
+async function bimbaRenderMkFotos() {
+  const el = document.getElementById('mk-fotos-lista');
+  el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center">Cargando...</div>';
+  try {
+    const sn = await firebase.database().ref('marketing/fotos').once('value');
+    const lista = [];
+    if (sn.exists()) sn.forEach(function (s) { lista.push(Object.assign({ id: s.key }, s.val())); });
+    lista.sort(function (a, b) {
+      if (!!a.hecha !== !!b.hecha) return a.hecha ? 1 : -1;
+      return (b.ts || 0) - (a.ts || 0);
+    });
+    _mkFotosCache = lista;
+  } catch (e) {
+    el.innerHTML = '<div style="color:#c0392b;font-size:12px;padding:14px;text-align:center">Error al cargar</div>';
+    return;
+  }
+  bimbaPintarMkFotosLista();
+}
+function bimbaPintarMkFotosLista() {
+  const el = document.getElementById('mk-fotos-lista');
+  if (!_mkFotosCache.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;padding:14px;text-align:center;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px">Sin fotos pendientes todavía</div>';
+    return;
+  }
+  el.innerHTML = _mkFotosCache.map(function (f) {
+    const hecha = !!f.hecha;
+    return '<div style="display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:10px 12px;margin-bottom:6px">'
+      + '<span onclick="bimbaToggleMkFotoHecha(\'' + f.id + '\')" style="font-size:19px;line-height:1;cursor:pointer;flex-shrink:0">' + (hecha ? '✅' : '⬜') + '</span>'
+      + '<div style="flex:1;min-width:0;font-size:13px;color:' + (hecha ? '#B99B84' : '#3D1F0D') + ';text-decoration:' + (hecha ? 'line-through' : 'none') + '">' + escapeHtml(f.texto || '') + '</div>'
+      + '<button onclick="bimbaEliminarMkFoto(\'' + f.id + '\')" style="background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>'
+      + '</div>';
+  }).join('');
+}
+async function bimbaToggleMkFotoHecha(id) {
+  const item = _mkFotosCache.find(function (f) { return f.id === id; });
+  if (!item) return;
+  item.hecha = !item.hecha;
+  _mkFotosCache.sort(function (a, b) {
+    if (!!a.hecha !== !!b.hecha) return a.hecha ? 1 : -1;
+    return (b.ts || 0) - (a.ts || 0);
+  });
+  bimbaPintarMkFotosLista();
+  try { await firebase.database().ref('marketing/fotos/' + id + '/hecha').set(item.hecha); } catch (e) {}
+}
+async function bimbaEliminarMkFoto(id) {
+  if (!confirm('¿Borrar esta foto pendiente?')) return;
+  try {
+    await firebase.database().ref('marketing/fotos/' + id).remove();
+    bimbaRenderMkFotos();
+  } catch (e) {}
+}
+async function bimbaGuardarMkFoto() {
+  const msgEl = document.getElementById('mk-foto-msg');
+  const texto = document.getElementById('mk-foto-texto').value.trim();
+  if (!texto) { msgEl.textContent = 'Escribe qué foto falta'; msgEl.style.color = '#c0392b'; return; }
+  try {
+    await firebase.database().ref('marketing/fotos').push({ texto: texto, hecha: false, ts: Date.now() });
+    msgEl.style.color = '#27855a';
+    msgEl.textContent = '✅ Guardado';
+    document.getElementById('mk-foto-texto').value = '';
+    bimbaRenderMkFotos();
+  } catch (e) {
+    msgEl.style.color = '#c0392b';
+    msgEl.textContent = 'Error al guardar';
+  }
+}
+
+// ── Extractor de color ──
+function openMkPaletaOverlay() {
+  document.getElementById('mk-paleta-overlay').classList.add('open');
+}
+function closeMkPaletaOverlay() {
+  document.getElementById('mk-paleta-overlay').classList.remove('open');
+}
+function bimbaMkPaletaProcesar(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const resultEl = document.getElementById('mk-paleta-resultado');
+  resultEl.innerHTML = '<div style="color:#8A6A4E;font-size:12px;text-align:center;padding:14px">Analizando...</div>';
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const img = new Image();
+    img.onload = function () {
+      const previewEl = document.getElementById('mk-paleta-preview');
+      previewEl.src = e.target.result;
+      previewEl.style.display = 'block';
+
+      const tamano = 100;
+      const canvas = document.getElementById('mk-paleta-canvas');
+      canvas.width = tamano;
+      canvas.height = tamano;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, tamano, tamano);
+      let datos;
+      try {
+        datos = ctx.getImageData(0, 0, tamano, tamano).data;
+      } catch (err) {
+        resultEl.innerHTML = '<div style="color:#c0392b;font-size:12px;text-align:center;padding:14px">No se pudo leer la imagen</div>';
+        return;
+      }
+      bimbaMkPaletaPintar(bimbaMkPaletaExtraer(datos));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function bimbaMkPaletaExtraer(datos) {
+  const cubos = {};
+  const paso = 32;
+  for (let i = 0; i < datos.length; i += 4) {
+    if (datos[i + 3] < 128) continue; // ignora píxeles muy transparentes
+    const r = Math.round(datos[i] / paso) * paso;
+    const g = Math.round(datos[i + 1] / paso) * paso;
+    const b = Math.round(datos[i + 2] / paso) * paso;
+    const clave = r + ',' + g + ',' + b;
+    cubos[clave] = (cubos[clave] || 0) + 1;
+  }
+  const ordenado = Object.keys(cubos).sort(function (x, y) { return cubos[y] - cubos[x]; });
+  return ordenado.slice(0, 6).map(function (clave) {
+    const partes = clave.split(',').map(Number);
+    return _mkRgbAHex(partes[0], partes[1], partes[2]);
+  });
+}
+function _mkRgbAHex(r, g, b) {
+  function componente(n) {
+    return Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  }
+  return '#' + componente(r) + componente(g) + componente(b);
+}
+function bimbaMkPaletaPintar(colores) {
+  const el = document.getElementById('mk-paleta-resultado');
+  if (!colores.length) {
+    el.innerHTML = '<div style="color:#8A6A4E;font-size:12px;text-align:center;padding:14px">No se detectaron colores</div>';
+    return;
+  }
+  el.innerHTML = '<div style="font-size:11px;font-weight:700;color:#8A6A4E;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Colores dominantes (toca para copiar)</div>'
+    + colores.map(function (hex) {
+      return '<div onclick="bimbaMkPaletaCopiar(\'' + hex + '\', this)" style="display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #F5E6C8;border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer">'
+        + '<div style="width:32px;height:32px;border-radius:8px;background:' + hex + ';border:1.5px solid rgba(0,0,0,0.08);flex-shrink:0"></div>'
+        + '<div style="flex:1;font-family:monospace;font-size:14px;font-weight:700;color:#3D1F0D">' + hex.toUpperCase() + '</div>'
+        + '<span class="mk-paleta-copy-msg" style="font-size:11px;color:#27855a;font-weight:700"></span>'
+        + '</div>';
+    }).join('');
+}
+async function bimbaMkPaletaCopiar(hex, el) {
+  try {
+    await navigator.clipboard.writeText(hex);
+    const msg = el.querySelector('.mk-paleta-copy-msg');
+    if (msg) {
+      msg.textContent = '✓ copiado';
+      setTimeout(function () { msg.textContent = ''; }, 1500);
+    }
+  } catch (e) {}
 }
