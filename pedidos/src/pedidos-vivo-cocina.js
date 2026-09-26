@@ -443,9 +443,18 @@ function updateKitchenClock() {
 // con ocultar el botón en el selector del cliente, alguien que ya tuviera
 // la página abierta podría seguir reservando si solo se bloqueara aquí.
 async function toggleSlotCerrado(slot) {
-  if (!window.fb_toggleSlotClosed) return;
+  // Antes esto se quedaba en silencio si Firebase no había terminado de
+  // arrancar (o había fallado por dentro) — tocar el turno no hacía nada
+  // visible ni en consola, así que parecía que la función "había
+  // desaparecido" sin ninguna pista de por qué (hallazgo en producción).
+  // window._firebaseError lo deja puesto js/config.js si su arranque
+  // lanzó una excepción a medias — si existe, es la pista real del fallo.
   const cerrados = (typeof getSlotsClosed === 'function') ? getSlotsClosed() : {};
   const yaCerrado = !!cerrados[slot];
+  if (!window.fb_toggleSlotClosed) {
+    alert('⚠️ No se ha podido ' + (yaCerrado ? 'reabrir' : 'cerrar') + ' el turno — la conexión con el servidor todavía no está lista. Espera unos segundos y vuelve a intentarlo; si sigue sin ir, recarga la página.' + (window._firebaseError ? '\n\nDetalle técnico: ' + window._firebaseError : ''));
+    return;
+  }
   // _todayKeyMadrid() (antifraude.js) en vez de toISOString(): con UTC,
   // durante la 1-2h de desfase tras la medianoche de Madrid esto podía
   // comparar/escribir contra el día equivocado — pedidos "en vivo"
