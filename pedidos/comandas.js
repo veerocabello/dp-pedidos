@@ -1496,7 +1496,7 @@ function renderCart() {
   custLines.forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
+    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? priceOfIngExtra('Queso Mozzarella') : 0) + (c.extraGratinado ? 0.5 : 0);
     const raw = unitPrice * c.qty;
     const discAmt = computeDiscountAmount(raw, lineDiscounts[c.key]);
     const subtotal = raw - discAmt;
@@ -1879,6 +1879,7 @@ function openCustomizer(id, editKey) {
   document.getElementById('cust-subtitle').textContent = cfg.subtitle;
   document.getElementById('cust-error').style.display = 'none';
   document.getElementById('cust-confirm-btn').textContent = existing ? '✓ Guardar cambios' : '→ Añadir al pedido';
+  document.querySelector('#cust-queso-label .option-sub').textContent = '+' + fmt(priceOfIngExtra('Queso Mozzarella')) + ' €';
   updateCustExtraUI('queso', custExtraQueso);
   updateCustExtraUI('gratinado', custExtraGratinado);
   renderCustChips();
@@ -2019,7 +2020,7 @@ function updateCustTotalPrice() {
   const allSauces = [...custSelSauces, ...custSelExtraSauces];
   const allIngredients = [...custSelIngredients, ...custSelExtraIngredients];
   let p = comboCorePrice(allSauces, allIngredients);
-  if (custExtraQueso) p += 1;
+  if (custExtraQueso) p += priceOfIngExtra('Queso Mozzarella');
   if (custExtraGratinado) p += 0.5;
   document.getElementById('cust-price').textContent = fmt(p) + ' €';
   const noteEl = document.getElementById('cust-price-note');
@@ -2908,7 +2909,7 @@ function buildOrderObject(preview) {
   Object.values(custCart).filter(c => c.qty > 0).forEach(c => {
     const item = MENU.find(m => m.id == c.menuId);
     if (!item) return;
-    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? 1 : 0) + (c.extraGratinado ? 0.5 : 0);
+    const unitPrice = comboCorePrice([...c.sauces, ...(c.extraSauces || [])], [...c.ingredients, ...(c.extraIngredients || [])]) + (c.extraQueso ? priceOfIngExtra('Queso Mozzarella') : 0) + (c.extraGratinado ? 0.5 : 0);
     // En el ticket el orden es siempre fijo, sin importar en qué momento
     // se eligió cada cosa: primero todas las salsas, luego los
     // ingredientes, y el queso/gratinado siempre al final. Lo que vaya
@@ -2917,7 +2918,7 @@ function buildOrderObject(preview) {
     // cobra aparte, igual que en una Simple con extras.
     const tier = custCartTier(c);
     const extras = custCartPricedLines(c).map(p => ({ name: p.name, price: p.price, underline: p.price != null }));
-    if (c.extraQueso) extras.push({ name: 'Queso', price: 1, underline: true });
+    if (c.extraQueso) extras.push({ name: 'Queso', price: priceOfIngExtra('Queso Mozzarella'), underline: true });
     if (c.extraGratinado) extras.push({ name: 'Gratinado', price: 0.5, underline: true });
     // La línea principal muestra solo el precio base del escalón
     // alcanzado (lo incluido ya va ahí); queso/gratinado/lo que se pase
