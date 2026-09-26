@@ -1891,6 +1891,18 @@
         <p style="font-size:11px;color:var(--muted);margin:8px 0 0">El cliente lo marca él mismo en el formulario — se pide carné en caja, si no lo presenta se cobra el precio normal.</p>
       </div>
 
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Cartel QR de la web</div>
+
+      <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px">📱 Cartel "Pide online"</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Un QR sencillo con el enlace a la web de pedidos, sin ningún código ni descuento — para dar a un cliente o dejarlo puesto en cualquier momento (a diferencia del cartel de "pedido desde el local" de abajo, este no caduca ni depende de ningún código).</p>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <label for="tc-web-qr-copias" style="font-size:12px;color:var(--muted);white-space:nowrap">Copias a imprimir</label>
+          <input type="number" id="tc-web-qr-copias" min="1" max="10" step="1" value="1" style="width:56px;padding:7px 8px;border:1.5px solid var(--warm);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:var(--cream);outline:none;text-align:center">
+        </div>
+        <button onclick="imprimirCartelQRWeb(document.getElementById('tc-web-qr-copias').value)" style="width:100%;background:var(--brown);color:var(--cream);border:none;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">🖨️ Imprimir cartel QR</button>
+      </div>
+
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px">Pedidos desde el local</div>
 
       <div style="background:var(--white);border:1.5px solid var(--warm);border-radius:12px;padding:14px;margin-bottom:16px">

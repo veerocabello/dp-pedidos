@@ -374,7 +374,17 @@ Detalle t\xE9cnico: `+window._firebaseError:""));return}const n=typeof _todayKey
 `),i(`
 
 
-`),a.push(n,86,66,0),await _ptEnviarBytes(new Uint8Array(a))}async function _ptImprimirResumenPedidos(e,t,o,n,a){const r=[],c=m=>{for(const p of _ptEncodeStr(m))r.push(p.charCodeAt(0)&255)},l=()=>r.push(27,97,1),d=()=>r.push(27,97,0),u=()=>r.push(27,33,48),f=m=>r.push(27,69,m?1:0),b=()=>r.push(27,33,0),y=()=>c(`--------------------------------
+`),a.push(n,86,66,0),await _ptEnviarBytes(new Uint8Array(a))}async function imprimirCartelQRWeb(e){const t=Math.max(1,Math.min(10,parseInt(e,10)||1)),o=typeof _ptEnFila=="function"?_ptEnFila:(n=>n());for(let n=0;n<t;n++)try{await o(()=>_imprimirUnCartelQRWeb())}catch(a){alert("\u26A0\uFE0F No se pudo imprimir el cartel: "+a.message);return}}async function _imprimirUnCartelQRWeb(){const e=window.location.origin+"/",t=27,o=29,n=[],a=c=>{for(const l of _ptEncodeStr(c))n.push(l.charCodeAt(0)&255)},i=()=>n.push(t,97,1),s=()=>n.push(t,33,48),r=()=>n.push(t,33,0);n.push(t,64),i(),a(`
+`),s(),a(`PIDE ONLINE
+`),r(),a(`Escanea este codigo para
+`),a(`hacer tu pedido por internet
+`),a(`
+`),_ptPushQR(n,o,e,8),a(`
+`),a(e+`
+`),a(`
+
+
+`),n.push(o,86,66,0),await _ptEnviarBytes(new Uint8Array(n))}async function _ptImprimirResumenPedidos(e,t,o,n,a){const r=[],c=m=>{for(const p of _ptEncodeStr(m))r.push(p.charCodeAt(0)&255)},l=()=>r.push(27,97,1),d=()=>r.push(27,97,0),u=()=>r.push(27,33,48),f=m=>r.push(27,69,m?1:0),b=()=>r.push(27,33,0),y=()=>c(`--------------------------------
 `);r.push(27,64),l(),u(),c(`DULCE PATATA
 `),b(),c(e+`
 `),c(t+`

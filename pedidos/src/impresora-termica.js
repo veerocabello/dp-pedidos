@@ -1602,6 +1602,49 @@ async function _imprimirUnCartelQRLocal(code) {
   await _ptEnviarBytes(new Uint8Array(d));
 }
 
+// Cartel con QR genérico a la web de pedidos — a diferencia de
+// imprimirCartelQRLocal (arriba), este NO lleva ningún código ni oferta de
+// "sin gastos de gestión": es solo un aviso reutilizable de "aquí se pide
+// por internet" (para dar a un cliente que pregunta, dejar en el mostrador
+// fuera de las horas de cola, etc. — no depende de ningún código que
+// caduque cada día).
+async function imprimirCartelQRWeb(copias) {
+  const n = Math.max(1, Math.min(10, parseInt(copias, 10) || 1));
+  const _ptEjecutarCartelWeb = typeof _ptEnFila === 'function' ? _ptEnFila : (fn => fn());
+  for (let i = 0; i < n; i++) {
+    try {
+      await _ptEjecutarCartelWeb(() => _imprimirUnCartelQRWeb());
+    } catch (e) {
+      alert('⚠️ No se pudo imprimir el cartel: ' + e.message);
+      return;
+    }
+  }
+}
+async function _imprimirUnCartelQRWeb() {
+  const url = window.location.origin + '/';
+  const ESC = 0x1B, GS = 0x1D;
+  const d = [];
+  const push = s => { for (const c of _ptEncodeStr(s)) d.push(c.charCodeAt(0) & 0xFF); };
+  const center = () => d.push(ESC, 0x61, 0x01);
+  const big = () => d.push(ESC, 0x21, 0x30);
+  const normal = () => d.push(ESC, 0x21, 0x00);
+  d.push(ESC, 0x40);
+  center();
+  push('\n');
+  big();
+  push('PIDE ONLINE\n');
+  normal();
+  push('Escanea este codigo para\n');
+  push('hacer tu pedido por internet\n');
+  push('\n');
+  _ptPushQR(d, GS, url, 8);
+  push('\n');
+  push(url + '\n');
+  push('\n\n\n');
+  d.push(GS, 0x56, 0x42, 0x00);
+  await _ptEnviarBytes(new Uint8Array(d));
+}
+
 // Imprime el "Resumen del día" que se ve en el panel tras pulsar "Cerrar
 // el día" (activarFinDeNoche(), en admin-turnos-descuentos.js) — pedidos,
 // total recaudado y top productos. Lee window._ultimoResumenDia, que ese
