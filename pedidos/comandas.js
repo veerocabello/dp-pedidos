@@ -307,6 +307,45 @@ function dobleSurcharge(dobles) {
 }
 
 const BOLSA_ID = 52;
+// Bolsas automáticas (activable en Ajustes): cuenta las patatas del
+// pedido (categoría "Patatas" — normales, Al Gusto, Bomba y Cheddar-Bacon
+// cuentan todas igual) y calcula 1 bolsa cada 2 patatas (redondeando
+// hacia arriba). Sin ninguna patata pero con cualquier otra cosa en el
+// pedido, 1 bolsa fija; con el pedido vacío del todo, ninguna.
+function contarPatatasPedido() {
+  let n = 0;
+  Object.entries(cart).forEach(([id, qty]) => {
+    const item = MENU.find(m => m.id == id);
+    if (item && item.cat === 'Patatas') n += qty;
+  });
+  Object.values(custCart).forEach(c => {
+    if (c.qty <= 0) return;
+    const item = MENU.find(m => m.id == c.menuId);
+    if (item && item.cat === 'Patatas') n += c.qty;
+  });
+  Object.values(extrasCart).forEach(c => {
+    if (c.qty <= 0) return;
+    const item = MENU.find(m => m.id == c.menuId);
+    if (item && item.cat === 'Patatas') n += c.qty;
+  });
+  return n;
+}
+function hayAlgoMasEnPedido() {
+  if (Object.entries(cart).some(([id, qty]) => id != BOLSA_ID && qty > 0)) return true;
+  if (Object.values(custCart).some(c => c.qty > 0)) return true;
+  if (Object.values(extrasCart).some(c => c.qty > 0)) return true;
+  if (Object.values(manualCart).some(m => m.qty > 0)) return true;
+  return false;
+}
+function calcularBolsasAutomaticas() {
+  const patatas = contarPatatasPedido();
+  if (patatas > 0) return Math.ceil(patatas / 2);
+  return hayAlgoMasEnPedido() ? 1 : 0;
+}
+function aplicarBolsasAutomaticas() {
+  const n = calcularBolsasAutomaticas();
+  if (n > 0) cart[BOLSA_ID] = n; else delete cart[BOLSA_ID];
+}
 // Orden fijo de categorías en la barra lateral y en "Todos" (siempre igual,
 // sin importar el orden en que estén los productos en MENU).
 const CATEGORY_ORDER = ["Patatas", "Boniato", "Paninis", "Tartas", "Cookies", "Bebidas", "Snacks"];
@@ -467,7 +506,7 @@ function initTabs() {
     `<button class="tab ${c === activeCategory ? 'active' : ''}" onclick="setCategory('${c}')"><span class="tab-icon">${CATEGORY_ICONS[c] || '🍽️'}</span>${c}</button>`
   ).join('');
   document.getElementById('tabs').innerHTML = catTabs
-    + `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`
+    + (getTicketConfig().bolsasAuto ? '' : `<button class="tab" onclick="addBolsaDirect()"><span class="tab-icon">${CATEGORY_ICONS.Extras}</span>Bolsa +${fmt(0.10)}€</button>`)
     + `<button class="tab" onclick="openStockModal()"><span class="tab-icon">📦</span>Stock</button>`;
 }
 function setCategory(cat) { activeCategory = cat; initTabs(); renderMenu(); }
@@ -1389,6 +1428,7 @@ function swipeRemoveByKey(type, key) {
 }
 
 function renderCart() {
+  if (getTicketConfig().bolsasAuto) aplicarBolsasAutomaticas();
   const bodyEl = document.getElementById('cart-body');
   const totalRowEl = document.getElementById('cart-total-row');
   const lines = Object.entries(cart);
@@ -1423,6 +1463,18 @@ function renderCart() {
     const discAmt = computeDiscountAmount(raw, lineDiscounts[key]);
     const subtotal = raw - discAmt;
     total += subtotal;
+    // Con las bolsas automáticas activadas, esta línea se recalcula sola
+    // en cada renderCart() — tocar +/- o el swipe para borrarla no tendría
+    // ningún efecto real (se vuelve a poner sola al momento), así que se
+    // muestra sin esos controles para no parecer que están rotos.
+    if (item.id === BOLSA_ID && getTicketConfig().bolsasAuto) {
+      rows.push({ rank: categoryRank(item.cat), html: `<div class="cart-line">
+        <span class="cart-line-name">${escapeHtml(item.name)}</span>
+        <div class="cart-qty-mini"><span>${qty} · automática</span></div>
+        <span class="cart-line-price">${fmt(subtotal)} €</span>
+      </div>` });
+      return;
+    }
     const simpleCanEdit = ALL_EXTRAS_IDS.has(item.id) || BONIATO_IDS.has(item.id);
     const simpleNameHtml = simpleCanEdit
       ? `<button type="button" class="cart-line-name cart-line-name-btn" onclick="editSimpleItem(${item.id})" title="Personalizar (quitar ingredientes, queso, gratinado...)">${escapeHtml(item.name)}</button>`
@@ -2795,6 +2847,7 @@ const TICKET_CONFIG_DEFAULTS = {
   modoImpresion: 'auto',
   printerDeviceName: '', // app de escritorio: qué impresora de Windows usar en impresión silenciosa ('' = la predeterminada)
   copiaAutoCadaDias: 1, // días entre copias automáticas; 0 = desactivada — ver "Copia automática" más abajo
+  bolsasAuto: false, // calcular la cantidad de bolsas sola según lo que lleve el pedido (ver calcularBolsasAutomaticas)
 };
 function getTicketConfig() {
   try {
@@ -4473,6 +4526,7 @@ function openSettings() {
   document.getElementById('set-auto-imprimir').checked = cfg.autoImprimir !== false;
   document.getElementById('set-modo-impresion').value = cfg.modoImpresion;
   document.getElementById('set-copia-auto-cada').value = String(cfg.copiaAutoCadaDias != null ? cfg.copiaAutoCadaDias : 1);
+  document.getElementById('set-bolsas-auto').checked = cfg.bolsasAuto === true;
   // "Silenciosa" solo existe en la app de escritorio (necesita imprimir
   // directo al driver de Windows vía Electron) — en un navegador normal no
   // se puede, así que ni se ofrece como opción.
@@ -4606,10 +4660,13 @@ function saveSettingsForm() {
     modoImpresion: document.getElementById('set-modo-impresion').value,
     printerDeviceName: document.getElementById('set-printer-name') ? document.getElementById('set-printer-name').value : '',
     copiaAutoCadaDias: parseInt(document.getElementById('set-copia-auto-cada').value, 10) || 0,
+    bolsasAuto: document.getElementById('set-bolsas-auto').checked,
   };
   saveTicketConfig(cfg);
   applyPrintPageSize();
   closeSettings();
+  initTabs();
+  renderCart();
   toast('✅ Ajustes guardados');
 }
 

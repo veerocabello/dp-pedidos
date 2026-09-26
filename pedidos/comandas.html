@@ -84,9 +84,10 @@
   <div class="modal-box" style="max-width:660px">
     <button class="modal-close" onclick="closeCobrarModal()">&#x2715;</button>
     <div class="modal-title">💰 Cobrar</div>
-    <div style="display:flex;gap:12px;margin-bottom:8px">
+    <div style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap">
       <button type="button" class="btn-text" style="color:var(--amber-dark)" onclick="openManualItemModal(null,1)">➕ Añadir gasto/cobro suelto</button>
       <button type="button" class="btn-text" style="color:var(--error)" onclick="openManualItemModal(null,-1)">➖ Restar del ticket</button>
+      <button type="button" class="btn-text" style="color:var(--amber-dark)" onclick="openDiscountModal()">🏷️ Descuento</button>
     </div>
     <div class="paid-toggle-row" id="paid-toggle-row">
       <button type="button" class="paid-toggle-btn paid-toggle-yes active" id="paid-btn-yes" onclick="setOrderPaid(true)">✅ Pagado</button>
@@ -292,6 +293,12 @@
         <option value="">La predeterminada de Windows</option>
       </select>
     </div>
+
+    <div class="section-label">Bolsas</div>
+    <label class="option-row" style="padding:10px 14px">
+      <div><div class="option-title" style="font-size:13.5px">Calcular bolsas automáticamente</div><div class="option-sub">1 patata (normal, Al Gusto, Bomba o Cheddar-Bacon, todas cuentan igual) → 1 bolsa; 3 o 4 → 2; 5 o 6 → 3, etc. Sin patatas pero con algo más en el pedido → 1 bolsa fija. Pedido vacío → 0.</div></div>
+      <input type="checkbox" id="set-bolsas-auto" style="width:20px;height:20px;flex-shrink:0">
+    </label>
 
     <div class="section-label">Copia de seguridad</div>
     <div class="form-group">
